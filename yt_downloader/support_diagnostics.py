@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 import platform
 import re
 from dataclasses import dataclass
@@ -34,12 +36,22 @@ def redact_line(line: str) -> str:
 
 
 def public_video_url(value: str) -> str | None:
-    """Never attach arbitrary/signed URLs, playlist IDs, or URL credentials."""
+    """Canonical YouTube video link; visibility (public/private/unlisted) is unknown."""
     try:
         url = urlsplit(value)
-        if url.scheme != "https" or url.username or url.password:
+        if (
+            url.scheme != "https"
+            or url.username
+            or url.password
+            or url.port not in (None, 443)
+        ):
             return None
-        if url.hostname in {"youtube.com", "www.youtube.com", "m.youtube.com"}:
+        if url.hostname in {
+            "youtube.com",
+            "www.youtube.com",
+            "m.youtube.com",
+            "music.youtube.com",
+        }:
             video = parse_qs(url.query).get("v", [""])[0]
             if url.path.startswith(("/shorts/", "/live/")):
                 video = url.path.split("/")[2]
@@ -49,7 +61,7 @@ def public_video_url(value: str) -> str | None:
             return None
         return (
             f"https://www.youtube.com/watch?v={video}"
-            if re.fullmatch(r"[\w-]{11}", video)
+            if re.fullmatch(r"[A-Za-z0-9_-]{11}", video)
             else None
         )
     except ValueError:
@@ -60,6 +72,30 @@ def public_video_url(value: str) -> str | None:
 class FailureContext:
     diagnostics: str
     video_url: str | None = None
+    output_folder: str | None = None
+
+
+def diagnostics_attachment(
+    context: FailureContext | None,
+    *,
+    include_diagnostics: bool,
+    include_output_folder: bool = False,
+) -> str:
+    """The review and transport share exactly one bounded attachment projection."""
+    if context is None or not include_diagnostics:
+        return ""
+    folder = ""
+    if (
+        include_output_folder
+        and isinstance(context.output_folder, str)
+        and 0 < len(context.output_folder) <= 1024
+        and not any(ord(c) < 32 for c in context.output_folder)
+    ):
+        # JSON quoting prevents a filename from introducing misleading log lines.
+        folder = "\n\nOutput folder: " + json.dumps(
+            context.output_folder, ensure_ascii=False
+        )
+    return context.diagnostics[: MAX_DIAGNOSTICS - len(folder)] + folder
 
 
 def failure_context(job: Any, message: str) -> FailureContext:
@@ -123,4 +159,15 @@ def failure_context(job: Any, message: str) -> FailureContext:
         if job.single_video_only and not getattr(job, "batch_mode", False)
         else None
     )
-    return FailureContext("\n".join(lines)[:MAX_DIAGNOSTICS], source)
+    output_folder = getattr(job, "output_dir", None)
+    try:
+        output_folder = (
+            os.fsdecode(output_folder) if output_folder is not None else None
+        )
+    except (TypeError, ValueError):
+        output_folder = None
+    if output_folder and (
+        len(output_folder) > 1024 or any(ord(c) < 32 for c in output_folder)
+    ):
+        output_folder = None
+    return FailureContext("\n".join(lines)[:MAX_DIAGNOSTICS], source, output_folder)

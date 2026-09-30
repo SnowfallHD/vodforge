@@ -25,10 +25,15 @@ _LOCK = threading.RLock()
 _ONBOARDING_KEYS = ("mode", "region_checked", "prompted", "welcome_attempted")
 REGION_POLICY_VERSION = 1
 ANALYTICS_BENEFITS = (
-    ("shield-check", "No personal information"),
+    ("shield-check", "No content or credentials"),
     ("activity", "Fix errors without support"),
     ("trending-up", "Improve the platform"),
     ("sliders", "Turn off anytime in Settings"),
+)
+ANALYTICS_DESCRIPTION = (
+    "Share usage events and system diagnostics to help us fix errors and improve the app. "
+    "Automatic analytics excludes source links, file paths, and credentials. "
+    "You can change this in Settings."
 )
 
 

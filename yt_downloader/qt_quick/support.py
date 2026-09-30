@@ -57,6 +57,7 @@ class QtSupportSession:
                     email=str(values.get("email") or ""),
                     include_diagnostics=values.get("diagnostics") is True,
                     include_video_url=values.get("videoUrl") is True,
+                    include_output_folder=values.get("outputFolder") is True,
                     context=self.context,
                 )
             else:

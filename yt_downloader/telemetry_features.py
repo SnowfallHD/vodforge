@@ -7,11 +7,16 @@ transport. This vocabulary is shared by producers, validation and QA inventories
 from __future__ import annotations
 
 import json
+import os
 import platform
 import re
 import uuid
 from collections.abc import Mapping
+from functools import lru_cache
+from importlib.metadata import PackageNotFoundError, version
 from urllib.parse import parse_qs, urlsplit
+
+import psutil
 
 from .failure_diagnostics import FAILURE_CODES, FAILURE_REASONS
 
@@ -278,6 +283,15 @@ DIMENSION_PATTERNS = {
     "operation_step": r"(?:[1-9]|[1-5][0-9]|6[0-4])",
     "build_revision": r"(?:[0-9a-f]{40}|unknown)",
 }
+SYSTEM_VERSION_PATTERN = r"[0-9]{1,6}(?:\.[0-9]{1,6}){0,3}"
+for _key in (
+    "os_version",
+    "python_version",
+    "qt_version",
+    "downloader_version",
+    "nvidia_driver",
+):
+    DIMENSION_PATTERNS[_key] = SYSTEM_VERSION_PATTERN
 DIMENSION_RANGES = {
     key: (0, 10000)
     for key in (
@@ -300,6 +314,9 @@ DIMENSION_RANGES.update(
         "observed_audio_channels": (1, 64),
         "namespace_media_file_count": (0, 128),
         "peer_comparison_count": (0, 32),
+        "cpu_logical_count": (1, 4096),
+        "memory_total_mb": (1, 999999),
+        "memory_available_mb": (0, 999999),
         **{
             key: (0, 5000)
             for key in (
@@ -685,6 +702,7 @@ DIMENSION_CHOICES: dict[str, frozenset[str]] = {
     "provider": frozenset({"youtube", "other"}),
     "encoder_preference": frozenset({"cpu", "nvidia"}),
     "architecture": frozenset({"arm64", "x64", "other"}),
+    "gpu_vendor": frozenset({"nvidia"}),
     "navigation_feature": frozenset({"archive", "watch", "library"}),
     "navigation_action": frozenset(
         {
@@ -748,6 +766,56 @@ DIMENSION_CHOICES: dict[str, frozenset[str]] = {
     "item_count_bucket": frozenset({"1", "2_5", "6_20", "21_100", "101_plus"}),
     "theme": frozenset({"violet", "cobalt", "jade", "ember", "rose", "custom"}),
 }
+
+
+@lru_cache(maxsize=1)
+def system_dimensions() -> dict[str, str]:
+    """Bounded versions/hardware facts; no shell commands, device IDs or hostnames."""
+    machine = platform.machine().lower()
+    result = {
+        "architecture": "arm64"
+        if machine in {"arm64", "aarch64"}
+        else "x64"
+        if machine in {"amd64", "x86_64"}
+        else "other"
+    }
+    # Linux release suffixes can contain arbitrary host/distribution text.
+    os_version = (
+        platform.mac_ver()[0]
+        if platform.system() == "Darwin"
+        else platform.win32_ver()[1]
+        if platform.system() == "Windows"
+        else platform.release().split("-")[0]
+    )
+    candidates = {"os_version": os_version, "python_version": platform.python_version()}
+    for key, package in (("qt_version", "PySide6"), ("downloader_version", "yt-dlp")):
+        try:
+            candidates[key] = version(package)
+        except PackageNotFoundError:
+            pass
+    for key, value in candidates.items():
+        if re.fullmatch(SYSTEM_VERSION_PATTERN, value):
+            result[key] = value
+    count = os.cpu_count()
+    if count is not None and 1 <= count <= 4096:
+        result["cpu_logical_count"] = str(count)
+    return result
+
+
+def resource_dimensions() -> dict[str, str]:
+    """Cheap local memory snapshot, no process inspection or drive/network scanning."""
+    try:
+        memory = psutil.virtual_memory()
+        return {
+            key: str(min(999999, max(0, value // (1024 * 1024))))
+            for key, value in (
+                ("memory_total_mb", memory.total),
+                ("memory_available_mb", memory.available),
+            )
+            if value >= 0 and (key != "memory_total_mb" or value >= 1024 * 1024)
+        }
+    except (OSError, RuntimeError, ValueError):
+        return {}
 
 
 # Explicit projection: unknown/future preferences are excluded until reviewed.

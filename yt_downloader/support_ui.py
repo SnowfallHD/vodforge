@@ -13,7 +13,11 @@ from tkinter import ttk
 from typing import Any
 
 from .modal_backdrop import ModalBackdrop
-from .support_diagnostics import FailureContext
+from .support_diagnostics import (
+    FailureContext,
+    diagnostics_attachment,
+    public_video_url,
+)
 from .support_payload import REASONS, feedback_payload, review_payload
 from .support_transport import SubmissionError, SupportTransport, VerificationRequired
 from .ui_button_contract import ProductButton
@@ -88,6 +92,7 @@ class SupportPanel:
         self.reply = tk.BooleanVar(parent, False)
         self.diagnostics = tk.BooleanVar(parent, False)
         self.video_url = tk.BooleanVar(parent, False)
+        self.output_folder = tk.BooleanVar(parent, False)
         if kind == "feedback":
             ChoiceDropdown(
                 body, textvariable=self.reason, values=REASONS, state="readonly"
@@ -152,6 +157,7 @@ class SupportPanel:
                     options,
                     text="Include recent diagnostics",
                     variable=self.diagnostics,
+                    command=self._diagnostics_changed,
                 ).grid(row=3, column=0, sticky="w", pady=(6, 0))
                 ProductButton(
                     options, text="Review diagnostics", command=self._review_diagnostics
@@ -159,9 +165,25 @@ class SupportPanel:
                 if context.video_url:
                     ModernCheckbox(
                         options,
-                        text="Include the public video URL",
+                        text="Include YouTube source link",
                         variable=self.video_url,
                     ).grid(row=4, column=0, columnspan=2, sticky="w", pady=3)
+                if context.output_folder:
+                    self.output_folder_checkbox = ModernCheckbox(
+                        options,
+                        text="Include output folder path (with diagnostics)",
+                        variable=self.output_folder,
+                    )
+                    self.output_folder_checkbox.grid(
+                        row=5, column=0, columnspan=2, sticky="w", pady=3
+                    )
+                    self._diagnostics_changed()
+                ttk.Label(
+                    options,
+                    text="Review selected attachments before sending. Source links and folder names can identify your content.",
+                    style="Muted.TLabel",
+                    wraplength=490,
+                ).grid(row=6, column=0, columnspan=2, sticky="w", pady=3)
             else:
                 ttk.Label(
                     options,
@@ -266,6 +288,11 @@ class SupportPanel:
         for n, button in enumerate(self.star_buttons, 1):
             button.configure(text="★" if n <= value else "☆")
 
+    def _diagnostics_changed(self) -> None:
+        control = getattr(self, "output_folder_checkbox", None)
+        if control is not None:
+            control.configure(state="normal" if self.diagnostics.get() else "disabled")
+
     def _reply_changed(self) -> None:
         if self.reply.get():
             self.email_hint.grid(row=1, column=0, sticky="w")
@@ -301,10 +328,16 @@ class SupportPanel:
         text.pack(fill="both", expand=True)
         text.insert(
             "1.0",
-            self.context.diagnostics
+            diagnostics_attachment(
+                self.context,
+                include_diagnostics=self.diagnostics.get(),
+                include_output_folder=self.output_folder.get(),
+            )
             + (
-                "\n\nOptional video URL: " + self.context.video_url
-                if self.context.video_url
+                "\n\nYouTube source link: "
+                + (public_video_url(self.context.video_url or "") or "")
+                if self.video_url.get()
+                and public_video_url(self.context.video_url or "")
                 else ""
             ),
         )
@@ -331,6 +364,7 @@ class SupportPanel:
                 email=self.email.get(),
                 include_diagnostics=self.diagnostics.get(),
                 include_video_url=self.video_url.get(),
+                include_output_folder=self.output_folder.get(),
                 context=self.context,
             )
         return review_payload(

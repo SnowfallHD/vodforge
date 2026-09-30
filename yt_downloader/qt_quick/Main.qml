@@ -146,6 +146,7 @@ Window {
             supportPopup.reply = false
             supportPopup.includeDiagnostics = false
             supportPopup.includeVideoUrl = false
+            supportPopup.includeOutputFolder = false
             supportMessage.text = ""
             supportEmail.text = ""
             supportName.text = ""
@@ -273,6 +274,7 @@ Window {
         property bool reply: false
         property bool includeDiagnostics: false
         property bool includeVideoUrl: false
+        property bool includeOutputFolder: false
         x: Math.max(0, (window.width - width) / 2)
         y: Math.max(0, (window.height - height) / 2)
         width: Math.min(580, window.width - 18)
@@ -414,11 +416,26 @@ Window {
                     }
                     StoneCheckBox {
                         visible: bridge.supportKind === "feedback" && !!bridge.supportContext.videoUrl
-                        text: "Include the public video URL"
+                        text: "Include YouTube source link"
                         checked: supportPopup.includeVideoUrl
                         Layout.preferredWidth: 245; Layout.preferredHeight: 32
                         enabled: !bridge.supportBusy && !bridge.supportSent
                         onToggled: supportPopup.includeVideoUrl = checked
+                    }
+                    StoneCheckBox {
+                        objectName: "supportOutputFolderConsent"
+                        visible: bridge.supportKind === "feedback" && !!bridge.supportContext.outputFolder
+                        text: "Include output folder path"
+                        checked: supportPopup.includeOutputFolder
+                        Layout.fillWidth: true; Layout.preferredHeight: 32
+                        enabled: supportPopup.includeDiagnostics && !bridge.supportBusy && !bridge.supportSent
+                        onToggled: supportPopup.includeOutputFolder = checked
+                    }
+                    Text {
+                        visible: bridge.supportKind === "feedback" && (!!bridge.supportContext.outputFolder || !!bridge.supportContext.videoUrl)
+                        text: "Source links and folder names can identify your content. Review your selected attachments before sending."
+                        color: theme.muted; font.pixelSize: 12
+                        Layout.fillWidth: true; wrapMode: Text.WordWrap
                     }
                 }
             }
@@ -451,6 +468,7 @@ Window {
                         email: supportEmail.text,
                         diagnostics: supportPopup.includeDiagnostics,
                         videoUrl: supportPopup.includeVideoUrl,
+                        outputFolder: supportPopup.includeOutputFolder,
                         name: supportName.text
                     })
                 }
@@ -491,7 +509,8 @@ Window {
                 id: diagnosticsBody
                 Layout.fillWidth: true; Layout.fillHeight: true; clip: true
                 Text {
-                    text: bridge.supportContext.diagnostics + (bridge.supportContext.videoUrl ? "\n\nOptional video URL: " + bridge.supportContext.videoUrl : "")
+                    objectName: "supportAttachmentPreview"
+                    text: bridge.supportAttachmentPreview(supportPopup.includeDiagnostics, supportPopup.includeVideoUrl, supportPopup.includeOutputFolder)
                     color: theme.text; font.pixelSize: 14
                     width: diagnosticsBody.availableWidth; wrapMode: Text.WrapAnywhere
                 }
@@ -515,7 +534,7 @@ Window {
             spacing: 20
             Text { text: "Help improve VODForge"; color: theme.text; font.pixelSize: 21; font.bold: true; Layout.alignment: Qt.AlignHCenter }
             Text {
-                text: "Share private, anonymous usage events to help us fix errors and improve the app. You can change this in Settings."
+                text: bridge.analyticsDescription
                 color: theme.text
                 font.pixelSize: 15
                 wrapMode: Text.WordWrap
@@ -2279,7 +2298,7 @@ Window {
                 visible: bridge.analyticsAvailable
                 Layout.fillWidth: true
                 Layout.preferredHeight: visible ? 40 : 0
-                Text { text: "Share anonymous usage analytics"; color: theme.text; font.pixelSize: 15; Layout.fillWidth: true }
+                Text { text: "Share usage analytics"; color: theme.text; font.pixelSize: 15; Layout.fillWidth: true }
                 StoneButton {
                     label: bridge.analyticsAllowed ? "On" : "Off"
                     selected: bridge.analyticsAllowed

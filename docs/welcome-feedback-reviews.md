@@ -1,7 +1,7 @@
 # Welcome, feedback, and ratings
 
 The current Qt Support form uses plain checkbox-and-label consent for reply,
-recent diagnostics, and the public source URL. Diagnostics remains visible but
+recent diagnostics, the YouTube source link, and output folder path. Diagnostics remains visible but
 disabled with an explanation when no recent failure context exists. The form fits
 its content and protects the action footer; no consent control has a button face.
 Automatic editorial prompts wait while a user is editing text.
@@ -20,8 +20,11 @@ Introduced for the 0.2.0 release; not part of the published 0.1.9 app.
 - The header gear menu opens Help and feedback directly, with Rate VODForge immediately below and Welcome tour separately available. Settings also provides Help and feedback. Feedback has a reason,
   a 2,000-character message, and optional reply email. It does not enable analytics.
 - Recent failure diagnostics are optional and unchecked. Review shows the bounded,
-  redacted failure context before sending. The canonical public video URL has a
-  separate unchecked option. Cookies, credentials, whole logs, local media, and
+  redacted failure context before sending. The canonical YouTube source link and
+  output folder have separate unchecked options. Folder inclusion also requires
+  diagnostics consent. Review uses the same bounded attachment projection as
+  transport and includes only selected options. A YouTube link is not evidence
+  that the video is public; private/unlisted links can identify content. Cookies, credentials, whole logs, local media, and
   arbitrary source URLs are not attached. Review the attachment: redaction is a
   safeguard, not a guarantee that every possible provider message is anonymous.
 - A rating is offered once after three distinct successfully completed download

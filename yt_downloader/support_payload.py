@@ -5,7 +5,11 @@ from __future__ import annotations
 import platform
 from typing import Any
 
-from .support_diagnostics import FailureContext
+from .support_diagnostics import (
+    FailureContext,
+    diagnostics_attachment,
+    public_video_url,
+)
 from .version import __version__
 
 REASONS = (
@@ -25,6 +29,7 @@ def feedback_payload(
     email: str = "",
     include_diagnostics: bool = False,
     include_video_url: bool = False,
+    include_output_folder: bool = False,
     context: FailureContext | None = None,
 ) -> dict[str, Any]:
     if reason not in REASONS:
@@ -46,9 +51,15 @@ def feedback_payload(
         "message": message,
         "reply_email": email,
         "include_diagnostics": bool(include_diagnostics),
-        "diagnostics": context.diagnostics if context and include_diagnostics else "",
+        "diagnostics": diagnostics_attachment(
+            context,
+            include_diagnostics=include_diagnostics,
+            include_output_folder=include_output_folder,
+        ),
         "include_video_url": bool(include_video_url),
-        "video_url": context.video_url if context and include_video_url else "",
+        "video_url": (public_video_url(context.video_url or "") or "")
+        if context and include_video_url
+        else "",
     }
 
 

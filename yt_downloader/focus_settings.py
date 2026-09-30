@@ -830,7 +830,7 @@ class FocusSettingsDialog:
         ).grid(row=0, column=0, sticky="w", pady=(0, self._px(7)))
         usage = ModernCheckbox(
             privacy,
-            text="Share anonymous analytics",
+            text="Share usage analytics",
             variable=self.bindings.anonymous_usage_analytics,
         )
         usage.grid(row=1, column=0, sticky="w")

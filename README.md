@@ -222,7 +222,7 @@ confirmed missing file.
 ## Privacy and usage analytics
 
 Library history, annotations, and downloaded media stay on your computer.
-**Share anonymous analytics** in Settings controls optional installation, update,
+**Share usage analytics** in Settings controls optional installation, update,
 attribution, and usage telemetry—not just recurring usage events. Turning it off
 also clears pending usage events. Checking for app updates remains a separate
 functional request; it is not permission to send analytics.
@@ -235,7 +235,7 @@ local state and evaluate the policy if needed without becoming new installs or
 reopening the first-install browser-link flow.
 
 Permitted telemetry uses random installation identifiers, opaque attempt/retry
-identifiers, and coarse app facts. It covers export presets and encoders, bucketed
+identifiers, and bounded app/system facts. It covers export presets and encoders, bucketed
 media size/duration and processing time, queue/recovery outcomes, Library/player
 feature use, and verified updater outcomes. Feature actions record usage only;
 it excludes media URLs, titles, filenames, paths, searches, notes, tags, and
@@ -243,6 +243,20 @@ playback positions. The first-install thank-you page can open independently of
 consent, but attribution requires permission. Closing that tab does not cause it
 to reopen for late consent. See the [privacy notice](https://getvodforge.com/privacy/)
 and [local-state ownership](docs/architecture.md#privacy-and-onboarding-state).
+
+App-open and failure observations include numeric OS/Python/Qt/downloader versions,
+processor architecture and logical CPU count, total/available memory in MB, and
+the exact build revision when available. Windows NVIDIA driver context reuses the
+existing capability probe; unavailable GPU facts remain unknown. Failures retain
+a bounded first-party call chain and observed cookie failure category. Filesystem
+errors can include path style, length and component sizes, never path contents.
+
+Support reports have separate, unchecked options for recent diagnostics, a
+canonical YouTube source link, and the output folder path (with diagnostics).
+The review shows the selected attachments. YouTube links can identify private or
+unlisted content; folder names can identify people or projects. Cookies, tokens,
+whole logs, downloaded contents, native replay and memory dumps are not attached.
+
 
 ## Output and local files
 

@@ -11,7 +11,9 @@ from yt_downloader.support_transport import SubmissionError
 
 
 def test_explicit_feedback_consent_controls_private_diagnostics_and_url():
-    context = FailureContext("bounded diagnostic", "https://example.com/private")
+    context = FailureContext(
+        "bounded diagnostic", "https://www.youtube.com/watch?v=8mv2Gonsdog&list=private"
+    )
     ordinary = feedback_payload(reason="Other", message="  Hello  ", context=context)
     assert ordinary["message"] == "Hello"
     assert ordinary["diagnostics"] == ordinary["video_url"] == ""
@@ -23,7 +25,7 @@ def test_explicit_feedback_consent_controls_private_diagnostics_and_url():
         context=context,
     )
     assert included["diagnostics"] == "bounded diagnostic"
-    assert included["video_url"] == "https://example.com/private"
+    assert included["video_url"] == "https://www.youtube.com/watch?v=8mv2Gonsdog"
 
 
 def test_support_payload_rejects_invalid_input_before_delivery():

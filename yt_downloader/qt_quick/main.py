@@ -40,7 +40,7 @@ from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickImageProvider, QQuickItem
 from PySide6.QtQuickControls2 import QQuickStyle
 
-from yt_downloader.analytics_consent import ANALYTICS_BENEFITS
+from yt_downloader.analytics_consent import ANALYTICS_BENEFITS, ANALYTICS_DESCRIPTION
 from yt_downloader.app import (
     DIAGNOSTICS_LOG_PATH,
     DownloaderApp,
@@ -202,7 +202,12 @@ from yt_downloader.settings_store import (
     save_settings,
     settings_file_path,
 )
-from yt_downloader.support_diagnostics import FailureContext, failure_context
+from yt_downloader.support_diagnostics import (
+    FailureContext,
+    diagnostics_attachment,
+    failure_context,
+    public_video_url,
+)
 from yt_downloader.telemetry_features import settings_dimensions, time_bucket
 from yt_downloader.telemetry_policy import telemetry_site_origin
 from yt_downloader.ui_button_contract import BUTTON_METRICS
@@ -1878,8 +1883,29 @@ class Bridge(QObject):
         context = self._support.context
         return {
             "diagnostics": context.diagnostics if context is not None else "",
-            "videoUrl": (context.video_url or "") if context is not None else "",
+            "videoUrl": (public_video_url(context.video_url or "") or "")
+            if context is not None
+            else "",
+            "outputFolder": (context.output_folder or "")
+            if context is not None
+            else "",
         }
+
+    @Slot(bool, bool, bool, result=str)
+    def supportAttachmentPreview(
+        self, diagnostics: bool, video_url: bool, output_folder: bool
+    ) -> str:
+        context = self._support.context
+        attachment = diagnostics_attachment(
+            context,
+            include_diagnostics=diagnostics,
+            include_output_folder=output_folder,
+        )
+        if context is not None and video_url:
+            source = public_video_url(context.video_url or "")
+            if source:
+                attachment += "\n\nYouTube source link: " + source
+        return attachment.strip() or "No diagnostic attachments selected."
 
     @Property(str, notify=editorialChanged)
     def editorialHeading(self) -> str:
@@ -2292,7 +2318,10 @@ class Bridge(QObject):
         self._nvenc_probe = probe
         probe.finished.connect(self._finish_nvenc_probe)
         probe.errorOccurred.connect(self._fail_nvenc_probe)
-        probe.start("nvidia-smi", ["-L"])
+        probe.start(
+            "nvidia-smi",
+            ["--query-gpu=driver_version", "--format=csv,noheader,nounits"],
+        )
         QTimer.singleShot(
             3000,
             lambda: (
@@ -2306,7 +2335,24 @@ class Bridge(QObject):
         probe = self._nvenc_probe
         if probe is None or self._closed:
             return
-        available = exit_code == 0 and b"GPU " in bytes(probe.readAllStandardOutput())
+        versions = (
+            bytes(probe.readAllStandardOutput())
+            .decode("ascii", errors="ignore")
+            .strip()
+            .splitlines()
+        )
+        available = (
+            exit_code == 0
+            and bool(versions)
+            and bool(
+                re.fullmatch(r"[0-9]{1,6}(?:\.[0-9]{1,6}){0,3}", versions[0].strip())
+            )
+        )
+        if available and self._analytics.telemetry is not None:
+            try:
+                self._analytics.telemetry.observe_nvidia_driver(versions[0].strip())
+            except ValueError:
+                pass  # Unsupported driver spelling is not a capability failure.
         self._nvenc_probe = None
         probe.deleteLater()
         if available != self._nvenc_available:
@@ -2335,6 +2381,10 @@ class Bridge(QObject):
     @Property(_QVARIANT_LIST, constant=True)
     def analyticsBenefits(self) -> list[dict[str, str]]:
         return [{"icon": icon, "label": label} for icon, label in ANALYTICS_BENEFITS]
+
+    @Property(str, constant=True)
+    def analyticsDescription(self) -> str:
+        return ANALYTICS_DESCRIPTION
 
     @Property(_QVARIANT_LIST, constant=True)
     def mp3QualityOptions(self) -> list[str]:

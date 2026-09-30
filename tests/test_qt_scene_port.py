@@ -3296,7 +3296,11 @@ def test_qt_help_form_exposes_only_explicit_recent_failure_context(
         assert bridge.supportStatus == "Please enter a message."
         assert bridge.closeSupport()
         assert bridge.openSupport("review")
-        assert bridge.supportContext == {"diagnostics": "", "videoUrl": ""}
+        assert bridge.supportContext == {
+            "diagnostics": "",
+            "videoUrl": "",
+            "outputFolder": "",
+        }
     finally:
         bridge.close()
 
@@ -5571,6 +5575,75 @@ def test_qt_consent_keeps_four_icon_summaries_and_actions_inside_surface(
             position = item.mapToItem(content, QPointF(0, 0))
             assert position.y() + item.height() <= content.height() + 1
         assert popup.property("height") < (360 if width == 820 else 310)
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+def test_qt_support_review_matches_selected_attachments_and_protects_footer(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    bridge = qt_main.Bridge(None)
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        window.show()
+        window.setWidth(1025)
+        window.setHeight(697)
+        bridge._latest_failure = FailureContext(
+            "Bounded evidence",
+            "https://youtu.be/8mv2Gonsdog?token=PRIVATE",
+            r"C:\Users\PRIVATE\Videos",
+        )
+        assert bridge.openSupport("feedback")
+        for _ in range(5):
+            app.processEvents()
+        popup = window.findChild(QObject, "supportPopup")
+        consent = window.findChild(QObject, "supportOutputFolderConsent")
+        assert consent.isVisible() and not consent.isEnabled()
+        assert not popup.property("includeOutputFolder")
+        assert (
+            bridge.supportAttachmentPreview(False, False, False)
+            == "No diagnostic attachments selected."
+        )
+        popup.setProperty("includeDiagnostics", True)
+        app.processEvents()
+        assert consent.isEnabled()
+        popup.setProperty("includeOutputFolder", True)
+        selected = bridge.supportAttachmentPreview(True, True, True)
+        assert "PRIVATE" in selected and "token=" not in selected
+        from yt_downloader.support_payload import feedback_payload
+
+        payload = feedback_payload(
+            reason="Other",
+            message="Report",
+            context=bridge._latest_failure,
+            include_diagnostics=True,
+            include_video_url=True,
+            include_output_folder=True,
+        )
+        assert (
+            selected
+            == payload["diagnostics"]
+            + "\n\nYouTube source link: "
+            + payload["video_url"]
+        )
+        assert popup.property("height") <= window.height() - 18
+        assert (
+            bridge.supportAttachmentPreview(False, False, True)
+            == "No diagnostic attachments selected."
+        )
+        assert bridge.closeSupport()
+        assert bridge.openSupport("feedback")
+        app.processEvents()
+        assert not popup.property("includeOutputFolder")
     finally:
         window.close()
         engine.deleteLater()

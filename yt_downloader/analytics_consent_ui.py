@@ -8,7 +8,7 @@ from functools import partial
 from tkinter import ttk
 from typing import TypedDict, cast
 
-from .analytics_consent import ANALYTICS_BENEFITS
+from .analytics_consent import ANALYTICS_BENEFITS, ANALYTICS_DESCRIPTION
 from .modal_backdrop import ModalBackdrop
 from .ui_button_contract import ProductButton
 from .ui_layout import window_logical_metrics
@@ -65,6 +65,14 @@ class AnalyticsConsentPanel:
             font=self._metrics.font((FONT_UI_FAMILY, 18, "bold")),
             anchor="center",
         ).pack(fill="x", pady=(0, px(10)))
+        ttk.Label(
+            surface.body,
+            text=ANALYTICS_DESCRIPTION,
+            style="Muted.TLabel",
+            wraplength=px(640),
+            anchor="center",
+            justify="center",
+        ).pack(fill="x", pady=(0, px(8)))
         benefits = ttk.Frame(surface.body, style="FocusShell.TFrame")
         benefits.pack(fill="x", pady=(px(12), px(4)))
         self.benefit_labels = []

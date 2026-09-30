@@ -352,6 +352,7 @@ def test_relocated_native_failure_keeps_closed_diagnostic_label():
         detail = _first_party_location(error)
     assert detail == {
         "source_module": "player_overlay_macos",
+        "source_trace": "player_overlay_macos:2",
         "source_line": 2,
         "source_scope": "first_party_frame",
     }
@@ -381,6 +382,7 @@ def test_qt_failure_location_keeps_closed_module_without_private_context():
         detail = _first_party_location(error)
     assert detail == {
         "source_module": "qt_quick.local_conversion",
+        "source_trace": "qt_quick.local_conversion:2",
         "source_line": 2,
         "source_scope": "first_party_frame",
     }

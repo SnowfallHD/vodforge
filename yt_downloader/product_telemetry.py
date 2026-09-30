@@ -31,6 +31,8 @@ from .telemetry_features import (
     FEATURE_ACTIONS,
     OPERATION_FEATURES,
     attempt_identifier,
+    resource_dimensions,
+    system_dimensions,
     time_bucket,
     validate_dimensions,
     validate_operation_fields,
@@ -393,6 +395,7 @@ class ProductTelemetryOwner:
         self._attempt_started: dict[str, float] = {}
         self._attempt_queued: dict[str, float] = {}
         self._last_settings_snapshot: dict[str, str] | None = None
+        self._hardware_dimensions: dict[str, str] = {}
         self._feature_observed: set[tuple[str, str, str]] = set()
         self._operation_steps: dict[tuple[str, str], tuple[str, int]] = {}
         self._observation_drops = 0
@@ -499,6 +502,20 @@ class ProductTelemetryOwner:
                 return False
         if not permitted or install_id is None:
             return False
+        if event_name == "app_opened" or _supports_failure(event_name, action, feature):
+            from .version import read_build_revision
+
+            with self._lock:
+                hardware = dict(self._hardware_dimensions)
+            clean_dimensions = validate_dimensions(
+                {
+                    **clean_dimensions,
+                    **system_dimensions(),
+                    **resource_dimensions(),
+                    **hardware,
+                    "build_revision": read_build_revision(),
+                }
+            )
         now = time.monotonic()
         with self._lock:
             if attempt_key:
@@ -760,6 +777,12 @@ class ProductTelemetryOwner:
 
     def record_app_opened(self) -> bool:
         return self.record("app_opened", dedupe_key=self._session_id)
+
+    def observe_nvidia_driver(self, value: str) -> None:
+        """Reuse the app's capability probe; no extra process or telemetry event."""
+        bounded = validate_dimensions({"nvidia_driver": value, "gpu_vendor": "nvidia"})
+        with self._lock:
+            self._hardware_dimensions = bounded
 
     def flush_async(self) -> None:
         with self._lock:

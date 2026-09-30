@@ -1,12 +1,15 @@
 """Immutable machine-readable failure facts. Raw diagnostics stay local."""
 
 import errno
+import os
+import re
 import socket
 import ssl
 
 # Used only to classify exceptions, never to execute a process.
 import subprocess  # nosec B404
 from dataclasses import asdict, dataclass
+from pathlib import PurePosixPath, PureWindowsPath
 
 from .safe_output import UnsafeOutputPathError
 
@@ -108,6 +111,7 @@ FIRST_PARTY_MODULES = frozenset(
 
 def _first_party_location(error: BaseException) -> dict[str, str | int]:
     location: dict[str, str | int] = {}
+    trace: list[str] = []
     frame = error.__traceback__
     depth = 0
     while frame is not None and depth < 64:
@@ -120,6 +124,7 @@ def _first_party_location(error: BaseException) -> dict[str, str | int]:
                 "platforms.macos.player_overlay": "player_overlay_macos",
             }.get(module, module)
             if module in FIRST_PARTY_MODULES and 1 <= frame.tb_lineno <= 100000:
+                trace.append(f"{module}:{frame.tb_lineno}")
                 location = {
                     "source_module": module,
                     "source_line": frame.tb_lineno,
@@ -127,7 +132,85 @@ def _first_party_location(error: BaseException) -> dict[str, str | int]:
                 }
         frame = frame.tb_next
         depth += 1
+    if trace:
+        location["source_trace"] = ">".join(trace[-8:])
     return location
+
+
+COOKIE_FAILURES = frozenset(
+    {
+        "database_missing",
+        "database_access_denied",
+        "database_locked",
+        "decryption_failed",
+        "invalid_cookie_file",
+        "expired",
+        "unknown",
+    }
+)
+
+
+def cookie_failure(message: str) -> str | None:
+    """Observed provider symptom only; never infer expired cookies from a 403."""
+    text = message[:16384].casefold()
+    if "cookie" not in text:
+        return None
+    for result, needles in (
+        (
+            "decryption_failed",
+            ("failed to decrypt", "cannot decrypt", "could not decrypt"),
+        ),
+        (
+            "database_locked",
+            ("database is locked", "database locked", "used by another process"),
+        ),
+        (
+            "database_access_denied",
+            ("permission denied", "access is denied", "could not copy chrome cookie"),
+        ),
+        ("database_missing", ("could not find", "no such file", "not found")),
+        (
+            "invalid_cookie_file",
+            ("does not look like a netscape", "invalid cookie file"),
+        ),
+        (
+            "expired",
+            (
+                "cookies have expired",
+                "cookies are expired",
+                "cookies are no longer valid",
+            ),
+        ),
+    ):
+        if any(needle in text for needle in needles):
+            return result
+    return "unknown"
+
+
+def path_failure_facts(value: object) -> dict[str, str | int]:
+    """Measure the actual failing pathname without retaining any of its text or IO."""
+    if not isinstance(value, (str, bytes, os.PathLike)):
+        return {}
+    try:
+        text = os.fsdecode(value)
+        windows = bool(re.match(r"^[A-Za-z]:[\\/]", text) or text.startswith("\\\\"))
+        path = PureWindowsPath(text) if windows else PurePosixPath(text)
+        parts = [part for part in path.parts if part != path.anchor]
+        return {
+            "path_style": "windows" if windows else "posix",
+            "path_units": min(
+                len(text.encode("utf-16-le", errors="surrogatepass")) // 2
+                if windows
+                else len(os.fsencode(text)),
+                100000,
+            ),
+            "path_component_count": min(len(parts), 10000),
+            "path_longest_component_bytes": min(
+                max((len(os.fsencode(p)) for p in parts), default=0), 100000
+            ),
+        }
+    except (TypeError, ValueError, UnicodeError):
+        return {}
 
 
 FAILURE_CODES = frozenset(
@@ -253,6 +336,12 @@ class FailureDiagnostic:
     source_module: str | None = None
     source_line: int | None = None
     source_scope: str | None = None
+    source_trace: str | None = None
+    cookie_failure: str | None = None
+    path_style: str | None = None
+    path_units: int | None = None
+    path_component_count: int | None = None
+    path_longest_component_bytes: int | None = None
 
     def payload(self) -> dict[str, str | int]:
         return {key: value for key, value in asdict(self).items() if value is not None}
@@ -274,6 +363,12 @@ def validate_failure_detail(value: dict) -> FailureDiagnostic:
         "source_module",
         "source_line",
         "source_scope",
+        "source_trace",
+        "cookie_failure",
+        "path_style",
+        "path_units",
+        "path_component_count",
+        "path_longest_component_bytes",
     }:
         raise ValueError("unsupported failure detail")
     if (
@@ -288,6 +383,37 @@ def validate_failure_detail(value: dict) -> FailureDiagnostic:
         and value["failure_code"] not in FAILURE_CODES
     ):
         raise ValueError("unsupported failure code")
+    if (
+        value.get("cookie_failure") is not None
+        and value["cookie_failure"] not in COOKIE_FAILURES
+    ):
+        raise ValueError("unsupported cookie failure")
+    if value.get("path_style") is not None and value["path_style"] not in {
+        "windows",
+        "posix",
+    }:
+        raise ValueError("unsupported path style")
+    path_keys = {
+        "path_style",
+        "path_units",
+        "path_component_count",
+        "path_longest_component_bytes",
+    }
+    if path_keys.intersection(value) and not path_keys.issubset(value):
+        raise ValueError("incomplete path facts")
+    trace = value.get("source_trace")
+    if trace is not None:
+        if not isinstance(trace, str) or not 1 <= len(trace.split(">")) <= 8:
+            raise ValueError("unsupported source trace")
+        for item in trace.split(">"):
+            module, separator, line = item.partition(":")
+            if (
+                module not in FIRST_PARTY_MODULES
+                or not separator
+                or not re.fullmatch(r"[1-9][0-9]{0,5}", line)
+                or int(line) > 100000
+            ):
+                raise ValueError("unsupported source trace")
     location = {
         key
         for key in ("source_module", "source_line", "source_scope")
@@ -301,6 +427,9 @@ def validate_failure_detail(value: dict) -> FailureDiagnostic:
         raise ValueError("unsupported source location")
     for key, low, high in (
         ("source_line", 1, 100000),
+        ("path_units", 0, 100000),
+        ("path_component_count", 0, 10000),
+        ("path_longest_component_bytes", 0, 100000),
         ("format_count", 0, 10000),
         ("video_format_count", 0, 10000),
         ("audio_format_count", 0, 10000),
@@ -335,6 +464,14 @@ def capture_failure(
         code = failure_code(current) if inspect_text else None
         if code is not None:
             facts["failure_code"] = code
+        if inspect_text and not isinstance(current, UnsafeOutputPathError):
+            observed_cookie_failure = cookie_failure(str(current))
+            if observed_cookie_failure is not None and (
+                observed_cookie_failure != "unknown" or "cookie_failure" not in facts
+            ):
+                facts["cookie_failure"] = observed_cookie_failure
+                if observed_cookie_failure != "unknown":
+                    facts["failure_code"] = "cookies_unavailable"
         if isinstance(current, SourceSelectionError):
             for key in ("format_count", "video_format_count", "audio_format_count"):
                 facts[key] = getattr(current, key)
@@ -374,6 +511,7 @@ def capture_failure(
             and 0 <= current.errno <= 65535
         ):
             facts["os_error"] = current.errno
+            facts.update(path_failure_facts(current.filename))
         if (
             isinstance(current, subprocess.CalledProcessError)
             and type(current.returncode) is int

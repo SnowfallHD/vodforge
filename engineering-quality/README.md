@@ -2615,3 +2615,26 @@ file belongs in the fresh Qt process, not the general backend process. Build and
 CI test inventories now match; an old fake playback owner must provide the actual
 new observer contract rather than suppressing assertions. Preserve this failed CI
 receipt and verify the corrected exact commit before claiming CI green.
+
+
+### Telemetry context and attachment consent learning — 2026-09-30
+
+Additional bounded environment/cookie/stack/path facts extend the existing event
+contract. The original tests enforced no raw content and a last-frame callsite;
+they did not require numeric system/resource context, multi-frame context or
+independently selected source/folder attachments. Representative owner tests now
+verify harvesting only after permission and replaying immutable persisted context.
+Validator/enrolled-D1 tests cover exact stored fields, deduplication and raw-content
+refusal. The Qt rendered support test binds selected preview to actual payload,
+checks unchecked defaults, diagnostics dependency and protected footer geometry.
+
+The first context suite caught a real typed-refusal regression: the cookie
+classifier called str() on UnsafeOutputPathError despite its typed-only contract.
+The existing refusal test remains unchanged and the shared classifier now skips
+text inspection for that type. The failed first receipt is retained under
+build/telemetry-completeness/context-first-tests.log. Initial server proof fixtures
+incorrectly used the unenrolled legacy writer for schema-v2 and omitted mandatory
+run fields; they were corrected to the existing authenticated ingestion route,
+which remains enforced. Native dumps/replay and deterministic private-source
+reproduction remain outside this change; rendered/source/D1 evidence does not
+qualify a new installed or public-release artifact.

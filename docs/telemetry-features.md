@@ -654,3 +654,47 @@ Qt gate adds actual update-choice, update-failure and native-error producers to 
 existing cases. Provider/worker controls are declared fixtures, not native decode
 or real installer execution. The companion's read-only analysis reports are
 verified against stored producer data, with absent observations explicitly unknown.
+
+
+## Bounded system and support context — 2026-09-29
+
+The existing owner enriches permitted app-open and failure observations before
+persistence. It caches numeric OS/Python/Qt/yt-dlp versions and architecture, adds
+logical CPU count (1–4096), total/available memory MB (capped at 999999), exact build
+revision, and NVIDIA driver/vendor when the existing Windows capability probe
+actually observes them. No new GPU process, hostname, hardware identifier, device
+fingerprint, drive enumeration or process inventory is collected. GPU facts may
+arrive after app-open and therefore be absent there. Intel/AMD/Apple GPU details
+are not inferred. Retries send the original persisted context without resampling.
+
+`failure_detail.source_trace` contains at most eight approved first-party
+module/line pairs. It excludes exception text, filenames, locals and third-party
+frames. Native crashes before Python persistence remain outside this capability.
+An OSError filename can yield path style, length (Windows UTF-16 units or POSIX
+encoded bytes), component count and largest component bytes. Only those numeric
+facts are sent; all four fields must validate together.
+
+Cookie exceptions map to database_missing, database_access_denied, database_locked,
+decryption_failed, invalid_cookie_file, expired or unknown. Expired requires
+explicit provider wording. A 403 or login-required response is not evidence of
+expiration, account ownership or which restriction caused the denial. Text is
+inspected locally, never attached automatically; typed output-path refusals retain
+their no-string-inspection contract. Provider warnings not retained in an exception
+may need optional support diagnostics.
+
+Support's separate unchecked source/folder choices are explicit content sharing.
+Only canonical HTTPS YouTube video IDs are accepted; visibility cannot be inferred,
+and extra query fields are discarded. Output folder inclusion requires diagnostics
+consent, quotes the value to prevent injected log lines, rejects controls/oversized
+values and preserves the existing 6000-character diagnostic bound. Review and
+transport share the same projection. No automatic raw source/path, credential,
+whole-log or media attachment is introduced. Compatible backend validation must
+deploy before a client release; existing JSON storage needs no migration.
+
+The previous owner/validator tests covered closed fields and last-frame context,
+but did not require this additional environment or multi-frame evidence. New
+representative tests cover consent before harvesting, immutable retry context,
+canonical source refusal, independently selected attachments, exact review/transport
+parity, cookie ambiguity and Unicode Windows/POSIX path metrics. The first run
+caught a typed-refusal regression in the new classifier; its failed receipt is
+retained and the classifier now preserves the original typed refusal invariant.

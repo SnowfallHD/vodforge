@@ -151,6 +151,14 @@ The analytics consent surface retains four passive privacy summaries from
 Use four columns when the available content width permits and two otherwise.
 These summaries are informational, not buttons or checkboxes. Fit the surface to
 its content and keep Privacy details and both consent actions visible.
+Consent copy names usage events and system diagnostics; do not call the records
+fully anonymous or claim they contain no personal information. Automatic source
+links, path contents and credentials remain excluded. Support uses independent,
+unchecked plain checkboxes for diagnostics, YouTube source link and output folder.
+The folder checkbox requires diagnostics; disabling it suppresses that attachment
+without silently enabling diagnostics. The review and submitted attachment use
+one projection so only selected evidence appears in both.
+
 
 `StonePopup` distinguishes an explicit trigger close from Qt's automatic outside
 press dismissal. Only automatic dismissal over the trigger consumes that same
