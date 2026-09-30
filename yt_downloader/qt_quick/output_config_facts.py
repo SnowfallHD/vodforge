@@ -45,7 +45,7 @@ def job_config(job: DownloadJob) -> dict[str, Any]:
             "mp3_quality": f"{mp3.bitrate_kbps} kbps",
             "mp3_sample_rate": mp3.sample_rate or "Preserve source",
             "mp3_channels": {"1": "Mono", "2": "Stereo"}.get(
-                mp3.channels, mp3.channels or "Preserve source"
+                mp3.channels or "", mp3.channels or "Preserve source"
             ),
             "mp3_cover_art_mode": "Custom art"
             if mp3.custom_cover_art_path

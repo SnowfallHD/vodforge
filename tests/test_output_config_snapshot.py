@@ -25,6 +25,21 @@ from yt_downloader.qt_quick.output_config_facts import (
 from yt_downloader.run_state import deserialize_download_job, serialize_download_job
 
 
+@pytest.fixture
+def runtime(tmp_path, monkeypatch):
+    from yt_downloader.qt_quick.runtime import DownloadRuntime
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    owner = DownloadRuntime()
+    try:
+        yield owner
+    finally:
+        # These are presentation-only synthetic jobs, not admitted worker runs.
+        owner.active_job = None
+        owner.close()
+
+
 @pytest.mark.parametrize(
     "output,available,requested,expected",
     [
@@ -102,16 +117,12 @@ def test_display_snapshot_allowlist_discards_secrets(tmp_path):
     assert sanitize_output_config_display({"access": "arbitrary secret"}) is None
 
 
-def test_history_event_persists_display_provenance(tmp_path, monkeypatch):
+def test_history_event_persists_display_provenance(tmp_path, monkeypatch, runtime):
     import yt_downloader.archive_file_operations as operations
-    from yt_downloader.qt_quick.runtime import DownloadRuntime
 
-    monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setattr(
         operations, "reconcile_file_record_delta", lambda record, *args: record
     )
-    runtime = DownloadRuntime()
     job = replace(
         make_job(tmp_path),
         use_cookies=True,
@@ -134,13 +145,10 @@ def test_history_event_persists_display_provenance(tmp_path, monkeypatch):
 
 
 def test_admission_captures_existing_capability_without_affecting_encoder(
-    tmp_path, monkeypatch
+    tmp_path, runtime
 ):
-    from yt_downloader.qt_quick.runtime import DownloadPreferences, DownloadRuntime
+    from yt_downloader.qt_quick.runtime import DownloadPreferences
 
-    monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-    runtime = DownloadRuntime()
     for available in (True, False, None):
         job = runtime.prepare_job(
             "https://youtu.be/abc123",

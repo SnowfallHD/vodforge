@@ -2970,3 +2970,18 @@ Mac build/CI backend exclusion and fresh Qt component process, plus the native
 source component gate. This preserves the existing process-isolation invariant;
 rendered tests must not enter the non-Qt backend suite merely because a new module
 was omitted from explicit command lists. Maintained routing checks cover it.
+
+### Summary provenance integration lifecycle check — 2026-09-30
+
+The new history/admission snapshot tests passed alone but left the process-wide
+child observer installed by DownloadRuntime. In the combined snapshot→metadata
+sequence, fifteen process regressions failed because their synthetic processes
+correctly had no admitted runtime PID. Their process protections were not relaxed.
+A scoped fixture now closes each snapshot runtime after its presentation-only
+synthetic job is cleared. The same combined sequence passes, independently
+checking teardown across history persistence and process execution consumers.
+The existing standalone tests missed lifetime after their module ended; retained
+combined failure evidence records that boundary. New Qt summary checks join the
+existing separate Qt build/CI/native-source test process. A None channel key is
+normalized only for display typing, retaining Preserve source semantics.
+Production process ownership/cancellation and retry cookie exclusions are unchanged.
