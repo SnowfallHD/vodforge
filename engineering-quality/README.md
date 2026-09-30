@@ -1,5 +1,21 @@
 # VODForge engineering-quality harness
 
+## Inline Library notes report successful durable changes — 2026-09-30
+
+The signed `e5d49d1` preview journey saved a note through the visible inline
+editor, but D1 had no `organization/notes_saved` event. The annotation popup
+already reported the same action; the inline route omitted that shared event.
+The inline save now emits the existing bounded feature/action after durable
+persistence and only when the note changed. It never includes note contents.
+
+Earlier coverage checked inline persistence and popup telemetry separately,
+so neither covered telemetry from the actual inline route. The new regression
+fails before the fix and checks successful change, unchanged save, invalid
+owner, over-limit input, failed persistence, and closed detail. The original
+package evidence remains under `build/watch-progress-proof/packaged-telemetry-final-de-e5d49d1`;
+a successor package must prove the new event in preview D1. This does not
+promote the predecessor's failed full-journey receipt to a release pass.
+
 ## Idle Qt telemetry retries durable pending events — 2026-09-30
 
 The exact `7fde501` packaged preview session left startup events queued after

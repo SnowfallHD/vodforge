@@ -4499,15 +4499,18 @@ class Bridge(QObject):
             self._status = f"Use up to {MAX_NOTE_CHARS:,} characters for your note."
             self.statusChanged.emit()
             return False
+        previous = self._annotations.annotation_for(annotation_owner)
         try:
             self._annotations.replace(
                 annotation_owner,
-                replace(self._annotations.annotation_for(annotation_owner), note=value),
+                replace(previous, note=value),
             )
         except LibraryAnnotationsError as exc:
             self._status = str(exc)
             self.statusChanged.emit()
             return False
+        if value != previous.note:
+            self._record_update_feature("organization", "notes_saved")
         self._status = "Library note saved."
         self.statusChanged.emit()
         self.historyChanged.emit()

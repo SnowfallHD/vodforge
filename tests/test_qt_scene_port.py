@@ -2741,6 +2741,47 @@ def test_qt_saved_collection_is_visible_through_shared_projection(
         bridge.close()
 
 
+def test_qt_inline_note_records_only_durable_changed_fields(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    qt_app()
+    bridge = qt_main.Bridge(None)
+    try:
+        bridge._runtime.history = [saved(tmp_path, "First", "MP4")]
+        owner = bridge.collectionCandidates[0]["owner"]
+        events = []
+        monkeypatch.setattr(
+            bridge,
+            "_record_update_feature",
+            lambda feature, action: events.append((feature, action)),
+        )
+        assert bridge.openLibraryDetails(owner)
+        events.clear()
+        assert bridge.saveLibraryNote(owner, "VF_PRIVATE_QA_SENTINEL")
+        assert bridge.libraryDetail["note"] == "VF_PRIVATE_QA_SENTINEL"
+        assert events == [("organization", "notes_saved")]
+        events.clear()
+        assert bridge.saveLibraryNote(owner, "VF_PRIVATE_QA_SENTINEL")
+        assert not bridge.saveLibraryNote("wrong-owner", "Changed")
+        assert not bridge.saveLibraryNote(owner, "x" * 10_001)
+        assert events == []
+        monkeypatch.setattr(
+            bridge._annotations,
+            "replace",
+            lambda *_: (_ for _ in ()).throw(LibraryAnnotationsError("disk failed")),
+        )
+        assert not bridge.saveLibraryNote(owner, "Changed")
+        assert bridge.libraryDetail["note"] == "VF_PRIVATE_QA_SENTINEL"
+        assert events == []
+        bridge.returnLibraryDetails()
+        assert not bridge.saveLibraryNote(owner, "Closed detail")
+        assert events == []
+    finally:
+        bridge.close()
+
+
 def test_qt_organization_records_only_durable_changed_fields(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
