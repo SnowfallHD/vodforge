@@ -41,6 +41,17 @@ Item {
         actionsPopup.anchorItem = trigger
         actionsPopup.toggleFrom(actionsPopup.anchorItem)
     }
+    Connections {
+        target: deck.appBridge
+        function onRunDeckChanged() {
+            if (!actionsPopup.visible || deck.selectedRecord.kind !== "active") return
+            const current = (deck.projection.records || []).find(record =>
+                record.kind === "active" && record.runId === deck.selectedRecord.runId &&
+                record.executionToken === deck.selectedRecord.executionToken)
+            if (!current) actionsPopup.close()
+            else deck.selectedRecord = current
+        }
+    }
     function openActiveActions() {
         for (let record of projection.records || []) {
             if (record.kind === "active") {
@@ -136,22 +147,46 @@ Item {
             width: actionsPopup.availableWidth
             spacing: 6
             StoneButton {
-                visible: deck.selectedRecord.kind === "active"
-                label: "Cancel run"
+                objectName: "deckControl0"
+                property var action: deck.selectedRecord.kind === "active" ? ((deck.selectedRecord.controls || [])[0] || ({})) : ({})
+                visible: !!action.label
+                label: action.label || ""
+                Accessible.description: action.description || ""
+                ToolTip.visible: hovered
+                ToolTip.text: action.description || ""
                 Layout.fillWidth: true
-                onActivated: { deck.appBridge.controlRun(deck.selectedRecord.runId, "cancel"); actionsPopup.close() }
+                onActivated: {
+                    deck.appBridge.controlRun(deck.selectedRecord.runId, action.operation)
+                    actionsPopup.close()
+                }
             }
             StoneButton {
-                visible: deck.selectedRecord.kind === "active"
-                label: "Skip current item"
+                objectName: "deckControl1"
+                property var action: deck.selectedRecord.kind === "active" ? ((deck.selectedRecord.controls || [])[1] || ({})) : ({})
+                visible: !!action.label
+                label: action.label || ""
+                Accessible.description: action.description || ""
+                ToolTip.visible: hovered
+                ToolTip.text: action.description || ""
                 Layout.fillWidth: true
-                onActivated: { deck.appBridge.controlRun(deck.selectedRecord.runId, "skip_item"); actionsPopup.close() }
+                onActivated: {
+                    deck.appBridge.controlRun(deck.selectedRecord.runId, action.operation)
+                    actionsPopup.close()
+                }
             }
             StoneButton {
-                visible: deck.selectedRecord.kind === "active"
-                label: "Skip current source URL"
+                objectName: "deckControl2"
+                property var action: deck.selectedRecord.kind === "active" ? ((deck.selectedRecord.controls || [])[2] || ({})) : ({})
+                visible: !!action.label
+                label: action.label || ""
+                Accessible.description: action.description || ""
+                ToolTip.visible: hovered
+                ToolTip.text: action.description || ""
                 Layout.fillWidth: true
-                onActivated: { deck.appBridge.controlRun(deck.selectedRecord.runId, "skip_source"); actionsPopup.close() }
+                onActivated: {
+                    deck.appBridge.controlRun(deck.selectedRecord.runId, action.operation)
+                    actionsPopup.close()
+                }
             }
             StoneButton {
                 visible: deck.selectedRecord.kind === "queued"

@@ -180,6 +180,7 @@ from yt_downloader.qt_quick.metadata_preview import QtMetadataPreview
 from yt_downloader.qt_quick.presentation import QtPresentationProbe
 from yt_downloader.qt_quick.previews import QtPreviewSession
 from yt_downloader.qt_quick.relink import QtRelinkSession
+from yt_downloader.qt_quick.run_controls import RunControlEvents, RunControlPresentation
 from yt_downloader.qt_quick.runtime import DownloadPreferences, DownloadRuntime
 from yt_downloader.qt_quick.scene_projection import (
     collection_picker,
@@ -412,6 +413,9 @@ class Bridge(QObject):
         self._run_menu_identity_job: Any | None = None
         self._run_menu_identity_token = ""  # nosec B105 - empty UI identity sentinel
         self._run_menu_admitted_job: Any | None = None
+        self._run_controls = RunControlPresentation()
+        self._run_control_events = RunControlEvents()
+        self._runtime.events = self._run_control_events
         self._selected_run_key = ""
         self._recent_interrupted_run_id = ""
         self._artwork_records: dict[str, dict[str, Any] | None] = {}
@@ -2613,6 +2617,10 @@ class Bridge(QObject):
             ),
         }
 
+    @Property("QVariantList", notify=runDeckChanged)
+    def runControls(self) -> list[dict[str, str]]:
+        return self._run_controls.actions(self._runtime.active_job)
+
     @Property(_QVARIANT_MAP, notify=runDeckChanged)
     def runDeck(self) -> dict[str, Any]:
         records: list[dict[str, Any]] = []
@@ -2645,6 +2653,7 @@ class Bridge(QObject):
                     "runId": active.run_id,
                     "selectionKey": "active:" + active.run_id,
                     "executionToken": self._run_menu_identity_token,
+                    "controls": self.runControls,
                     "kind": "active",
                     "title": str(
                         preview.get("title") or f"{active.output_type.value} download"
@@ -5788,6 +5797,8 @@ class Bridge(QObject):
             self.statusChanged.emit()
             self._timer.stop()
             return
+        for kind, payload in self._run_control_events.take_context_events():
+            self._run_controls.observe(active_job_before, kind, payload)
         for kind, payload in events:
             if kind in {"progress", "progress_determinate"} and payload is not None:
                 self._progress = max(0.0, min(100.0, float(payload)))

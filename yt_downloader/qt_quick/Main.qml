@@ -1179,9 +1179,51 @@ Window {
                     RowLayout {
                         visible: bridge.running && !window.compactHeight
                         spacing: 8
-                        StoneButton { label: "Cancel"; Layout.preferredWidth: 82; Layout.preferredHeight: 36; onActivated: bridge.cancel() }
-                        StoneButton { label: "Skip item"; Layout.preferredWidth: 105; Layout.preferredHeight: 36; onActivated: bridge.skipItem() }
-                        StoneButton { label: "Skip source"; Layout.preferredWidth: 119; Layout.preferredHeight: 36; onActivated: bridge.skipSource() }
+                        StoneButton {
+                            objectName: "forgeControl0"
+                            property var action: (bridge.runControls || [])[0] || ({})
+                            visible: !!action.label
+                            label: action.label || ""
+                            Accessible.description: action.description || ""
+                            ToolTip.visible: hovered
+                            ToolTip.text: action.description || ""
+                            Layout.preferredHeight: 36
+                            onActivated: {
+                                if (action.operation === "cancel") bridge.cancel()
+                                else if (action.operation === "skip_item") bridge.skipItem()
+                                else bridge.skipSource()
+                            }
+                        }
+                        StoneButton {
+                            objectName: "forgeControl1"
+                            property var action: (bridge.runControls || [])[1] || ({})
+                            visible: !!action.label
+                            label: action.label || ""
+                            Accessible.description: action.description || ""
+                            ToolTip.visible: hovered
+                            ToolTip.text: action.description || ""
+                            Layout.preferredHeight: 36
+                            onActivated: {
+                                if (action.operation === "cancel") bridge.cancel()
+                                else if (action.operation === "skip_item") bridge.skipItem()
+                                else bridge.skipSource()
+                            }
+                        }
+                        StoneButton {
+                            objectName: "forgeControl2"
+                            property var action: (bridge.runControls || [])[2] || ({})
+                            visible: !!action.label
+                            label: action.label || ""
+                            Accessible.description: action.description || ""
+                            ToolTip.visible: hovered
+                            ToolTip.text: action.description || ""
+                            Layout.preferredHeight: 36
+                            onActivated: {
+                                if (action.operation === "cancel") bridge.cancel()
+                                else if (action.operation === "skip_item") bridge.skipItem()
+                                else bridge.skipSource()
+                            }
+                        }
                     }
                     StoneButton {
                         visible: bridge.running && window.compactHeight

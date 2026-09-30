@@ -2931,7 +2931,7 @@ def test_qt_rendered_run_menu_uses_admitted_execution(tmp_path, monkeypatch):
         cancel = next(
             item
             for item in popup.findChildren(QObject)
-            if item.property("label") == "Cancel run"
+            if item.property("label") == "Cancel download"
         )
         bridge._runtime.active_job = replace(original)
         cancel.activated.emit()
@@ -5904,6 +5904,122 @@ def test_qt_support_review_matches_selected_attachments_and_protects_footer(
         assert bridge.openSupport("feedback")
         app.processEvents()
         assert not popup.property("includeOutputFolder")
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+@pytest.mark.parametrize("context", ["video", "playlist", "batch", "batch_playlist"])
+def test_qt_context_controls_share_labels_scope_and_retirement(
+    tmp_path, monkeypatch, context
+):
+    """Both surfaces share execution/source scope, stable controls and retirement.
+
+    Prior menu tests exercised admission only and expected every generic action.
+    This matrix independently checks displayed choices, actual dispatch, and a
+    source handoff/completion, rather than only the helper's returned strings.
+    """
+    from dataclasses import replace
+
+    from PySide6.QtQuickControls2 import QQuickStyle
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    QQuickStyle.setStyle("Basic")
+    bridge = qt_main.Bridge(None)
+    batch = context.startswith("batch")
+    playlist = context.endswith("playlist")
+    original = replace(
+        make_job(tmp_path), batch_mode=batch, single_video_only=not playlist
+    )
+    source = (
+        replace(original, url="https://www.youtube.com/playlist?list=PLtest")
+        if playlist
+        else original
+    )
+    if not batch:
+        original = source
+    bridge._runtime.active_job = original
+    bridge._runtime.events.put(("job_metadata", {"job": source, "info": {}}))
+    bridge._pump()
+    engine = qt_main.create_engine(bridge)
+    expected = {
+        "video": [("Cancel download", "cancel")],
+        "playlist": [("Skip this video", "skip_item"), ("Stop playlist", "cancel")],
+        "batch": [("Skip this link", "skip_source"), ("Stop batch", "cancel")],
+        "batch_playlist": [
+            ("Skip this video", "skip_item"),
+            ("Skip playlist", "skip_source"),
+            ("Stop batch", "cancel"),
+        ],
+    }[context]
+    try:
+        window = engine.rootObjects()[0]
+        window.setWidth(1100)
+        window.setHeight(820)
+        app.processEvents()
+        deck = window.findChild(QObject, "forgeRunDeck")
+        popup = window.findChild(QObject, "runActionsPopup")
+        calls = []
+        for operation in ("cancel", "skip_item", "skip_source"):
+            monkeypatch.setattr(
+                bridge._runtime,
+                operation,
+                lambda operation=operation: calls.append(operation),
+            )
+        deck.openActiveActions()
+        app.processEvents()
+        for index, (label, operation) in enumerate(expected):
+            inline = window.findChild(QObject, f"forgeControl{index}")
+            menu = window.findChild(QObject, f"deckControl{index}")
+            assert inline.property("label") == menu.property("label") == label
+            assert (
+                inline.property("accessibilityLabel")
+                == menu.property("accessibilityLabel")
+                == label
+            )
+            assert inline.property("visible") and menu.property("visible")
+            assert inline.width() >= inline.implicitWidth()
+            menu.activated.emit()
+            app.processEvents()
+            assert calls[-1] == operation
+            deck.openActiveActions()
+            app.processEvents()
+        for index in range(len(expected), 3):
+            assert not window.findChild(QObject, f"forgeControl{index}").property(
+                "visible"
+            )
+            assert not window.findChild(QObject, f"deckControl{index}").property(
+                "visible"
+            )
+        first = window.findChild(QObject, "deckControl0")
+        bridge.runDeckChanged.emit()
+        app.processEvents()
+        assert window.findChild(QObject, "deckControl0") is first
+        assert popup.property("visible")
+        if context == "batch_playlist":
+            bridge._runtime.events.put(
+                ("job_log", {"job": original, "line": "source boundary"})
+            )
+            bridge._pump()
+            app.processEvents()
+            assert first.property("label") == "Skip this link"
+            assert not window.findChild(QObject, "deckControl2").property("visible")
+        bridge._runtime.active_job = None
+        bridge.runningChanged.emit()
+        bridge.runDeckChanged.emit()
+        app.processEvents()
+        assert bridge.runControls == []
+        assert not popup.property("visible")
+        assert all(
+            not window.findChild(QObject, f"forgeControl{i}").property("visible")
+            for i in range(3)
+        )
     finally:
         window.close()
         engine.deleteLater()
