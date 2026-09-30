@@ -54,6 +54,7 @@ jobs:
           --ignore=tests/test_qt_terminal_item_events.py
           --ignore=tests/test_qt_scene_port.py
           --ignore=tests/test_qt_telemetry_coverage.py
+          --ignore=tests/test_qt_scroll_lifecycle.py
           --ignore=tests/test_qt_interaction_invariants.py
       - name: Run Qt component tests in a fresh process
         env:
@@ -68,6 +69,7 @@ jobs:
           tests/test_qt_relink.py
           tests/test_qt_terminal_item_events.py
           tests/test_qt_telemetry_coverage.py
+          tests/test_qt_scroll_lifecycle.py
           tests/test_qt_interaction_invariants.py
       - name: Run Qt scene tests in a fresh process
         env:
