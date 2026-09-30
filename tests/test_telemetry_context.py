@@ -288,3 +288,21 @@ def test_nvidia_context_rejects_non_numeric_driver_data(tmp_path):
     )
     with pytest.raises(ValueError):
         owner.observe_nvidia_driver("PRIVATE-UUID")
+
+
+def test_qt_version_uses_loaded_runtime_without_distribution_metadata(monkeypatch):
+    import sys
+    from importlib.metadata import PackageNotFoundError
+
+    def absent(_package):
+        raise PackageNotFoundError
+
+    telemetry_features.system_dimensions.cache_clear()
+    monkeypatch.setattr(telemetry_features, "version", absent)
+    monkeypatch.setitem(
+        sys.modules, "PySide6.QtCore", SimpleNamespace(qVersion=lambda: "6.11.2")
+    )
+    try:
+        assert telemetry_features.system_dimensions()["qt_version"] == "6.11.2"
+    finally:
+        telemetry_features.system_dimensions.cache_clear()

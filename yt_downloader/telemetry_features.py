@@ -10,6 +10,7 @@ import json
 import os
 import platform
 import re
+import sys
 import uuid
 from collections.abc import Mapping
 from functools import lru_cache
@@ -793,6 +794,11 @@ def system_dimensions() -> dict[str, str]:
             candidates[key] = version(package)
         except PackageNotFoundError:
             pass
+    # Frozen Qt bundles need not contain PySide6 distribution metadata.
+    # The already-loaded runtime is authoritative; never import Qt just to collect.
+    qt_core = sys.modules.get("PySide6.QtCore")
+    if qt_core is not None:
+        candidates["qt_version"] = qt_core.qVersion()
     for key, value in candidates.items():
         if re.fullmatch(SYSTEM_VERSION_PATTERN, value):
             result[key] = value
