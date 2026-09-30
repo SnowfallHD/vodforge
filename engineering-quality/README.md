@@ -2809,3 +2809,17 @@ non-isolated paths, live sessions, failed exits, surviving processes, changed
 consent mode and invalid prior evidence. This is bounded evidence recovery,
 not permission to adopt unrelated apps or manufacture missing UI actions.
 Set the live control to `relaunch` before quitting for an ordinary restart.
+
+### Encoder intent must agree with independently probed output
+
+Custom `ultrafast` was reachable in both bitrate and quality modes. x264 treats
+`-profile high` as a ceiling, so that preset disabled every High-profile tool
+and emitted Constrained Baseline. The output validator correctly refused the
+export. The shared encoder now explicitly enables the 8x8 transform in both
+software modes; NVENC and the validator remain unchanged. Earlier encoder tests
+inspected argv and used synthetic probes already marked High, so they missed
+the actual encoder result. Six real encode/probe/decode cases cover ultrafast,
+veryfast and medium across both modes. Both ultrafast cases fail before the fix
+and pass after it; receipts are under `build/watch-progress-proof/custom-profile-*`.
+This representative matrix does not establish physical GPU behavior or every
+encoder build. Native packaged retry requires a new candidate containing the fix.

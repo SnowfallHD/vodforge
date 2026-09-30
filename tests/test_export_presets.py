@@ -1,5 +1,8 @@
 """Task presets must carry their intent through planning, encoding and recovery."""
 
+import json
+import shutil
+import subprocess
 from dataclasses import replace
 from pathlib import Path
 
@@ -16,6 +19,78 @@ from yt_downloader.export_planning import (
 )
 from yt_downloader.models import ExportMode, ManualExportSettings
 from yt_downloader.output_validation import output_artifact_plan_mismatches
+
+
+@pytest.mark.parametrize("preset", ["ultrafast", "veryfast", "medium"])
+@pytest.mark.parametrize("crf", [None, 19])
+def test_real_custom_encoder_satisfies_high_profile(tmp_path, preset, crf):
+    ffmpeg, ffprobe = shutil.which("ffmpeg"), shutil.which("ffprobe")
+    if not ffmpeg or not ffprobe:
+        pytest.skip("real encoder profile verification requires FFmpeg and ffprobe")
+    source = tmp_path / "source.mkv"
+    subprocess.run(
+        [
+            ffmpeg,
+            "-y",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=160x90:rate=24",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=48000",
+            "-t",
+            "1",
+            "-c:v",
+            "ffv1",
+            "-c:a",
+            "pcm_s16le",
+            str(source),
+        ],
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+    output = tmp_path / "custom.mp4"
+    subprocess.run(
+        build_vod_ffmpeg_command(
+            ffmpeg,
+            source,
+            output,
+            video_bitrate_kbps=1000,
+            x264_preset=preset,
+            video_crf=crf,
+        ),
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+    probe = json.loads(
+        subprocess.check_output(
+            [
+                ffprobe,
+                "-v",
+                "error",
+                "-show_streams",
+                "-of",
+                "json",
+                str(output),
+            ],
+            timeout=30,
+        )
+    )
+    video = next(s for s in probe["streams"] if s["codec_type"] == "video")
+    assert video["profile"] == "High"
+    assert video["pix_fmt"] == "yuv420p"
+    subprocess.run(
+        [ffmpeg, "-v", "error", "-i", str(output), "-f", "null", "-"],
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
 
 
 def source_info(bitrate=3000, height=1080, width=1920, fps=30):

@@ -3113,7 +3113,7 @@ def build_vod_ffmpeg_command(
             profile_option,
             "high",
             x264_params_option,
-            "nal-hrd=cbr:force-cfr=1",
+            "nal-hrd=cbr:force-cfr=1:8x8dct=1",
         ]
     )
     if video_crf is not None:
@@ -3128,6 +3128,10 @@ def build_vod_ffmpeg_command(
             "yuv420p",
             profile_option,
             "high",
+            # x264's ultrafast preset otherwise disables every High-profile
+            # tool; -profile high alone only sets an upper constraint.
+            x264_params_option,
+            "8x8dct=1",
         ]
         if use_nvenc:
             video_args = [
