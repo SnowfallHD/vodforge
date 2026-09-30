@@ -2232,6 +2232,17 @@ def test_retained_watch_hero_tracks_observed_replay_without_rebuilding_rails(
         app.processEvents()
         assert not scene.property("heroProgress")["resume"]
         assert label.property("text") == ""
+        # Completion changes the ranking of a fresh projection, but the
+        # retained hero's Play must still target the title visible to the user.
+        owner = projection["hero"]["owner"]
+        assert bridge.watchScene["hero"]["owner"] != owner
+        admitted = []
+        with monkeypatch.context() as playback_patch:
+            playback_patch.setattr(
+                bridge, "openLibraryItem", lambda index: admitted.append(index)
+            )
+            bridge.playWatchHero(owner)
+        assert admitted == [1]
         bridge.manualPlaybackSeek(0)
         bridge.observePlayback(0, 255, "Playing", bridge._playback_generation)
         assert label.property("text") == ""

@@ -4183,7 +4183,10 @@ class Bridge(QObject):
 
     @Slot(str)
     def playWatchHero(self, owner: str) -> None:
-        if owner != str(self.watchScene["hero"].get("owner") or ""):
+        # Watch retains its visible hero as progress changes. A fresh ranking
+        # may now feature another title; validate the requested saved owner,
+        # rather than silently rejecting the still-visible Play control.
+        if self._saved_item_for_owner(owner) is None:
             return
         self._record_update_feature(
             "watch", "hero_played", {"watch_mode": self._watch_mode()}

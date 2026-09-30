@@ -2,6 +2,17 @@
 
 ## Ended video keeps its frame across player surfaces — 2026-09-30
 
+The successor `03d8f49` native package retained the ended mini-player frame,
+but its visible Watch hero Play was rejected after completion changed the
+ranking of a freshly computed hero. The retained projection is deliberate;
+actions now validate the displayed saved owner through the existing canonical
+owner resolver. The retained-hero scene regression covers visible and hidden
+scenes through completion, checks that a fresh hero differs, and asserts Play
+admits the displayed item's index. Both cases failed with the former guard.
+The existing progress-only test missed this because it replayed through the
+provider directly instead of invoking the hero action. A new package must
+verify this action before any install claim; predecessor images cannot do so.
+
 Exact signed package `5ea8c0e` left a blank mini-player after Back and natural
 completion. Its full-frame before receipt is
 `build/watch-progress-proof/package-5ea8c0e-frames/07-mini-return.png` (also
