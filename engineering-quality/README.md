@@ -2844,3 +2844,12 @@ test now owns a child Python process instead of assuming the CI parent shell is
 readable. This keeps the actual production query and the live-owner assertion.
 Receipts are under `build/watch-progress-proof/process-inspection-*`; local
 results do not substitute for Windows CI or packaged platform qualification.
+
+The subsequent Mac build retained a failed Issues inspector geometry assertion:
+expanding Quality and Download options scheduled nested positioner work, but
+the test calculated the scroll limit before that work finished. A single event
+processing call is not a layout-ready oracle. The scene test now completes
+scheduled child-to-parent polish before measuring that limit; the one scroll
+and full Download-button visibility assertion remain unchanged. The original
+failed build is retained as `build-macos-owner-6c3d49e.log`. This test correction
+does not claim a new product layout fix or native scrolling acceptance.

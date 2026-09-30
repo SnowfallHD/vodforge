@@ -78,6 +78,13 @@ def visual_item(root, name: str):
     return None
 
 
+def polish_scene(item):
+    """Complete scheduled nested positioners before measuring their geometry."""
+    for child in item.childItems():
+        polish_scene(child)
+    item.ensurePolished()
+
+
 def saved(path: Path, name: str, kind: str, *, category: str = "") -> dict:
     return {
         "id": name,
@@ -1031,11 +1038,12 @@ def test_issue_inspector_retries_with_selected_settings_and_stays_until_success(
         quality_button.activated.emit()
         options_button.activated.emit()
         app.processEvents()
+        download_button = window.findChild(QObject, "libraryIssueDownload")
+        polish_scene(issue_panel)
         max_scroll = scroll_content.property("contentHeight") - scroll_content.height()
         assert max_scroll > 0
         scroll_content.setProperty("contentY", max_scroll)
         app.processEvents()
-        download_button = window.findChild(QObject, "libraryIssueDownload")
         download_top = download_button.mapToItem(issue_panel, QPointF(0, 0)).y()
         download_bottom = download_button.mapToItem(
             issue_panel, QPointF(0, download_button.height())
