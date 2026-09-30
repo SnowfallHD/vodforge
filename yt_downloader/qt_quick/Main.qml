@@ -2277,6 +2277,7 @@ Window {
                     }
                     ManualMp4Settings {
                         objectName: "settingsManualMp4"
+                        headingColor: theme.accent
                         visible: window.outputFormat === "MP4" && bridge.exportMode === "Manual Override"
                         Layout.fillWidth: true
                         backend: bridge

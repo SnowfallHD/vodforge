@@ -7,9 +7,10 @@ ColumnLayout {
     required property var backend
     required property var colors
     property int gridColumns: 2
+    property color headingColor: manual.colors.muted
     spacing: 7
 
-    Text { text: "MANUAL MP4"; color: manual.colors.muted; font.pixelSize: 13; font.bold: true }
+    Text { objectName: "manualMp4Heading"; text: "MANUAL MP4"; color: manual.headingColor; font.pixelSize: 13; font.bold: true }
     GridLayout {
         Layout.fillWidth: true
         columns: manual.gridColumns

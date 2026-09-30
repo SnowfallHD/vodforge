@@ -3,8 +3,9 @@
 import os
 from pathlib import Path
 
-from PySide6.QtCore import QCoreApplication, QEvent, QObject
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, QUrl
 from PySide6.QtGui import QColor
+from PySide6.QtQml import QQmlComponent
 
 from tests.test_qt_scene_port import qt_app
 from yt_downloader.qt_quick import main as qt_main
@@ -37,6 +38,7 @@ def test_settings_live_accent_and_neutral_copy(tmp_path, monkeypatch):
     try:
         window.resize(1100, 900)
         settings = window.findChild(QObject, "downloadSettingsPopup")
+        bridge.setExportMode("Manual Override")
         settings.open()
         for name in THEME_NAMES:
             assert bridge.setAppearance(name, "#00ff00")
@@ -68,6 +70,11 @@ def test_settings_live_accent_and_neutral_copy(tmp_path, monkeypatch):
                     "SAVE ALONGSIDE MP4",
                 )
             ]
+            headings.append(
+                window.findChild(QObject, "settingsManualMp4").findChild(
+                    QObject, "manualMp4Heading"
+                )
+            )
             assert len(headings) >= 10
             assert all(
                 item.property("color") == QColor(THEME["accent"]) for item in headings
@@ -85,6 +92,21 @@ def test_settings_live_accent_and_neutral_copy(tmp_path, monkeypatch):
             if output:
                 Path(output).mkdir(parents=True, exist_ok=True)
                 assert frame.save(str(Path(output) / (name.replace(" ", "-") + ".png")))
+        component = QQmlComponent(
+            engine,
+            QUrl.fromLocalFile(
+                str(
+                    Path(__file__).parents[1]
+                    / "yt_downloader/qt_quick/ManualMp4Settings.qml"
+                )
+            ),
+        )
+        other_consumer = component.createWithInitialProperties(
+            {"backend": bridge, "colors": dict(THEME)}
+        )
+        assert other_consumer is not None, component.errors()
+        assert other_consumer.property("headingColor") == QColor(THEME["muted"])
+        other_consumer.deleteLater()
     finally:
         window.close()
         engine.deleteLater()
