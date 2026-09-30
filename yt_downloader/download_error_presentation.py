@@ -29,8 +29,39 @@ FAILURE_GUIDANCE = {
 }
 
 
+class DownloadErrorMessage(str):
+    """Friendly terminal text carrying an approved recovery action."""
+
+    action = "choose_output_folder"
+    action_label = "Choose folder"
+    code = "output_path_too_long"
+
+
+def _output_path_budget_error(error: object) -> object | None:
+    # Import lazily: app composes this presenter and owns the typed path error.
+    from .app import OutputPathBudgetError
+
+    seen: set[int] = set()
+    pending = [error]
+    while pending and len(seen) < 8:
+        current = pending.pop(0)
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if isinstance(current, OutputPathBudgetError):
+            return current
+        for name in ("error", "__cause__", "__context__"):
+            nested = getattr(current, name, None)
+            if isinstance(nested, BaseException):
+                pending.append(nested)
+    return None
+
+
 def download_error_message(error: object) -> str:
     """Pair every known category and unknown failure with a bounded next step."""
+    path_error = _output_path_budget_error(error)
+    if path_error is not None:
+        return DownloadErrorMessage(str(path_error))
     text = str(error)[:16384].lower()
     diagnostic = capture_failure(error) if isinstance(error, BaseException) else None
     reason = diagnostic.reason if diagnostic is not None else classify_failure(text)

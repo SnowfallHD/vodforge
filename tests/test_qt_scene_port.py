@@ -6025,3 +6025,63 @@ def test_qt_context_controls_share_labels_scope_and_retirement(
         engine.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         bridge.close()
+
+
+def test_qt_path_budget_recovery_uses_existing_output_folder_choice(
+    tmp_path, monkeypatch
+):
+    from PySide6.QtCore import QUrl
+
+    from yt_downloader.app import OutputPathBudgetError
+    from yt_downloader.download_error_presentation import download_error_message
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    bridge = qt_main.Bridge(None)
+    engine = qt_main.create_engine(bridge)
+    requested = []
+    bridge.outputFolderRecoveryRequested.connect(requested.append)
+    try:
+        bridge._runtime.events.put(
+            ("error", download_error_message(OutputPathBudgetError()))
+        )
+        bridge._pump()
+        assert requested == [OutputPathBudgetError.user_message]
+        app.processEvents()
+        window = engine.rootObjects()[0]
+        popup = window.findChild(QObject, "outputFolderRecoveryPopup")
+        assert popup.property("visible")
+        button = window.findChild(QObject, "outputFolderRecoveryChoose")
+        assert button.property("label") == "Choose folder"
+        assert button.property("visible")
+        assert button.property("height") == 40
+        popup.close()
+        destination = tmp_path / "short"
+        destination.mkdir()
+        bridge.chooseOutputUrl(QUrl.fromLocalFile(str(destination)))
+        assert bridge.outputPath == str(destination)
+        bridge._runtime.events.put(("error", "ordinary failure"))
+        bridge._pump()
+        assert len(requested) == 1
+    finally:
+        bridge.close()
+        engine.deleteLater()
+        app.processEvents()
+
+
+def test_qt_everyday_default_and_saved_preset_survive_restart(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    qt_app()
+    bridge = qt_main.Bridge(None)
+    assert bridge.exportModeLabel == "Everyday"
+    bridge.setExportMode("Streaming")
+    bridge.close()
+    restored = qt_main.Bridge(None)
+    try:
+        assert restored.exportModeLabel == "Streaming"
+    finally:
+        restored.close()

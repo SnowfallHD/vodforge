@@ -2899,3 +2899,27 @@ Representative tests use an actual owned process before/after exit, inaccessible
 identity, bounded log tails and escaped profile symlinks. Native Windows capture
 and the underlying startup cause still require the next exact CI receipt; this
 instrumentation is not the product fix or packaged updater qualification.
+
+### Integrated output-path recovery contract — 2026-09-30
+
+A typed preflight failure must retain its approved plain explanation and recovery
+intent across item wrappers, worker event transport and the Qt presentation
+adapter. A generic friendly-string assertion missed the new typed action; path
+allocation tests did not exercise the terminal consumer. The bounded regression
+now checks direct and wrapped errors, refuses provider-text imitation, observes
+the actual bridge signal and rendered Choose folder action, and applies the
+existing folder setter. Retained failed integration tests caught an incorrectly
+placed signal that never consumed terminal events. The footer remains separate
+from the bounded message; folder selection does not automatically restart work.
+Existing controls context/handoff and durable Note-only telemetry tests run in
+the same scene suite. Everyday starts fresh and saved Streaming survives restart
+through isolated settings, without normal user-profile access. Offscreen source
+coverage is not packaged native folder-dialog, cancellation, preview-D1 or
+Windows/macOS release qualification.
+
+Presentation owns message/action projection and Qt owns signal/dialog routing;
+path validation remains in its existing allocator, runtime cancellation and
+settings persistence remain with their existing owners. app.py gains no new
+responsibility from the recovery hookup. Coupling stays bounded to the existing
+app/presenter seam (lazy typed-error lookup avoids import initialization cycles).
+No new architectural debt is deferred by this integration.

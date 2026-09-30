@@ -139,6 +139,10 @@ Window {
     }
     Connections {
         target: bridge
+        function onOutputFolderRecoveryRequested(message) {
+            outputFolderRecoveryPopup.message = message
+            outputFolderRecoveryPopup.open()
+        }
         function onAnalyticsPromptRequested() { analyticsPopup.open() }
         function onSupportRequested() {
             supportPopup.reason = "Select one…"
@@ -578,6 +582,48 @@ Window {
                 Item { Layout.fillWidth: true }
                 StoneButton { label: "No thanks"; Layout.preferredWidth: 115; Layout.preferredHeight: 40; onActivated: { if (bridge.chooseAnalytics(false)) analyticsPopup.close() } }
                 StoneButton { label: "Share analytics"; Layout.preferredWidth: 150; Layout.preferredHeight: 40; onActivated: { if (bridge.chooseAnalytics(true)) analyticsPopup.close() } }
+            }
+        }
+    }
+    StonePopup {
+        id: outputFolderRecoveryPopup
+        objectName: "outputFolderRecoveryPopup"
+        property string message: ""
+        x: Math.max(0, (window.width - width) / 2)
+        y: Math.max(0, (window.height - height) / 2)
+        width: Math.min(520, window.width - 30)
+        height: 220
+        padding: 18
+        modal: true
+        Text {
+            anchors.top: parent.top
+            width: parent.width
+            height: parent.height - 58
+            text: outputFolderRecoveryPopup.message
+            color: theme.text
+            font.pixelSize: 16
+            wrapMode: Text.WordWrap
+        }
+        RowLayout {
+            anchors.bottom: parent.bottom
+            width: parent.width
+            StoneButton {
+                objectName: "outputFolderRecoveryChoose"
+                label: "Choose folder"
+                emphasized: true
+                Layout.preferredWidth: 150
+                Layout.preferredHeight: 40
+                onActivated: {
+                    outputFolderRecoveryPopup.close()
+                    outputFolderDialog.open()
+                }
+            }
+            Item { Layout.fillWidth: true }
+            StoneButton {
+                label: "Later"
+                Layout.preferredWidth: 84
+                Layout.preferredHeight: 40
+                onActivated: outputFolderRecoveryPopup.close()
             }
         }
     }

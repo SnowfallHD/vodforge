@@ -247,3 +247,27 @@ def test_real_audio_selection_failure_keeps_cause_and_correct_media_kind():
     assert "No usable audio source" in technical_download_error(error)
     assert "No downloadable audio" in download_error_message(error)
     assert "No downloadable video" not in download_error_message(error)
+
+
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_path_budget_error_preserves_approved_message_and_folder_action(wrapped):
+    from types import SimpleNamespace
+
+    from yt_downloader.app import OutputPathBudgetError, _DownloadItemExecutionError
+
+    error = OutputPathBudgetError()
+    presented = download_error_message(
+        _DownloadItemExecutionError(error, SimpleNamespace()) if wrapped else error
+    )
+    assert presented == error.user_message
+    assert presented.code == "output_path_too_long"
+    assert presented.action == "choose_output_folder"
+    assert presented.action_label == "Choose folder"
+
+
+def test_path_budget_recovery_is_typed_not_provider_text():
+    from yt_downloader.app import OutputPathBudgetError
+
+    assert not hasattr(
+        download_error_message(OutputPathBudgetError.user_message), "action"
+    )

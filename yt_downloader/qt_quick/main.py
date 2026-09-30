@@ -352,6 +352,7 @@ class Materials(QQuickImageProvider):
 
 class Bridge(QObject):
     pointerGestureEnded = Signal()
+    outputFolderRecoveryRequested = Signal(str)
     statusChanged = Signal()
     outputPathChanged = Signal()
     selectionChanged = Signal()
@@ -2617,7 +2618,7 @@ class Bridge(QObject):
             ),
         }
 
-    @Property("QVariantList", notify=runDeckChanged)
+    @Property(_QVARIANT_LIST, notify=runDeckChanged)
     def runControls(self) -> list[dict[str, str]]:
         return self._run_controls.actions(self._runtime.active_job)
 
@@ -5800,6 +5801,11 @@ class Bridge(QObject):
         for kind, payload in self._run_control_events.take_context_events():
             self._run_controls.observe(active_job_before, kind, payload)
         for kind, payload in events:
+            if (
+                kind == "error"
+                and getattr(payload, "action", "") == "choose_output_folder"
+            ):
+                self.outputFolderRecoveryRequested.emit(str(payload))
             if kind in {"progress", "progress_determinate"} and payload is not None:
                 self._progress = max(0.0, min(100.0, float(payload)))
                 self.progressChanged.emit()
