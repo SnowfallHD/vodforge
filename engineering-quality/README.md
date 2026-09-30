@@ -591,6 +591,28 @@ by a user, telemetry, support, development, or a release run. Do this as part of
 same fix, before describing that work as complete. A specific regression test and
 a harness improvement serve different purposes; one is not a substitute for the other.
 
+September 30 popup/scroll/presentation follow-up: retirement must release the
+underlying owner, not merely remove its visible content. The installed preview
+still contained the older hover-based popup dismissal; all three existing actual
+press/explicit-close regressions fail with that installed QML. Current shared
+pointer-based dismissal passes those regressions and scroll-away/back cycles,
+including a held press whose release must not consume a later activation.
+Source fixes must be checked against the installed artifact before attributing a
+fresh report to another focus bug. Watch home, channel and video routes also have
+monotonic wheel-notification checks; projection refresh retains scroll geometry.
+The reported intermittent vertical reversal has not been reproduced by these
+bounded cases; they do not establish physical trackpad timing coverage.
+
+Earlier player-surface coverage asserted QML binding and hidden visibility with
+an offscreen platform, which cannot detect a surviving native fullscreen Space.
+The new opt-in macOS test checks AppKit's actual fullscreen flag, presentation
+visibility and real media playback across playing/paused Back and floating
+transitions. The previous implementation fails native Back: the hidden window
+still has the fullscreen style. The shared Player scene now requests normal
+presentation before hiding, allowing Cocoa to retire its fullscreen Space.
+No native replay, new window owner, timers or platform-specific polling was added
+to product code. Native Windows presentation remains a separate evidence tier.
+
 1. Preserve the concrete reproducer and add a regression for the reported failure.
 2. Identify the invariant that failed, independently of the affected screen or tool.
    Examples: accepted intent survives delayed readiness; only the current owner may

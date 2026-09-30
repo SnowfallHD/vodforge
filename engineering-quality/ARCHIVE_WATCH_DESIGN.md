@@ -93,6 +93,14 @@ double scrolling. Keyboard actions belong to the nearest active visible scope:
 Escape closes the active popup only, or returns a detail/player view to its actual
 origin. Enter saves a collection only in that active popup.
 
+An anchored popup retires when its trigger leaves the viewport. Returning to that
+trigger opens it on the first click; suppression of an outside-press dismissal
+belongs only to that same pointer gesture, never to stale hover or a later click.
+Moving playback out of fullscreen must exit the native fullscreen state before
+hiding its window. Back may keep video playing in the corner, but must leave no
+empty fullscreen window or macOS Space behind. Check native window state as well
+as the QML video binding; hiding a window alone does not establish retirement.
+
 Collection creation uses a labelled Save button and the exact empty-field hint
 “Type your collection name”. A visible focus treatment must not be confused with
 selection or a scrollbar. All common control roles require intentional normal,

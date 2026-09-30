@@ -82,8 +82,13 @@ Item {
         restoreFillAfterCaptions = false
     }
     onPresentationModeChanged: {
-        if (presentationMode === "embedded") presentationWindow.hide()
-        else if (presentationMode === "fullscreen") presentationWindow.showFullScreen()
+        if (presentationMode === "embedded") {
+            // Hiding a fullscreen Cocoa window leaves its native Space alive.
+            // Retire fullscreen before moving the video back into the app.
+            if (presentationWindow.visibility === Window.FullScreen)
+                presentationWindow.showNormal()
+            presentationWindow.hide()
+        } else if (presentationMode === "fullscreen") presentationWindow.showFullScreen()
         else presentationWindow.showNormal()
     }
     onProjectionChanged: {
