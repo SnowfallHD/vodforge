@@ -53,6 +53,7 @@ fi
     --ignore=tests/test_qt_scene_port.py \
     --ignore=tests/test_qt_telemetry_coverage.py \
     --ignore=tests/test_qt_fullscreen_native.py \
+    --ignore=tests/test_qt_settings_theme.py \
     --ignore=tests/test_qt_scroll_lifecycle.py \
     --ignore=tests/test_qt_interaction_invariants.py
   QT_QUICK_BACKEND=software "$python_bin" -m pytest -q \
@@ -66,6 +67,7 @@ fi
     tests/test_qt_terminal_item_events.py \
     tests/test_qt_telemetry_coverage.py \
     tests/test_qt_fullscreen_native.py \
+    tests/test_qt_settings_theme.py \
     tests/test_qt_scroll_lifecycle.py \
     tests/test_qt_interaction_invariants.py
   QT_QUICK_BACKEND=software "$python_bin" -m pytest -q tests/test_qt_scene_port.py

@@ -71,6 +71,7 @@ def test_qt_candidate_uses_rendered_qml_contract_instead_of_tk_native_suite(
     assert "tests/test_qt_terminal_item_events.py" in observed
     assert "tests/test_qt_artwork_image.py" in observed
     assert "tests/test_qt_interaction_invariants.py" in observed
+    assert "tests/test_qt_settings_theme.py" in observed
     assert len(observed) == len(set(observed))
 
 

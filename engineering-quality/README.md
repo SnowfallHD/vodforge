@@ -2964,3 +2964,9 @@ relaunch and Repair with receipts, preserved data and native visual review.
 No platform wrapper or updates.py transaction change. App.py is unchanged. Intent
 ownership remains within the existing update session, with bounded Bridge
 composition coupling. No broad architecture debt is introduced or deferred.
+
+Settings accent integration enrolls its new `test_qt_settings_theme.py` in the
+Mac build/CI backend exclusion and fresh Qt component process, plus the native
+source component gate. This preserves the existing process-isolation invariant;
+rendered tests must not enter the non-Qt backend suite merely because a new module
+was omitted from explicit command lists. Maintained routing checks cover it.
