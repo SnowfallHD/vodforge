@@ -2808,6 +2808,16 @@ for a separate updater journey. Continuation guards cover changed candidates,
 non-isolated paths, live sessions, failed exits, surviving processes, changed
 consent mode and invalid prior evidence. This is bounded evidence recovery,
 not permission to adopt unrelated apps or manufacture missing UI actions.
+
+Preview launch credentials and the telemetry/profile mode must be validated
+before a continuation archives evidence or rewrites its control file. An invalid
+launch request must preserve the original session byte for byte, so correcting
+the request can still resume it. Existing continuation guards checked session
+ownership and candidate identity, but missed launch prerequisites checked later
+in the launcher. Four absent, empty, short and malformed-key cases fail on the
+prior launcher because it creates `continuation-1/` before refusing the launch;
+all pass after moving prerequisite validation ahead of that mutation. These
+checks cover refusal ordering, separately from actual packaged restart proof.
 Set the live control to `relaunch` before quitting for an ordinary restart.
 
 ### Encoder intent must agree with independently probed output

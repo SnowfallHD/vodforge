@@ -99,3 +99,45 @@ def test_continuation_keeps_original_failed_receipt_and_trace(tmp_path, monkeypa
     for name, content in before.items():
         assert (directory / name).read_bytes() == content
         assert (directory / "continuation-1" / name).read_bytes() == content
+
+
+@pytest.mark.parametrize("key", [None, "", "short", "G" * 64])
+def test_refused_preview_launch_does_not_archive_or_rewrite_continuation(
+    tmp_path, monkeypatch, key
+):
+    directory, session, _, _, args = fixture(tmp_path, monkeypatch)
+    session["candidate_binding"]["artifact_policy"] = "release"
+    session["fixture_manifest"] = {}
+    monkeypatch.setattr(
+        packaged_e2e,
+        "_artifact_receipt",
+        lambda *a, **k: {
+            "verified": True,
+            "executable": session["candidate_binding"]["artifact_path"],
+            "bundle_tree": {"sha256": "tree"},
+        },
+    )
+    monkeypatch.setattr(packaged_e2e, "preexisting_vodforge_processes", lambda p: [])
+    path = directory / "session.json"
+    path.write_text(json.dumps(session))
+    args.resume = path
+    monkeypatch.setattr(packaged_e2e.sys, "platform", "darwin")
+    if key is None:
+        monkeypatch.delenv("VODFORGE_QA_ACCESS_KEY", raising=False)
+    else:
+        monkeypatch.setenv("VODFORGE_QA_ACCESS_KEY", key)
+    before = {
+        p.relative_to(directory): p.read_bytes()
+        for p in directory.rglob("*")
+        if p.is_file()
+    }
+    with pytest.raises(ValueError, match="requires the private QA access key"):
+        packaged_e2e.run_packaged_e2e_session(
+            args, repo_root=tmp_path, harness_root=tmp_path
+        )
+    assert not (directory / "continuation-1").exists()
+    assert {
+        p.relative_to(directory): p.read_bytes()
+        for p in directory.rglob("*")
+        if p.is_file()
+    } == before

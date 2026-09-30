@@ -1435,6 +1435,15 @@ def run_packaged_e2e_session(
             file=sys.stderr,
         )
         return 2
+    # Validate launch prerequisites before archiving or rewriting a resumed
+    # session. A refused launch must leave the previous evidence resumable.
+    telemetry_mode = getattr(args, "telemetry", "off")
+    if args.profile == "telemetry" and telemetry_mode != "preview":
+        raise ValueError("The telemetry journey requires --telemetry preview")
+    if telemetry_mode == "preview":
+        key = os.environ.get("VODFORGE_QA_ACCESS_KEY", "")
+        if len(key) != 64 or any(c not in "0123456789abcdef" for c in key):
+            raise ValueError("Preview E2E requires the private QA access key")
     resumed: dict[str, Any] | None = None
     resume_path = getattr(args, "resume", None)
     if resume_path is not None:
@@ -1540,13 +1549,7 @@ def run_packaged_e2e_session(
             "VODFORGE_QUALITY_E2E_ISOLATION_ROOT": state_paths["isolation_root"],
         }
     )
-    telemetry_mode = getattr(args, "telemetry", "off")
-    if args.profile == "telemetry" and telemetry_mode != "preview":
-        raise ValueError("The telemetry journey requires --telemetry preview")
     if telemetry_mode == "preview":
-        key = env.get("VODFORGE_QA_ACCESS_KEY", "")
-        if len(key) != 64 or any(c not in "0123456789abcdef" for c in key):
-            raise ValueError("Preview E2E requires the private QA access key")
         env.pop("VODFORGE_DISABLE_TELEMETRY", None)
         env["VODFORGE_QA_PREVIEW_TELEMETRY"] = "1"
         env["VODFORGE_QA_PROFILE"] = state_paths["application_data"]
