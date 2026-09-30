@@ -15,13 +15,16 @@ AnchoredPopup {
     preferAbove: true
     alignRight: true
     width: Math.min(245, parent.width - 24)
-    height: Math.min(250, 52 + (player ? player.subtitleTracks.length + 1 : 1) * 42)
+    height: Math.min(250, captionChoices.implicitHeight + topPadding + bottomPadding)
     padding: 5
     ScrollView {
         anchors.fill: parent
         clip: true
+        contentWidth: menu.availableWidth
+        contentHeight: captionChoices.implicitHeight
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
         Column {
+            id: captionChoices
             width: menu.availableWidth
             spacing: 2
             StoneButton {

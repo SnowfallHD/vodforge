@@ -231,6 +231,7 @@ def test_qt_first_play_denied_attempt_is_not_replayed_after_consent_change() -> 
     fake = SimpleNamespace(
         _playback_binding=binding,
         _playback_recorded=False,
+        _playback_record=None,
         _playback_phases=set(),
         _observe_playback_phase=lambda *_args, **_kwargs: None,
         _playback_output_type="MP4",

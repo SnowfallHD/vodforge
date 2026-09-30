@@ -641,6 +641,14 @@ arrowhead must be one connected silhouette. Both old directions fail at enlarged
 inspection size. This is targeted coverage of a reported aesthetic defect, not
 general automatic discovery of unknown visual defects.
 
+The approved captions spacing follow-up uses the shared menu's actual column
+height plus its intentional 5px padding, retaining its 250px cap and vertical
+scrolling. Prior zero/one-track cases measure 94/136px rather than the required
+76/92px; both regressions fail before the change, and the eight-track case checks
+the retained cap. Placement and close behavior stay with AnchoredPopup. The first
+full build also caught the analytics test's synthetic playback context missing
+the newly required record field; its denied-once event assertion is preserved.
+
 1. Preserve the concrete reproducer and add a regression for the reported failure.
 2. Identify the invariant that failed, independently of the affected screen or tool.
    Examples: accepted intent survives delayed readiness; only the current owner may

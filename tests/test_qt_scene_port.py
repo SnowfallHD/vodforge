@@ -2126,6 +2126,51 @@ def test_transport_arrow_and_arc_have_one_connected_silhouette(
         bridge.close()
 
 
+@pytest.mark.parametrize("track_count", [0, 1, 8])
+def test_caption_menu_fits_content_and_preserves_bounded_scroll(
+    tmp_path, monkeypatch, track_count
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    bridge = qt_main.Bridge(None)
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    tracks = ",".join(
+        '{stringValue: function(key) { return "English" }}' for _ in range(track_count)
+    )
+    component = QQmlComponent(engine)
+    component.setData(
+        (
+            "import QtQuick\nCaptionTracks { player: ({ activeSubtitleTrack: -1, "
+            "subtitleTracks: [" + tracks + "] }) }"
+        ).encode(),
+        QUrl.fromLocalFile(str(Path(qt_main.__file__).with_name("CaptionProbe.qml"))),
+    )
+    menu = component.create()
+    try:
+        assert menu is not None, component.errorString()
+        menu.setProperty("parent", window.contentItem())
+        menu.open()
+        app.processEvents()
+        # One 40px off action, either the 24px empty explanation or 40px
+        # track actions, 2px gaps, and intentional 5px surface padding.
+        expected = 76 if not track_count else min(250, 50 + 42 * track_count)
+        assert menu.property("height") == expected
+        assert menu.property("availableHeight") == expected - 10
+        assert menu.property("width") == 245
+    finally:
+        if menu is not None:
+            menu.close()
+            menu.deleteLater()
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
 @pytest.mark.parametrize("hidden", [False, True])
 def test_retained_watch_hero_tracks_observed_replay_without_rebuilding_rails(
     tmp_path, monkeypatch, hidden
