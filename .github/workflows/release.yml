@@ -7,6 +7,11 @@ on:
         description: Semantic version without the v prefix, for example 1.2.3
         required: true
         type: string
+      artifacts_only:
+        description: Build and retain QA artifacts without creating or modifying a release
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -165,6 +170,7 @@ jobs:
           if-no-files-found: error
 
   draft:
+    if: ${{ !inputs.artifacts_only }}
     needs: [windows, macos]
     runs-on: ubuntu-latest
     steps:

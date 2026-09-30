@@ -2996,3 +2996,11 @@ The new display-only allowlist helper used a production assert; aggregate Bandit
 found that optimized Python removes it. An explicit ValueError retains the invariant
 in optimized execution. Focused provenance/privacy tests and Bandit validate this
 narrow correction. These checks establish source contracts, not native release QA.
+
+### Artifact-only final qualification workflow — 2026-09-30
+
+An existing v0.2.3 draft makes unconditional draft creation unsafe for candidate
+CI. The explicit artifacts_only dispatch input retains signed Windows and review
+Mac artifacts while skipping the entire release-mutating job. A workflow contract
+asserts that no release mutation lives in the artifact jobs and that the default
+draft behavior remains review-only. No existing release/tag/assets are altered.

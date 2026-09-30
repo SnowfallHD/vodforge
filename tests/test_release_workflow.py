@@ -350,3 +350,16 @@ def test_draft_release_notes_keep_the_release_team_safety_gate():
     assert "Release-team draft" in notes
     assert "Do not publish" in notes
     assert "notarized" in notes
+
+
+def test_artifact_only_dispatch_skips_all_release_mutation():
+    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
+    inputs = workflow.split("jobs:", 1)[0]
+    assert "artifacts_only:" in inputs
+    assert "type: boolean" in inputs.split("artifacts_only:", 1)[1]
+    draft = workflow.split("  draft:", 1)[1]
+    assert "if: ${{ !inputs.artifacts_only }}" in draft.split("steps:", 1)[0]
+    assert "gh release create" not in workflow.split("  draft:", 1)[0]
+    assert "gh release upload" not in workflow
+    assert "gh release edit" not in workflow
+    assert "--draft" in draft
