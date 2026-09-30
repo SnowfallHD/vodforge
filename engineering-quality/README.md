@@ -1,5 +1,23 @@
 # VODForge engineering-quality harness
 
+## Idle Qt telemetry retries durable pending events — 2026-09-30
+
+The exact `7fde501` packaged preview session left startup events queued after
+its initial enrollment failure, even after the persisted backoff expired and
+the preview version was admitted. Qt's existing continuous analytics poll now
+wakes the existing product outbox at a bounded 30-second interval. The durable
+owner still controls consent, transport backoff and immutable event identity;
+no new event or retry owner is introduced. Closed sessions cannot wake it.
+
+The previous retry regression called the startup producer a second time, so
+it never exercised an idle Qt session. The new session-level matrix uses the
+real durable outbox and failed-then-successful transports for startup and
+feature events, with uninterrupted, consent-withdrawn and closed sessions.
+Both uninterrupted cases fail before the fix and pass afterward without a
+second producer callback. The failed packaged attempt remains under
+`build/watch-progress-proof/packaged-telemetry-7fde501`; a new immutable package
+must prove idle delivery before continuing the full telemetry journey.
+
 ## Ended video keeps its frame across player surfaces — 2026-09-30
 
 The successor `03d8f49` native package retained the ended mini-player frame,

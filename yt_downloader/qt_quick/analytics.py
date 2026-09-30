@@ -38,6 +38,8 @@ class QtAnalyticsSession:
         self._started = False
         self._presented = False
         self._opened = False
+        self._closed = False
+        self._next_telemetry_flush = time.monotonic() + 30.0
         self._app_version = app_version
         self._attribution_path = installation_state_path(data_dir=directory)
         self._attribution = InstallationAttributionOwner(
@@ -184,12 +186,26 @@ class QtAnalyticsSession:
         self._attribution_work.submit("first_launch", deliver)
 
     def poll_first_launch_delivery(self) -> None:
+        """Poll startup work and retry the existing outbox while Qt is idle."""
+        if self._closed:
+            return
         work = self._attribution_work
         if work is not None and work.poll() is not None:
             work.close()
             self._attribution_work = None
+        now = time.monotonic()
+        if (
+            self.allowed
+            and self.telemetry is not None
+            and now >= self._next_telemetry_flush
+        ):
+            self._next_telemetry_flush = now + 30.0
+            # The durable owner retains event identity, consent and transport
+            # backoff. Retrying must not require another feature interaction.
+            self.telemetry.flush_async()
 
     def close(self) -> None:
+        self._closed = True
         if self._attribution_work is not None:
             self._attribution_work.close()
             self._attribution_work = None
