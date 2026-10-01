@@ -48,7 +48,11 @@ The source model supplies conditional paths for **2,936 pairs**, including **69
 above three clicks**; **53,824 remain unresolved**. A real offscreen pointer click
 on Forge's All N runs control changes the production bridge to Library: **one
 validated pair and one observed handler site out of 478**. Native coverage is **zero**.
-Native integration retains sole GUI ownership.
+The same offscreen scene read finds 1,293 Qt interactive candidates: 119 have
+a literal source-name match and 1,174 remain unmapped. Framework internals,
+unnamed controls and repeated delegates are included in this candidate denominator;
+it is not a count of 1,174 missing product actions. Name matches do not prove bindings
+or effective visibility. Native integration retains sole GUI ownership.
 
 ## Click semantics and representative output
 
@@ -87,7 +91,7 @@ player interactions. No native unreachable claim is established by this run.
 
 ## JSON contract
 
-The outer report has `inventory` and `coverage`:
+The full report uses `schema_version=1` and has `inventory` and `coverage`:
 
 - `inventory.files` binds every scanned file by SHA-256; `inventory.sites` includes
   file/line, source handler expression, calls, owner type, ancestor menus, source
@@ -117,6 +121,13 @@ Currently observed statuses are `reachable`, `ux_review`, or `unverified`. The h
 deliberately does not infer `unreachable` or `not_applicable` from absent observations:
 those require an explicit reviewed item-state/applicability contract. That enrollment
 is still outstanding. Null counts mean unresolved availability/route, not zero clicks.
+
+`runtime_controls(scene, inventory)` reads the supplied Qt scene without invoking
+controls and returns candidate instances, their actual names/types/input methods,
+visibility/enabled properties, literal source-name matches and unresolved instances.
+The maintained headless observation includes this runtime inventory. New unnamed or
+dynamic controls cannot disappear behind a handwritten success map. Further scenes
+and windows remain unobserved.
 
 ## State consistency and failure learning
 

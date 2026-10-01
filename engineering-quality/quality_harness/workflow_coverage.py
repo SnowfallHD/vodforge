@@ -202,6 +202,65 @@ def inventory(root: Path) -> dict[str, Any]:
     }
 
 
+def runtime_controls(root_object: Any, discovered: dict[str, Any]) -> dict[str, Any]:
+    """Read a supplied scene's interactive Qt candidates, without invoking them.
+
+    Generated delegate names, framework internals and unnamed controls remain
+    unmapped. This runtime denominator is distinct from lexical source sites.
+    """
+    from PySide6.QtCore import QObject
+
+    input_signals = {
+        "activated",
+        "clicked",
+        "triggered",
+        "accepted",
+        "pressed",
+        "toggled",
+    }
+    source_names = {}
+    for site in discovered["sites"]:
+        name = site["properties"].get("objectName", "")
+        if re.fullmatch(r'"[^"\\]*"', name):
+            source_names.setdefault(name[1:-1], []).append(site["site"])
+    controls = []
+    for node in [root_object, *root_object.findChildren(QObject)]:
+        meta = node.metaObject()
+        signals = {
+            bytes(meta.method(i).name()).decode() for i in range(meta.methodCount())
+        }
+        signals &= input_signals
+        if not signals:
+            continue
+        name = node.objectName()
+        controls.append(
+            {
+                "object_name": name,
+                "qt_type": meta.className(),
+                "signals": sorted(signals),
+                "visible": node.property("visible"),
+                "enabled": node.property("enabled"),
+                "source_sites": source_names.get(name, []),
+                "status": "named_source_match"
+                if name in source_names
+                else "unmapped_runtime_candidate",
+            }
+        )
+    return {
+        "controls": controls,
+        "counts": {
+            "interactive_candidates": len(controls),
+            "named_source_matches": sum(bool(c["source_sites"]) for c in controls),
+            "unmapped_runtime_candidates": sum(not c["source_sites"] for c in controls),
+        },
+        "limits": [
+            "Qt internals and repeated delegate instances are candidates, not distinct user actions",
+            "name matching is not binding, click or effective-availability proof",
+            "one supplied scene does not enumerate every runtime state or window",
+        ],
+    }
+
+
 def path_report(discovered: dict[str, Any], evidence: dict[str, Any]) -> dict[str, Any]:
     """Validate evidence-bound transitions and find least-cost witnessed paths.
 
@@ -686,7 +745,11 @@ def main() -> None:
             )
         )
     else:
-        print(json.dumps({"inventory": found, "coverage": report}, indent=2))
+        print(
+            json.dumps(
+                {"schema_version": 1, "inventory": found, "coverage": report}, indent=2
+            )
+        )
 
 
 if __name__ == "__main__":

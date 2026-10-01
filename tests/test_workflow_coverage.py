@@ -263,6 +263,11 @@ def test_headless_pointer_observation_binds_navigation_to_source(tmp_path, monke
         app.processEvents()
         assert bridge.selection == "Library"
         found = inventory(ROOT)
+        from quality_harness.workflow_coverage import runtime_controls
+
+        live = runtime_controls(window, found)
+        assert live["counts"]["interactive_candidates"] > 0
+        assert live["counts"]["unmapped_runtime_candidates"] > 0
         site = next(
             s
             for s in found["sites"]
@@ -294,7 +299,10 @@ def test_headless_pointer_observation_binds_navigation_to_source(tmp_path, monke
         assert report["counts"]["observed_handler_sites"] == 1
         if os.environ.get("VODFORGE_WORKFLOW_EVIDENCE"):
             Path(os.environ["VODFORGE_WORKFLOW_EVIDENCE"]).write_text(
-                json.dumps({"evidence": evidence, "report": report}, indent=2)
+                json.dumps(
+                    {"evidence": evidence, "report": report, "runtime_inventory": live},
+                    indent=2,
+                )
             )
     finally:
         window.close()
