@@ -68,6 +68,22 @@ class DownloadPreferences:
     write_info_json: bool = True
 
 
+class _WorkerEventQueue(queue.Queue[Any]):
+    """Put-only worker sink retaining the originating execution object."""
+
+    def __init__(self, target: queue.Queue[tuple[str, Any]], job: DownloadJob) -> None:
+        super().__init__()
+        self._target = target
+        self._job = job
+
+    def put(self, item: Any, block: bool = True, timeout: float | None = None) -> None:
+        self._target.put(
+            ("worker_event", {"job": self._job, "event": item}),
+            block=block,
+            timeout=timeout,
+        )
+
+
 class DownloadRuntime:
     def __init__(self) -> None:
         self.events: queue.Queue[tuple[str, Any]] = queue.Queue()
@@ -82,6 +98,9 @@ class DownloadRuntime:
             )
         self.worker: threading.Thread | None = None
         self.active_job: DownloadJob | None = None
+        self._active_feedback_job: DownloadJob | None = None
+        self._active_status = "Preparing download"
+        self._active_progress = 0.0
         self._worker_app: DownloadWorkerCore | None = None
         self.provider_network = ProviderNetworkCoordinator()
         self._closing = False
@@ -109,6 +128,25 @@ class DownloadRuntime:
     @property
     def busy(self) -> bool:
         return self.worker is not None and self.worker.is_alive()
+
+    @property
+    def active_status(self) -> str:
+        if self.active_job is None:
+            return ""
+        if self._active_feedback_job is not self.active_job:
+            return "Preparing download"
+        return self._active_status
+
+    @property
+    def active_progress(self) -> float:
+        if self.active_job is None or self._active_feedback_job is not self.active_job:
+            return 0.0
+        return self._active_progress
+
+    def _reset_active_feedback(self, job: DownloadJob) -> None:
+        self._active_feedback_job = job
+        self._active_status = "Preparing download"
+        self._active_progress = 0.0
 
     def start(
         self,
@@ -469,7 +507,7 @@ class DownloadRuntime:
         # The production worker is now a UI-independent owner shared by Tk,
         # Qt, and the engineering harness.
         worker_app = DownloadWorkerCore()
-        worker_app.events = self.events
+        worker_app.events = _WorkerEventQueue(self.events, job)
         worker_app.cancel_requested = False
         worker_app.skip_video_requested = False
         worker_app.skip_url_requested = False
@@ -483,6 +521,7 @@ class DownloadRuntime:
         self._worker_app = worker_app
         self._history_error = False
         self.active_job = job
+        self._reset_active_feedback(job)
         self.worker = threading.Thread(
             target=worker_app._download_worker,
             args=(job,),
@@ -552,11 +591,33 @@ class DownloadRuntime:
             except queue.Empty:
                 break
             kind, payload = event
+            if kind == "worker_event":
+                if payload["job"] is not self.active_job:
+                    continue
+                event = payload["event"]
+                kind, payload = event
+            if self.active_job is not None and kind in {
+                "status",
+                "progress",
+                "progress_determinate",
+            }:
+                if self._active_feedback_job is not self.active_job:
+                    self._reset_active_feedback(self.active_job)
+                if kind == "status":
+                    self._active_status = str(payload)
+                elif payload is not None:
+                    self._active_progress = max(0.0, min(100.0, float(payload)))
             if kind == "history_record" and isinstance(payload, dict):
                 try:
                     self._record_history(payload)
                 except (HistoryError, OSError, ValueError):
                     self._history_error = True
+                    if self.active_job is not None:
+                        if self._active_feedback_job is not self.active_job:
+                            self._reset_active_feedback(self.active_job)
+                        self._active_status = (
+                            "Output saved, but Library history needs attention."
+                        )
                     result.append(
                         ("status", "Output saved, but Library history needs attention.")
                     )
