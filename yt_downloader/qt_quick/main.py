@@ -174,6 +174,7 @@ from yt_downloader.product_telemetry import BoundProductOperation, product_outpu
 from yt_downloader.qt_quick.analytics import QtAnalyticsSession
 from yt_downloader.qt_quick.artwork import QtArtwork
 from yt_downloader.qt_quick.library_files import QtLibraryFiles
+from yt_downloader.qt_quick.library_window_model import register_window_model
 from yt_downloader.qt_quick.local_conversion import LocalConversionRuntime
 from yt_downloader.qt_quick.mac_windowing import integrate_qt_main_window
 from yt_downloader.qt_quick.metadata_preview import QtMetadataPreview
@@ -6238,6 +6239,7 @@ class Bridge(QObject):
 
 
 def create_engine(bridge: Bridge) -> QQmlApplicationEngine:
+    register_window_model()
     engine = QQmlApplicationEngine()
     materials = Materials()
     engine.addImageProvider("vodforge", materials)

@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import VODForge.Models 1.0
 
 Item {
     id: scene
@@ -372,34 +373,42 @@ Item {
                             horizontalView: homeRail
                             verticalView: viewport
                         }
-                        property int loadedCount: 6
-                        Connections {
-                            target: homeRail.contentItem
-                            function onContentXChanged() {
-                                if (!homeRail.visible || !homeRail.contentItem ||
-                                        homeRail.contentItem.contentX <= 0) return
-                                if (homeRail.contentItem.contentX + homeRail.width >=
-                                        homeRail.contentItem.contentWidth - homeRail.width)
-                                    homeRail.loadedCount = Math.min(section.items.length,
-                                                                    homeRail.loadedCount + 6)
-                            }
-                        }
+                        readonly property real cardStride: section.route === "channels" ? 272 : 237
+                        readonly property int firstCard: Math.max(0, Math.min(section.items.length,
+                            Math.floor(contentItem.contentX / cardStride) - 1))
+                        readonly property int lastCard: Math.min(section.items.length,
+                            firstCard + Math.ceil(width / cardStride) + 3)
+                        readonly property var windowItems: visible ? section.items.slice(firstCard, lastCard) : []
+                        function updateWindow() { railWindow.replace(windowItems) }
+                        onWindowItemsChanged: Qt.callLater(updateWindow)
+                        OwnerWindowModel { id: railWindow }
                         Row {
                             spacing: 12
                             readonly property int placeholderColumns: Math.max(1, Math.min(4,
                                 Math.floor((homeRail.width + 14) / 280)))
+                            width: section.items.length > 0 ? section.items.length * homeRail.cardStride - spacing : homeRail.width
+                            Item {
+                                visible: homeRail.firstCard > 0
+                                width: Math.max(0, homeRail.firstCard * homeRail.cardStride - 12)
+                                height: 1
+                            }
                             Repeater {
                                 objectName: "watchHomeGroupRepeater"
-                                model: homeRail.visible ? Math.min(section.items.length, homeRail.loadedCount) : 0
+                                model: railWindow
                                 WatchGroupCard {
-                                    required property int index
-                                    readonly property var railGroup: section.items[index]
+                                    required property var modelData
+                                    readonly property var railGroup: modelData
                                     width: railGroup.kind === "channel" ? 260 : 225
                                     group: railGroup
                                     appBridge: scene.appBridge
                                     projection: scene.projection
                                     onChosen: scene.appBridge.navigateWatchGroup(railGroup.kind, railGroup.key)
                                 }
+                            }
+                            Item {
+                                visible: homeRail.lastCard < section.items.length
+                                width: Math.max(0, (section.items.length - homeRail.lastCard) * homeRail.cardStride - 12)
+                                height: 1
                             }
                             Repeater {
                                 model: section.items.length === 0 && homeRail.visible ?
@@ -429,6 +438,10 @@ Item {
                             (groupFlow.y + groupFlow.parent.y + groupFlow.parent.parent.y)
                         readonly property int firstRow: Math.max(0, Math.min(totalRows, Math.floor(scrollTop / rowStride) - 1))
                         readonly property int lastRow: Math.min(totalRows, firstRow + Math.ceil(viewport.height / rowStride) + 3)
+                        readonly property var windowItems: items.slice(firstRow * columns, lastRow * columns)
+                        function updateWindow() { groupWindow.replace(windowItems) }
+                        onWindowItemsChanged: Qt.callLater(updateWindow)
+                        OwnerWindowModel { id: groupWindow }
                         Item {
                             visible: groupFlow.firstRow > 0
                             width: groupFlow.width
@@ -436,8 +449,7 @@ Item {
                         }
                         Repeater {
                             objectName: "watchGroupRepeater"
-                            model: groupFlow.items.slice(groupFlow.firstRow * groupFlow.columns,
-                                                         groupFlow.lastRow * groupFlow.columns)
+                            model: groupWindow
                             WatchGroupCard {
                                 required property var modelData
                                 width: groupFlow.cardWidth
@@ -516,6 +528,10 @@ Item {
                     Math.max(0, Math.min(totalRows, Math.floor(scrollTop / rowStride) - 1))
                 readonly property int lastRow: scene.route === "home" ? totalRows :
                     Math.min(totalRows, firstRow + Math.ceil(viewport.height / rowStride) + 3)
+                readonly property var windowItems: scene.videos.slice(firstRow * columns, Math.min(displayCount, lastRow * columns))
+                function updateWindow() { mediaWindow.replace(windowItems) }
+                onWindowItemsChanged: Qt.callLater(updateWindow)
+                OwnerWindowModel { id: mediaWindow }
                 Item {
                     visible: mediaFlow.firstRow > 0
                     width: mediaFlow.width
@@ -523,8 +539,7 @@ Item {
                 }
                 Repeater {
                     objectName: "watchMediaRepeater"
-                    model: scene.videos.slice(mediaFlow.firstRow * mediaFlow.columns,
-                                              Math.min(mediaFlow.displayCount, mediaFlow.lastRow * mediaFlow.columns))
+                    model: mediaWindow
                     StoneButton {
                         required property var modelData
                         width: mediaFlow.cardWidth

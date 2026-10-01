@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import VODForge.Models 1.0
 
 Item {
     id: scene
@@ -388,6 +389,10 @@ Item {
                         Math.max(0, Math.min(totalRows, Math.floor(scrollTop / rowStride) - 1))
                     readonly property int lastRow: scene.route === "home" ? totalRows :
                         Math.min(totalRows, firstRow + Math.ceil(viewport.height / rowStride) + 3)
+                    readonly property var windowItems: items.slice(firstRow * columns, lastRow * columns)
+                    function updateWindow() { groupWindow.replace(windowItems) }
+                    onWindowItemsChanged: Qt.callLater(updateWindow)
+                    OwnerWindowModel { id: groupWindow }
                     Item {
                         visible: groupFlow.firstRow > 0
                         width: groupFlow.width
@@ -395,8 +400,7 @@ Item {
                     }
                     Repeater {
                         objectName: "libraryGroupRepeater"
-                        model: groupFlow.items.slice(groupFlow.firstRow * groupFlow.columns,
-                                                     groupFlow.lastRow * groupFlow.columns)
+                        model: groupWindow
                         StoneButton {
                             id: groupCard
                             required property var modelData
@@ -634,6 +638,10 @@ Item {
                     readonly property real scrollTop: viewport.contentItem.contentY - y
                     readonly property int firstRow: Math.max(0, Math.min(totalRows, Math.floor(scrollTop / rowStride) - 1))
                     readonly property int lastRow: Math.min(totalRows, firstRow + Math.ceil(viewport.height / rowStride) + 3)
+                    readonly property var windowItems: scene.media.slice(firstRow * columns, lastRow * columns)
+                    function updateWindow() { mediaWindow.replace(windowItems) }
+                    onWindowItemsChanged: Qt.callLater(updateWindow)
+                    OwnerWindowModel { id: mediaWindow }
                     Item {
                         visible: mediaFlow.firstRow > 0
                         width: mediaFlow.width
@@ -641,8 +649,7 @@ Item {
                     }
                     Repeater {
                         objectName: "libraryMediaRepeater"
-                        model: scene.media.slice(mediaFlow.firstRow * mediaFlow.columns,
-                                                mediaFlow.lastRow * mediaFlow.columns)
+                        model: mediaWindow
                         StoneButton {
                             id: mediaCard
                             required property var modelData

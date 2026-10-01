@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import shutil
 import subprocess
@@ -206,12 +207,16 @@ def test_qt_watch_home_rails_show_groups_across_full_width_and_load_on_scroll(
         )
         assert rail.isVisible()
         assert rail.width() > window.width() * 0.7
-        assert repeater.property("count") == 6
+        expected_window = min(
+            14, math.ceil(rail.width() / rail.property("cardStride")) + 3
+        )
+        assert repeater.property("count") == expected_window
         flickable = rail.property("contentItem")
         assert flickable.setProperty("contentX", 600)
         for _ in range(5):
             app.processEvents()
-        assert 6 < repeater.property("count") < 14
+        assert 0 < repeater.property("count") <= expected_window
+        assert rail.property("firstCard") > 0
         viewport = window.findChild(QObject, "watchViewport")
         before = viewport.property("contentItem").property("contentY")
         point = rail.mapToScene(QPointF(120, 80))
@@ -4497,21 +4502,25 @@ def test_qt_library_home_shows_all_recent_downloads_without_phantom_rows(
     window = engine.rootObjects()[0]
     try:
         bridge.select("Library")
-        app.processEvents()
+        for _ in range(3):
+            app.processEvents()
         repeater = window.findChild(QObject, "libraryMediaRepeater")
         assert len(bridge.libraryScene["media"]) == 9
         assert repeater.property("count") == 9
         window.setWidth(820)
-        app.processEvents()
+        for _ in range(3):
+            app.processEvents()
         assert 0 < repeater.property("count") <= 9
         window.setWidth(1400)
-        app.processEvents()
+        for _ in range(3):
+            app.processEvents()
         assert repeater.property("count") == 9
         flow = window.findChild(QObject, "libraryMediaFlow")
         assert flow.property("totalRows") == 2
         assert abs(flow.height() - (2 * flow.property("rowStride") - 14)) < 1
         bridge.navigateLibrary("all")
-        app.processEvents()
+        for _ in range(3):
+            app.processEvents()
         assert repeater.property("count") == 9
     finally:
         window.close()
