@@ -140,10 +140,9 @@ Item {
                                 color: theme.text; font.pixelSize: 20
                                 width: parent.width - 44
                             }
-                            StoneButton {
-                                label: "⧉"; accessibilityLabel: "Copy description"
-                                size: "inline"; width: 36; height: 28
-                                onActivated: detail.appBridge.copyLibraryText(detail.item.owner, "description")
+                            CopyButton {
+                                appBridge: detail.appBridge; owner: detail.item.owner || ""
+                                field: "description"; accessibilityLabel: "Copy description"
                             }
                         }
                         ScrollView {
@@ -208,23 +207,13 @@ Item {
                         spacing: 9
                         Row {
                             width: parent.width
-                            Text { text: "Tags and notes"; color: theme.text; font.pixelSize: 20; width: parent.width - 104 }
-                            StoneButton {
+                            Text { text: "Tags and notes"; color: theme.text; font.pixelSize: 20; width: parent.width - 44 }
+                            CopyButton {
                                 id: copyTagsButton
                                 objectName: "libraryCopyTagsButton"
-                                property bool copied: false
-                                property string owner: detail.item.owner || ""
-                                onOwnerChanged: copied = false
-                                label: copied ? "Copied" : "Copy tags"; accessibilityLabel: "Copy tags to clipboard"
+                                appBridge: detail.appBridge; owner: detail.item.owner || ""
+                                field: "tags"; accessibilityLabel: "Copy tags to clipboard"
                                 enabled: (detail.item.tags || []).length > 0
-                                size: "inline"; width: 96; height: 28
-                                ToolTip.visible: hovered
-                                ToolTip.text: "Copy tags to clipboard"
-                                onActivated: {
-                                    copied = detail.appBridge.copyLibraryText(detail.item.owner, "tags")
-                                    if (copied) tagCopyFeedback.restart()
-                                }
-                                Timer { id: tagCopyFeedback; interval: 1500; onTriggered: copyTagsButton.copied = false }
                             }
                         }
                         Flow {
@@ -277,23 +266,15 @@ Item {
                         }
                         Row {
                             width: parent.width
-                            Text { text: "Your note"; color: theme.muted; font.pixelSize: 13; width: parent.width - 104 }
-                            StoneButton {
+                            Text { text: "Your note"; color: theme.muted; font.pixelSize: 13; width: parent.width - 44 }
+                            CopyButton {
                                 id: copyNoteButton
                                 objectName: "libraryCopyNoteButton"
-                                property bool copied: false
-                                property string owner: detail.item.owner || ""
-                                onOwnerChanged: copied = false
-                                label: copied ? "Copied" : "Copy note"; accessibilityLabel: "Copy displayed note to clipboard"
+                                appBridge: detail.appBridge; owner: detail.item.owner || ""
+                                field: "note"; displayedText: noteInput.text
+                                accessibilityLabel: "Copy displayed note to clipboard"
+                                tooltipText: "Copy the displayed note without saving it"
                                 enabled: noteInput.text.length > 0
-                                size: "inline"; width: 96; height: 28
-                                ToolTip.visible: hovered
-                                ToolTip.text: "Copy the displayed note without saving it"
-                                onActivated: {
-                                    copied = detail.appBridge.copyLibraryText(detail.item.owner, "note", noteInput.text)
-                                    if (copied) noteCopyFeedback.restart()
-                                }
-                                Timer { id: noteCopyFeedback; interval: 1500; onTriggered: copyNoteButton.copied = false }
                             }
                         }
                         StoneField {
@@ -301,7 +282,6 @@ Item {
                             TextArea {
                                 id: noteInput
                                 objectName: "libraryNoteInput"
-                                onTextChanged: copyNoteButton.copied = false
                                 property string owner: detail.item.owner || ""
                                 onOwnerChanged: text = detail.item.note || ""
                                 anchors.fill: parent; anchors.margins: 8
@@ -388,18 +368,16 @@ Item {
                                                 }
                                             }
                                         }
-                                        StoneButton {
+                                        CopyButton {
+                                            appBridge: detail.appBridge; owner: detail.item.owner || ""
+                                            factLabel: modelData.label
+                                            section: modelData.label === "Source URL" ? "source" : "output"
                                             visible: modelData.label === "Saved Location" || modelData.label === "Source URL"
-                                            label: "⧉"
                                             accessibilityLabel: modelData.label === "Source URL" ? "Copy source URL" : "Copy saved location"
                                             size: "inline"
                                             width: visible ? 34 : 0
                                             height: 30
                                             y: (parent.height - height) / 2
-                                            onActivated: detail.appBridge.copyLibraryFact(
-                                                detail.item.owner,
-                                                modelData.label === "Source URL" ? "source" : "output",
-                                                modelData.label)
                                         }
                                     }
                                 }

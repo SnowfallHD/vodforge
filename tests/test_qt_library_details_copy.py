@@ -55,6 +55,8 @@ def test_distinct_copy_controls_use_annotations_and_displayed_note_without_save(
     editor = window.findChild(QObject, "libraryNoteInput")
     clipboard = app.clipboard()
     clipboard.setText("sentinel")
+    assert tags.property("label") == note.property("label") == "⧉"
+    assert tags.width() == note.width() == 36
     assert not tags.property("enabled")
     assert not note.property("enabled")
     assert not bridge.copyLibraryText(owner, "tags")
@@ -70,7 +72,8 @@ def test_distinct_copy_controls_use_annotations_and_displayed_note_without_save(
     assert "note" in note.property("accessibilityLabel")
     assert QMetaObject.invokeMethod(tags, "activated")
     assert clipboard.text() == "first, second"
-    assert tags.property("label") == "Copied"
+    assert tags.property("label") == "⧉"
+    assert tags.property("copied") and tags.property("emphasized")
     assert bridge.status == "Copied tags."
     editor.setProperty("text", "Unsaved note\nwith lines")
     snapshot = bridge._annotations.snapshot
@@ -81,7 +84,8 @@ def test_distinct_copy_controls_use_annotations_and_displayed_note_without_save(
     )
     assert QMetaObject.invokeMethod(note, "activated")
     assert clipboard.text() == "Unsaved note\nwith lines"
-    assert note.property("label") == "Copied"
+    assert note.property("label") == "⧉"
+    assert note.property("copied") and note.property("emphasized")
     assert bridge.status == "Copied note."
     assert bridge._annotations.snapshot == snapshot
     assert bridge._runtime.history == raw_history
@@ -97,6 +101,39 @@ def test_distinct_copy_controls_use_annotations_and_displayed_note_without_save(
     assert bridge.editLibraryTag(owner, "second", True)
     app.processEvents()
     assert not tags.property("enabled")
+
+
+def test_existing_and_new_copy_controls_share_emblem_and_dispatch(detail):
+    app, bridge, owner, _engine, window = detail
+    controls = [
+        item
+        for item in visual_descendants(window.contentItem())
+        if "CopyButton" in item.metaObject().className()
+    ]
+    assert len(controls) >= 5
+    assert {item.property("field") for item in controls} >= {
+        "description",
+        "tags",
+        "note",
+    }
+    for item in controls:
+        assert item.property("label") == "⧉"
+        assert item.width() <= 36
+    assert bridge.saveLibraryDescription(owner, "Current shared description")
+    app.processEvents()
+    description = next(
+        item for item in controls if item.property("field") == "description"
+    )
+    assert QMetaObject.invokeMethod(description, "activated")
+    assert app.clipboard().text() == "Current shared description"
+    assert description.property("copied")
+    assert description.property("label") == "⧉"
+    fact = next(
+        item for item in controls if item.property("factLabel") == "Saved Location"
+    )
+    assert QMetaObject.invokeMethod(fact, "activated")
+    assert fact.property("copied")
+    assert app.clipboard().text() == bridge._runtime.history[0]["vodforge_output_dir"]
 
 
 def test_tag_bursts_retain_unrelated_chips_and_preserve_real_press_feedback(detail):
