@@ -9,11 +9,12 @@ Item {
     property bool selected: false
     property bool emphasized: false
     property bool transientMaterial: true
+    property bool hoverMaterial: true
     property bool interactive: true
     property bool quiet: false
     property string size: "default"
     readonly property bool hovered: mouse.containsMouse
-    readonly property bool activeFace: hovered || activeFocus || selected
+    readonly property bool activeFace: (hoverMaterial && hovered) || activeFocus || selected
     // Artwork cards keep their content inside the same inset face in every state.
     readonly property int artworkFaceInset: 7 + (activeFace && transientMaterial ? 2 : 0)
     signal activated()

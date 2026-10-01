@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import VODForge.Models 1.0
 
 Item {
     id: detail
@@ -206,26 +207,46 @@ Item {
                         spacing: 9
                         Row {
                             width: parent.width
-                            Text { text: "Tags and notes"; color: theme.text; font.pixelSize: 20; width: parent.width - 44 }
+                            Text { text: "Tags and notes"; color: theme.text; font.pixelSize: 20; width: parent.width - 104 }
                             StoneButton {
-                                label: "⧉"; accessibilityLabel: "Copy tags"
-                                size: "inline"; width: 36; height: 28
-                                onActivated: detail.appBridge.copyLibraryText(detail.item.owner, "tags")
+                                id: copyTagsButton
+                                objectName: "libraryCopyTagsButton"
+                                property bool copied: false
+                                property string owner: detail.item.owner || ""
+                                onOwnerChanged: copied = false
+                                label: copied ? "Copied" : "Copy tags"; accessibilityLabel: "Copy tags to clipboard"
+                                enabled: (detail.item.tags || []).length > 0
+                                size: "inline"; width: 96; height: 28
+                                ToolTip.visible: hovered
+                                ToolTip.text: "Copy tags to clipboard"
+                                onActivated: {
+                                    copied = detail.appBridge.copyLibraryText(detail.item.owner, "tags")
+                                    if (copied) tagCopyFeedback.restart()
+                                }
+                                Timer { id: tagCopyFeedback; interval: 1500; onTriggered: copyTagsButton.copied = false }
                             }
                         }
                         Flow {
                             width: parent.width
                             height: childrenRect.height
                             spacing: 6
+                            readonly property var tagRows: (detail.item.tags || []).map(function(tag) { return {owner: tag, tag: tag} })
+                            function updateTags() { tagWindow.replace(tagRows) }
+                            onTagRowsChanged: Qt.callLater(updateTags)
+                            OwnerWindowModel { id: tagWindow }
                             Repeater {
-                                model: detail.item.tags || []
+                                objectName: "libraryTagRepeater"
+                                model: tagWindow
                                 StoneButton {
-                                    required property string modelData
-                                    label: modelData + " ×"
-                                    accessibilityLabel: "Remove tag " + modelData
+                                    objectName: "libraryTagChip"
+                                    required property var modelData
+                                    label: modelData.tag + " ×"
+                                    accessibilityLabel: "Remove tag " + modelData.tag
+                                    hoverMaterial: false
+                                    emphasized: hovered || activeFocus
                                     size: "inline"
                                     width: Math.min(tagColumn.width, implicitWidth)
-                                    onActivated: detail.appBridge.editLibraryTag(detail.item.owner, modelData, true)
+                                    onActivated: detail.appBridge.editLibraryTag(detail.item.owner, modelData.tag, true)
                                 }
                             }
                         }
@@ -253,11 +274,33 @@ Item {
                                 }
                             }
                         }
-                        Text { text: "Your note"; color: theme.muted; font.pixelSize: 13 }
+                        Row {
+                            width: parent.width
+                            Text { text: "Your note"; color: theme.muted; font.pixelSize: 13; width: parent.width - 104 }
+                            StoneButton {
+                                id: copyNoteButton
+                                objectName: "libraryCopyNoteButton"
+                                property bool copied: false
+                                property string owner: detail.item.owner || ""
+                                onOwnerChanged: copied = false
+                                label: copied ? "Copied" : "Copy note"; accessibilityLabel: "Copy displayed note to clipboard"
+                                enabled: noteInput.text.length > 0
+                                size: "inline"; width: 96; height: 28
+                                ToolTip.visible: hovered
+                                ToolTip.text: "Copy the displayed note without saving it"
+                                onActivated: {
+                                    copied = detail.appBridge.copyLibraryText(detail.item.owner, "note", noteInput.text)
+                                    if (copied) noteCopyFeedback.restart()
+                                }
+                                Timer { id: noteCopyFeedback; interval: 1500; onTriggered: copyNoteButton.copied = false }
+                            }
+                        }
                         StoneField {
                             width: parent.width; height: 68
                             TextArea {
                                 id: noteInput
+                                objectName: "libraryNoteInput"
+                                onTextChanged: copyNoteButton.copied = false
                                 property string owner: detail.item.owner || ""
                                 onOwnerChanged: text = detail.item.note || ""
                                 anchors.fill: parent; anchors.margins: 8
@@ -277,6 +320,7 @@ Item {
             }
             Flow {
                 id: factsRow
+                objectName: "libraryFactsRow"
                 width: parent.width
                 height: childrenRect.height
                 spacing: 16
@@ -311,42 +355,51 @@ Item {
                             spacing: 11
                             Text { text: modelData.title; color: theme.text; font.pixelSize: 20 }
                             Rectangle { width: parent.width; height: 1; color: theme.border }
-                            Repeater {
-                                model: modelData.fields
-                                Row {
-                                    required property var modelData
-                                    width: factsColumn.width
-                                    spacing: 12
-                                    Text { text: modelData.label; width: Math.min(138, parent.width * 0.29); color: theme.muted; font.pixelSize: 14; wrapMode: Text.WordWrap }
-                                    Text {
-                                        text: modelData.value
-                                        width: parent.width - Math.min(138, parent.width * 0.29) - 12 -
-                                               (modelData.label === "Saved Location" || modelData.label === "Source URL" ? 46 : 0)
-                                        color: modelData.label === "Source URL" ? theme.accent : theme.text
-                                        font.pixelSize: 14; wrapMode: Text.WrapAnywhere
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: {
-                                                if (modelData.label === "Source URL") detail.appBridge.openLibrarySource(detail.item.owner)
-                                                else detail.appBridge.copyLibraryFact(
-                                                    detail.item.owner,
-                                                    factsPanel.section,
-                                                    modelData.label)
+                            Column {
+                                width: parent.width
+                                spacing: 0
+                                Repeater {
+                                    model: modelData.fields
+                                    Row {
+                                        required property var modelData
+                                        objectName: "libraryFactRow_" + factsPanel.section + "_" + modelData.label
+                                        width: factsColumn.width
+                                        height: Math.max(30, factLabel.implicitHeight, factValue.implicitHeight)
+                                        spacing: 12
+                                        Text { id: factLabel; y: (parent.height - height) / 2; text: modelData.label; width: Math.min(138, parent.width * 0.29); color: theme.muted; font.pixelSize: 14; wrapMode: Text.WordWrap }
+                                        Text {
+                                            id: factValue
+                                            y: (parent.height - height) / 2
+                                            text: modelData.value
+                                            width: parent.width - Math.min(138, parent.width * 0.29) - 12 -
+                                                   (modelData.label === "Saved Location" || modelData.label === "Source URL" ? 46 : 0)
+                                            color: modelData.label === "Source URL" ? theme.accent : theme.text
+                                            font.pixelSize: 14; wrapMode: Text.WrapAnywhere
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    if (modelData.label === "Source URL") detail.appBridge.openLibrarySource(detail.item.owner)
+                                                    else detail.appBridge.copyLibraryFact(
+                                                        detail.item.owner,
+                                                        factsPanel.section,
+                                                        modelData.label)
+                                                }
                                             }
                                         }
-                                    }
-                                    StoneButton {
-                                        visible: modelData.label === "Saved Location" || modelData.label === "Source URL"
-                                        label: "⧉"
-                                        accessibilityLabel: modelData.label === "Source URL" ? "Copy source URL" : "Copy saved location"
-                                        size: "inline"
-                                        width: visible ? 34 : 0
-                                        height: 30
-                                        onActivated: detail.appBridge.copyLibraryFact(
-                                            detail.item.owner,
-                                            modelData.label === "Source URL" ? "source" : "output",
-                                            modelData.label)
+                                        StoneButton {
+                                            visible: modelData.label === "Saved Location" || modelData.label === "Source URL"
+                                            label: "⧉"
+                                            accessibilityLabel: modelData.label === "Source URL" ? "Copy source URL" : "Copy saved location"
+                                            size: "inline"
+                                            width: visible ? 34 : 0
+                                            height: 30
+                                            y: (parent.height - height) / 2
+                                            onActivated: detail.appBridge.copyLibraryFact(
+                                                detail.item.owner,
+                                                modelData.label === "Source URL" ? "source" : "output",
+                                                modelData.label)
+                                        }
                                     }
                                 }
                             }

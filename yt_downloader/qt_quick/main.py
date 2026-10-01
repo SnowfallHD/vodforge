@@ -4469,8 +4469,15 @@ class Bridge(QObject):
         return True
 
     @Slot(str, str, result=bool)
-    def copyLibraryText(self, owner: str, field: str) -> bool:
-        if field not in {"description", "tags"}:
+    @Slot(str, str, str, result=bool)
+    def copyLibraryText(
+        self, owner: str, field: str, displayed_note: str | None = None
+    ) -> bool:
+        if field not in {"description", "tags", "note"}:
+            return False
+        if displayed_note is not None and (
+            field != "note" or len(displayed_note) > MAX_NOTE_CHARS
+        ):
             return False
         playback_owner = (
             history_archive_owner(self._playback_record)
@@ -4483,14 +4490,30 @@ class Bridge(QObject):
             playback_owner,
         }:
             return False
-        row = self._saved_item_for_owner(owner)
-        if row is None:
+        rows = [
+            row
+            for row in self._projected_library()
+            if history_archive_owner(row) == owner
+        ]
+        if len(rows) != 1:
             return False
-        value = (
-            str(row.get("vodforge_user_description", row.get("description")) or "")
-            if field == "description"
-            else ", ".join(str(tag) for tag in row.get("vodforge_user_tags") or ())
-        )
+        row = rows[0]
+        if field == "description":
+            value = str(
+                row.get("vodforge_user_description", row.get("description")) or ""
+            )
+        elif field == "tags":
+            value = ", ".join(str(tag) for tag in row.get("vodforge_user_tags") or ())
+        else:
+            value = (
+                displayed_note
+                if displayed_note is not None
+                else str(row.get("vodforge_user_note") or "")
+            )
+        if not value:
+            self._status = f"No {field} to copy."
+            self.statusChanged.emit()
+            return False
         clipboard = QGuiApplication.clipboard()
         if clipboard is None:
             return False

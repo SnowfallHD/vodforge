@@ -2192,6 +2192,7 @@ Window {
             Text { text: "Every option is available here; the main workspace stays focused."; color: theme.muted; font.pixelSize: 14 }
             ScrollView {
                 id: settingsBody
+                objectName: "settingsBodyViewport"
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 clip: true
@@ -2409,13 +2410,24 @@ Window {
                         StoneButton { label: "Choose"; Layout.preferredWidth: 90; Layout.preferredHeight: 40; onActivated: accentColorDialog.open() }
                     }
                     Text { text: "Choose Custom accent to use a #RRGGBB color. Appearance updates immediately."; color: theme.muted; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true }
-                    Text { text: "PRIVACY"; color: theme.accent; font.pixelSize: 13; font.bold: true }
+                    Text { objectName: "settingsPrivacyHeading"; text: "PRIVACY"; color: theme.accent; font.pixelSize: 13; font.bold: true }
+                    Text {
+                        objectName: "settingsAnalyticsUnavailable"
+                        visible: !bridge.analyticsAvailable
+                        text: "Usage analytics is disabled for this session."
+                        color: theme.muted
+                        font.pixelSize: 13
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                    }
                     RowLayout {
+                objectName: "settingsAnalyticsRow"
                 visible: bridge.analyticsAvailable
                 Layout.fillWidth: true
                 Layout.preferredHeight: visible ? 40 : 0
                 Text { text: "Share usage analytics"; color: theme.text; font.pixelSize: 15; Layout.fillWidth: true }
                 StoneButton {
+                    objectName: "settingsAnalyticsToggle"
                     label: bridge.analyticsAllowed ? "On" : "Off"
                     selected: bridge.analyticsAllowed
                     Layout.preferredWidth: 74
