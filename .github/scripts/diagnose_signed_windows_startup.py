@@ -40,7 +40,7 @@ for marker, expected in [("VODFORGE_BUILD_REVISION", SOURCE), ("VODFORGE_VERSION
     assert len(paths) == 1 and paths[0].read_text().strip() == expected
 checkenv = dict(os.environ, DIAG_EXE=str(exe))
 signature_script = out / "verify-signature.ps1"
-signature_script.write_text("$s=Get-AuthenticodeSignature -LiteralPath $env:DIAG_EXE\n$s | Select-Object Status,StatusMessage,@{n='SignerSubject';e={$_.SignerCertificate.Subject}},@{n='TimestampSubject';e={$_.TimeStamperCertificate.Subject}} | ConvertTo-Json\n& (Join-Path $env:GITHUB_WORKSPACE 'verify_windows_signatures.ps1') -Files $env:DIAG_EXE\n", encoding="utf-8-sig")
+signature_script.write_text("$env:PSModulePath = $PSHOME + '/Modules'\n$ErrorActionPreference='Stop'\ntry {\n$s=Get-AuthenticodeSignature -LiteralPath $env:DIAG_EXE\n$s | Select-Object Status,StatusMessage,@{n='SignerSubject';e={$_.SignerCertificate.Subject}},@{n='TimestampSubject';e={$_.TimeStamperCertificate.Subject}} | ConvertTo-Json\n& (Join-Path $env:GITHUB_WORKSPACE 'verify_windows_signatures.ps1') -Files $env:DIAG_EXE\nif (!$?) {throw 'Maintained signature verifier failed'}\nexit 0\n} catch {Write-Output $_;exit 1}\n", encoding="utf-8-sig")
 signature = subprocess.run(["powershell", "-NoProfile", "-File", str(signature_script)], env=checkenv, capture_output=True)
 (out / "signature.log").write_bytes(signature.stdout + signature.stderr)
 assert signature.returncode == 0, "Maintained signature verification failed; inspect signature.log"
