@@ -773,7 +773,14 @@ def test_file_path_trail_is_one_line_with_reachable_hidden_parents(
             assert bridge.libraryFolders["path"] == hidden["key"]
             assert not popup.property("visible")
         else:
+            assert not back.property("enabled")
             back.activated.emit()
+            app.processEvents()
+            assert bridge.libraryScene["route"] == "folders"
+            assert bridge.libraryFolders["path"] == str(root)
+            library = window.findChild(QObject, "libraryFolderLibraryButton")
+            assert library.property("visible")
+            library.activated.emit()
             app.processEvents()
             assert bridge.libraryScene["route"] == "home"
     finally:
