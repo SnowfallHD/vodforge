@@ -116,3 +116,39 @@ def test_mp3_progressive_fallback_prefers_original():
         build_mp3_export_plan({"formats": [dubbed, original]}).audio_format_id
         == "original-av"
     )
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("quality", [False, True])
+def test_equal_quality_original_wins_independent_of_provider_order(reverse, quality):
+    original = audio("original", 128, 10)
+    dub = audio("dub", 128, -1)
+    formats = [original, dub] if reverse else [dub, original]
+    assert choose_best_audio_format(formats, prefer_quality=quality) is original
+
+
+@pytest.mark.parametrize("missing", [None, "invalid", True, float("nan")])
+def test_unknown_track_beats_descriptive_and_ties_alternate_by_quality(missing):
+    unknown = audio("unknown", 160, missing)
+    descriptive = audio("descriptive", 256, -10)
+    alternate = audio("alternate", 128, -1)
+    assert choose_best_audio_format([descriptive, unknown]) is unknown
+    assert choose_best_audio_format([alternate, unknown]) is unknown
+
+
+def test_auto_audio_hls_original_survives_direct_transport_preference():
+    from yt_downloader.export_planning import _choose_auto_audio_source
+
+    original = {**audio("original-hls", 128, 10), "protocol": "m3u8_native"}
+    dub = audio("dub-http", 160, -1)
+    video = {"format_id": "video", "vcodec": "avc1", "acodec": "none"}
+    assert _choose_auto_audio_source([dub, original], video, False) is original
+
+
+def test_auto_audio_unknown_bitrate_hls_original_uses_relaxed_pass():
+    from yt_downloader.export_planning import _choose_auto_audio_source
+
+    original = {**audio("original-hls", None, 10), "protocol": "m3u8_native"}
+    dub = audio("dub-http", 160, -1)
+    video = {"format_id": "video", "vcodec": "avc1", "acodec": "none"}
+    assert _choose_auto_audio_source([dub, original], video, False) is original

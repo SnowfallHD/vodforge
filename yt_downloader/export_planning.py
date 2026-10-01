@@ -462,11 +462,14 @@ def _preferred_audio_language(formats: list[dict[str, Any]]) -> list[dict[str, A
             else None
         )
 
-    observed = [value for fmt in formats if (value := preference(fmt)) is not None]
-    if not observed:
-        return formats
-    highest = max(observed)
-    return [fmt for fmt in formats if preference(fmt) == highest]
+    # yt-dlp's FormatSorter gives missing track preference -1. Unknown metadata
+    # must not promote a descriptive (-10) track or exclude an unlabelled peer.
+    ranked = [
+        (fmt, value if (value := preference(fmt)) is not None else -1)
+        for fmt in formats
+    ]
+    highest = max((value for _fmt, value in ranked), default=-1)
+    return [fmt for fmt, value in ranked if value == highest]
 
 
 def choose_best_audio_format(
