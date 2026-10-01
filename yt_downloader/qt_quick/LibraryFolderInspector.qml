@@ -121,11 +121,12 @@ Column {
                  (!!inspector.recoveryActions.location || inspector.recoveryActions.canOpenLocation ||
                   !!inspector.recoveryActions.dismissRunId || !!inspector.recoveryActions.savedOwner)
         width: parent.width
-        height: Math.min(168, recoveryDetailsContent.implicitHeight + 20)
+        // Keep tab positions stable while full paths remain vertically scrollable.
+        height: 52
         ScrollView {
             id: recoveryDetailsScroll
             anchors.fill: parent
-            anchors.margins: 10
+            anchors.margins: 2
             clip: true
             contentWidth: availableWidth
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
@@ -133,30 +134,39 @@ Column {
             Column {
                 id: recoveryDetailsContent
                 width: recoveryDetailsScroll.availableWidth
-                spacing: 8
+                spacing: 2
                 Text {
                     objectName: "libraryInspectorExactLocation"
                     visible: !!text
                     width: parent.width
                     text: inspector.recoveryActions.location || ""
-                    wrapMode: Text.WrapAnywhere
+                    wrapMode: inspector.section === "Description" ? Text.NoWrap : Text.WrapAnywhere
+                    elide: inspector.section === "Description" ? Text.ElideRight : Text.ElideNone
                     color: theme.muted
                     font.pixelSize: 12
                     HoverHandler { id: recoveryLocationHover }
                     ToolTip.visible: recoveryLocationHover.hovered && !!text
                     ToolTip.text: text
                 }
+                Flow {
+                    width: parent.width
+                    height: childrenRect.height
+                    spacing: 4
                 StoneButton {
                     objectName: "libraryInspectorOpenLocation"
                     visible: !!inspector.recoveryActions.canOpenLocation
-                    width: parent.width
+                    width: Math.min(parent.width, implicitWidth)
+                    height: 28
+                    size: "inline"
                     label: "Open location"
                     onActivated: inspector.appBridge.openInspectorLocation(inspector.recoveryActions.selectionKey)
                 }
                 StoneButton {
                     objectName: "libraryInspectorDismissRun"
                     visible: !!inspector.recoveryActions.dismissRunId
-                    width: parent.width
+                    width: Math.min(parent.width, implicitWidth)
+                    height: 28
+                    size: "inline"
                     label: "Dismiss run"
                     accessibilityLabel: "Dismiss run; keep downloaded files"
                     onActivated: inspector.appBridge.dismissTerminal(inspector.recoveryActions.dismissRunId)
@@ -164,10 +174,13 @@ Column {
                 StoneButton {
                     objectName: "libraryInspectorRemoveCard"
                     visible: !!inspector.recoveryActions.savedOwner
-                    width: parent.width
+                    width: Math.min(parent.width, implicitWidth)
+                    height: 28
+                    size: "inline"
                     label: "Remove Library card"
                     accessibilityLabel: "Remove Library card; keep downloaded files"
                     onActivated: inspector.appBridge.requestInspectorLibraryRemoval(inspector.recoveryActions.selectionKey)
+                }
                 }
             }
         }
@@ -610,10 +623,9 @@ Column {
         visible: !!inspector.item.owner
         width: parent.width
         height: inspector.section === "Item" ? itemColumn.childrenRect.height + 20 :
-            Math.max(360, inspector.targetPanelBottom -
-                (eyebrow.height + overview.height + openDetails.height + tabs.height
-                 + (openCurrentFolder.visible ? openCurrentFolder.height + inspector.spacing : 0)
-                 + inspector.spacing * 4))
+            // The selected-item controls above this panel are content-dependent.
+            // Use the rendered panel position rather than an incomplete height sum.
+            Math.max(80, inspector.targetPanelBottom - detailsPanel.y)
         Item {
             anchors.fill: parent
             anchors.margins: 10

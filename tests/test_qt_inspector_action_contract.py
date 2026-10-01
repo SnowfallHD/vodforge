@@ -10,8 +10,11 @@ def test_inspector_actions_use_authoritative_selection_and_keep_file_actions_sep
     start = source.index('objectName: "libraryInspectorRecoveryDetails"')
     end = source.index("id: openCurrentFolder", start)
     panel = source[start:end]
-    assert "height: Math.min(168, recoveryDetailsContent.implicitHeight + 20)" in panel
-    assert "wrapMode: Text.WrapAnywhere" in panel
+    assert "height: 52" in panel
+    assert (
+        'wrapMode: inspector.section === "Description" ? Text.NoWrap : Text.WrapAnywhere'
+        in panel
+    )
     assert "VerticalScrollChain { nestedScrollView: recoveryDetailsScroll }" in panel
     assert "visible: !!inspector.recoveryActions.canOpenLocation" in panel
     assert "openInspectorLocation(inspector.recoveryActions.selectionKey)" in panel
