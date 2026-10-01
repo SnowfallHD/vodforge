@@ -108,7 +108,12 @@ Item {
         height: 480
         color: "black"
         title: scene.projection.title || "VODForge Player"
-        flags: scene.presentationMode === "floating" ? Qt.Window | Qt.WindowStaysOnTopHint : Qt.Window
+        // Windows adds default decorations only for a bare Qt.Window. Adding
+        // the on-top hint requires requesting the native controls explicitly.
+        flags: Qt.Window | Qt.WindowTitleHint | Qt.WindowSystemMenuHint |
+               Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint |
+               Qt.WindowCloseButtonHint |
+               (scene.presentationMode === "floating" ? Qt.WindowStaysOnTopHint : 0)
         onClosing: scene.setPresentation("embedded")
         Shortcut {
             sequence: "Escape"
