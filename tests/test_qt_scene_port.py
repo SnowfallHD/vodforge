@@ -3573,7 +3573,7 @@ def test_qt_help_form_exposes_only_explicit_recent_failure_context(
         bridge.close()
 
 
-def test_qt_all_runs_hover_shows_work_above_button_and_click_toggles(
+def test_qt_all_runs_hover_shows_work_above_button_and_click_opens_library(
     tmp_path, monkeypatch
 ):
     from PySide6.QtQuickControls2 import QQuickStyle
@@ -3611,6 +3611,7 @@ def test_qt_all_runs_hover_shows_work_above_button_and_click_toggles(
         center = button.mapToScene(
             QPointF(button.property("width") / 2, button.property("height") / 2)
         )
+        QTest.mouseMove(window, QPoint(2, 2))
         QTest.mouseMove(window, QPoint(round(center.x()), round(center.y())))
         app.processEvents()
         assert popup.property("visible")
@@ -3618,7 +3619,7 @@ def test_qt_all_runs_hover_shows_work_above_button_and_click_toggles(
         popup_bottom = content_item.mapToScene(
             QPointF(0, content_item.property("height") + popup.property("padding"))
         ).y()
-        assert 8 <= popup_bottom - button_top <= 11
+        assert abs(popup_bottom - button_top) <= 0.01
         popup_right = content_item.mapToScene(
             QPointF(content_item.property("width") + popup.property("padding"), 0)
         ).x()
@@ -3640,10 +3641,7 @@ def test_qt_all_runs_hover_shows_work_above_button_and_click_toggles(
         assert not popup.property("visible")
         button.activated.emit()
         app.processEvents()
-        assert bridge.selection == "Forge"
-        assert popup.property("visible")
-        button.activated.emit()
-        app.processEvents()
+        assert bridge.selection == "Library"
         assert not popup.property("visible")
     finally:
         window.close()

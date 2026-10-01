@@ -68,14 +68,51 @@ Item {
             id: deckHeader
             Layout.fillWidth: true
             Text { text: "RUN DECK"; color: theme.muted; font.pixelSize: 12; font.bold: true; Layout.fillWidth: true }
-            StoneButton {
+            // This hover trigger has one held face. Pointer presses navigate;
+            // they do not introduce StoneButton's separate click-face state.
+            Item {
                 id: allRunsButton
                 objectName: "allRunsButton"
                 visible: deck.workRecords.length > 0
-                label: "All " + deck.workRecords.length +
+                readonly property string label: "All " + deck.workRecords.length +
                        (deck.workRecords.length === 1 ? " run" : " runs")
-                size: "inline"
+                readonly property bool hovered: allRunsMouse.containsMouse
+                readonly property bool held: hovered || allRunsPopup.visible
+                signal activated()
+                implicitHeight: buttonMetrics.inline.height
                 Layout.preferredWidth: 120
+                activeFocusOnTab: true
+                Accessible.role: Accessible.Button
+                Accessible.name: label
+                Accessible.focusable: true
+                Accessible.focused: activeFocus
+                Accessible.onPressAction: activated()
+                Image {
+                    objectName: "allRunsTriggerFace"
+                    anchors.fill: parent
+                    source: "image://vodforge/button/" + Math.max(1, Math.round(parent.width))
+                            + "/" + Math.max(1, Math.round(parent.height)) + "/"
+                            + (allRunsButton.held ? "pressed" : "normal")
+                            + "/0/r" + bridge.themeRevision
+                    fillMode: Image.Stretch
+                    smooth: true
+                }
+                Text {
+                    anchors.centerIn: parent
+                    text: allRunsButton.label
+                    color: theme.text
+                    font.family: buttonFontFamily
+                    font.pixelSize: buttonMetrics.inline.fontPixels
+                }
+                MouseArea {
+                    id: allRunsMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: allRunsButton.activated()
+                }
+                Keys.onReturnPressed: activated()
+                Keys.onSpacePressed: activated()
                 onHoveredChanged: {
                     if (hovered) {
                         hoverClose.stop()
@@ -83,8 +120,7 @@ Item {
                     } else if (allRunsPopup.visible) hoverClose.restart()
                 }
                 onActivated: {
-                    hoverClose.stop()
-                    allRunsPopup.toggleFrom(allRunsButton)
+                    deck.appBridge.select("Library")
                 }
                 onVisibleChanged: { if (!visible) allRunsPopup.close() }
             }
@@ -214,16 +250,32 @@ Item {
         anchorItem: allRunsButton
         preferAbove: true
         alignRight: true
-        overlap: 10
+        overlap: 0
         width: Math.min(480, deck.width)
-        height: Math.min(380, Math.max(84, deck.workRecords.length * 73 + 18))
+        readonly property real desiredHeight: Math.min(380, Math.max(84, deck.workRecords.length * 73 + 18))
+        height: desiredHeight
+        // When neither side fits, shrink to the larger side rather than clamp
+        // across the trigger. The ListView still exposes every run by scrolling.
+        function reposition() {
+            if (!visible || !anchorItem || !parent) return
+            if (!anchorItem.visible) { close(); return }
+            const point = anchorItem.mapToItem(parent, 0, 0)
+            const above = Math.max(0, point.y)
+            const below = Math.max(0, parent.height - point.y - anchorItem.height)
+            const useAbove = above >= desiredHeight ||
+                             (below < desiredHeight && above >= below)
+            height = Math.min(desiredHeight, useAbove ? above : below)
+            x = Math.max(0, Math.min(parent.width - width,
+                                     point.x + anchorItem.width - width))
+            y = useAbove ? point.y - height : point.y + anchorItem.height
+        }
         padding: 9
         modal: false
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        closePolicy: Popup.CloseOnEscape
         HoverHandler {
             id: popupHover
             objectName: "allRunsPopupHover"
-            parent: allRunsPopup.contentItem
+            parent: allRunsPopup.background
             onHoveredChanged: {
                 if (hovered) hoverClose.stop()
                 else if (allRunsPopup.visible) hoverClose.restart()
