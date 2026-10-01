@@ -442,14 +442,45 @@ def choose_best_progressive_format(
         return None
     target_height = max(item[0] for item in candidates)
     same_res = [item for item in candidates if item[0] == target_height]
+    preferred = _preferred_audio_language([item[5] for item in same_res])
+    same_res = [item for item in same_res if item[5] in preferred]
     best_effective = max(item[1] for item in same_res)
     close = [item for item in same_res if item[1] >= best_effective * 0.85]
     return max(close, key=lambda item: (item[4], item[1], item[2], item[3]))[5]
 
 
+def _preferred_audio_language(formats: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Respect extractor track preference without guessing a language code."""
+
+    def preference(fmt: dict[str, Any]) -> float | None:
+        value = fmt.get("language_preference")
+        return (
+            float(value)
+            if isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(value)
+            else None
+        )
+
+    observed = [value for fmt in formats if (value := preference(fmt)) is not None]
+    if not observed:
+        return formats
+    highest = max(observed)
+    return [fmt for fmt in formats if preference(fmt) == highest]
+
+
 def choose_best_audio_format(
     formats: list[dict[str, Any]], *, prefer_quality: bool = False
 ) -> dict[str, Any] | None:
+    formats = _preferred_audio_language(
+        [
+            fmt
+            for fmt in formats
+            if _is_none_codec(fmt.get("vcodec"))
+            and not _is_none_codec(fmt.get("acodec"))
+        ]
+    )
+
     def _select(allow_unknown_bitrate: bool = False) -> dict[str, Any] | None:
         candidates = []
         for fmt in formats:
@@ -514,7 +545,9 @@ def build_mp3_export_plan(
     formats = [fmt for fmt in info.get("formats") or [] if isinstance(fmt, dict)]
     audio = choose_best_audio_format(formats, prefer_quality=True)
     if audio is None:
-        candidates = [fmt for fmt in formats if not _is_none_codec(fmt.get("acodec"))]
+        candidates = _preferred_audio_language(
+            [fmt for fmt in formats if not _is_none_codec(fmt.get("acodec"))]
+        )
         if candidates:
             audio = max(
                 candidates,
@@ -650,7 +683,10 @@ def _choose_auto_video_source(
     if video is not None:
         return video, True
 
-    # Last resort still stays inside the resolved quality tier.
+    # Last resort still stays inside the resolved quality tier. If all remaining
+    # sources include audio, preserve the extractor's preferred track too.
+    if all(not _is_none_codec(fmt.get("acodec")) for fmt in formats):
+        formats = _preferred_audio_language(formats)
     video = next(
         (fmt for fmt in formats if not _is_none_codec(fmt.get("vcodec"))),
         None,
