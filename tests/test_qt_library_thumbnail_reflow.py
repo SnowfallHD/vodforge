@@ -27,10 +27,13 @@ def test_library_column_reflow_keeps_painted_owners_bounded(tmp_path, count, scr
         },
         capture_output=True,
         text=True,
-        timeout=40,
+        # Measured Intel software CI needs up to91s for fixture creation,
+        # scene setup, 153 pixel captures and detail/return assertions. This
+        # whole-process guard is not a native resize-latency qualification.
+        timeout=120,
         check=False,
     )
-    assert result.returncode == 0, result.stderr[-3000:]
+    assert result.returncode == 0, result.stdout[-3000:] + result.stderr[-3000:]
     proof = json.loads((tmp_path / "proof.json").read_text())
     assert not proof["blank_faces"], proof["blank_faces"]
     assert proof["max_delegates"] <= proof["max_cap"] < count
@@ -48,6 +51,20 @@ def probe(output: Path, count: int, scroll: int) -> None:
     import time
     from collections import Counter
 
+    started = time.monotonic()
+
+    def phase(name):
+        evidence = {
+            "phase": name,
+            "elapsed_seconds": time.monotonic() - started,
+            "count": count,
+            "scroll": scroll,
+        }
+        with (output / "phases.jsonl").open("a") as stream:
+            stream.write(json.dumps(evidence) + "\n")
+        print(json.dumps(evidence), flush=True)
+
+    phase("imports_started")
     from PySide6.QtCore import QCoreApplication, QEvent, QObject, QPointF, QUrl, Slot
     from PySide6.QtGui import QColor, QGuiApplication, QImage
     from PySide6.QtQml import QQmlApplicationEngine
@@ -66,6 +83,7 @@ def probe(output: Path, count: int, scroll: int) -> None:
         for child in item.childItems():
             yield from descendants(child)
 
+    phase("imports_ready")
     # Instrument a disposable QML copy, never product source.
     qml = output / "qml"
     shutil.copytree(Path(main.__file__).parent, qml)
@@ -79,6 +97,7 @@ def probe(output: Path, count: int, scroll: int) -> None:
         def hit(self, kind):
             self.counts[kind] += 1
 
+    phase("qml_copy_ready")
     counter = PaintCounter()
     artwork = qml / "ArtworkImage.qml"
     artwork.write_text(
@@ -102,6 +121,7 @@ def probe(output: Path, count: int, scroll: int) -> None:
     main.QQmlApplicationEngine = Engine
     app = QGuiApplication([])
     bridge = main.Bridge(None)
+    phase("bridge_created")
     bridge._engagement.presented_welcome()
     bridge._settings["whats_new_seen"] = main.SHOWCASE_ID
     bridge._runtime.history = [
@@ -115,6 +135,7 @@ def probe(output: Path, count: int, scroll: int) -> None:
         }
         for i in range(count)
     ]
+    phase("records_ready")
     urls, expected = {}, {}
     for i in range(count):
         color = QColor(40 + i % 80, 110 + i % 60, 180 + i % 60)
@@ -126,6 +147,7 @@ def probe(output: Path, count: int, scroll: int) -> None:
         urls[str(i)], expected[url] = url, color.name()
     bridge._artwork.request = lambda record, *_a, **_k: urls[str(record["id"])]
     bridge._artwork.state = lambda *_a: "ready"
+    phase("fixture_images_ready")
     engine = main.create_engine(bridge)
     window = engine.rootObjects()[0]
     try:
@@ -146,6 +168,7 @@ def probe(output: Path, count: int, scroll: int) -> None:
         QTest.qWait(100)
         flickable.setProperty("contentY", scroll)
         QTest.qWait(500)
+        phase("viewport_warmed")
         initial_scroll = flickable.property("contentY")
         counter.counts.clear()
         max_delegates = max_cap = replaced = 0
@@ -202,6 +225,9 @@ def probe(output: Path, count: int, scroll: int) -> None:
             if step in (0, 6, 40, 142):
                 frame.save(str(output / f"frame-{step:03d}.png"))
             QTest.qWait(15)
+            if (step + 1) % (len(widths) // 3) == 0:
+                phase("resize_cycle_completed")
+        phase("resize_cycles_captured")
         cpu_ms = (time.process_time() - cpu_start) * 1000
         final_scroll = flickable.property("contentY")
         detail_owner = bridge.libraryScene["media"][min(count - 1, 30)]["owner"]
@@ -247,10 +273,12 @@ def probe(output: Path, count: int, scroll: int) -> None:
         }
         (output / "proof.json").write_text(json.dumps(proof, indent=2))
     finally:
+        phase("teardown_started")
         window.close()
         engine.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         bridge.close()
+        phase("teardown_completed")
 
 
 if __name__ == "__main__":
