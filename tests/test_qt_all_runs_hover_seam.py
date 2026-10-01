@@ -26,6 +26,7 @@ def run_scene(tmp_path, monkeypatch):
     app = qt_app()
     QQuickStyle.setStyle("Basic")
     bridge = qt_main.Bridge(None)
+    bridge._engagement.presented_welcome()
     bridge._runtime.history = [saved(tmp_path, "One", "MP4")]
     bridge._runtime.active_job = make_job(tmp_path)
     engine = qt_main.create_engine(bridge)
@@ -69,6 +70,11 @@ def test_edge_touch_and_held_face_across_padding_and_seam(run_scene):
         assert button.property("held")
         assert "/pressed/" in face.property("source").toString()
     move(window, QPointF(2, 2))
+    assert not button.property("hovered")
+    for _ in range(20):
+        if not popup.property("visible"):
+            break
+        QTest.qWait(50)
     assert not popup.property("visible")
     assert not button.property("held")
     assert "/normal/" in face.property("source").toString()

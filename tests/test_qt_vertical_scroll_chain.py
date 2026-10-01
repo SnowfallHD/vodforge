@@ -141,8 +141,8 @@ def test_no_overflow_and_horizontal_trackpad(scroll_scene):
 
 
 def test_production_vertical_seams():
-    detail = (QML_DIR / "LibraryDetail.qml").read_text()
-    inspector = (QML_DIR / "LibraryFolderInspector.qml").read_text()
+    detail = (QML_DIR / "LibraryDetail.qml").read_text(encoding="utf-8")
+    inspector = (QML_DIR / "LibraryFolderInspector.qml").read_text(encoding="utf-8")
     assert "VerticalScrollChain { nestedScrollView: descriptionScroll }" in detail
     for name in ("filePanel", "issuePanel", "tagsScroll", "descriptionScroll"):
         assert f"VerticalScrollChain {{ nestedScrollView: {name} }}" in inspector
