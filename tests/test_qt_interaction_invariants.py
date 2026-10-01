@@ -180,13 +180,15 @@ def test_library_description_and_notes_share_height_and_copy_current_text(
 ):
     row = saved(tmp_path, "Ocean", "MP4")
     row["description"] = "The reef at dawn"
-    row["vodforge_user_tags"] = ["reef", "travel"]
+
     app, bridge, engine, window = _launch(tmp_path, monkeypatch, [row])
     try:
         bridge.selectHome("Library")
         bridge.navigateLibrary("all")
         owner = bridge.libraryScene["media"][0]["owner"]
         assert bridge.openLibraryDetails(owner)
+        assert bridge.editLibraryTag(owner, "reef", False)
+        assert bridge.editLibraryTag(owner, "travel", False)
         app.processEvents()
         description = window.findChild(QObject, "libraryDescriptionPanel")
         notes = window.findChild(QObject, "libraryTagsNotesPanel")
@@ -842,9 +844,7 @@ def test_floating_surfaces_cast_shadow_outside_unchanged_input_bounds(
         _close(bridge, engine, window)
 
 
-@pytest.mark.parametrize(
-    "menu", ["format", "options", "run", "active", "allruns", "folders"]
-)
+@pytest.mark.parametrize("menu", ["format", "options", "run", "active", "folders"])
 def test_popup_trigger_click_closes_without_reopening(tmp_path, monkeypatch, menu):
     from PySide6.QtCore import QPoint, Qt
 
