@@ -89,6 +89,11 @@ class DownloadRuntime:
         self.product_telemetry: Any | None = None
         self.activity: list[dict[str, str]] = []
         for job in [*self.recovered, *self.queued]:
+            if job.retry_of_run_id:
+                job.preview_info = {
+                    **(job.preview_info or {}),
+                    "vodforge_issue_retry": True,
+                }
             self._activity_upsert(
                 job,
                 job.terminal_status or "Queued",
@@ -344,11 +349,9 @@ class DownloadRuntime:
             "vodforge_terminal_run_id",
         ):
             preview.pop(key, None)
-        # Only a retry admitted from Library Issues stays in that list while it
-        # is queued or running. Ordinary Forge downloads never acquire this flag.
-        current_preview = current_job.preview_info if current_job is not None else None
-        if current_preview and current_preview.get("vodforge_issue_retry"):
-            preview["vodforge_issue_retry"] = True
+        # Recovery membership belongs to the admitted terminal lineage, not the
+        # surface that initiated it. Ordinary new downloads never pass here.
+        preview["vodforge_issue_retry"] = True
         retry = replace(
             settings_job,
             url=url,
@@ -517,6 +520,20 @@ class DownloadRuntime:
                 daemon=True,
             ).start()
 
+    def dismiss_terminal(self, run_id: str) -> bool:
+        """Dismiss one durable terminal card without changing media or active work."""
+        if self.active_job is not None and self.active_job.run_id == run_id:
+            return False
+        if any(job.run_id == run_id for job in self.queued):
+            return False
+        matches = [job for job in self.recovered if job.run_id == run_id]
+        if len(matches) != 1:
+            return False
+        if not self.recovery.store.clear(run_id, terminal_only=True):
+            return False
+        self.recovered = [job for job in self.recovered if job is not matches[0]]
+        return True
+
     def remove_queued(self, run_id: str) -> bool:
         matches = [job for job in self.queued if job.run_id == run_id]
         if len(matches) != 1:
@@ -552,7 +569,10 @@ class DownloadRuntime:
                     and job is self.active_job
                     and isinstance(info, dict)
                 ):
-                    if (job.preview_info or {}).get("vodforge_issue_retry") is True:
+                    if (
+                        job.retry_of_run_id
+                        or (job.preview_info or {}).get("vodforge_issue_retry") is True
+                    ):
                         job.preview_info = {**info, "vodforge_issue_retry": True}
                     else:
                         job.preview_info = info
