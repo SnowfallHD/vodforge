@@ -21,9 +21,15 @@ class RunControlEvents(Queue):
 
     def get_nowait(self) -> Any:
         event = super().get_nowait()
+        # Direct tuples are trusted consumer/test injections. Worker envelopes
+        # remain opaque here until the runtime validates their execution owner.
+        self.retain_context_event(event)
+        return event
+
+    def retain_context_event(self, event: tuple[str, Any]) -> None:
+        """Retain raw context, or worker context admitted by the runtime."""
         if event[0] in {"job_log", "job_metadata"}:
             self.context_events.append(event)
-        return event
 
     def take_context_events(self) -> list[tuple[str, Any]]:
         events, self.context_events = self.context_events, []

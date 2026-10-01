@@ -596,6 +596,12 @@ class DownloadRuntime:
                     continue
                 event = payload["event"]
                 kind, payload = event
+                # Source-bearing context is flattened below for UI display.
+                # Forward it only after validating the captured worker owner;
+                # the queue cannot safely unwrap envelopes on its own.
+                retain_context = getattr(self.events, "retain_context_event", None)
+                if retain_context is not None:
+                    retain_context(event)
             if self.active_job is not None and kind in {
                 "status",
                 "progress",
