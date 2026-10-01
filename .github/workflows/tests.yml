@@ -66,6 +66,11 @@ jobs:
           --ignore=tests/test_qt_inspector_recovery_details.py
           --ignore=tests/test_qt_folder_columns_responsive.py
           --ignore=tests/test_qt_inspector_action_contract.py
+          --ignore=tests/test_qt_library_playlist_art.py
+          --ignore=tests/test_qt_inspector_actions.py
+          --ignore=tests/test_qt_library_group_selection.py
+          --ignore=tests/test_qt_runtime_event_ownership.py
+          --ignore=tests/test_qt_action_feedback_ownership.py
           --ignore=tests/test_qt_floating_player_chrome.py
           --ignore=tests/test_qt_player_responsive_stage.py
           --ignore=tests/test_qt_legacy_preset_preferences.py
@@ -102,6 +107,11 @@ jobs:
           tests/test_qt_inspector_recovery_details.py
           tests/test_qt_folder_columns_responsive.py
           tests/test_qt_inspector_action_contract.py
+          tests/test_qt_library_playlist_art.py
+          tests/test_qt_inspector_actions.py
+          tests/test_qt_library_group_selection.py
+          tests/test_qt_runtime_event_ownership.py
+          tests/test_qt_action_feedback_ownership.py
           tests/test_qt_floating_player_chrome.py
           tests/test_qt_player_responsive_stage.py
           tests/test_qt_legacy_preset_preferences.py

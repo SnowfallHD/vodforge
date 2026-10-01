@@ -1213,7 +1213,7 @@ Window {
                           "Showing " + window.selectedForgeRun.status.toLowerCase() + " run: " + window.selectedForgeRun.title :
                           window.selectedForgeRun.kind === "queued" ?
                           "Showing queued run: " + window.selectedForgeRun.title :
-                          window.selectedForgeRun.kind === "active" ? bridge.status :
+                          window.selectedForgeRun.kind === "active" ? window.selectedForgeRun.status :
                           bridge.history.length ? "Loaded " + bridge.history.length + " downloaded media item(s) from history." : "Ready for a new run."
                     color: theme.muted; font.pixelSize: 14
                     Layout.fillWidth: true; elide: Text.ElideRight

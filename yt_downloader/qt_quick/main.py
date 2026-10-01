@@ -705,6 +705,19 @@ class Bridge(QObject):
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
         self._save_timer.timeout.connect(self._save_preferences)
+        self._feedback_ready = True
+
+    @property
+    def _status(self) -> str:
+        return self._status_text
+
+    @_status.setter
+    def _status(self, message: str) -> None:
+        # User actions have one feedback channel. Execution presentation comes
+        # exclusively from the runtime's owner-bound active projection.
+        self._status_text = message
+        if getattr(self, "_feedback_ready", False):
+            self.operationFeedback.emit(message)
 
     @Property(str, notify=statusChanged)
     def status(self) -> str:
@@ -2192,7 +2205,7 @@ class Bridge(QObject):
         )
 
     def _recovery_progress_label(self) -> str:
-        message = self._status.casefold()
+        message = self._runtime.active_status.casefold()
         if "transcod" in message or "convert" in message:
             return "Transcoding"
         if "download" in message:
@@ -2758,9 +2771,9 @@ class Bridge(QObject):
                     "detail": str(
                         preview.get("uploader") or preview.get("channel") or ""
                     ),
-                    "status": self._status,
+                    "status": self._runtime.active_status,
                     "type": active.output_type.value,
-                    "progress": self._progress,
+                    "progress": self._runtime.active_progress,
                     "duration": format_duration(preview.get("duration")),
                     "_artwork_info": preview,
                 }
@@ -6033,7 +6046,7 @@ class Bridge(QObject):
                 self._progress = max(0.0, min(100.0, float(payload)))
                 self.progressChanged.emit()
             elif kind == "status":
-                self._status = str(payload)
+                self._status_text = str(payload)
                 self._forge_activity.observe(self._forge_run_id, self._status)
                 self.statusChanged.emit()
                 active = self._runtime.active_job
@@ -6106,7 +6119,7 @@ class Bridge(QObject):
                         self._engagement.completed_download(active_job_before.run_id)
                     except (OSError, ValueError):
                         pass
-                self._status = str(payload)
+                self._status_text = str(payload)
                 self._forge_activity.observe(
                     self._forge_run_id,
                     {
