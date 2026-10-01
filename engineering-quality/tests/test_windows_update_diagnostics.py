@@ -65,7 +65,66 @@ def test_actual_owned_process_then_confirmed_exit_is_distinguished():
         child.terminate()
         child.wait(timeout=10)
     rows, owners = diagnostics.process_snapshot(child.pid)
-    assert rows == [{"pid": child.pid, "inspection_error": "NoSuchProcess"}]
+    _assert_confirmed_exit_snapshot(rows, owners, child.pid)
+
+
+def _assert_confirmed_exit_snapshot(rows, owners, pid):
+    assert owners == {pid}
+    if rows == [{"pid": pid, "inspection_error": "NoSuchProcess"}]:
+        return
+    # Windows can retain cached creation time after wait(), while every live
+    # field and child inspection explicitly reports the process is gone.
+    assert len(rows) == 2
+    assert rows[0] == {"pid": pid, "children_error": "NoSuchProcess"}
+    row = dict(rows[1])
+    cached_creation = row.pop("create_time", None)
+    if cached_creation is not None:
+        assert isinstance(cached_creation, (float, int))
+        assert 0 < cached_creation < float("inf")
+    else:
+        assert row.pop("create_time_error") == "NoSuchProcess"
+    assert row == {
+        "pid": pid,
+        **{
+            field + "_error": "NoSuchProcess"
+            for field in ("ppid", "name", "exe", "status")
+        },
+    }
+
+
+@pytest.mark.parametrize("constructor_exit", [True, False])
+def test_confirmed_exit_shapes_preserve_explicit_absence(monkeypatch, constructor_exit):
+    class Exited:
+        pid = 123
+
+        def children(self, recursive):
+            raise psutil.NoSuchProcess(self.pid)
+
+        def create_time(self):
+            return 123.0
+
+        def __getattr__(self, field):
+            def gone():
+                raise psutil.NoSuchProcess(self.pid)
+
+            return gone
+
+    def process(pid):
+        if constructor_exit:
+            raise psutil.NoSuchProcess(pid)
+        return Exited()
+
+    monkeypatch.setattr(diagnostics.psutil, "Process", process)
+    rows, owners = diagnostics.process_snapshot(123)
+    _assert_confirmed_exit_snapshot(rows, owners, 123)
+
+
+@pytest.mark.parametrize("error", ["AccessDenied", "ZombieProcess"])
+def test_permission_or_zombie_error_is_not_confirmed_exit(error):
+    with pytest.raises(AssertionError):
+        _assert_confirmed_exit_snapshot(
+            [{"pid": 123, "inspection_error": error}], {123}, 123
+        )
 
 
 def test_unreadable_process_is_explicit_and_never_replaced_with_empty_success(
