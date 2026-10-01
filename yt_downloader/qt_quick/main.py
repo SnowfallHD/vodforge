@@ -95,6 +95,7 @@ from yt_downloader.export_planning import (
     export_mode_description,
     export_mode_display_name,
     export_mode_from_display_name,
+    migrate_export_preferences,
 )
 from yt_downloader.failure_diagnostics import FailureDiagnostic
 from yt_downloader.forge_activity import (
@@ -560,7 +561,9 @@ class Bridge(QObject):
         )
         self._settings_path = settings_file_path()
         try:
-            self._settings = load_settings(self._settings_path)
+            self._settings = migrate_export_preferences(
+                load_settings(self._settings_path)
+            )
             self._settings_writable = True
         except SettingsError:
             self._settings = {}
