@@ -770,15 +770,34 @@ Window {
             readonly property bool stacked: brandWidth + navWidth + utilityWidth + 8 > width
 
             MouseArea {
+                id: headerDragArea
                 objectName: "headerDragArea"
                 anchors.fill: parent
+                // Blank gutters and layout spacing above the divider drag too.
+                anchors.leftMargin: -window.gutter
+                anchors.rightMargin: -window.gutter
+                anchors.bottomMargin: -2
                 z: -1
+                property bool awaitingSystemMove: false
+                onReleased: awaitingSystemMove = false
+                onCanceled: awaitingSystemMove = false
                 onPressed: function(mouse) {
-                    // Cocoa's system drag can consume mouse-up. Once the OS
-                    // owns the gesture, do not retain a QML press/grab waiting
-                    // for that release or the next press can be suppressed.
-                    if (window.startSystemMove())
-                        mouse.accepted = false
+                    // Cocoa can deliver the Qt press while currentEvent is an
+                    // application event. Retry only during this held gesture.
+                    const moved = window.startSystemMove()
+                    awaitingSystemMove = !moved
+                    // The OS can consume release; relinquish QML ownership.
+                    if (moved) mouse.accepted = false
+                }
+                onPositionChanged: function(mouse) {
+                    if (!awaitingSystemMove || !pressed || !(mouse.buttons & Qt.LeftButton)) return
+                    if (window.startSystemMove()) {
+                        awaitingSystemMove = false
+                        // The OS may consume release after a retry too. Retire
+                        // the QML press so the next press is independently heard.
+                        visible = false
+                        Qt.callLater(function() { headerDragArea.visible = true })
+                    }
                 }
             }
 

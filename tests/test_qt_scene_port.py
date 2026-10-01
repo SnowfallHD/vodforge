@@ -4832,8 +4832,9 @@ def test_qt_shared_header_keeps_navigation_next_to_brand_on_every_tab(
                 round(header.mapToItem(None, 0, 0).y()),
             ) == (margin, 5)
             assert round(header.height()) == 44
-            assert drag_area.property("width") == pytest.approx(header.width())
-            assert drag_area.property("height") == pytest.approx(header.height())
+            assert drag_area.property("width") == pytest.approx(window.width())
+            assert drag_area.mapToItem(None, 0, 0).x() == pytest.approx(0)
+            assert drag_area.property("height") == pytest.approx(header.height() + 2)
             native_title_inset = 82 if sys.platform == "darwin" else 0
             assert round(brand.mapToItem(None, 0, 0).x()) == margin + native_title_inset
             assert (

@@ -42,6 +42,7 @@ def header():
 Item {
     id: window
     width: 400; height: 44
+    property int gutter: 0
     property int moves: 0
     property bool moveAccepted: true
     property int clicks: 0
@@ -65,7 +66,7 @@ Item {
     root = component.create()
     assert root is not None, component.errors()
     surface = QQuickWindow()
-    surface.resize(400, 44)
+    surface.resize(400, 48)
     root.setParentItem(surface.contentItem())
     surface.show()
     _APP.processEvents()
@@ -77,10 +78,10 @@ Item {
     _APP.processEvents()
 
 
-def send(surface, kind, x=100, button=Qt.LeftButton):
+def send(surface, kind, x=100, button=Qt.LeftButton, y=20):
     buttons = button if kind == QEvent.MouseButtonPress else Qt.NoButton
     event = QMouseEvent(
-        kind, QPointF(x, 20), QPointF(x, 20), button, buttons, Qt.NoModifier
+        kind, QPointF(x, y), QPointF(x, y), button, buttons, Qt.NoModifier
     )
     QGuiApplication.sendEvent(surface, event)
 
@@ -116,3 +117,54 @@ def test_control_and_non_left_buttons_do_not_start_window_move(header):
         send(surface, QEvent.MouseButtonPress, button=button)
         send(surface, QEvent.MouseButtonRelease, button=button)
     assert root.property("moves") == 0
+
+
+def held_move(surface, x=120):
+    event = QMouseEvent(
+        QEvent.MouseMove,
+        QPointF(x, 20),
+        QPointF(x, 20),
+        Qt.NoButton,
+        Qt.LeftButton,
+        Qt.NoModifier,
+    )
+    QGuiApplication.sendEvent(surface, event)
+
+
+def test_rejected_press_retries_on_held_motion_and_retires_qml_press(header):
+    surface, root = header
+    root.setProperty("moveAccepted", False)
+    send(surface, QEvent.MouseButtonPress)
+    assert root.property("moves") == 1
+    root.setProperty("moveAccepted", True)
+    held_move(surface)
+    assert root.property("moves") == 2
+    _APP.processEvents()
+    assert not root.findChild(type(root), "headerDragArea").property("pressed")
+    # The OS may consume release after the retry as well.
+    send(surface, QEvent.MouseButtonPress, 160)
+    assert root.property("moves") == 3
+
+
+def test_retry_is_retired_on_release_and_never_starts_from_control(header):
+    surface, root = header
+    root.setProperty("moveAccepted", False)
+    send(surface, QEvent.MouseButtonPress)
+    send(surface, QEvent.MouseButtonRelease)
+    root.setProperty("moveAccepted", True)
+    held_move(surface)
+    assert root.property("moves") == 1
+    send(surface, QEvent.MouseButtonPress, 330)
+    held_move(surface, 340)
+    send(surface, QEvent.MouseButtonRelease, 340)
+    assert root.property("moves") == 1
+
+
+def test_blank_spacing_above_divider_is_draggable_but_content_below_is_not(header):
+    surface, root = header
+    send(surface, QEvent.MouseButtonPress, y=45)
+    assert root.property("moves") == 1
+    send(surface, QEvent.MouseButtonRelease, y=45)
+    send(surface, QEvent.MouseButtonPress, y=47)
+    assert root.property("moves") == 1
+    send(surface, QEvent.MouseButtonRelease, y=47)
