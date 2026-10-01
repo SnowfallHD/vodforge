@@ -3046,3 +3046,15 @@ separates production reaping from fixture cleanup, records the launched PID even
 on inspection failure, and never lets cleanup count as successful recovery.
 Permission-denial, successful production reaping, and cleanup-only negative controls
 cover the missed boundary. No production process ownership policy is changed.
+
+### Conclusive orphan exit after signalling — 2026-10-01
+
+The retained orphan phase trace showed readable owned identity before SIGTERM,
+then macOS briefly denied command-line inspection while that process exited.
+Recovery now waits within a bounded deadline for conclusive exit. Inspection
+refusal never counts as exit: persistent denial raises before any SIGKILL, and
+identity/staging checks before the first signal remain intact. The original
+`lifecycle.quit_restart_recovery` scenario passes with a real orphan; direct-child
+cleanup remains supplemental. Focused tests cover transient refusal, persistent
+refusal without escalation, and readable live-process escalation followed by exit.
+Prior failed receipts and the phase trace remain outside the worktree.

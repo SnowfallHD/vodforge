@@ -178,6 +178,26 @@ def process_command(pid: int) -> str | None:
     return " ".join(argv)
 
 
+def _wait_for_pid_exit(pid: int, *, timeout_seconds: float) -> bool:
+    """Wait for conclusive exit; unreadable identity never authorizes a signal."""
+    deadline = time.monotonic() + timeout_seconds
+    inspection_error = None
+    while True:
+        try:
+            if process_command(pid) is None:
+                return True
+            inspection_error = None
+        except ProcessOwnershipError as exc:
+            # macOS can refuse cmdline briefly while a signalled orphan exits.
+            # Keep waiting for a conclusive read without treating denial as exit.
+            inspection_error = exc
+        if time.monotonic() >= deadline:
+            if inspection_error is not None:
+                raise inspection_error
+            return False
+        time.sleep(0.05)
+
+
 def terminate_pid(pid: int, *, timeout_seconds: float = 5.0) -> bool:
     try:
         os.kill(pid, signal.SIGTERM)
@@ -185,18 +205,15 @@ def terminate_pid(pid: int, *, timeout_seconds: float = 5.0) -> bool:
         return True
     except OSError:
         return False
-    deadline = time.monotonic() + timeout_seconds
-    while time.monotonic() < deadline:
-        if process_command(pid) is None:
-            return True
-        time.sleep(0.05)
+    if _wait_for_pid_exit(pid, timeout_seconds=timeout_seconds):
+        return True
     try:
         os.kill(pid, signal.SIGKILL)
     except ProcessLookupError:
         return True
     except OSError:
         return False
-    return process_command(pid) is None
+    return _wait_for_pid_exit(pid, timeout_seconds=timeout_seconds)
 
 
 def terminate_recorded_children(

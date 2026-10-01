@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import signal
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -63,6 +64,63 @@ def test_recorded_child_requires_exact_executable_and_staging_identity() -> None
     )
 
     assert terminated == [321]
+
+
+def test_signalled_orphan_waits_for_conclusive_exit_after_transient_denial(monkeypatch):
+    signals = []
+    reads = iter([ProcessOwnershipError("transient exit inspection"), None])
+
+    def command(_pid):
+        value = next(reads)
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    monkeypatch.setattr(lifecycle, "process_command", command)
+    monkeypatch.setattr(
+        lifecycle.os, "kill", lambda pid, sig: signals.append((pid, sig))
+    )
+    monkeypatch.setattr(lifecycle.time, "sleep", lambda _seconds: None)
+    assert lifecycle.terminate_pid(321) is True
+    assert signals == [(321, signal.SIGTERM)]
+
+
+def test_persistent_exit_inspection_denial_never_authorizes_sigkill(monkeypatch):
+    signals = []
+    clock = iter([0.0, 6.0])
+
+    def unreadable(_pid):
+        raise ProcessOwnershipError("persistent inspection denial")
+
+    monkeypatch.setattr(lifecycle, "process_command", unreadable)
+    monkeypatch.setattr(lifecycle.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(
+        lifecycle.os, "kill", lambda pid, sig: signals.append((pid, sig))
+    )
+    with pytest.raises(ProcessOwnershipError, match="persistent inspection denial"):
+        lifecycle.terminate_pid(321)
+    assert signals == [(321, signal.SIGTERM)]
+
+
+def test_sigkill_exit_is_also_confirmed_after_transient_denial(monkeypatch):
+    signals = []
+    reads = iter(["owned fixture", ProcessOwnershipError("exit inspection"), None])
+    clock = iter([0.0, 6.0, 6.0, 6.1])
+
+    def command(_pid):
+        value = next(reads)
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    monkeypatch.setattr(lifecycle, "process_command", command)
+    monkeypatch.setattr(lifecycle.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(
+        lifecycle.os, "kill", lambda pid, sig: signals.append((pid, sig))
+    )
+    monkeypatch.setattr(lifecycle.time, "sleep", lambda _seconds: None)
+    assert lifecycle.terminate_pid(321) is True
+    assert signals == [(321, signal.SIGTERM), (321, signal.SIGKILL)]
 
 
 def test_recorded_child_rejects_reused_pid_without_staging_identity() -> None:
