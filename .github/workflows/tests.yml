@@ -60,6 +60,10 @@ jobs:
           --ignore=tests/test_qt_settings_theme.py
           --ignore=tests/test_qt_scroll_lifecycle.py
           --ignore=tests/test_qt_all_runs_hover_seam.py
+          --ignore=tests/test_qt_file_recovery_actions.py
+          --ignore=tests/test_qt_terminal_dismissal.py
+          --ignore=tests/test_qt_retry_recovery_membership.py
+          --ignore=tests/test_qt_inspector_recovery_details.py
           --ignore=tests/test_qt_legacy_preset_preferences.py
           --ignore=tests/test_qt_library_details_copy.py
           --ignore=tests/test_qt_library_window_model.py
@@ -88,6 +92,10 @@ jobs:
           tests/test_qt_settings_theme.py
           tests/test_qt_scroll_lifecycle.py
           tests/test_qt_all_runs_hover_seam.py
+          tests/test_qt_file_recovery_actions.py
+          tests/test_qt_terminal_dismissal.py
+          tests/test_qt_retry_recovery_membership.py
+          tests/test_qt_inspector_recovery_details.py
           tests/test_qt_legacy_preset_preferences.py
           tests/test_qt_library_details_copy.py
           tests/test_qt_library_window_model.py

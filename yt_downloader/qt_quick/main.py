@@ -362,6 +362,8 @@ class Bridge(QObject):
     pointerGestureEnded = Signal()
     outputFolderRecoveryRequested = Signal(str)
     statusChanged = Signal()
+    operationFeedback = Signal(str)
+    libraryRemovalRequested = Signal()
     outputPathChanged = Signal()
     selectionChanged = Signal()
     progressChanged = Signal()
@@ -764,6 +766,19 @@ class Bridge(QObject):
     def fileActionEligible(self) -> bool:
         return self._files.phase == "preview" and self._files.eligible
 
+    @Property(str, notify=fileActionChanged)
+    def fileActionReviewOwner(self) -> str:
+        plan = self._files.plan
+        if self._files.phase != "preview" or self._files.eligible or plan is None:
+            return ""
+        if len(plan.items) != 1:
+            return ""
+        selected = plan.items[0]
+        item = self._saved_item_for_owner(selected.owner)
+        if item is None or record_fingerprint(item) != selected.fingerprint:
+            return ""
+        return selected.owner
+
     @Property(bool, notify=fileActionChanged)
     def fileActionRecovery(self) -> bool:
         return self._files.phase == "recovery"
@@ -901,6 +916,59 @@ class Bridge(QObject):
         if not self._folder_file_path or not path.parent.is_dir():
             return False
         return QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.parent)))
+
+    @Property(_QVARIANT_MAP, notify=historyChanged)
+    def inspectorRecoveryActions(self) -> dict[str, Any]:
+        """Offer actions for the exact displayed owner, not a mutable list index."""
+        if self._library_scene_route != "folders" or not self._folder_inspector_key:
+            return {}
+        item = self.libraryFolderInspector
+        job = self._issue_job(self._issue_run_id) if self._issue_run_id else None
+        location = (
+            str(job.output_dir) if job is not None else str(item.get("location") or "")
+        )
+        path = Path(location) if location else None
+        folder = (
+            path
+            if job is not None or item.get("folder")
+            else path.parent
+            if path
+            else None
+        )
+        return {
+            "selectionKey": self._folder_inspector_key,
+            "location": location,
+            "canOpenLocation": folder is not None and folder.is_dir(),
+            "dismissRunId": job.run_id
+            if job is not None
+            and job in self._runtime.recovered
+            and job.terminal_status in {"Failed", "Stopped", "Skipped"}
+            else "",
+            "savedOwner": str(item.get("owner") or self._missing_issue_owner or ""),
+        }
+
+    @Slot(str, result=bool)
+    def openInspectorLocation(self, selection_key: str) -> bool:
+        if self._selection != "Library" or selection_key != self._folder_inspector_key:
+            return False
+        actions = self.inspectorRecoveryActions
+        if not actions.get("canOpenLocation"):
+            return False
+        path = Path(str(actions["location"]))
+        job = self._issue_job(self._issue_run_id) if self._issue_run_id else None
+        if job is None and not self.libraryFolderInspector.get("folder"):
+            path = path.parent
+        return QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
+    @Slot(str, result=bool)
+    def requestInspectorLibraryRemoval(self, selection_key: str) -> bool:
+        if self._selection != "Library" or selection_key != self._folder_inspector_key:
+            return False
+        owner = str(self.inspectorRecoveryActions.get("savedOwner") or "")
+        if not owner or not self.prepareLibraryRemoval(owner):
+            return False
+        self.libraryRemovalRequested.emit()
+        return True
 
     @Slot(str, str, str, result=bool)
     def saveSelectedFolderMetadata(
@@ -1359,6 +1427,11 @@ class Bridge(QObject):
                 self._recovery_source_url, self._output_path
             )
         return self._output_path
+
+    @Property(QUrl, notify=outputPathChanged)
+    def outputFolderUrl(self) -> QUrl:
+        """Initialize the chooser from the current destination, never app cwd."""
+        return QUrl.fromLocalFile(self.outputPath)
 
     @Property(str, notify=selectionChanged)
     def selection(self) -> str:
@@ -3337,6 +3410,7 @@ class Bridge(QObject):
             "source": source,
             "source_editable": not bool(source),
             "output_dir": output_dir,
+            "output_url": QUrl.fromLocalFile(output_dir).toString(),
             "output_type": job.output_type.value,
             "export_mode": job.export_mode.value,
             "quality": job.quality_label
@@ -3461,6 +3535,7 @@ class Bridge(QObject):
             self._set_status("Select an existing output folder.")
             return
         self._issue_settings["output_dir"] = str(path)
+        self._issue_settings["output_url"] = QUrl.fromLocalFile(str(path)).toString()
         self.historyChanged.emit()
 
     @Slot(result=bool)
@@ -5486,12 +5561,10 @@ class Bridge(QObject):
         try:
             removed = self._runtime.remove_queued(run_id)
         except RunStateError:
-            self._status = "The queued run could not be removed safely."
-            self.statusChanged.emit()
+            self.operationFeedback.emit("The queued run could not be removed safely.")
             return False
         if removed:
-            self._status = "Queued run removed."
-            self.statusChanged.emit()
+            self.operationFeedback.emit("Queued run removed.")
             self.activityChanged.emit()
             self.historyChanged.emit()
         return removed
@@ -5499,6 +5572,24 @@ class Bridge(QObject):
     @Slot(str, result=bool)
     def retryTerminal(self, run_id: str) -> bool:
         return self._admit_retry(run_id)
+
+    @Slot(str, result=bool)
+    def dismissTerminal(self, run_id: str) -> bool:
+        try:
+            dismissed = self._runtime.dismiss_terminal(run_id)
+        except RunStateError:
+            self.operationFeedback.emit(
+                "The interrupted run could not be dismissed safely."
+            )
+            return False
+        if dismissed:
+            self.operationFeedback.emit(
+                "Interrupted run dismissed. Saved files were kept."
+            )
+            self.historyChanged.emit()
+            self.activityChanged.emit()
+            self.runDeckChanged.emit()
+        return dismissed
 
     def _admit_retry(
         self,
@@ -5545,18 +5636,18 @@ class Bridge(QObject):
             self._status = str(exc)
             self.statusChanged.emit()
             return False
-        self._status = (
-            "Added retry to the queue."
-            if retry is not self._runtime.active_job
-            else "Retry started."
-        )
-        self.statusChanged.emit()
+        if retry is self._runtime.active_job:
+            self._status = "Retry started."
+            self.statusChanged.emit()
+        else:
+            self.operationFeedback.emit("Added retry to the queue.")
+        if stay_in_issues or self._issue_run_id == run_id:
+            self._issue_run_id = retry.run_id
+            self._folder_inspector_key = f"run:{retry.run_id}"
         self.activityChanged.emit()
         self.historyChanged.emit()
         self.runningChanged.emit()
         if stay_in_issues:
-            self._issue_run_id = retry.run_id
-            self._folder_inspector_key = f"run:{retry.run_id}"
             self.historyChanged.emit()
             self._record_update_feature("guidance", "recovery_selected")
         else:

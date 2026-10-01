@@ -742,11 +742,11 @@ class ActiveRunStore:
         jobs = self.load_failed_jobs()
         return jobs[0] if jobs else None
 
-    def clear(self, run_id: str) -> None:
+    def clear(self, run_id: str, *, terminal_only: bool = False) -> bool:
         with self._lock:
             payload = self._read_unlocked()
             if payload is None:
-                return
+                return False
             active_job = (
                 payload.get("job") if payload.get("state") == "active" else None
             )
@@ -765,25 +765,31 @@ class ActiveRunStore:
                 for record in existing_queue
                 if str(record.get("run_id") or "") != run_id
             ]
+            if terminal_only and (
+                active_matches
+                or len(queued) != len(existing_queue)
+                or len(failures) != len(existing_failures) - 1
+            ):
+                return False
             if (
                 not active_matches
                 and len(failures) == len(existing_failures)
                 and len(queued) == len(existing_queue)
             ):
-                return
+                return False
             if not active_matches:
                 if payload.get("state") == "active":
                     payload["recovered_failures"] = failures
                     payload["queued_jobs"] = queued
                     self._write_unlocked(payload)
-                    return
+                    return True
                 if not failures and not queued:
                     self._unlink_unlocked()
-                    return
+                    return True
                 payload["recovered_failures"] = failures
                 payload["queued_jobs"] = queued
                 self._write_unlocked(payload)
-                return
+                return True
             if failures or queued:
                 self._write_unlocked(
                     {
@@ -793,8 +799,9 @@ class ActiveRunStore:
                         "queued_jobs": queued,
                     }
                 )
-                return
+                return True
             self._unlink_unlocked()
+            return True
 
 
 def recover_interrupted_run(

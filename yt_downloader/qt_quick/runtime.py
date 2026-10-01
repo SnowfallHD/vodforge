@@ -397,9 +397,8 @@ class DownloadRuntime:
         self.recovered = [
             job for job in self.recovered if job.run_id != previous.run_id
         ]
-        self.activity = [
-            item for item in self.activity if item["runId"] != previous.run_id
-        ]
+        # Recovery presentation follows the successor, while Activity retains
+        # the original attempt and its failure detail for investigation.
         return retry
 
     def _launch_next_queued(self) -> None:

@@ -178,7 +178,10 @@ Item {
         padding: 10
         modal: false
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        onClosed: deck.appBridge.retireRunMenu()
+        onClosed: {
+            deck.appBridge.retireRunMenu()
+            if (allRunsPopup.visible) hoverClose.restart()
+        }
         ColumnLayout {
             width: actionsPopup.availableWidth
             spacing: 6
@@ -235,6 +238,13 @@ Item {
                 label: "Retry run"
                 Layout.fillWidth: true
                 onActivated: { deck.appBridge.retryTerminal(deck.selectedRecord.runId); actionsPopup.close() }
+            }
+            StoneButton {
+                objectName: "dismissTerminalRun"
+                visible: deck.selectedRecord.kind === "terminal"
+                label: "Dismiss run"
+                Layout.fillWidth: true
+                onActivated: { deck.appBridge.dismissTerminal(deck.selectedRecord.runId); actionsPopup.close() }
             }
             StoneButton {
                 label: "View Activity"
@@ -297,9 +307,10 @@ Item {
                 record: displayedRecord
                 artworkSource: displayedRecord.artwork ||
                     deck.appBridge.runDeckArtwork(displayedRecord.selectionKey || "")
-                showActions: false
+                showActions: true
                 width: allRunsList.width - 8
                 height: 68
+                onActionsRequested: function(anchor) { deck.showActions(record, anchor) }
                 onChosen: {
                     deck.appBridge.selectRunRecord(record.selectionKey)
                     allRunsPopup.close()
@@ -311,7 +322,7 @@ Item {
         id: hoverClose
         interval: 100
         onTriggered: {
-            if (!allRunsButton.hovered && !popupHover.hovered) allRunsPopup.close()
+            if (!actionsPopup.visible && !allRunsButton.hovered && !popupHover.hovered) allRunsPopup.close()
         }
     }
 }

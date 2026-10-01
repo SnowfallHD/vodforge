@@ -17,6 +17,14 @@ StoneField {
     implicitHeight: compact ? 50 : 68
     onActivated: chosen()
 
+    MouseArea {
+        objectName: "runCardContextArea"
+        anchors.fill: parent
+        acceptedButtons: Qt.RightButton
+        enabled: card.showActions
+        onClicked: card.actionsRequested(card)
+    }
+
     RowLayout {
         anchors.fill: parent
         anchors.margins: 6

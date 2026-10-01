@@ -14,7 +14,7 @@ from PySide6.QtQuick import QQuickItem
 from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtTest import QTest
 
-from tests.test_qt_scene_port import make_job, qt_app, qt_main, saved
+from tests.test_qt_scene_port import make_job, qt_app, qt_main, saved, visual_item
 
 
 @pytest.fixture
@@ -98,6 +98,38 @@ def test_click_navigates_without_another_press_face_or_toggle(run_scene):
     app.processEvents()
     assert bridge.selection == "Library"
     assert not popup.property("visible")
+
+
+@pytest.mark.parametrize("gesture", ["ellipsis", "right_click"])
+def test_overflow_actions_keep_owner_and_anchor_alive(run_scene, gesture):
+    app, bridge, window, button, popup = run_scene
+    center = button.mapToScene(QPointF(button.width() / 2, button.height() / 2))
+    move(window, center)
+    card = visual_item(popup.property("contentItem"), "allRunsCard_0")
+    assert card.property("showActions")
+    owner = card.property("record")["runId"]
+    selection = bridge.selection
+    if gesture == "ellipsis":
+        action = card.findChild(QObject, "allRunsAction")
+        QMetaObject.invokeMethod(action, "activated")
+    else:
+        point = card.mapToScene(QPointF(card.width() / 2, card.height() / 2))
+        QTest.mouseClick(
+            window,
+            Qt.RightButton,
+            Qt.NoModifier,
+            QPoint(round(point.x()), round(point.y())),
+        )
+    app.processEvents()
+    actions = window.findChild(QObject, "runActionsPopup")
+    assert actions.property("visible")
+    assert bridge.selection == selection
+    # Moving into the actions must not retire the overflow delegate/anchor.
+    content = actions.property("contentItem")
+    move(window, content.mapToScene(QPointF(20, 20)))
+    assert popup.property("visible")
+    assert actions.property("visible")
+    assert card.property("record")["runId"] == owner
 
 
 @pytest.mark.parametrize("side", ["top", "bottom", "tight"])

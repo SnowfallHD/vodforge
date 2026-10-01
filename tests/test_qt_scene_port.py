@@ -1230,7 +1230,12 @@ def test_removing_queued_issue_retry_removes_it_from_issues(tmp_path, monkeypatc
         assert bridge.downloadSelectedIssue()
         queued = bridge._runtime.queued[0]
         assert bridge.libraryFolderInspector["status"] == "Queued"
+        bridge._status = "Downloading active media"
+        feedback = []
+        bridge.operationFeedback.connect(feedback.append)
         assert bridge.removeQueued(queued.run_id)
+        assert bridge.status == "Downloading active media"
+        assert feedback == ["Queued run removed."]
         assert bridge.libraryFolders["count"] == 0
         assert bridge._runtime.recovered == []
         assert bridge._runtime.recovery.store.load_queued_jobs() == []
@@ -1602,9 +1607,17 @@ def test_qt_library_player_video_click_and_escape_change_real_playback(
         assert until(
             lambda: window.findChild(QObject, "miniPlayerPause").property("visible")
         )
+        assert (
+            window.findChild(QObject, "miniPlayerPause").property("sceneIcon")
+            == "pause"
+        )
+        assert window.findChild(QObject, "miniPlayerPause").property("label") == ""
         window.findChild(QObject, "miniPlayerPause").activated.emit()
         assert until(
             lambda: player().property("playbackState") == QMediaPlayer.PausedState
+        )
+        assert (
+            window.findChild(QObject, "miniPlayerPause").property("sceneIcon") == "play"
         )
         saved_position = player().property("position")
         QTest.mouseClick(
@@ -6115,6 +6128,9 @@ def test_qt_path_budget_recovery_uses_existing_output_folder_choice(
         destination.mkdir()
         bridge.chooseOutputUrl(QUrl.fromLocalFile(str(destination)))
         assert bridge.outputPath == str(destination)
+        assert bridge.outputFolderUrl == QUrl.fromLocalFile(str(destination))
+        folder_dialog = window.findChild(QObject, "outputFolderDialog")
+        assert folder_dialog.property("currentFolder") == bridge.outputFolderUrl
         bridge._runtime.events.put(("error", "ordinary failure"))
         bridge._pump()
         assert len(requested) == 1
