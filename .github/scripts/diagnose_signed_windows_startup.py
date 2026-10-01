@@ -39,8 +39,11 @@ for marker, expected in [("VODFORGE_BUILD_REVISION", SOURCE), ("VODFORGE_VERSION
     paths = list(exe.parent.rglob(marker))
     assert len(paths) == 1 and paths[0].read_text().strip() == expected
 checkenv = dict(os.environ, DIAG_EXE=str(exe))
-signature = subprocess.run(["powershell", "-NoProfile", "-Command", "$s=Get-AuthenticodeSignature -LiteralPath $env:DIAG_EXE; if($s.Status -ne 'Valid' -or !$s.TimeStamperCertificate -or !$s.SignerCertificate.Subject.Contains('O=\"Kryden Ventures, LLC\"')){throw 'Signature mismatch'}; $s | Format-List Status,SignerCertificate,TimeStamperCertificate"], env=checkenv, capture_output=True, check=True)
+signature_script = out / "verify-signature.ps1"
+signature_script.write_text("$s=Get-AuthenticodeSignature -LiteralPath $env:DIAG_EXE\n$s | Select-Object Status,StatusMessage,@{n='SignerSubject';e={$_.SignerCertificate.Subject}},@{n='TimestampSubject';e={$_.TimeStamperCertificate.Subject}} | ConvertTo-Json\n& (Join-Path $env:GITHUB_WORKSPACE 'verify_windows_signatures.ps1') -Files $env:DIAG_EXE\n", encoding="utf-8-sig")
+signature = subprocess.run(["powershell", "-NoProfile", "-File", str(signature_script)], env=checkenv, capture_output=True)
 (out / "signature.log").write_bytes(signature.stdout + signature.stderr)
+assert signature.returncode == 0, "Maintained signature verification failed; inspect signature.log"
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
 user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
