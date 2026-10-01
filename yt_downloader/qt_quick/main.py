@@ -4523,6 +4523,14 @@ class Bridge(QObject):
         clipboard.setText(value)
         self._status = f"Copied {field}."
         self.statusChanged.emit()
+        self._record_update_feature(
+            "library",
+            {
+                "description": "source_description_copied",
+                "tags": "personal_tags_copied",
+                "note": "personal_note_copied",
+            }[field],
+        )
         return True
 
     @Slot(str, result=bool)
@@ -5100,6 +5108,8 @@ class Bridge(QObject):
         clipboard.setText(value)
         self._status = "Copied source URL."
         self.statusChanged.emit()
+        if canonical_youtube_url(record):
+            self._record_update_feature("library", "youtube_url_copied")
         return True
 
     @Slot(str)
@@ -5115,6 +5125,7 @@ class Bridge(QObject):
             clipboard.setText(str(path))
             self._status = "Saved media path copied."
             self.statusChanged.emit()
+            self._record_update_feature("archive", "location_copied")
 
     @Slot(str, result=bool)
     def prepareLibraryRemoval(self, owner: str) -> bool:
@@ -5304,6 +5315,9 @@ class Bridge(QObject):
         if action in self._playback_phases:
             return
         self._playback_phases.add(action)
+        if action in {"completed", "failed"}:
+            # Preserve legacy engagement alongside correlated operation outcomes.
+            self._record_player_feature(action)
         operation(
             self._analytics.telemetry,
             "playback_operation",

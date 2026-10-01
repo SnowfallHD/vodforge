@@ -89,7 +89,7 @@ def test_distinct_copy_controls_use_annotations_and_displayed_note_without_save(
     assert bridge.status == "Copied note."
     assert bridge._annotations.snapshot == snapshot
     assert bridge._runtime.history == raw_history
-    assert not events
+    assert events == [("library", "personal_note_copied")]
     assert bridge.libraryDetail["note"] == "Saved note"
     assert not bridge.copyLibraryText("stale-owner", "note", "wrong")
     assert not bridge.copyLibraryText(owner, "tags", "wrong")

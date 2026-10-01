@@ -330,3 +330,104 @@ def test_automatic_check_starts_during_active_work_and_retries_only_updater_busy
     assert scheduled[-1] == 30 * 1000
     bridge._runtime = runtime
     bridge.close()
+
+
+@pytest.mark.parametrize("permitted", [True, False])
+@pytest.mark.parametrize("terminal", ["Ended", "Failed"])
+def test_legacy_player_terminal_engagement_survives_operation_tracking(
+    tmp_path, monkeypatch, permitted, terminal
+):
+    bridge, telemetry = bridge_fixture(tmp_path, monkeypatch, permitted=permitted)
+    try:
+        record = saved(tmp_path, "PRIVATE title", "MP4")
+        path = tmp_path / "PRIVATE.mp4"
+        path.write_bytes(b"controlled provider input")
+        record["vodforge_output_path"] = str(path)
+        bridge._runtime.history = [record]
+        assert bridge.openLibraryItem(0)
+        generation = bridge._playback_generation
+        bridge.observePlayback(0, 100, "Playing", generation)
+        bridge.observePlayback(100, 100, terminal, generation - 1)
+        bridge.observePlayback(100, 100, terminal, generation)
+        bridge.observePlayback(100, 100, terminal, generation)
+        if terminal == "Failed":
+            bridge.observePlayback(100, 100, "Ended", generation)
+        actual = rows(telemetry, tmp_path, "player")
+        assert [event["action"] for event in actual] == (
+            ["completed" if terminal == "Ended" else "failed"] if permitted else []
+        )
+    finally:
+        bridge.close()
+
+
+@pytest.mark.parametrize("permitted", [True, False])
+def test_successful_copy_engagement_contains_no_private_text_and_rejects_stale_owner(
+    tmp_path, monkeypatch, permitted
+):
+    from yt_downloader.history import history_archive_owner
+
+    bridge, telemetry = bridge_fixture(tmp_path, monkeypatch, permitted=permitted)
+    try:
+        record = saved(tmp_path, "PRIVATE title", "MP4")
+        record["description"] = "PRIVATE source description"
+        bridge._runtime.history = [record]
+        owner = history_archive_owner(record)
+        bridge._library_detail_owner = owner
+        bridge._library_scene_route = "detail"
+        assert not bridge.copyLibraryText("stale-owner", "description")
+        assert not bridge.copyLibraryText(owner, "tags")
+        assert bridge.copyLibraryText(owner, "description")
+        assert bridge.copyLibraryText(owner, "description")
+        assert bridge.editLibraryTag(owner, "PRIVATE tag", False)
+        assert bridge.copyLibraryText(owner, "tags")
+        assert bridge.copyLibraryText(owner, "note", "PRIVATE unsaved note")
+        actual = rows(telemetry, tmp_path, "library")
+        assert [event["action"] for event in actual] == (
+            [
+                "source_description_copied",
+                "personal_tags_copied",
+                "personal_note_copied",
+            ]
+            if permitted
+            else []
+        )
+        assert bridge._annotations.annotation_for(owner).note == ""
+    finally:
+        bridge.close()
+
+
+@pytest.mark.parametrize("permitted", [True, False])
+def test_clipboard_location_and_youtube_source_track_only_success_without_values(
+    tmp_path, monkeypatch, permitted
+):
+    from yt_downloader.history import history_archive_owner
+
+    bridge, telemetry = bridge_fixture(tmp_path, monkeypatch, permitted=permitted)
+    try:
+        record = saved(tmp_path, "PRIVATE title", "MP4")
+        record["webpage_url"] = "https://www.youtube.com/watch?v=abcdefghijk"
+        path = tmp_path / "PRIVATE.mp4"
+        path.write_bytes(b"controlled fixture")
+        record["vodforge_output_path"] = str(path)
+        bridge._runtime.history = [record]
+        bridge._playback_record = record
+        owner = history_archive_owner(record)
+        assert not bridge.copyPlayerSourceUrl("stale-owner")
+        bridge.copyLibraryPath("stale-owner")
+        assert bridge.copyPlayerSourceUrl(owner)
+        bridge.copyLibraryPath(owner)
+        assert telemetry.shutdown(2)
+        actual = [
+            event.public_payload()
+            for event in _load_outbox(tmp_path / "telemetry/events.json")
+        ]
+        assert "PRIVATE" not in json.dumps(actual)
+        assert "https://" not in json.dumps(actual)
+        pairs = [(event.get("feature"), event.get("action")) for event in actual]
+        assert pairs == (
+            [("library", "youtube_url_copied"), ("archive", "location_copied")]
+            if permitted
+            else []
+        )
+    finally:
+        bridge.close()
