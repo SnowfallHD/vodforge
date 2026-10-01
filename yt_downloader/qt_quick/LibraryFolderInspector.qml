@@ -46,7 +46,7 @@ Column {
         id: overview
         objectName: "libraryFolderOverview"
         width: parent.width
-        height: inspector.item.folder ? 214 : 81
+        height: inspector.item.folder ? 214 : Math.max(81, selectedOverview.implicitHeight + 8)
         StoneField {
             objectName: "libraryFolderArtworkFrame"
             visible: !inspector.item.folder
@@ -66,6 +66,7 @@ Column {
             visible: !(inspector.item.artwork || "")
         }
         Column {
+            id: selectedOverview
             x: inspector.item.folder ? 0 : 136
             y: inspector.item.folder ? 136 : 0
             width: inspector.item.folder ? parent.width : Math.max(130, inspector.width - 136)
@@ -98,6 +99,18 @@ Column {
                 font.pixelSize: 12
                 width: parent.width
                 elide: Text.ElideRight
+                HoverHandler { id: selectedLocationHover }
+                ToolTip.visible: selectedLocationHover.hovered && !!text
+                ToolTip.text: text
+            }
+            Text {
+                objectName: "libraryFolderSelectedSummary"
+                visible: !inspector.item.folder && !!text
+                text: [inspector.item.status, inspector.item.modeLabel].filter(Boolean).join("  ·  ")
+                color: theme.muted
+                font.pixelSize: 12
+                width: parent.width
+                wrapMode: Text.WordWrap
             }
         }
     }
@@ -349,7 +362,12 @@ Column {
                 width: parent.width; height: 40
                 label: inspector.issueSettings.output_dir || "Choose output folder…"
                 accessibilityLabel: "Choose output folder for this retry"
-                onActivated: issueFolderDialog.open()
+                ToolTip.visible: hovered && !!inspector.issueSettings.output_dir
+                ToolTip.text: inspector.issueSettings.output_dir || ""
+                onActivated: {
+                    issueFolderDialog.currentFolder = inspector.issueSettings.output_url || ""
+                    issueFolderDialog.open()
+                }
             }
             Text { text: "Output"; visible: !inspector.item.missing || inspector.item.canRedownload; color: theme.muted; font.pixelSize: 12; font.bold: true }
             InlineSelector {
@@ -546,6 +564,20 @@ Column {
                 id: itemColumn
                 anchors.fill: parent
                 spacing: 10
+                Repeater {
+                    model: (inspector.item.source || []).slice(0, 1).concat((inspector.item.output || []).slice(0, 1))
+                    delegate: Text {
+                        required property var modelData
+                        width: itemColumn.width
+                        text: modelData.label + ": " + modelData.value
+                        color: theme.muted
+                        font.pixelSize: 12
+                        elide: Text.ElideRight
+                        HoverHandler { id: factHover }
+                        ToolTip.visible: factHover.hovered
+                        ToolTip.text: text
+                    }
+                }
                 Text { text: "Saved version"; color: theme.muted; font.pixelSize: 12; font.bold: true }
                 Flow {
                     width: parent.width
