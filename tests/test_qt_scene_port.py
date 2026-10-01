@@ -5618,7 +5618,10 @@ def test_qt_visible_cards_show_resolved_local_artwork(
         for image in images:
             assert image.property("inset") == 0
             if not channel:
-                assert image.property("cover")
+                # Library playlist previews preserve the complete frame.
+                assert bool(image.property("cover")) == (
+                    surface != "Library" or mode != "groups"
+                )
             if not channel:
                 inset = image.parentItem().property("artworkFaceInset") or 0
                 assert image.x() == inset

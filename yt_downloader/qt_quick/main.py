@@ -2206,6 +2206,8 @@ class Bridge(QObject):
 
     def _recovery_progress_label(self) -> str:
         message = self._runtime.active_status.casefold()
+        if "prepar" in message:
+            return "Preparing"
         if "transcod" in message or "convert" in message:
             return "Transcoding"
         if "download" in message:
