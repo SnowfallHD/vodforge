@@ -76,8 +76,8 @@ Item {
             }
             Item { Layout.fillHeight: true }
             StoneButton {
+                objectName: "libraryFolderLibraryButton"
                 label: "← Library"
-                visible: browser.model.mode !== "folders"
                 Layout.fillWidth: true
                 onActivated: browser.appBridge.backLibrary()
             }
@@ -163,16 +163,17 @@ Item {
                 Layout.fillWidth: true
                 StoneButton {
                     objectName: "libraryFolderBackButton"
-                    label: "← Back"
+                    label: "←"
+                    accessibilityLabel: "Parent folder"
+                    enabled: browser.model.canGoUp && (browser.model.breadcrumbs || []).length > 1
                     size: "inline"
-                    Layout.preferredWidth: 72
+                    Layout.preferredWidth: 36
                     visible: browser.model.mode === "folders"
                     onActivated: {
-                        if (browser.model.canGoUp)
-                            browser.appBridge.upLibraryFolder()
-                        else
-                            browser.appBridge.backLibrary()
+                        if (enabled) browser.appBridge.upLibraryFolder()
                     }
+                    ToolTip.visible: hovered
+                    ToolTip.text: "Parent folder"
                 }
                 Text {
                     objectName: "libraryFolderLocationHeading"

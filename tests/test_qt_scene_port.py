@@ -4932,6 +4932,10 @@ def test_qt_library_folders_columns_clear_the_header_divider(tmp_path, monkeypat
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
     app = qt_app()
     bridge = qt_main.Bridge(None)
+    record = saved(tmp_path, "Root item", "MP4")
+    Path(record["vodforge_output_path"]).write_bytes(b"video")
+    (tmp_path / "child").mkdir()
+    bridge._runtime.history = [record]
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
     try:
@@ -4954,8 +4958,34 @@ def test_qt_library_folders_columns_clear_the_header_divider(tmp_path, monkeypat
             assert inspector.property("visible") == (width >= 920 and height >= 740)
         back = window.findChild(QObject, "libraryFolderBackButton")
         assert back.property("visible") is True
-        assert back.width() == 72
+        assert back.width() == 36
+        assert back.property("label") == "←"
+        assert back.property("accessibilityLabel") == "Parent folder"
+        assert not back.property("enabled")
         back.activated.emit()
+        assert bridge.libraryScene["route"] == "folders"
+        deadline = time.monotonic() + 2
+        while bridge.libraryFolders["checkingFolder"] and time.monotonic() < deadline:
+            bridge._pump()
+            app.processEvents()
+            QTest.qWait(10)
+        child = next(
+            item
+            for item in bridge.libraryFolders["components"]
+            if item["kind"] == "folder" and item["title"] == "child"
+        )
+        assert bridge.openLibraryFolderComponent(child["key"])
+        app.processEvents()
+        assert back.property("enabled")
+        back.activated.emit()
+        app.processEvents()
+        assert bridge.libraryFolders["path"] == str(tmp_path)
+        assert bridge.libraryScene["route"] == "folders"
+        assert not back.property("enabled")
+        library = window.findChild(QObject, "libraryFolderLibraryButton")
+        assert library.property("visible")
+        assert library.property("label") == "← Library"
+        library.activated.emit()
         assert bridge.libraryScene["route"] == "home"
     finally:
         window.close()
