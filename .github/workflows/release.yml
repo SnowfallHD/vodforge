@@ -10,6 +10,8 @@ permissions:
   contents: read
 jobs:
   verify-existing-signed-intel:
+    permissions:
+      contents: write
     runs-on: macos-15-intel
     timeout-minutes: 12
     steps:
