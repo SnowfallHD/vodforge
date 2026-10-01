@@ -372,9 +372,15 @@ def test_qt_library_group_menu_selects_every_saved_variant(tmp_path, monkeypatch
         app.processEvents()
         assert not menu.property("visible")
         assert scene.property("selectionMode")
-        assert set(scene.property("selectedOwners").toVariant()) == set(
+        targets = scene.property("selectedGroups").toVariant()
+        assert len(targets) == 1
+        assert scene.property("selectedEntityCount") == 1
+        assert set(bridge.resolveLibrarySelection(targets)) == set(
             bridge.libraryScene["groups"][0]["owners"]
         )
+        assert bridge.resolveLibrarySelection(targets + targets) == []
+        bridge.navigateLibrary("all")
+        assert bridge.resolveLibrarySelection(targets) == []
     finally:
         window.close()
         engine.deleteLater()

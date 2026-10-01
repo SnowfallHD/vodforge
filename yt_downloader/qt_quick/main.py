@@ -4386,6 +4386,43 @@ class Bridge(QObject):
         return self.createCollection(name, owners)
 
     @Slot("QVariantList", result="QVariantList")
+    def resolveLibrarySelection(self, targets: list[dict[str, Any]]) -> list[str]:
+        """Expand current screen entities only when an action is requested."""
+        if self._selection != "Library" or not targets:
+            return []
+        scene = self.libraryScene
+        groups = {
+            (str(group["kind"]), str(group["key"])): group for group in scene["groups"]
+        }
+        media = {str(item["owner"]) for item in scene["media"]}
+        seen: set[tuple[str, str]] = set()
+        owners: list[str] = []
+        for target in targets:
+            if not isinstance(target, dict):
+                return []
+            kind = target.get("kind")
+            key = target.get("owner") if kind == "media" else target.get("key")
+            if not isinstance(kind, str) or not isinstance(key, str) or not key:
+                return []
+            identity = (kind, key)
+            if identity in seen:
+                return []
+            seen.add(identity)
+            if kind == "media":
+                if key not in media:
+                    return []
+                owners.append(key)
+            else:
+                group = groups.get(identity)
+                if group is None:
+                    return []
+                owners.extend(group["owners"])
+        resolved = list(dict.fromkeys(owners))
+        if any(self._saved_item_for_owner(owner) is None for owner in resolved):
+            return []
+        return resolved
+
+    @Slot("QVariantList", result="QVariantList")
     def collectionOwnersForArchiveSelection(self, owners: list[str]) -> list[str]:
         """Resolve selected file owners to the stable annotation owners."""
         if not owners or len(owners) != len(set(owners)):
