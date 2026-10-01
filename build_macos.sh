@@ -63,6 +63,7 @@ fi
     --ignore=tests/test_qt_settings_privacy.py \
     --ignore=tests/test_qt_titlebar_drag.py \
     --ignore=tests/test_qt_vertical_scroll_chain.py \
+    --ignore=tests/test_qt_material_visibility.py \
     --ignore=tests/test_qt_interaction_invariants.py
   QT_QUICK_BACKEND=software "$python_bin" -m pytest -q \
     tests/test_qt_analytics_session.py \
@@ -85,6 +86,7 @@ fi
     tests/test_qt_settings_privacy.py \
     tests/test_qt_titlebar_drag.py \
     tests/test_qt_vertical_scroll_chain.py \
+    tests/test_qt_material_visibility.py \
     tests/test_qt_interaction_invariants.py
   QT_QUICK_BACKEND=software "$python_bin" -m pytest -q tests/test_qt_scene_port.py
 )
