@@ -19,6 +19,11 @@ from PIL import Image, ImageOps
 
 from .failure_diagnostics import FailureDiagnostic, capture_failure
 from .history import application_data_dir
+from .local_video_labels import (
+    local_video_profile_label,
+    local_video_profile_text,
+    local_video_profile_value,
+)
 from .models import OutputType
 from .output_validation import validate_output_artifact
 from .platform_services import hidden_window_subprocess_kwargs
@@ -93,7 +98,7 @@ class LocalVideoProfileSpec:
 def local_video_profile_spec(profile: LocalVideoProfile | str) -> LocalVideoProfileSpec:
     """Resolve one immutable profile without consulting live application settings."""
 
-    selected = LocalVideoProfile(profile)
+    selected = LocalVideoProfile(local_video_profile_value(profile))
     if selected is LocalVideoProfile.UHD:
         return LocalVideoProfileSpec(
             width=3840,
@@ -193,7 +198,7 @@ def new_local_audio_video_request(
         image_path=Path(image_path),
         output_dir=Path(output_dir),
         run_id=uuid.uuid4().hex,
-        profile=LocalVideoProfile(profile),
+        profile=LocalVideoProfile(local_video_profile_value(profile)),
     )
 
 
@@ -404,7 +409,7 @@ def build_local_audio_video_history_metadata(
         "Output duration": f"{duration:.2f} seconds" if duration else "Not available",
         "Validation status": "Validated",
     }
-    profile = f"MP4 • {spec.label} • Static image"
+    profile = local_video_profile_text(f"MP4 • {spec.label} • Static image")
     return {
         "id": f"local_{request.run_id}",
         "title": title,
@@ -427,7 +432,7 @@ def build_local_audio_video_history_metadata(
         ),
         "vodforge_run_activity": [
             "Local MP3 and still image selected.",
-            f"Static-image MP4 encoded with {request.profile.value} and validated.",
+            f"Static-image MP4 encoded with {local_video_profile_label(request.profile.value)} and validated.",
             f"Committed output file: {output_path.name}",
         ],
         "vodforge_encoding_summary": {

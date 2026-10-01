@@ -175,6 +175,7 @@ from .local_audio_video import (
     local_conversion_state_path,
 )
 from .local_audio_video_ui import LocalAudioVideoDialog
+from .local_video_labels import local_video_profile_text
 from .media_player import (
     MediaPlayerError as MediaPlayerError,  # noqa: PLC0414 - compatibility export
 )
@@ -11125,7 +11126,10 @@ class DownloaderApp(
         activity = (
             list(job.activity_lines)
             if isinstance(job, DownloadJob)
-            else sanitize_run_activity(info.get("vodforge_run_activity"))
+            else [
+                local_video_profile_text(line)
+                for line in sanitize_run_activity(info.get("vodforge_run_activity"))
+            ]
         )
         panel = self.__dict__.get("forge_activity")
         if panel is not None and terminal_status in {"Failed", "Partial"}:

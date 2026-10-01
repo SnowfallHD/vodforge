@@ -158,6 +158,11 @@ from yt_downloader.local_audio_video import (
     LocalAudioVideoProgress,
     LocalAudioVideoResult,
 )
+from yt_downloader.local_video_labels import (
+    local_video_profile_label,
+    local_video_profile_text,
+    local_video_profile_value,
+)
 from yt_downloader.media_player import resolve_library_media_path
 from yt_downloader.models import (
     CookieSource,
@@ -2320,7 +2325,7 @@ class Bridge(QObject):
 
     @Property(str, notify=localChanged)
     def localProfile(self) -> str:
-        return self._local_profile
+        return local_video_profile_label(self._local_profile)
 
     @Property(str, notify=localChanged)
     def localProgress(self) -> str:
@@ -2568,7 +2573,12 @@ class Bridge(QObject):
             if job is not None:
                 lines = job.activity_lines
             elif saved is not None:
-                lines = sanitize_run_activity(saved.get("vodforge_run_activity"))
+                lines = [
+                    local_video_profile_text(line)
+                    for line in sanitize_run_activity(
+                        saved.get("vodforge_run_activity")
+                    )
+                ]
             else:
                 lines = []
             technical = "\n".join(lines)[-50_000:]
@@ -4657,6 +4667,7 @@ class Bridge(QObject):
 
     @Slot(str)
     def setLocalProfile(self, profile: str) -> None:
+        profile = local_video_profile_value(profile)
         if profile in LOCAL_VIDEO_PROFILE_OPTIONS:
             self._local_profile = profile
             self.localChanged.emit()
@@ -6292,7 +6303,8 @@ def create_engine(bridge: Bridge) -> QQmlApplicationEngine:
     engine.rootContext().setContextProperty("monoFontFamily", FONT_MONO_FAMILY)
     engine.rootContext().setContextProperty("qualityOptions", list(QUALITY_OPTIONS))
     engine.rootContext().setContextProperty(
-        "localVideoProfiles", list(LOCAL_VIDEO_PROFILE_OPTIONS)
+        "localVideoProfiles",
+        [local_video_profile_label(value) for value in LOCAL_VIDEO_PROFILE_OPTIONS],
     )
     engine.rootContext().setContextProperty(
         "buttonMetrics",

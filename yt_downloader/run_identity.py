@@ -11,6 +11,7 @@ from typing import Any
 
 from .export_planning import export_mode_display_name
 from .history import history_output_path, sanitize_durable_url
+from .local_video_labels import local_video_profile_text
 from .models import DownloadJob, ExportMode, OutputType
 
 ATTEMPT_SIGNATURE_KEY = "vodforge_attempt_signature"
@@ -268,7 +269,7 @@ def metadata_attempt_signature(info: dict[str, Any]) -> str:
 def metadata_output_profile(info: dict[str, Any]) -> str:
     stored = str(info.get(OUTPUT_PROFILE_KEY) or "").strip()
     if stored:
-        return stored
+        return local_video_profile_text(stored)
     output_type = str(info.get("vodforge_output_type") or "MP4").upper()
     summary = info.get("vodforge_encoding_summary")
     output = summary.get("output") if isinstance(summary, dict) else None
@@ -287,7 +288,7 @@ def metadata_output_profile(info: dict[str, Any]) -> str:
 def metadata_output_profile_details(info: dict[str, Any]) -> str:
     stored = str(info.get(OUTPUT_PROFILE_DETAILS_KEY) or "").strip()
     if stored:
-        return stored
+        return local_video_profile_text(stored)
     profile = metadata_output_profile(info)
     summary = info.get("vodforge_encoding_summary")
     output = summary.get("output") if isinstance(summary, dict) else None

@@ -24,6 +24,7 @@ from .local_audio_video import (
     local_video_profile_spec,
     new_local_audio_video_request,
 )
+from .local_video_labels import local_video_profile_label, local_video_profile_value
 from .platform_services import create_surface_image, surface_backing_scale
 from .ui_button_contract import ProductButton
 from .ui_layout import (
@@ -212,10 +213,16 @@ class LocalAudioVideoDialog:
         self._label(profile, text="OUTPUT PROFILE", style="FocusEyebrow.TLabel").grid(
             row=0, column=0, sticky="w"
         )
+        self.profile_display_var = tk.StringVar(
+            value=local_video_profile_label(self.profile_var.get())
+        )
         self.profile_combo = ChoiceDropdown(
             profile,
-            textvariable=self.profile_var,
-            values=LOCAL_VIDEO_PROFILE_OPTIONS,
+            textvariable=self.profile_display_var,
+            values=tuple(
+                local_video_profile_label(value)
+                for value in LOCAL_VIDEO_PROFILE_OPTIONS
+            ),
             state="readonly",
         )
         self.profile_combo.grid(row=1, column=0, sticky="ew", pady=(self._px(5), 0))
@@ -229,9 +236,13 @@ class LocalAudioVideoDialog:
         ).grid(row=2, column=0, sticky="ew", pady=(self._px(7), 0))
         self.profile_combo.bind(
             "<<ComboboxSelected>>",
-            lambda _event: self._sync_profile_description(),
+            lambda _event: self._select_profile_label(),
             add="+",
         )
+        self._sync_profile_description()
+
+    def _select_profile_label(self) -> None:
+        self.profile_var.set(local_video_profile_value(self.profile_display_var.get()))
         self._sync_profile_description()
 
     def _sync_profile_description(self) -> None:
@@ -240,6 +251,7 @@ class LocalAudioVideoDialog:
         except ValueError:
             self.profile_var.set(LocalVideoProfile.STANDARD.value)
             spec = local_video_profile_spec(LocalVideoProfile.STANDARD)
+        self.profile_display_var.set(local_video_profile_label(self.profile_var.get()))
         self.profile_description_var.set(spec.description)
 
     def _build_destination(self, root: ttk.Frame) -> None:

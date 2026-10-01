@@ -199,7 +199,10 @@ def test_qt_local_worker_failure_replaces_progress_with_friendly_message(
         )
         bridge._pump()
         assert not bridge.localRunning
-        assert bridge.localProgress == "That audio file could not be read. Choose another MP3."
+        assert (
+            bridge.localProgress
+            == "That audio file could not be read. Choose another MP3."
+        )
         assert bridge.status == "That audio file could not be read. Choose another MP3."
     finally:
         bridge.close()
@@ -236,3 +239,68 @@ def test_qt_local_worker_failure_is_rendered_in_composer(
         engine.deleteLater()
         app.processEvents()
         bridge.close()
+
+
+def test_converter_display_labels_render_and_keep_durable_selection(
+    tmp_path, monkeypatch
+):
+    from PySide6.QtCore import QMetaObject
+
+    from yt_downloader.local_audio_video import LocalVideoProfile
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    engine = qt_main.create_engine(bridge)
+    try:
+        root = engine.rootObjects()[0]
+        popup = root.findChild(QObject, "localConversionPopup")
+        popup.open()
+        app.processEvents()
+        buttons = [
+            child
+            for child in root.findChildren(QObject)
+            if child.property("label") == "Everyday  ▾" and child.property("visible")
+        ]
+        assert buttons
+        assert QMetaObject.invokeMethod(buttons[0], "activated")
+        app.processEvents()
+        from PySide6.QtTest import QTest
+
+        QTest.qWait(100)
+
+        def visual_items(item):
+            yield item
+            for child in item.childItems():
+                yield from visual_items(child)
+
+        labels = {
+            child.property("label")
+            for child in visual_items(root.contentItem())
+            if child.isVisible() and isinstance(child.property("label"), str)
+        }
+        assert {"Everyday", "4K", "Broadcast", "Smaller File"} <= labels
+        submitted = []
+        monkeypatch.setattr(
+            bridge._local, "start", lambda *args: submitted.append(args)
+        )
+        for profile, label in zip(
+            LocalVideoProfile,
+            ("Everyday", "4K", "Broadcast", "Smaller File"),
+            strict=True,
+        ):
+            bridge.setLocalProfile(label)
+            app.processEvents()
+            assert bridge.localProfile == label
+            assert bridge._local_profile == profile.value
+            bridge.startLocalConversion()
+            assert submitted[-1][-1] == profile.value
+    finally:
+        for root in engine.rootObjects():
+            root.close()
+        bridge.close()
+        engine.deleteLater()
+        app.processEvents()

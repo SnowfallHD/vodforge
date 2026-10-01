@@ -267,7 +267,7 @@ def test_profile_choice_is_captured_by_the_request_and_library_metadata(
     )
 
     assert request.profile is LocalVideoProfile.STRICT_CBR
-    assert "Strict 2 Mbps CBR" in metadata["vodforge_output_profile"]
+    assert "1080p • Broadcast" in metadata["vodforge_output_profile"]
     output = metadata["vodforge_encoding_summary"]["output"]
     assert output["Output rate-control mode"] == "Strict CBR"
     assert output["Target video bitrate"] == "2000 kbps"
