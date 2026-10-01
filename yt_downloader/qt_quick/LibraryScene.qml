@@ -636,8 +636,37 @@ Item {
                     readonly property real rowStride: cardHeight + spacing
                     readonly property int totalRows: Math.ceil(scene.media.length / columns)
                     readonly property real scrollTop: viewport.contentItem.contentY - y
+                    // Keep the same owner through column reflow. Otherwise a fixed
+                    // contentY admits a different, unpainted delegate window.
+                    property int windowColumns: 0
+                    property bool neighborPrewarm: false
+                    property real windowStride: 0
+                    property int resizeAnchorOwner: 0
+                    property real resizeAnchorFraction: 0
+                    property real resizeAnchorScroll: -1
+                    function preserveResizeAnchor() {
+                        if (visible && windowColumns > 0 && windowStride > 0 && scrollTop > 0) {
+                            if (Math.abs(viewport.contentItem.contentY - resizeAnchorScroll) > 0.5) {
+                                const oldRow = Math.floor(scrollTop / windowStride)
+                                resizeAnchorOwner = oldRow * windowColumns
+                                resizeAnchorFraction = scrollTop / windowStride - oldRow
+                            }
+                            const target = y + (Math.floor(resizeAnchorOwner / columns) + resizeAnchorFraction) * rowStride
+                            viewport.contentItem.contentY = Math.max(0, Math.min(target,
+                                viewport.contentItem.contentHeight - viewport.contentItem.height))
+                        }
+                        // Within 80px of an extra column, warm at most two more
+                        // rows. Admission stays capped at (viewport rows + 5)
+                        // * columns, independently of history size or scroll depth.
+                        neighborPrewarm = visible && windowColumns > 0 && columns < 5 &&
+                            Math.floor((width + 14 + 80) / 200) > columns
+                        windowColumns = columns
+                        windowStride = rowStride
+                        resizeAnchorScroll = viewport.contentItem.contentY
+                    }
+                    onRowStrideChanged: preserveResizeAnchor()
                     readonly property int firstRow: Math.max(0, Math.min(totalRows, Math.floor(scrollTop / rowStride) - 1))
-                    readonly property int lastRow: Math.min(totalRows, firstRow + Math.ceil(viewport.height / rowStride) + 3)
+                    readonly property int lastRow: Math.min(totalRows, firstRow + Math.ceil(viewport.height / rowStride) + (neighborPrewarm ? 5 : 3))
                     readonly property var windowItems: scene.media.slice(firstRow * columns, lastRow * columns)
                     function updateWindow() { mediaWindow.replace(windowItems) }
                     onWindowItemsChanged: Qt.callLater(updateWindow)
