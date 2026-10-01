@@ -147,6 +147,7 @@ Column {
     }
     ScrollView {
         id: filePanel
+        VerticalScrollChain { nestedScrollView: filePanel }
         objectName: "libraryFolderFileInspector"
         visible: !!inspector.item.file
         width: parent.width
@@ -233,6 +234,7 @@ Column {
     }
     ScrollView {
         id: issuePanel
+        VerticalScrollChain { nestedScrollView: issuePanel }
         objectName: "libraryIssueInspector"
         visible: !!inspector.item.issue
         width: parent.width
@@ -571,6 +573,8 @@ Column {
                     }
                 }
                 ScrollView {
+                    id: tagsScroll
+                    VerticalScrollChain { nestedScrollView: tagsScroll }
                     width: parent.width
                     height: Math.min(54, Math.max(18, tagsText.implicitHeight))
                     clip: true
@@ -617,6 +621,7 @@ Column {
             }
             ScrollView {
                 id: descriptionScroll
+                VerticalScrollChain { nestedScrollView: descriptionScroll }
                 objectName: "libraryFolderDescriptionScroll"
                 x: 0; y: 25
                 width: parent.width

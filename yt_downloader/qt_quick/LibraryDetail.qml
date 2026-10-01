@@ -148,6 +148,7 @@ Item {
                         }
                         ScrollView {
                             id: descriptionScroll
+                            VerticalScrollChain { nestedScrollView: descriptionScroll }
                             objectName: "libraryDescriptionScroll"
                             visible: !descriptionPanel.editing
                             width: parent.width
