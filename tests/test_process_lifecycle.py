@@ -103,6 +103,8 @@ def test_persistent_exit_inspection_denial_never_authorizes_sigkill(monkeypatch)
 
 
 def test_sigkill_exit_is_also_confirmed_after_transient_denial(monkeypatch):
+    # This fully mocked POSIX escalation also runs on Windows, which has no SIGKILL.
+    monkeypatch.setattr(signal, "SIGKILL", 9, raising=False)
     signals = []
     reads = iter(["owned fixture", ProcessOwnershipError("exit inspection"), None])
     clock = iter([0.0, 6.0, 6.0, 6.1])
