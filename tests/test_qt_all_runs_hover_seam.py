@@ -1,10 +1,20 @@
 """Synthetic offscreen pointer checks; not native macOS acceptance evidence."""
+
 import pytest
-from PySide6.QtCore import QObject, QPoint, QPointF, QCoreApplication, QEvent, QMetaObject, Qt
+from PySide6.QtCore import (
+    QCoreApplication,
+    QEvent,
+    QMetaObject,
+    QObject,
+    QPoint,
+    QPointF,
+    Qt,
+)
 from PySide6.QtQuick import QQuickItem
-from PySide6.QtTest import QTest
 from PySide6.QtQuickControls2 import QQuickStyle
-from tests.test_qt_scene_port import qt_app, qt_main, saved, make_job
+from PySide6.QtTest import QTest
+
+from tests.test_qt_scene_port import make_job, qt_app, qt_main, saved
 
 
 @pytest.fixture
@@ -39,7 +49,7 @@ def move(window, point):
 
 
 def test_edge_touch_and_held_face_across_padding_and_seam(run_scene):
-    app, bridge, window, button, popup = run_scene
+    _app, _bridge, window, button, popup = run_scene
     face = button.findChild(QObject, "allRunsTriggerFace")
     center = button.mapToScene(QPointF(button.width() / 2, button.height() / 2))
     move(window, center)
@@ -47,7 +57,9 @@ def test_edge_touch_and_held_face_across_padding_and_seam(run_scene):
     assert button.property("held")
     assert "/pressed/" in face.property("source").toString()
     content = popup.property("contentItem")
-    bottom = content.mapToScene(QPointF(0, content.height() + popup.property("padding"))).y()
+    bottom = content.mapToScene(
+        QPointF(0, content.height() + popup.property("padding"))
+    ).y()
     top = button.mapToScene(QPointF(0, 0)).y()
     assert bottom == pytest.approx(top, abs=0.01)
     # Repeated crossings include the frame's 9px padding, excluded previously.
@@ -68,11 +80,15 @@ def test_click_navigates_without_another_press_face_or_toggle(run_scene):
     point = button.mapToScene(QPointF(button.width() / 2, button.height() / 2))
     move(window, point)
     before = face.property("source")
-    QTest.mousePress(window, Qt.LeftButton, Qt.NoModifier, QPoint(round(point.x()), round(point.y())))
+    QTest.mousePress(
+        window, Qt.LeftButton, Qt.NoModifier, QPoint(round(point.x()), round(point.y()))
+    )
     app.processEvents()
     assert face.property("source") == before
     assert popup.property("visible")
-    QTest.mouseRelease(window, Qt.LeftButton, Qt.NoModifier, QPoint(round(point.x()), round(point.y())))
+    QTest.mouseRelease(
+        window, Qt.LeftButton, Qt.NoModifier, QPoint(round(point.x()), round(point.y()))
+    )
     app.processEvents()
     assert bridge.selection == "Library"
     assert not popup.property("visible")
@@ -80,7 +96,7 @@ def test_click_navigates_without_another_press_face_or_toggle(run_scene):
 
 @pytest.mark.parametrize("side", ["top", "bottom", "tight"])
 def test_window_edge_clamping_keeps_edge_contact(run_scene, side):
-    app, bridge, window, button, popup = run_scene
+    app, _bridge, window, _button, popup = run_scene
     # A fixed window-space surface avoids the Forge ColumnLayout rearranging
     # the synthetic anchor as another layout child.
     parent = QQuickItem(window.contentItem())
@@ -106,8 +122,9 @@ def test_window_edge_clamping_keeps_edge_contact(run_scene, side):
     y, height = popup.property("y"), popup.property("height")
     assert y >= 0
     assert y + height <= parent.height()
-    assert (y + height == pytest.approx(anchor.y(), abs=0.01) or
-            y == pytest.approx(anchor.y() + anchor.height(), abs=0.01))
+    assert y + height == pytest.approx(anchor.y(), abs=0.01) or y == pytest.approx(
+        anchor.y() + anchor.height(), abs=0.01
+    )
     assert popup.property("x") >= 0
     assert popup.property("x") + popup.property("width") <= parent.width()
     if side == "tight":

@@ -1,4 +1,5 @@
 """Offscreen event-delivery regression; this does not prove native macOS input."""
+
 import os
 from pathlib import Path
 
@@ -6,7 +7,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PySide6.QtCore import QObject, QPoint, QPointF, Qt, QUrl
-from PySide6.QtGui import QGuiApplication, QWheelEvent, QInputDevice, QPointingDevice
+from PySide6.QtGui import QGuiApplication, QInputDevice, QPointingDevice, QWheelEvent
 from PySide6.QtQml import QQmlComponent, QQmlEngine
 from PySide6.QtQuick import QQuickWindow
 
@@ -18,7 +19,8 @@ def scroll_scene():
     app = QGuiApplication.instance() or QGuiApplication([])
     engine = QQmlEngine()
     component = QQmlComponent(engine)
-    component.setData(b'''
+    component.setData(
+        b"""
 import QtQuick
 import QtQuick.Controls
 Window {
@@ -39,9 +41,13 @@ Window {
         }
     }
 }
-''', QUrl.fromLocalFile(str(QML_DIR / "ScrollChainRegression.qml")))
+""",
+        QUrl.fromLocalFile(str(QML_DIR / "ScrollChainRegression.qml")),
+    )
     window = component.create()
-    assert isinstance(window, QQuickWindow), [error.toString() for error in component.errors()]
+    assert isinstance(window, QQuickWindow), [
+        error.toString() for error in component.errors()
+    ]
     for _ in range(5):
         app.processEvents()
     outer = window.findChild(QObject, "outer").property("contentItem")
@@ -54,16 +60,21 @@ Window {
 
 
 @pytest.mark.parametrize("pixels", [True, False])
-@pytest.mark.parametrize("start,delta,expected_inner,expected_outer", [
-    (100, -80, 180, 0),      # inner can still move
-    (360, -80, 380, 60),     # same event crosses bottom: only remainder
-    (380, -80, 380, 80),     # bottom continues onto page
-    (20, 80, 0, -60),        # same event crosses top
-    (0, 80, 0, -80),         # top continues onto page
-    (380, 80, 300, 0),       # reversal at bottom stays inner
-    (0, -80, 80, 0),         # reversal at top stays inner
-])
-def test_vertical_event_chains_once(scroll_scene, pixels, start, delta, expected_inner, expected_outer):
+@pytest.mark.parametrize(
+    "start,delta,expected_inner,expected_outer",
+    [
+        (100, -80, 180, 0),  # inner can still move
+        (360, -80, 380, 60),  # same event crosses bottom: only remainder
+        (380, -80, 380, 80),  # bottom continues onto page
+        (20, 80, 0, -60),  # same event crosses top
+        (0, 80, 0, -80),  # top continues onto page
+        (380, 80, 300, 0),  # reversal at bottom stays inner
+        (0, -80, 80, 0),  # reversal at top stays inner
+    ],
+)
+def test_vertical_event_chains_once(
+    scroll_scene, pixels, start, delta, expected_inner, expected_outer
+):
     app, window, outer, inner_view, inner = scroll_scene
     # Keep the nested view under the pointer while giving the page room both ways.
     outer.setProperty("contentY", 0)
@@ -74,9 +85,16 @@ def test_vertical_event_chains_once(scroll_scene, pixels, start, delta, expected
         inner_view.setProperty("y", 100)
     before = outer.property("contentY")
     point = inner_view.mapToScene(QPointF(40, 40))
-    event = QWheelEvent(point, point, QPoint(0, delta) if pixels else QPoint(),
-                        QPoint() if pixels else QPoint(0, delta * 120 // 80),
-                        Qt.NoButton, Qt.NoModifier, Qt.ScrollUpdate, False)
+    event = QWheelEvent(
+        point,
+        point,
+        QPoint(0, delta) if pixels else QPoint(),
+        QPoint() if pixels else QPoint(0, delta * 120 // 80),
+        Qt.NoButton,
+        Qt.NoModifier,
+        Qt.ScrollUpdate,
+        False,
+    )
     QGuiApplication.sendEvent(window, event)
     app.processEvents()
     assert inner.property("contentY") == pytest.approx(expected_inner)
@@ -87,14 +105,32 @@ def test_no_overflow_and_horizontal_trackpad(scroll_scene):
     app, window, outer, inner_view, inner = scroll_scene
     inner_view.setProperty("contentHeight", 100)
     point = inner_view.mapToScene(QPointF(40, 40))
-    trackpad = QPointingDevice("Test trackpad", 47, QInputDevice.DeviceType.TouchPad,
-                              QPointingDevice.PointerType.Finger,
-                              QInputDevice.Capability.Position, 1, 0)
+    trackpad = QPointingDevice(
+        "Test trackpad",
+        47,
+        QInputDevice.DeviceType.TouchPad,
+        QPointingDevice.PointerType.Finger,
+        QInputDevice.Capability.Position,
+        1,
+        0,
+    )
+
     def send(dx, dy, phase):
-        event = QWheelEvent(point, point, QPoint(dx, dy), QPoint(), Qt.NoButton,
-                            Qt.NoModifier, phase, False, Qt.MouseEventNotSynthesized, trackpad)
+        event = QWheelEvent(
+            point,
+            point,
+            QPoint(dx, dy),
+            QPoint(),
+            Qt.NoButton,
+            Qt.NoModifier,
+            phase,
+            False,
+            Qt.MouseEventNotSynthesized,
+            trackpad,
+        )
         QGuiApplication.sendEvent(window, event)
         app.processEvents()
+
     send(-3, -53, Qt.ScrollBegin)
     send(-4, -61, Qt.ScrollMomentum)
     assert inner.property("contentY") == 0
@@ -118,8 +154,16 @@ def test_outer_edge_does_not_replay_delta(scroll_scene):
     outer.setProperty("contentY", 680)
     inner_view.setProperty("y", 680)
     point = inner_view.mapToScene(QPointF(40, 40))
-    event = QWheelEvent(point, point, QPoint(0, -80), QPoint(), Qt.NoButton,
-                        Qt.NoModifier, Qt.ScrollUpdate, False)
+    event = QWheelEvent(
+        point,
+        point,
+        QPoint(0, -80),
+        QPoint(),
+        Qt.NoButton,
+        Qt.NoModifier,
+        Qt.ScrollUpdate,
+        False,
+    )
     QGuiApplication.sendEvent(window, event)
     app.processEvents()
     assert inner.property("contentY") == 380
