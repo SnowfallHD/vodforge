@@ -382,7 +382,8 @@ Item {
                     readonly property int columns: Math.max(1, Math.min(5, Math.floor((width + spacing) / 200)))
                     readonly property real cardWidth: (width - spacing * (columns - 1)) / columns
                     readonly property var items: scene.route === "home" ? scene.groups.slice(0, columns) : scene.groups
-                    readonly property real rowStride: 178 + spacing
+                    readonly property real cardHeight: Math.max(178, cardWidth * 9 / 16 + 53)
+                    readonly property real rowStride: cardHeight + spacing
                     readonly property int totalRows: Math.ceil(items.length / columns)
                     readonly property real scrollTop: viewport.contentItem.contentY - groupFlow.mapToItem(content, 0, 0).y
                     readonly property int firstRow: scene.route === "home" ? 0 :
@@ -405,7 +406,7 @@ Item {
                             id: groupCard
                             required property var modelData
                             width: groupFlow.cardWidth
-                            height: 178
+                            height: groupFlow.cardHeight
                             label: ""
                             accessibilityLabel: modelData.title + ", " + modelData.count + " item(s)"
                             onActivated: {
@@ -421,9 +422,9 @@ Item {
                                 x: groupCard.modelData.kind === "channel" ? (parent.width - 96) / 2 : groupCard.artworkFaceInset
                                 y: groupCard.modelData.kind === "channel" ? 14 + groupCard.artworkFaceInset - 7 : groupCard.artworkFaceInset
                                 width: groupCard.modelData.kind === "channel" ? 96 : parent.width - groupCard.artworkFaceInset * 2
-                                height: groupCard.modelData.kind === "channel" ? 96 : 125 - groupCard.artworkFaceInset
+                                height: groupCard.modelData.kind === "channel" ? 96 : width * 9 / 16
                                 circular: groupCard.modelData.kind === "channel"
-                                cover: !circular
+                                cover: false
                                 inset: 0
                                 source: {
                                     const revision = scene.appBridge.artworkRevision
@@ -433,7 +434,7 @@ Item {
                                     scene.appBridge.groupArtworkState(modelData.owner, modelData.kind) === "pending"
                             }
                             Text {
-                                x: 14; y: 130
+                                x: 14; y: groupCard.height - 48
                                 width: parent.width - 52
                                 text: groupCard.modelData.title
                                 color: theme.text
@@ -442,7 +443,7 @@ Item {
                                 elide: Text.ElideRight
                             }
                             Text {
-                                x: 14; y: 153
+                                x: 14; y: groupCard.height - 25
                                 width: parent.width - 28
                                 text: groupCard.modelData.summary
                                 color: theme.muted
@@ -452,7 +453,7 @@ Item {
                             StoneButton {
                                 objectName: "libraryGroupMore"
                                 x: parent.width - 42
-                                y: 129
+                                y: groupCard.height - 49
                                 width: 36
                                 height: 36
                                 label: "⋮"
@@ -471,7 +472,7 @@ Item {
                         visible: scene.route === "home"
                         objectName: "addLibraryCollectionCard"
                         width: groupFlow.cardWidth
-                        height: 178
+                        height: groupFlow.cardHeight
                         label: ""
                         accessibilityLabel: "Add Collection"
                         onActivated: scene.collectionRequested()
