@@ -60,6 +60,7 @@ fi
     --ignore=tests/test_qt_legacy_preset_preferences.py \
     --ignore=tests/test_qt_library_details_copy.py \
     --ignore=tests/test_qt_library_window_model.py \
+    --ignore=tests/test_qt_library_thumbnail_reflow.py \
     --ignore=tests/test_qt_settings_privacy.py \
     --ignore=tests/test_qt_titlebar_drag.py \
     --ignore=tests/test_qt_vertical_scroll_chain.py \
@@ -83,6 +84,7 @@ fi
     tests/test_qt_legacy_preset_preferences.py \
     tests/test_qt_library_details_copy.py \
     tests/test_qt_library_window_model.py \
+    tests/test_qt_library_thumbnail_reflow.py \
     tests/test_qt_settings_privacy.py \
     tests/test_qt_titlebar_drag.py \
     tests/test_qt_vertical_scroll_chain.py \
