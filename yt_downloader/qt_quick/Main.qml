@@ -773,7 +773,13 @@ Window {
                 objectName: "headerDragArea"
                 anchors.fill: parent
                 z: -1
-                onPressed: window.startSystemMove()
+                onPressed: function(mouse) {
+                    // Cocoa's system drag can consume mouse-up. Once the OS
+                    // owns the gesture, do not retain a QML press/grab waiting
+                    // for that release or the next press can be suppressed.
+                    if (window.startSystemMove())
+                        mouse.accepted = false
+                }
             }
 
             Row {
