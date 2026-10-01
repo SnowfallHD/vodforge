@@ -62,6 +62,7 @@ Choose this only when **About This Mac** shows an **Intel Processor**. Using thi
 - **Focused release checks:** regression coverage and bounded Mac/Windows preview-telemetry checks verify copy actions, playback outcomes and privacy suppression.
 - **One-click updates:** Download update shows progress, verifies the download and safely restarts the app. Repair download remains available for recovery.
 - **Library browsing:** visible cards retain their owners through scrolling and column reflow, with bounded viewport loading.
+- **Original audio preference:** automatic selection respects provider-marked original audio instead of choosing a higher-bitrate dubbed track. Explicit format choices remain in control.
 - **Converter profiles:** Everyday, 4K, Broadcast and Smaller File use the same existing encoding settings and saved profile identities.
 - **In-app guidance:** What’s New and Did You Know retain their illustrated feature examples.
 
