@@ -56,6 +56,13 @@ fi
     --ignore=tests/test_qt_output_config.py \
     --ignore=tests/test_qt_settings_theme.py \
     --ignore=tests/test_qt_scroll_lifecycle.py \
+    --ignore=tests/test_qt_all_runs_hover_seam.py \
+    --ignore=tests/test_qt_legacy_preset_preferences.py \
+    --ignore=tests/test_qt_library_details_copy.py \
+    --ignore=tests/test_qt_library_window_model.py \
+    --ignore=tests/test_qt_settings_privacy.py \
+    --ignore=tests/test_qt_titlebar_drag.py \
+    --ignore=tests/test_qt_vertical_scroll_chain.py \
     --ignore=tests/test_qt_interaction_invariants.py
   QT_QUICK_BACKEND=software "$python_bin" -m pytest -q \
     tests/test_qt_analytics_session.py \
@@ -71,6 +78,13 @@ fi
     tests/test_qt_output_config.py \
     tests/test_qt_settings_theme.py \
     tests/test_qt_scroll_lifecycle.py \
+    tests/test_qt_all_runs_hover_seam.py \
+    tests/test_qt_legacy_preset_preferences.py \
+    tests/test_qt_library_details_copy.py \
+    tests/test_qt_library_window_model.py \
+    tests/test_qt_settings_privacy.py \
+    tests/test_qt_titlebar_drag.py \
+    tests/test_qt_vertical_scroll_chain.py \
     tests/test_qt_interaction_invariants.py
   QT_QUICK_BACKEND=software "$python_bin" -m pytest -q tests/test_qt_scene_port.py
 )
