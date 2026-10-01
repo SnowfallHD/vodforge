@@ -17,9 +17,9 @@ in a searchable Library with built-in playback.
 
 ![Actual VODForge Watch workspace with fictional nature media](assets/readme/current-design/watch.png)
 
-> These are native screenshots of the current Qt Quick development build with a
-> fictional nature library. They preview the new design; the current public release
-> is **0.2.2** and may look different. No personal media appears in these assets.
+> These native screenshots show the Qt Quick interface with a fictional nature
+> library. See the latest release for the available version. No personal media
+> appears in these assets.
 > [Screenshot provenance](assets/readme/current-design/manifest.json) · [Press assets](https://getvodforge.com/press/)
 
 [Install](#install-a-packaged-release) · [Using VODForge](#using-vodforge) ·

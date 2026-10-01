@@ -59,7 +59,10 @@ Choose this only when **About This Mac** shows an **Intel Processor**. Using thi
 - **Qt Quick desktop interface:** Forge, Library, Watch and Activity use the shared stone controls and retain their familiar layout. Run progress now shows failure in red, stopped or skipped work in orange, and completed work in green.
 - **More reliable optional analytics:** app-open observations, export outcomes, retries and feature usage now share a validated telemetry contract. Attempt identifiers are installation-scoped and do not contain media URLs, filenames or content.
 - **Consent stays in control:** pending updater observations are discarded when analytics permission is withdrawn, including across a later opt-in.
-- **Stronger release verification:** regression coverage and final Mac/Windows preview-D1 journeys check telemetry delivery, duplicate prevention and privacy suppression.
+- **Focused release checks:** regression coverage and bounded Mac/Windows preview-telemetry checks verify copy actions, playback outcomes and privacy suppression.
+- **One-click updates:** Download update shows progress, verifies the download and safely restarts the app. Repair download remains available for recovery.
+- **Library browsing:** visible cards retain their owners through scrolling and column reflow, with bounded viewport loading.
+- **Converter profiles:** Everyday, 4K, Broadcast and Smaller File use the same existing encoding settings and saved profile identities.
 - **In-app guidance:** What’s New and Did You Know retain their illustrated feature examples.
 
 Checksums for every download are available in `SHA256SUMS.txt` below.
