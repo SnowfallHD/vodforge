@@ -69,6 +69,7 @@ jobs:
           --ignore=tests/test_qt_library_playlist_art.py
           --ignore=tests/test_qt_inspector_actions.py
           --ignore=tests/test_qt_inspector_description_geometry.py
+          --ignore=tests/test_workflow_coverage.py
           --ignore=tests/test_qt_library_group_selection.py
           --ignore=tests/test_qt_runtime_event_ownership.py
           --ignore=tests/test_qt_action_feedback_ownership.py
@@ -111,6 +112,7 @@ jobs:
           tests/test_qt_library_playlist_art.py
           tests/test_qt_inspector_actions.py
           tests/test_qt_inspector_description_geometry.py
+          tests/test_workflow_coverage.py
           tests/test_qt_library_group_selection.py
           tests/test_qt_runtime_event_ownership.py
           tests/test_qt_action_feedback_ownership.py
