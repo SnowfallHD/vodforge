@@ -806,10 +806,13 @@ Window {
                 objectName: "brandRow"
                 x: focusHeader.nativeHeaderInset
                 y: Math.round((44 - height) / 2)
-                spacing: 10
+                // Canonical lockup: 13px gap at 191px painted mark height.
+                // Account for this mark export's 8px transparent right edge.
+                spacing: (36 * 400 / 410) * 13 / 191 - 36 * 8 / 410
                 Image {
+                    objectName: "brandMark"
                     source: assetUrl + "brand/vf-mark.png"
-                    width: 46; height: 36
+                    width: 36 * 468 / 410; height: 36
                     fillMode: Image.PreserveAspectFit
                     smooth: true
                 }

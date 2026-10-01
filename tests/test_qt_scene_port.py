@@ -4845,8 +4845,20 @@ def test_qt_shared_header_keeps_navigation_next_to_brand_on_every_tab(
                 <= 0.5
             )
             if width >= 960:
+                mark = window.findChild(QObject, "brandMark")
                 vod = window.findChild(QObject, "brandVodText")
                 forge = window.findChild(QObject, "brandForgeText")
+                assert mark.width() / mark.height() == pytest.approx(468 / 410)
+                # Match the approved lockup's painted gap/height, including
+                # the standalone mark export's transparent right-edge pixels.
+                painted_right = (
+                    mark.mapToItem(None, mark.width(), 0).x() - 8 * mark.height() / 410
+                )
+                name_left = vod.mapToItem(None, 0, 0).x()
+                painted_height = mark.height() * 400 / 410
+                assert (name_left - painted_right) / painted_height == pytest.approx(
+                    13 / 191
+                )
                 assert vod.property("text") == "VOD"
                 assert forge.property("text") == "Forge"
                 assert vod.property("color").name() == qt_main.THEME["accent"]
