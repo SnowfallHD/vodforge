@@ -1,0 +1,25 @@
+"""Selected-item recovery controls bind the authoritative selection contract."""
+
+from pathlib import Path
+
+from yt_downloader.qt_quick import main as qt_main
+
+
+def test_inspector_actions_use_authoritative_selection_and_keep_file_actions_separate():
+    source = (Path(qt_main.__file__).parent / "LibraryFolderInspector.qml").read_text()
+    start = source.index('objectName: "libraryInspectorRecoveryDetails"')
+    end = source.index("id: openCurrentFolder", start)
+    panel = source[start:end]
+    assert "height: Math.min(168, recoveryDetailsContent.implicitHeight + 20)" in panel
+    assert "wrapMode: Text.WrapAnywhere" in panel
+    assert "VerticalScrollChain { nestedScrollView: recoveryDetailsScroll }" in panel
+    assert "visible: !!inspector.recoveryActions.canOpenLocation" in panel
+    assert "openInspectorLocation(inspector.recoveryActions.selectionKey)" in panel
+    assert "visible: !!inspector.recoveryActions.dismissRunId" in panel
+    assert "dismissTerminal(inspector.recoveryActions.dismissRunId)" in panel
+    assert "visible: !!inspector.recoveryActions.savedOwner" in panel
+    assert (
+        "requestInspectorLibraryRemoval(inspector.recoveryActions.selectionKey)"
+        in panel
+    )
+    assert "trash" not in panel.casefold()

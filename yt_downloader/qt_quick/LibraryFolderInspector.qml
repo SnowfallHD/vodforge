@@ -8,6 +8,7 @@ Column {
     property var appBridge
     readonly property var item: appBridge.libraryFolderInspector
     readonly property var issueSettings: item.settings || ({})
+    readonly property var recoveryActions: appBridge.inspectorRecoveryActions || ({})
     property string section: "Item"
     property real targetPanelBottom: height
     spacing: 8
@@ -111,6 +112,63 @@ Column {
                 font.pixelSize: 12
                 width: parent.width
                 wrapMode: Text.WordWrap
+            }
+        }
+    }
+    StoneField {
+        objectName: "libraryInspectorRecoveryDetails"
+        visible: !!inspector.recoveryActions.selectionKey &&
+                 (!!inspector.recoveryActions.location || inspector.recoveryActions.canOpenLocation ||
+                  !!inspector.recoveryActions.dismissRunId || !!inspector.recoveryActions.savedOwner)
+        width: parent.width
+        height: Math.min(168, recoveryDetailsContent.implicitHeight + 20)
+        ScrollView {
+            id: recoveryDetailsScroll
+            anchors.fill: parent
+            anchors.margins: 10
+            clip: true
+            contentWidth: availableWidth
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+            VerticalScrollChain { nestedScrollView: recoveryDetailsScroll }
+            Column {
+                id: recoveryDetailsContent
+                width: recoveryDetailsScroll.availableWidth
+                spacing: 8
+                Text {
+                    objectName: "libraryInspectorExactLocation"
+                    visible: !!text
+                    width: parent.width
+                    text: inspector.recoveryActions.location || ""
+                    wrapMode: Text.WrapAnywhere
+                    color: theme.muted
+                    font.pixelSize: 12
+                    HoverHandler { id: recoveryLocationHover }
+                    ToolTip.visible: recoveryLocationHover.hovered && !!text
+                    ToolTip.text: text
+                }
+                StoneButton {
+                    objectName: "libraryInspectorOpenLocation"
+                    visible: !!inspector.recoveryActions.canOpenLocation
+                    width: parent.width
+                    label: "Open location"
+                    onActivated: inspector.appBridge.openInspectorLocation(inspector.recoveryActions.selectionKey)
+                }
+                StoneButton {
+                    objectName: "libraryInspectorDismissRun"
+                    visible: !!inspector.recoveryActions.dismissRunId
+                    width: parent.width
+                    label: "Dismiss run"
+                    accessibilityLabel: "Dismiss run; keep downloaded files"
+                    onActivated: inspector.appBridge.dismissTerminal(inspector.recoveryActions.dismissRunId)
+                }
+                StoneButton {
+                    objectName: "libraryInspectorRemoveCard"
+                    visible: !!inspector.recoveryActions.savedOwner
+                    width: parent.width
+                    label: "Remove Library card"
+                    accessibilityLabel: "Remove Library card; keep downloaded files"
+                    onActivated: inspector.appBridge.requestInspectorLibraryRemoval(inspector.recoveryActions.selectionKey)
+                }
             }
         }
     }
