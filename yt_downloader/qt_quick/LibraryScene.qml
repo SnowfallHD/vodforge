@@ -16,6 +16,25 @@ Item {
 
     property bool selectionMode: false
     property var selectedOwners: []
+    property var selectedGroups: []
+    readonly property int selectedEntityCount: selectedOwners.length + selectedGroups.length
+    function groupSelected(group) {
+        return selectedGroups.some(item => item.kind === group.kind && item.key === group.key)
+    }
+    function toggleGroup(group) {
+        if (!group || !groupFlow.items.some(item => item.kind === group.kind && item.key === group.key)) return
+        const existing = groupSelected(group)
+        selectedGroups = existing ? selectedGroups.filter(item => item.kind !== group.kind || item.key !== group.key) :
+            selectedGroups.concat([{kind: group.kind, key: group.key}])
+    }
+    function reconcileSelection() {
+        selectedOwners = selectedOwners.filter(owner => scene.media.some(item => item.owner === owner))
+        selectedGroups = selectedGroups.filter(group => groupFlow.items.some(item => item.kind === group.kind && item.key === group.key))
+    }
+    function selectionTargets() {
+        reconcileSelection()
+        return selectedGroups.slice().concat(selectedOwners.map(owner => ({kind: "media", owner: owner})))
+    }
     property string groupMenuKind: ""
     property string groupMenuKey: ""
     property alias browseViewport: viewport
@@ -32,7 +51,7 @@ Item {
         else next.push(owner)
         selectedOwners = next
     }
-    function finishSelection() { selectedOwners = []; selectionMode = false }
+    function finishSelection() { selectedOwners = []; selectedGroups = []; selectionMode = false }
     function resetViewport() {
         if (viewport && viewport.contentItem) viewport.contentItem.contentY = 0
     }
@@ -43,6 +62,7 @@ Item {
         if (visible && appBridge && projectionDirty) {
             projection = appBridge.libraryScene
             projectionDirty = false
+            Qt.callLater(scene.reconcileSelection)
         }
     }
     Component.onCompleted: refreshProjection()
@@ -284,6 +304,7 @@ Item {
                             accessibilityLabel: modelData.label + ", " + modelData.count
                             onActivated: scene.appBridge.navigateLibrary(modelData.route)
                             readonly property bool compact: width < 220
+                            readonly property bool wide: width >= 420
                             readonly property int iconSize: width >= 255 ? 64 : 48
                             Rectangle {
                                 visible: !categoryTile.compact
@@ -323,8 +344,9 @@ Item {
                             }
                             Text {
                                 visible: !categoryTile.compact
-                                x: categoryTile.iconSize + 36; y: 73
-                                width: parent.width - categoryTile.iconSize - 51
+                                x: categoryTile.wide ? parent.width * 0.55 : categoryTile.iconSize + 36
+                                y: categoryTile.wide ? 45 : 73
+                                width: categoryTile.wide ? parent.width * 0.4 - 20 : parent.width - categoryTile.iconSize - 51
                                 text: categoryTile.modelData.count ? categoryTile.modelData.subtitle : categoryTile.modelData.empty
                                 color: theme.muted
                                 font.pixelSize: 10
@@ -379,10 +401,12 @@ Item {
                     height: !visible ? 0 : Math.max(0,
                         (scene.route === "home" ? Math.ceil((items.length + 1) / columns) : totalRows) * rowStride - spacing)
                     spacing: 14
-                    readonly property int columns: Math.max(1, Math.min(5, Math.floor((width + spacing) / 200)))
+                    readonly property int columns: scene.route === "channels" ? Math.max(1, Math.ceil((width + spacing) / 294)) :
+                        Math.max(1, Math.min(5, Math.floor((width + spacing) / 200)))
                     readonly property real cardWidth: (width - spacing * (columns - 1)) / columns
                     readonly property var items: scene.route === "home" ? scene.groups.slice(0, columns) : scene.groups
-                    readonly property real cardHeight: Math.max(178, cardWidth * 9 / 16 + 53)
+                    onItemsChanged: Qt.callLater(scene.reconcileSelection)
+                    readonly property real cardHeight: scene.route === "channels" ? 178 : Math.max(178, cardWidth * 9 / 16 + 53)
                     readonly property real rowStride: cardHeight + spacing
                     readonly property int totalRows: Math.ceil(items.length / columns)
                     readonly property real scrollTop: viewport.contentItem.contentY - groupFlow.mapToItem(content, 0, 0).y
@@ -411,10 +435,7 @@ Item {
                             accessibilityLabel: modelData.title + ", " + modelData.count + " item(s)"
                             onActivated: {
                                 if (scene.selectionMode) {
-                                    for (const owner of modelData.owners) {
-                                        if (scene.selectedOwners.indexOf(owner) < 0)
-                                            scene.selectedOwners = scene.selectedOwners.concat([owner])
-                                    }
+                                    scene.toggleGroup(modelData)
                                 } else scene.appBridge.navigateLibraryGroup(modelData.kind, modelData.key)
                             }
                             ArtworkImage {
@@ -432,6 +453,16 @@ Item {
                                 }
                                 pending: source.toString().length === 0 && scene.appBridge.artworkRevision >= 0 &&
                                     scene.appBridge.groupArtworkState(modelData.owner, modelData.kind) === "pending"
+                            }
+                            StoneButton {
+                                objectName: "libraryGroupSelectionCheckbox"
+                                visible: scene.selectionMode
+                                x: 7; y: 7
+                                width: 30; height: 30
+                                label: scene.groupSelected(groupCard.modelData) ? "✓" : ""
+                                selected: scene.groupSelected(groupCard.modelData)
+                                accessibilityLabel: "Select " + groupCard.modelData.kind + " " + groupCard.modelData.title
+                                onActivated: scene.toggleGroup(groupCard.modelData)
                             }
                             Text {
                                 x: 14; y: groupCard.height - 48
@@ -610,7 +641,7 @@ Item {
                     height: visible ? 40 : 0
                     spacing: 12
                     Text {
-                        text: scene.selectedOwners.length ? scene.selectedOwners.length + " selected" : "Select items"
+                        text: scene.selectedEntityCount ? scene.selectedEntityCount + " selected" : "Select items"
                         color: theme.muted
                         font.pixelSize: 14
                         height: 40
@@ -618,7 +649,7 @@ Item {
                     }
                     StoneButton {
                         objectName: "librarySelectionActionsButton"
-                        visible: scene.selectedOwners.length > 0
+                        visible: scene.selectedEntityCount > 0
                         label: "Actions…"
                         width: 175
                         height: 40
@@ -773,9 +804,9 @@ Item {
                             width: parent.width; height: 44
                             label: modelData.label
                             onActivated: {
-                                var owners = scene.selectedOwners.slice()
+                                var owners = scene.appBridge.resolveLibrarySelection(scene.selectionTargets())
                                 selectionActions.close()
-                                scene.selectionActionRequested(modelData.action, owners)
+                                if (owners.length) scene.selectionActionRequested(modelData.action, owners)
                             }
                         }
                     }
@@ -903,13 +934,13 @@ Item {
             StoneButton {
                 objectName: "libraryGroupSelectButton"
                 width: parent.width; height: 44
-                label: "Select media"
+                label: "Select " + scene.groupMenuKind
                 onActivated: {
                     const group = scene.currentMenuGroup()
                     groupMenu.close()
                     if (group) {
                         scene.selectionMode = true
-                        scene.selectedOwners = group.owners.slice()
+                        scene.selectedGroups = [{kind: group.kind, key: group.key}]
                     }
                 }
             }
