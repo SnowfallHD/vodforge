@@ -65,10 +65,18 @@ def probe(output: Path, count: int, scroll: int) -> None:
         print(json.dumps(evidence), flush=True)
 
     phase("imports_started")
-    from PySide6.QtCore import QCoreApplication, QEvent, QObject, QPointF, QUrl, Slot
+    from PySide6.QtCore import (
+        QCoreApplication,
+        QEvent,
+        QEventLoop,
+        QObject,
+        QPointF,
+        QTimer,
+        QUrl,
+        Slot,
+    )
     from PySide6.QtGui import QColor, QGuiApplication, QImage
     from PySide6.QtQml import QQmlApplicationEngine
-    from PySide6.QtTest import QTest
     from shiboken6 import getCppPointer
 
     from yt_downloader.qt_quick import main
@@ -77,6 +85,14 @@ def probe(output: Path, count: int, scroll: int) -> None:
         import resource
     except ImportError:  # Windows does not expose process rusage.
         resource = None
+
+    def pump(milliseconds=0):
+        # QTest.qWait/processEvents can hold the Python GIL while a QML image
+        # load waits on Qt's pixmap-reader lock; its Python provider wrapper
+        # needs that GIL. A real nested event loop releases it during dispatch.
+        loop = QEventLoop()
+        QTimer.singleShot(milliseconds, loop.quit)
+        loop.exec()
 
     def descendants(item):
         yield item
@@ -120,6 +136,7 @@ def probe(output: Path, count: int, scroll: int) -> None:
 
     main.QQmlApplicationEngine = Engine
     app = QGuiApplication([])
+    assert QGuiApplication.instance() is app
     bridge = main.Bridge(None)
     phase("bridge_created")
     bridge._engagement.presented_welcome()
@@ -155,7 +172,7 @@ def probe(output: Path, count: int, scroll: int) -> None:
         window.show()
         bridge.select("Library")
         bridge.navigateLibrary("videos")
-        QTest.qWait(300)
+        pump(300)
         flow = window.findChild(QObject, "libraryMediaFlow")
         viewport = window.findChild(QObject, "libraryViewport")
         flickable = viewport.property("contentItem")
@@ -165,9 +182,9 @@ def probe(output: Path, count: int, scroll: int) -> None:
         owner = bridge.libraryScene["media"][0]["owner"]
         scene.setProperty("selectedOwners", [owner])
         scene.setProperty("selectionMode", True)
-        QTest.qWait(100)
+        pump(100)
         flickable.setProperty("contentY", scroll)
-        QTest.qWait(500)
+        pump(500)
         phase("viewport_warmed")
         initial_scroll = flickable.property("contentY")
         counter.counts.clear()
@@ -185,9 +202,9 @@ def probe(output: Path, count: int, scroll: int) -> None:
         for step, width in enumerate(widths):
             start = time.perf_counter()
             window.resize(width, 740)
-            app.processEvents()
+            pump()
             timings.append((time.perf_counter() - start) * 1000)
-            QTest.qWait(1)
+            pump(1)
             frame = window.grabWindow()
             delegates = window.findChild(QObject, "libraryMediaRepeater").property(
                 "count"
@@ -224,7 +241,7 @@ def probe(output: Path, count: int, scroll: int) -> None:
                 frame.save(str(output / "before-failure.png"))
             if step in (0, 6, 40, 142):
                 frame.save(str(output / f"frame-{step:03d}.png"))
-            QTest.qWait(15)
+            pump(15)
             if (step + 1) % (len(widths) // 3) == 0:
                 phase("resize_cycle_completed")
         phase("resize_cycles_captured")
@@ -235,15 +252,15 @@ def probe(output: Path, count: int, scroll: int) -> None:
         retained = retained.toVariant() if hasattr(retained, "toVariant") else retained
         selection_retained = retained == [owner] and scene.property("selectionMode")
         bridge.openLibraryDetails(detail_owner)
-        app.processEvents()
+        pump()
         bridge.returnLibraryDetails()
-        QTest.qWait(50)
+        pump(50)
         return_error = abs(flickable.property("contentY") - final_scroll)
         retained = scene.property("selectedOwners")
         retained = retained.toVariant() if hasattr(retained, "toVariant") else retained
         bridge.select("Forge")
         window.resize(1080, 740)
-        app.processEvents()
+        pump()
         proof = {
             "count": count,
             "scroll": scroll,
