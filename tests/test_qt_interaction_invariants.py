@@ -25,6 +25,7 @@ def _launch(tmp_path, monkeypatch, records):
     bridge._runtime.history = records
     # These interaction journeys start after the separate first-run tour.
     bridge._engagement.presented_welcome()
+    bridge._settings["whats_new_seen"] = qt_main.SHOWCASE_ID
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
     window.show()

@@ -68,6 +68,7 @@ def test_retiring_fullscreen_exits_native_space(
     )
     bridge._runtime.history = [record]
     bridge._engagement.presented_welcome()
+    bridge._settings["whats_new_seen"] = qt_main.SHOWCASE_ID
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
     try:
@@ -158,6 +159,7 @@ def test_native_replay_back_keeps_watch_hero_progress_current(
     assert progress.observe(session, PlaybackSnapshot(None, "Paused", 4, 8, 80))
     assert progress.retire(session)
     bridge._engagement.presented_welcome()
+    bridge._settings["whats_new_seen"] = qt_main.SHOWCASE_ID
     bridge.selectHome("Watch")
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
@@ -254,6 +256,7 @@ def test_qt_ended_video_retains_frame_and_replays(tmp_path, monkeypatch, surface
     bridge = qt_main.Bridge(None)
     bridge._runtime.history = [media]
     bridge._engagement.presented_welcome()
+    bridge._settings["whats_new_seen"] = qt_main.SHOWCASE_ID
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
     presentation = window.findChild(QObject, "watchPresentationWindow")

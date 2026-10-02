@@ -27,6 +27,7 @@ def run_scene(tmp_path, monkeypatch):
     QQuickStyle.setStyle("Basic")
     bridge = qt_main.Bridge(None)
     bridge._engagement.presented_welcome()
+    bridge._settings["whats_new_seen"] = qt_main.SHOWCASE_ID
     bridge._runtime.history = [saved(tmp_path, "One", "MP4")]
     bridge._runtime.active_job = make_job(tmp_path)
     engine = qt_main.create_engine(bridge)

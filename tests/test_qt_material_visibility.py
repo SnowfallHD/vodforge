@@ -27,6 +27,7 @@ def material_field(tmp_path, monkeypatch):
     monkeypatch.setattr(main.Materials, "requestImage", request)
     bridge = main.Bridge(None)
     bridge._engagement.presented_welcome()
+    bridge._settings["whats_new_seen"] = main.SHOWCASE_ID
     engine = main.create_engine(bridge)
     window = engine.rootObjects()[0]
     component = QQmlComponent(engine)

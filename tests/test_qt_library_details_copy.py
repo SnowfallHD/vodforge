@@ -26,6 +26,7 @@ def detail(tmp_path, monkeypatch):
     app = qt_app()
     bridge = main.Bridge(None)
     bridge._engagement.presented_welcome()
+    bridge._settings["whats_new_seen"] = main.SHOWCASE_ID
     bridge._runtime.history = [saved(tmp_path, "Saved", "MP4")]
     bridge.select("Library")
     bridge.navigateLibrary("all")
