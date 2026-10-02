@@ -4,6 +4,8 @@ from dataclasses import replace
 
 import pytest
 from PySide6.QtCore import QCoreApplication, QEvent, QObject
+from PySide6.QtQml import QQmlExpression
+from PySide6.QtTest import QTest
 
 from tests.test_qt_scene_port import qt_app, saved
 from yt_downloader.qt_quick import main
@@ -74,6 +76,124 @@ def test_player_local_fallback_is_owner_safe_and_balanced(
         app.processEvents()
         assert scene.property("relatedLoading") is True
         assert add.property("visible") is False
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+@pytest.mark.parametrize(
+    "size,rotation,expected",
+    [
+        ((640, 360), 0, 16 / 9),
+        ((320, 480), 0, 2 / 3),
+        ((640, 360), 90, 9 / 16),
+        ((400, 200), 270, 0.5),
+    ],
+)
+def test_embedded_stage_follows_qt_displayed_frame_aspect(
+    tmp_path, monkeypatch, size, rotation, expected
+):
+    from PySide6.QtGui import QImage
+    from PySide6.QtMultimedia import QtVideo, QVideoFrame
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    bridge = main.Bridge(None)
+    bridge._runtime.history = [saved(tmp_path, "frame", "MP4")]
+    (tmp_path / "frame.mp4").write_bytes(b"fixture")
+    engine = main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    bridge._window = window
+    try:
+        assert bridge.openLibraryItem(0)
+        window.resize(1280, 800)
+        window.show()
+        QTest.qWait(100)
+        for _ in range(3):
+            app.processEvents()
+        output = window.findChild(QObject, "watchVideoSurface")
+        frame = QVideoFrame(QImage(*size, QImage.Format_RGB32))
+        frame.setRotation(QtVideo.Rotation(rotation))
+        output.property("videoSink").setVideoFrame(frame)
+        QTest.qWait(100)
+        for _ in range(5):
+            app.processEvents()
+        stage = window.findChild(QObject, "playerMediaStage")
+        assert stage.width() / stage.height() == pytest.approx(expected)
+        assert QQmlExpression(
+            engine.rootContext(), output, "fillMode === 1"
+        ).evaluate()[0]
+        rect = output.property("contentRect")
+        assert rect.width() <= output.width() + 0.1
+        assert rect.height() <= output.height() + 0.1
+        scene = stage.parentItem()
+        while scene.property("displayedVideoAspect") is None:
+            scene = scene.parentItem()
+        scene.setProperty("videoFill", True)
+        QTest.qWait(50)
+        assert stage.width() / stage.height() == pytest.approx(expected)
+        assert scene.property("videoAspect") == pytest.approx(expected)
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+def test_embedded_stage_respects_decoded_sample_aspect_ratio(tmp_path, monkeypatch):
+    import shutil
+    import subprocess
+
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        pytest.skip("ffmpeg required for real SAR fixture")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    subprocess.run(
+        [
+            ffmpeg,
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=blue:s=320x240:r=2",
+            "-vf",
+            "setsar=2",
+            "-t",
+            "2",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            str(tmp_path / "sar.mp4"),
+        ],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    qt_app()
+    bridge = main.Bridge(None)
+    bridge._runtime.history = [saved(tmp_path, "sar", "MP4")]
+    engine = main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    bridge._window = window
+    try:
+        window.resize(1280, 800)
+        window.show()
+        assert bridge.openLibraryItem(0)
+        stage = window.findChild(QObject, "playerMediaStage")
+        for _ in range(40):
+            QTest.qWait(50)
+            if abs(stage.width() / stage.height() - 8 / 3) < 0.001:
+                break
+        assert stage.width() / stage.height() == pytest.approx(8 / 3)
     finally:
         window.close()
         engine.deleteLater()

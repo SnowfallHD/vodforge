@@ -18,7 +18,24 @@ Item {
     readonly property string activeSurfaceName: activeVideoSurface.objectName
     readonly property var projection: appBridge.playerScene
     readonly property bool wide: width >= 1080
-    readonly property real videoAspect: 16 / 9
+    // Sample Qt's displayed geometry after layout settles; directly binding
+    // the stage ratio to contentRect creates a geometry dependency loop.
+    property real displayedVideoAspect: 16 / 9
+    readonly property real videoAspect: displayedVideoAspect
+    function refreshDisplayedAspect() {
+        const output = activeVideoSurface
+        if (output.sourceRect.width <= 0 || output.sourceRect.height <= 0 ||
+                output.contentRect.width <= 0 || output.contentRect.height <= 0) return
+        const aspect = output.contentRect.width / output.contentRect.height
+        if (isFinite(aspect) && aspect > 0 && Math.abs(displayedVideoAspect - aspect) > 0.0001)
+            displayedVideoAspect = aspect
+    }
+    onActiveVideoSurfaceChanged: Qt.callLater(refreshDisplayedAspect)
+    Connections {
+        target: scene.activeVideoSurface
+        function onContentRectChanged() { Qt.callLater(scene.refreshDisplayedAspect) }
+        function onSourceRectChanged() { Qt.callLater(scene.refreshDisplayedAspect) }
+    }
     readonly property real stageMaxHeight: Math.max(180, height - 145)
     readonly property real stageHeightLimit: stageMaxHeight
     function eligibleCards(rows) {
