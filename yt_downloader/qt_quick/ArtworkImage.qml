@@ -29,10 +29,11 @@ Item {
         }
     }
     onPresentedSourceChanged: {
-        roundedPicture.paintedReady = false
-        if (roundedPicture.loadedSource.toString().length > 0 &&
-                (roundedPicture.isImageLoaded(roundedPicture.loadedSource) || roundedPicture.isImageLoading(roundedPicture.loadedSource)))
-            roundedPicture.unloadImage(roundedPicture.loadedSource)
+        // Keep the last painted source loaded until the replacement Canvas
+        // image is ready, including when resizing clears the backing texture.
+        if (roundedPicture.loadedSource.toString() !== roundedPicture.paintedSource.toString() &&
+                roundedPicture.loadedSource.toString() !== presentedSource.toString())
+            roundedPicture.discardSource(roundedPicture.loadedSource)
         roundedPicture.loadedSource = presentedSource
         if (hasArtwork && !circular) roundedPicture.loadImage(presentedSource)
         roundedPicture.requestPaint()
@@ -50,8 +51,12 @@ Item {
     onPendingChanged: { showDelayedLoading = false }
     onSourceChanged: {
         showDelayedLoading = false
+        roundedPicture.resetOwner()
         adoptedSource = ""
         reducedSource = ""
+        roundedPicture.loadedSource = source
+        if (hasArtwork && !circular) roundedPicture.loadImage(source)
+        roundedPicture.requestPaint()
         scheduleReduction()
     }
     Timer {
@@ -97,6 +102,30 @@ Item {
         id: roundedPicture
         property url loadedSource: ""
         property bool paintedReady: false
+        property url paintedSource: ""
+        property real paintedSourceWidth: 0
+        property real paintedSourceHeight: 0
+        property bool ownerPaintReady: false
+        // A new owner must never display the previous owner's retained pixels.
+        opacity: ownerPaintReady ? 1 : 0
+        function discardSource(url) {
+            if (url.toString().length > 0 && (isImageLoaded(url) || isImageLoading(url)))
+                unloadImage(url)
+        }
+        function resetOwner() {
+            discardSource(loadedSource)
+            if (paintedSource.toString() !== loadedSource.toString()) discardSource(paintedSource)
+            loadedSource = ""
+            paintedSource = ""
+            paintedSourceWidth = 0
+            paintedSourceHeight = 0
+            ownerPaintReady = false
+            paintedReady = false
+        }
+        Component.onDestruction: {
+            discardSource(loadedSource)
+            if (paintedSource.toString() !== loadedSource.toString()) discardSource(paintedSource)
+        }
         anchors.fill: picture
         visible: !artwork.circular
         Timer {
@@ -112,16 +141,24 @@ Item {
         onWidthChanged: { paintedReady = false; resizePaint.restart() }
         onHeightChanged: { paintedReady = false; resizePaint.restart() }
         onPaint: {
-            paintedReady = false
             const context = getContext("2d")
-            context.clearRect(0, 0, width, height)
-            if (!isImageLoaded(artwork.presentedSource) || picture.sourceSize.width <= 0 || picture.sourceSize.height <= 0)
+            const fresh = isImageLoaded(artwork.presentedSource) && picture.status === Image.Ready &&
+                picture.sourceSize.width > 0 && picture.sourceSize.height > 0
+            const drawSource = fresh ? artwork.presentedSource : paintedSource
+            const sourceWidth = fresh ? picture.sourceSize.width : paintedSourceWidth
+            const sourceHeight = fresh ? picture.sourceSize.height : paintedSourceHeight
+            if (!drawSource.toString().length || !isImageLoaded(drawSource) || sourceWidth <= 0 || sourceHeight <= 0) {
+                context.clearRect(0, 0, width, height)
+                ownerPaintReady = false
+                paintedReady = false
                 return
+            }
+            context.clearRect(0, 0, width, height)
             const scale = artwork.cover
-                ? Math.max(width / picture.sourceSize.width, height / picture.sourceSize.height)
-                : Math.min(width / picture.sourceSize.width, height / picture.sourceSize.height)
-            const paintedWidth = picture.sourceSize.width * scale
-            const paintedHeight = picture.sourceSize.height * scale
+                ? Math.max(width / sourceWidth, height / sourceHeight)
+                : Math.min(width / sourceWidth, height / sourceHeight)
+            const paintedWidth = sourceWidth * scale
+            const paintedHeight = sourceHeight * scale
             const left = (width - paintedWidth) / 2
             const top = (height - paintedHeight) / 2
             context.save()
@@ -129,8 +166,16 @@ Item {
             if (artwork.cover) context.roundedRect(0, 0, width, height, 7, 7)
             else context.roundedRect(left, top, paintedWidth, paintedHeight, 7, 7)
             context.clip()
-            context.drawImage(artwork.presentedSource, left, top, paintedWidth, paintedHeight)
+            context.drawImage(drawSource, left, top, paintedWidth, paintedHeight)
             context.restore()
+            if (fresh && paintedSource.toString() !== artwork.presentedSource.toString()) {
+                const previous = paintedSource
+                paintedSource = artwork.presentedSource
+                paintedSourceWidth = sourceWidth
+                paintedSourceHeight = sourceHeight
+                discardSource(previous)
+            }
+            ownerPaintReady = true
             paintedReady = true
         }
     }
