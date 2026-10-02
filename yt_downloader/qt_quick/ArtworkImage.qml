@@ -5,6 +5,38 @@ Item {
     id: artwork
     property url source: ""
     // Avatar assets arrive as transparent circular PNGs from QtArtwork.
+    // Only settled geometry admits a derived image; continuous resizing retains
+    // the last ready reduction. The provider performs decoding off the UI thread.
+    property url reducedSource: ""
+    property url adoptedSource: ""
+    readonly property url presentedSource: circular || !adoptedSource.toString().length ? source : adoptedSource
+    function scheduleReduction() { reductionDebounce.restart() }
+    onWidthChanged: scheduleReduction()
+    onHeightChanged: scheduleReduction()
+    onCoverChanged: scheduleReduction()
+    onInsetChanged: scheduleReduction()
+    onCircularChanged: scheduleReduction()
+    property real artworkDpr: Screen.devicePixelRatio
+    onArtworkDprChanged: scheduleReduction()
+    Timer {
+        id: reductionDebounce
+        interval: 80
+        onTriggered: {
+            if (artwork.circular || !artwork.hasArtwork) return
+            const w = Math.max(1, Math.round((artwork.width - 2 * artwork.inset) * artwork.artworkDpr))
+            const h = Math.max(1, Math.round((artwork.height - 2 * artwork.inset) * artwork.artworkDpr))
+            artwork.reducedSource = "image://vodforge-thumbnails/source=" + encodeURIComponent(artwork.source.toString()) + "&w=" + w + "&h=" + h + "&cover=" + (artwork.cover ? "1" : "0")
+        }
+    }
+    onPresentedSourceChanged: {
+        roundedPicture.paintedReady = false
+        if (roundedPicture.loadedSource.toString().length > 0 &&
+                (roundedPicture.isImageLoaded(roundedPicture.loadedSource) || roundedPicture.isImageLoading(roundedPicture.loadedSource)))
+            roundedPicture.unloadImage(roundedPicture.loadedSource)
+        roundedPicture.loadedSource = presentedSource
+        if (hasArtwork && !circular) roundedPicture.loadImage(presentedSource)
+        roundedPicture.requestPaint()
+    }
     property bool circular: false
     property bool cover: false
     property bool pending: false
@@ -18,14 +50,9 @@ Item {
     onPendingChanged: { showDelayedLoading = false }
     onSourceChanged: {
         showDelayedLoading = false
-        roundedPicture.paintedReady = false
-        if (roundedPicture.loadedSource.toString().length > 0 &&
-                (roundedPicture.isImageLoaded(roundedPicture.loadedSource) ||
-                 roundedPicture.isImageLoading(roundedPicture.loadedSource)))
-            roundedPicture.unloadImage(roundedPicture.loadedSource)
-        roundedPicture.loadedSource = source
-        if (hasArtwork && !circular) roundedPicture.loadImage(source)
-        roundedPicture.requestPaint()
+        adoptedSource = ""
+        reducedSource = ""
+        scheduleReduction()
     }
     Timer {
         interval: 300
@@ -44,11 +71,22 @@ Item {
     }
 
     Image {
+        id: reductionCandidate
+        source: artwork.circular ? "" : artwork.reducedSource
+        asynchronous: true
+        cache: false
+        visible: false
+        onStatusChanged: {
+            if (status === Image.Ready) artwork.adoptedSource = source
+        }
+    }
+    Image {
         id: picture
         anchors.fill: parent
         anchors.margins: artwork.inset
-        source: artwork.source
+        source: artwork.presentedSource
         asynchronous: true
+        cache: false
         fillMode: artwork.cover ? Image.PreserveAspectCrop : Image.PreserveAspectFit
         smooth: true
         opacity: artwork.circular ? 1 : 0
@@ -67,8 +105,8 @@ Item {
             onTriggered: roundedPicture.requestPaint()
         }
         onVisibleChanged: {
-            if (visible && artwork.hasArtwork && !isImageLoaded(artwork.source) && !isImageLoading(artwork.source))
-                loadImage(artwork.source)
+            if (visible && artwork.hasArtwork && !isImageLoaded(artwork.presentedSource) && !isImageLoading(artwork.presentedSource))
+                loadImage(artwork.presentedSource)
         }
         onImageLoaded: requestPaint()
         onWidthChanged: { paintedReady = false; resizePaint.restart() }
@@ -77,7 +115,7 @@ Item {
             paintedReady = false
             const context = getContext("2d")
             context.clearRect(0, 0, width, height)
-            if (!isImageLoaded(artwork.source) || picture.sourceSize.width <= 0 || picture.sourceSize.height <= 0)
+            if (!isImageLoaded(artwork.presentedSource) || picture.sourceSize.width <= 0 || picture.sourceSize.height <= 0)
                 return
             const scale = artwork.cover
                 ? Math.max(width / picture.sourceSize.width, height / picture.sourceSize.height)
@@ -91,7 +129,7 @@ Item {
             if (artwork.cover) context.roundedRect(0, 0, width, height, 7, 7)
             else context.roundedRect(left, top, paintedWidth, paintedHeight, 7, 7)
             context.clip()
-            context.drawImage(artwork.source, left, top, paintedWidth, paintedHeight)
+            context.drawImage(artwork.presentedSource, left, top, paintedWidth, paintedHeight)
             context.restore()
             paintedReady = true
         }

@@ -8,11 +8,15 @@ import json
 import math
 import threading
 import time
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs
 
 from PIL import Image, ImageDraw
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QSize, QUrl
+from PySide6.QtGui import QImage
+from PySide6.QtQuick import QQuickImageProvider
 
 from yt_downloader.app import (
     THUMBNAIL_MAX_BYTES,
@@ -289,3 +293,91 @@ class QtArtwork:
         self._owner.close()
         self._pending.clear()
         self._cached_fallback.clear()
+
+
+class ThumbnailReductionProvider(QQuickImageProvider):
+    """Local-only, asynchronous DPR-sized reductions; originals remain untouched."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            QQuickImageProvider.ImageType.Image,
+            QQuickImageProvider.Flag.ForceAsynchronousImageLoading,
+        )
+        self._reductions: OrderedDict[tuple[str, int, int, int, int, bool], QImage] = (
+            OrderedDict()
+        )
+        self._reduction_lock = threading.Lock()
+        self._reduction_bytes = 0
+
+    def requestImage(
+        self, identifier: str, size: QSize, requested_size: QSize
+    ) -> QImage:
+        try:
+            params = parse_qs(identifier)
+            source_url = QUrl(params["source"][0])
+            if not source_url.isLocalFile():
+                return QImage()
+            source = Path(source_url.toLocalFile())
+            width = max(1, min(4096, int(params["w"][0])))
+            height = max(1, min(4096, int(params["h"][0])))
+            cover = params.get("cover", ["0"])[0] == "1"
+            stat = source.stat()
+            if not 0 < stat.st_size <= THUMBNAIL_MAX_BYTES:
+                return QImage()
+            key = (
+                str(source.resolve()),
+                stat.st_mtime_ns,
+                stat.st_size,
+                width,
+                height,
+                cover,
+            )
+            with self._reduction_lock:
+                cached = self._reductions.get(key)
+                if cached is not None:
+                    self._reductions.move_to_end(key)
+                    size.setWidth(cached.width())
+                    size.setHeight(cached.height())
+                    return cached
+            with Image.open(source) as opened:
+                if opened.width * opened.height > 40_000_000:
+                    return QImage()
+                image = opened.convert("RGBA")
+            ratio = (max if cover else min)(width / image.width, height / image.height)
+            ratio = min(1.0, ratio)
+            image = image.resize(
+                (
+                    max(1, round(image.width * ratio)),
+                    max(1, round(image.height * ratio)),
+                ),
+                Image.Resampling.LANCZOS,
+            )
+            output = QImage(
+                image.tobytes(),
+                image.width,
+                image.height,
+                image.width * 4,
+                QImage.Format.Format_RGBA8888,
+            ).copy()
+            cost = output.sizeInBytes()
+            with self._reduction_lock:
+                if key not in self._reductions:
+                    self._reductions[key] = output
+                    self._reduction_bytes += cost
+                while (
+                    len(self._reductions) > 64
+                    or self._reduction_bytes > 32 * 1024 * 1024
+                ):
+                    _, expired = self._reductions.popitem(last=False)
+                    self._reduction_bytes -= expired.sizeInBytes()
+            size.setWidth(output.width())
+            size.setHeight(output.height())
+            return output
+        except (
+            OSError,
+            ValueError,
+            KeyError,
+            OverflowError,
+            Image.DecompressionBombError,
+        ):
+            return QImage()

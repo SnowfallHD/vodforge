@@ -179,7 +179,7 @@ from yt_downloader.playback_progress_binding import PlaybackProgressBinding
 from yt_downloader.player_related import player_related_plan
 from yt_downloader.product_telemetry import BoundProductOperation, product_output_kind
 from yt_downloader.qt_quick.analytics import QtAnalyticsSession
-from yt_downloader.qt_quick.artwork import QtArtwork
+from yt_downloader.qt_quick.artwork import QtArtwork, ThumbnailReductionProvider
 from yt_downloader.qt_quick.library_files import QtLibraryFiles
 from yt_downloader.qt_quick.library_window_model import register_window_model
 from yt_downloader.qt_quick.local_conversion import LocalConversionRuntime
@@ -6471,6 +6471,7 @@ def create_engine(bridge: Bridge) -> QQmlApplicationEngine:
     engine = QQmlApplicationEngine()
     materials = Materials()
     engine.addImageProvider("vodforge", materials)
+    engine.addImageProvider("vodforge-thumbnails", ThumbnailReductionProvider())
     bridge._theme_engine = engine
     bridge._theme_materials = materials
     engine.addImageProvider("vodforge-previews", bridge._previews.images)
