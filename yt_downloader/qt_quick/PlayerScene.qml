@@ -19,10 +19,23 @@ Item {
     readonly property var projection: appBridge.playerScene
     readonly property bool wide: width >= 1080
     readonly property real videoAspect: 16 / 9
-    readonly property real stageMaxHeight: Math.min(810, Math.max(450, width * 0.28))
-    readonly property real stageHeightLimit: Math.max(180, Math.min(stageMaxHeight, height - 205))
-    readonly property bool hasRelatedSide: wide && (projection.upNext || []).length > 0
-    readonly property real relatedSideWidth: hasRelatedSide ? Math.min(480, Math.max(310, width * 0.20)) : 0
+    readonly property real stageMaxHeight: Math.max(180, height - 145)
+    readonly property real stageHeightLimit: stageMaxHeight
+    function eligibleCards(rows) {
+        const seen = {}
+        return (rows || []).filter(function(row) {
+            if (!row || !row.owner || row.owner === projection.owner || seen[row.owner]) return false
+            seen[row.owner] = true
+            return true
+        })
+    }
+    readonly property var primaryRelated: eligibleCards(projection.upNext)
+    readonly property var recentCards: eligibleCards(projection.recent)
+    readonly property bool relatedFallback: primaryRelated.length === 0
+    readonly property var relatedCards: relatedFallback ? recentCards : primaryRelated
+    readonly property bool relatedLoading: projection.loading === true || !projection.owner
+    readonly property bool hasRelatedSide: wide
+    readonly property real relatedSideWidth: hasRelatedSide ? Math.min(360, Math.max(270, width * 0.22)) : 0
     signal closeRequested()
     signal volumeRequested(real value)
     signal editDetailsRequested(string owner)
@@ -248,7 +261,7 @@ Item {
                     Item {
                         id: mediaStage
                         objectName: "playerMediaStage"
-                        height: Math.max(180, Math.min(scene.stageHeightLimit, parent.width / scene.videoAspect))
+                        height: Math.max(1, Math.min(scene.stageHeightLimit, parent.width / scene.videoAspect))
                         width: Math.min(parent.width, height * scene.videoAspect)
                         x: (parent.width - width) / 2
                         clip: true
@@ -332,13 +345,41 @@ Item {
                     Layout.alignment: Qt.AlignTop
                     spacing: 9
                     Text {
-                        text: scene.projection.queued ? "UP NEXT" : "MORE TO WATCH"
+                        text: scene.relatedFallback ? "RECENTLY ADDED" : scene.projection.queued ? "UP NEXT" : "MORE TO WATCH"
                         color: theme.muted
                         font.pixelSize: 12
                         font.bold: true
                     }
+                    Column {
+                        objectName: "playerRelatedEmptyState"
+                        visible: scene.relatedCards.length === 0
+                        width: parent.width
+                        spacing: 10
+                        Text {
+                            width: parent.width
+                            text: scene.relatedLoading ? "Loading saved media…" : "Add something to watch"
+                            color: theme.text
+                            font.pixelSize: 16
+                            font.bold: true
+                            wrapMode: Text.WordWrap
+                        }
+                        Text {
+                            width: parent.width
+                            text: scene.relatedLoading ? "Your local suggestions will appear here." : "Save another video in Forge to build your watch list."
+                            color: theme.muted
+                            font.pixelSize: 13
+                            wrapMode: Text.WordWrap
+                        }
+                        StoneButton {
+                            objectName: "playerRelatedAddMedia"
+                            visible: !scene.relatedLoading
+                            label: "Open Forge"
+                            width: Math.min(160, parent.width)
+                            onActivated: scene.appBridge.selectHome("Forge")
+                        }
+                    }
                     Repeater {
-                        model: (scene.projection.upNext || []).slice(0, 4)
+                        model: scene.relatedCards.slice(0, 4)
                         StoneField {
                             required property var modelData
                             width: relatedSide.width
@@ -383,11 +424,25 @@ Item {
 
             Column {
                 objectName: "playerRelatedCompact"
-                visible: !scene.wide && (scene.projection.upNext || []).length > 0
+                visible: !scene.wide
                 width: parent.width
                 spacing: 8
-                Text { text: scene.projection.queued ? "UP NEXT" : "MORE TO WATCH"; color: theme.muted; font.pixelSize: 12; font.bold: true }
+                Text { text: scene.relatedFallback ? "RECENTLY ADDED" : scene.projection.queued ? "UP NEXT" : "MORE TO WATCH"; color: theme.muted; font.pixelSize: 12; font.bold: true }
+                Text {
+                    visible: scene.relatedCards.length === 0
+                    width: parent.width
+                    text: scene.relatedLoading ? "Loading saved media…" : "Save another video in Forge to build your watch list."
+                    color: theme.muted
+                    wrapMode: Text.WordWrap
+                }
+                StoneButton {
+                    objectName: "playerRelatedCompactAddMedia"
+                    visible: scene.relatedCards.length === 0 && !scene.relatedLoading
+                    label: "Add something to watch"
+                    onActivated: scene.appBridge.selectHome("Forge")
+                }
                 ScrollView {
+                    visible: scene.relatedCards.length > 0
                     id: relatedRail
                     objectName: "playerRelatedRail"
                     width: parent.width
@@ -399,7 +454,7 @@ Item {
                     Row {
                         spacing: 12
                         Repeater {
-                            model: scene.projection.upNext || []
+                            model: scene.relatedCards
                             PlayerThumbnailCard { appBridge: scene.appBridge }
                         }
                     }
@@ -429,7 +484,7 @@ Item {
 
             Column {
                 objectName: "playerRecentRail"
-                visible: (scene.projection.recent || []).length > 1
+                visible: !scene.relatedFallback && scene.recentCards.length > 0
                 width: parent.width
                 spacing: 8
                 Text { text: "RECENTLY ADDED"; color: theme.muted; font.pixelSize: 12; font.bold: true }
@@ -447,7 +502,7 @@ Item {
                     Row {
                         spacing: 12
                         Repeater {
-                            model: (scene.projection.recent || []).slice(0, 8)
+                            model: scene.recentCards.slice(0, 8)
                             PlayerThumbnailCard { appBridge: scene.appBridge }
                         }
                     }
