@@ -957,10 +957,14 @@ class Bridge(QObject):
             if path
             else None
         )
+        try:
+            can_open_location = folder is not None and folder.is_dir()
+        except OSError:
+            can_open_location = False
         return {
             "selectionKey": self._folder_inspector_key,
             "location": location,
-            "canOpenLocation": folder is not None and folder.is_dir(),
+            "canOpenLocation": can_open_location,
             "dismissRunId": job.run_id
             if job is not None
             and job in self._runtime.recovered

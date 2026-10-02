@@ -1,6 +1,7 @@
 """Exercise exact-owner inspector recovery actions through the real Qt scene."""
 
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 from PySide6.QtCore import QCoreApplication, QEvent, QObject
@@ -73,7 +74,7 @@ def test_saved_inspector_open_location_uses_selected_file_parent(
         lambda url: opened.append(url.toLocalFile()) or True,
     )
     window.findChild(QObject, "libraryInspectorOpenLocation").activated.emit()
-    assert opened == [str(tmp_path)]
+    assert [Path(location) for location in opened] == [tmp_path]
 
 
 def test_saved_inspector_remove_requires_popup_and_keeps_files(scene, tmp_path):
@@ -187,7 +188,7 @@ def test_issue_inspector_dismisses_terminal_only_and_keeps_saved_state(
         lambda url: opened.append(url.toLocalFile()) or True,
     )
     window.findChild(QObject, "libraryInspectorOpenLocation").activated.emit()
-    assert opened == [str(tmp_path)]
+    assert [Path(location) for location in opened] == [tmp_path]
     active = replace(make_job(tmp_path), run_id="active-fixture")
     queued = replace(make_job(tmp_path), run_id="queued-fixture")
     bridge._runtime.active_job = active
@@ -230,3 +231,72 @@ def test_inspector_full_path_is_preserved_in_bounded_panel(scene, tmp_path, widt
         assert 0 < panel.height() <= 168
         assert 0 < path.width() <= panel.width()
         assert path.property("lineCount") > 1
+
+
+@pytest.mark.parametrize("failure", [PermissionError("denied"), OSError("offline")])
+@pytest.mark.parametrize("owner_kind", ["saved", "failed"])
+def test_denied_location_preserves_exact_owner_recovery_actions(
+    scene, tmp_path, monkeypatch, failure, owner_kind
+):
+    app, bridge, window = scene
+    folder = tmp_path / "denied-media-folder"
+    folder.mkdir()
+    media = folder / "retained.mp4"
+    media.write_bytes(b"retained fixture media")
+    if owner_kind == "saved":
+        select_saved(bridge, folder, ("retained",))
+    else:
+        job = make_job(folder)
+        bridge._runtime.recovery.terminal_attempt(job, "Failed", "Fixture failure")
+        bridge._runtime.recovered = bridge._runtime.recovery.store.load_terminal_jobs()
+        bridge.select("Library")
+        bridge.navigateLibraryFolders("issues")
+        issue = bridge.libraryFolders["components"][0]
+        assert bridge.selectLibraryFolderComponent(issue["key"])
+    app.processEvents()
+    original_actions = bridge.inspectorRecoveryActions
+    original_media = media.read_bytes()
+    history = (
+        bridge._runtime.history_path.read_bytes()
+        if bridge._runtime.history_path.exists()
+        else None
+    )
+    is_dir = Path.is_dir
+
+    def denied_probe(path):
+        if path == folder:
+            raise failure
+        return is_dir(path)
+
+    monkeypatch.setattr(Path, "is_dir", denied_probe)
+    opened = []
+    monkeypatch.setattr(
+        qt_main.QDesktopServices, "openUrl", lambda url: opened.append(url) or True
+    )
+    actions = bridge.inspectorRecoveryActions
+    assert not actions["canOpenLocation"]
+    for key in ("selectionKey", "location", "savedOwner", "dismissRunId"):
+        assert actions[key] == original_actions[key]
+    assert not bridge.openInspectorLocation(actions["selectionKey"])
+    assert not opened
+    bridge.historyChanged.emit()
+    app.processEvents()
+    assert not window.findChild(QObject, "libraryInspectorOpenLocation").property(
+        "visible"
+    )
+    if owner_kind == "saved":
+        control = window.findChild(QObject, "libraryInspectorRemoveCard")
+        assert control.property("visible")
+        requested = QSignalSpy(bridge.libraryRemovalRequested)
+        control.activated.emit()
+        assert requested.count() == 1
+        assert bridge._pending_library_removal is not None
+    else:
+        control = window.findChild(QObject, "libraryInspectorDismissRun")
+        assert control.property("visible")
+        control.activated.emit()
+        assert bridge._runtime.recovered == []
+        assert bridge._runtime.recovery.store.load_terminal_jobs() == []
+    assert media.read_bytes() == original_media
+    if history is not None:
+        assert bridge._runtime.history_path.read_bytes() == history
