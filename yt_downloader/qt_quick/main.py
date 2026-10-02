@@ -642,10 +642,19 @@ class Bridge(QObject):
             else "Ready"
         )
         saved_output = str(self._settings.get("output_dir") or "")
+        try:
+            saved_output_available = bool(saved_output) and Path(saved_output).is_dir()
+        except OSError:
+            # Keep the chosen path when a provider/permission probe fails. Opening
+            # the app must not require access to every retained output folder;
+            # download admission still validates it before writing any media.
+            saved_output_available = True
+            self._status = (
+                "The saved output folder is unavailable. Choose another folder "
+                "before starting a download."
+            )
         self._output_path = (
-            saved_output
-            if saved_output and Path(saved_output).is_dir()
-            else str(Path.home() / "Downloads")
+            saved_output if saved_output_available else str(Path.home() / "Downloads")
         )
         self._selection = "Forge"
         self._progress = 0.0
