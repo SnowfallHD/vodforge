@@ -93,6 +93,14 @@ def test_chapter_segments_titles_and_continuous_seek(player_scene):  # noqa: F81
     ]
     assert len(segments) == 4
     assert all(segment.width() > 0 for segment in segments)
+    assert segments[0].x() + segments[0].width() < segments[1].x()
+    overlay.setProperty(
+        "chapters", [{"start_time": 0, "end_time": 120, "title": "LongTitle" * 40}]
+    )
+    flush(app)
+    tooltip = overlay.findChild(QObject, "playerChapterTitleTooltip")
+    assert tooltip.property("text") == "LongTitle" * 40
+    assert tooltip.property("width") <= 360
     seek = overlay.findChild(QObject, "playerOverlaySeek")
     spy = QSignalSpy(overlay.seekRequested)
     seek.forceActiveFocus()

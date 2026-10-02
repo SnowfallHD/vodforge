@@ -64,6 +64,20 @@ Item {
         color: "white"
         font.pixelSize: 11
         elide: Text.ElideRight
+        HoverHandler { id: chapterTitleHover }
+        ToolTip {
+            objectName: "playerChapterTitleTooltip"
+            visible: chapterTitleHover.hovered && !!chapterTrack.currentChapter
+            text: chapterTrack.currentChapter
+            width: Math.min(360, controls.width - 24)
+            background: Rectangle { color: theme.surface_2; radius: 8; border.color: theme.border }
+            contentItem: Text {
+                text: chapterTrack.currentChapter
+                color: theme.text
+                wrapMode: Text.WrapAnywhere
+                font.pixelSize: 12
+            }
+        }
     }
     Basic.Slider {
         id: seek
@@ -112,8 +126,9 @@ Item {
     }
     Rectangle {
         id: hoverPreview
+        HoverHandler { id: previewHover }
         objectName: "playerSeekPreview"
-        visible: seekHover.containsMouse && controls.player && controls.player.duration > 0
+        visible: (seekHover.containsMouse || previewHover.hovered) && controls.player && controls.player.duration > 0
         width: 160; height: chapterTrack.chapterAt(controls.hoverSeconds) ? 132 : 112; radius: 7
         x: Math.max(4, Math.min(controls.width - width - 4, seekHover.x + seekHover.mouseX - width / 2))
         y: -height + 9
