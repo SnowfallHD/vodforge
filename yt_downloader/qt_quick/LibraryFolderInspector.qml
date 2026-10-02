@@ -8,6 +8,7 @@ Column {
     property var appBridge
     readonly property var item: appBridge.libraryFolderInspector
     readonly property var issueSettings: item.settings || ({})
+    readonly property var recoveryActions: appBridge.inspectorRecoveryActions || ({})
     property string section: "Item"
     property real targetPanelBottom: height
     spacing: 8
@@ -46,7 +47,7 @@ Column {
         id: overview
         objectName: "libraryFolderOverview"
         width: parent.width
-        height: inspector.item.folder ? 214 : 81
+        height: inspector.item.folder ? 214 : Math.max(81, selectedOverview.implicitHeight + 8)
         StoneField {
             objectName: "libraryFolderArtworkFrame"
             visible: !inspector.item.folder
@@ -66,6 +67,7 @@ Column {
             visible: !(inspector.item.artwork || "")
         }
         Column {
+            id: selectedOverview
             x: inspector.item.folder ? 0 : 136
             y: inspector.item.folder ? 136 : 0
             width: inspector.item.folder ? parent.width : Math.max(130, inspector.width - 136)
@@ -98,6 +100,88 @@ Column {
                 font.pixelSize: 12
                 width: parent.width
                 elide: Text.ElideRight
+                HoverHandler { id: selectedLocationHover }
+                ToolTip.visible: selectedLocationHover.hovered && !!text
+                ToolTip.text: text
+            }
+            Text {
+                objectName: "libraryFolderSelectedSummary"
+                visible: !inspector.item.folder && !!text
+                text: [inspector.item.status, inspector.item.modeLabel].filter(Boolean).join("  ·  ")
+                color: theme.muted
+                font.pixelSize: 12
+                width: parent.width
+                wrapMode: Text.WordWrap
+            }
+        }
+    }
+    StoneField {
+        objectName: "libraryInspectorRecoveryDetails"
+        visible: !!inspector.recoveryActions.selectionKey &&
+                 (!!inspector.recoveryActions.location || inspector.recoveryActions.canOpenLocation ||
+                  !!inspector.recoveryActions.dismissRunId || !!inspector.recoveryActions.savedOwner)
+        width: parent.width
+        // Keep tab positions stable while full paths remain vertically scrollable.
+        height: 52
+        ScrollView {
+            id: recoveryDetailsScroll
+            anchors.fill: parent
+            anchors.margins: 2
+            clip: true
+            contentWidth: availableWidth
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+            VerticalScrollChain { nestedScrollView: recoveryDetailsScroll }
+            Column {
+                id: recoveryDetailsContent
+                width: recoveryDetailsScroll.availableWidth
+                spacing: 2
+                Text {
+                    objectName: "libraryInspectorExactLocation"
+                    visible: !!text
+                    width: parent.width
+                    text: inspector.recoveryActions.location || ""
+                    wrapMode: inspector.section === "Description" ? Text.NoWrap : Text.WrapAnywhere
+                    elide: inspector.section === "Description" ? Text.ElideRight : Text.ElideNone
+                    color: theme.muted
+                    font.pixelSize: 12
+                    HoverHandler { id: recoveryLocationHover }
+                    ToolTip.visible: recoveryLocationHover.hovered && !!text
+                    ToolTip.text: text
+                }
+                Flow {
+                    width: parent.width
+                    height: childrenRect.height
+                    spacing: 4
+                StoneButton {
+                    objectName: "libraryInspectorOpenLocation"
+                    visible: !!inspector.recoveryActions.canOpenLocation
+                    width: Math.min(parent.width, implicitWidth)
+                    height: 28
+                    size: "inline"
+                    label: "Open location"
+                    onActivated: inspector.appBridge.openInspectorLocation(inspector.recoveryActions.selectionKey)
+                }
+                StoneButton {
+                    objectName: "libraryInspectorDismissRun"
+                    visible: !!inspector.recoveryActions.dismissRunId
+                    width: Math.min(parent.width, implicitWidth)
+                    height: 28
+                    size: "inline"
+                    label: "Dismiss run"
+                    accessibilityLabel: "Dismiss run; keep downloaded files"
+                    onActivated: inspector.appBridge.dismissTerminal(inspector.recoveryActions.dismissRunId)
+                }
+                StoneButton {
+                    objectName: "libraryInspectorRemoveCard"
+                    visible: !!inspector.recoveryActions.savedOwner
+                    width: Math.min(parent.width, implicitWidth)
+                    height: 28
+                    size: "inline"
+                    label: "Remove Library card"
+                    accessibilityLabel: "Remove Library card; keep downloaded files"
+                    onActivated: inspector.appBridge.requestInspectorLibraryRemoval(inspector.recoveryActions.selectionKey)
+                }
+                }
             }
         }
     }
@@ -349,7 +433,12 @@ Column {
                 width: parent.width; height: 40
                 label: inspector.issueSettings.output_dir || "Choose output folder…"
                 accessibilityLabel: "Choose output folder for this retry"
-                onActivated: issueFolderDialog.open()
+                ToolTip.visible: hovered && !!inspector.issueSettings.output_dir
+                ToolTip.text: inspector.issueSettings.output_dir || ""
+                onActivated: {
+                    issueFolderDialog.currentFolder = inspector.issueSettings.output_url || ""
+                    issueFolderDialog.open()
+                }
             }
             Text { text: "Output"; visible: !inspector.item.missing || inspector.item.canRedownload; color: theme.muted; font.pixelSize: 12; font.bold: true }
             InlineSelector {
@@ -534,10 +623,9 @@ Column {
         visible: !!inspector.item.owner
         width: parent.width
         height: inspector.section === "Item" ? itemColumn.childrenRect.height + 20 :
-            Math.max(360, inspector.targetPanelBottom -
-                (eyebrow.height + overview.height + openDetails.height + tabs.height
-                 + (openCurrentFolder.visible ? openCurrentFolder.height + inspector.spacing : 0)
-                 + inspector.spacing * 4))
+            // The selected-item controls above this panel are content-dependent.
+            // Use the rendered panel position rather than an incomplete height sum.
+            Math.max(80, inspector.targetPanelBottom - detailsPanel.y)
         Item {
             anchors.fill: parent
             anchors.margins: 10
@@ -546,6 +634,20 @@ Column {
                 id: itemColumn
                 anchors.fill: parent
                 spacing: 10
+                Repeater {
+                    model: (inspector.item.source || []).slice(0, 1).concat((inspector.item.output || []).slice(0, 1))
+                    delegate: Text {
+                        required property var modelData
+                        width: itemColumn.width
+                        text: modelData.label + ": " + modelData.value
+                        color: theme.muted
+                        font.pixelSize: 12
+                        elide: Text.ElideRight
+                        HoverHandler { id: factHover }
+                        ToolTip.visible: factHover.hovered
+                        ToolTip.text: text
+                    }
+                }
                 Text { text: "Saved version"; color: theme.muted; font.pixelSize: 12; font.bold: true }
                 Flow {
                     width: parent.width

@@ -18,6 +18,7 @@ $result = @{ status='failed'; evidence_tier='windows-running-upgrade'; ui_click_
 $old = $null
 $new = $null
 $visibilityStarted = $null
+$baselineVisibilityStarted = $null
 try {
   $env:VODFORGE_DISABLE_TELEMETRY = '1'
   $env:LOCALAPPDATA = Join-Path $run 'profile'
@@ -35,9 +36,11 @@ try {
   $candidateHash = (Get-FileHash $CandidateExecutable).Hash
   if ($baselineHash -eq $candidateHash) { throw 'Upgrade requires distinct baseline and candidate executables' }
   $old = Start-Process $exe -PassThru
-  Start-Sleep -Seconds 4
-  $old.Refresh()
-  if ($old.HasExited -or $old.MainWindowHandle -eq 0) { throw 'Baseline app is not visibly running' }
+  # Cold signed-app startup must satisfy the same exact-PID/path bounded
+  # visibility contract as relaunch; a four-second snapshot was too early.
+  $baselineVisibilityStarted = Get-Date
+  $old = Wait-VODForgeUpdatedWindow -TargetProcessId $old.Id -ExpectedPath $exe
+  $result.baseline_visibility_wait_ms = [int]((Get-Date) - $baselineVisibilityStarted).TotalMilliseconds
   if ($LegacyHandoff) {
     # Match flags sent by already-installed older updaters. Inno's saved install
     # directory comes from the baseline installation in this isolated QA account.
@@ -81,6 +84,9 @@ try {
   $result.new_pid = $new.Id
   $result.handoff_receipt = $handoff
 } catch {
+  if ($baselineVisibilityStarted -and !$result.baseline_visibility_wait_ms) {
+    $result.baseline_visibility_wait_ms = [int]((Get-Date) - $baselineVisibilityStarted).TotalMilliseconds
+  }
   if ($visibilityStarted) {
     $result.visibility_wait_ms = [int]((Get-Date) - $visibilityStarted).TotalMilliseconds
   }

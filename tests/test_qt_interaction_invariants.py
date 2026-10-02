@@ -441,7 +441,15 @@ def test_folder_navigation_keeps_columns_fixed_while_async_contents_change(
                 QTest.qWait(10)
             assert not bridge.libraryFolders["checkingFolder"]
         assert navigation.width() == 184
-        assert inspector.width() == 380
+        browser = window.findChild(QObject, "libraryFolderBrowser")
+        expected_inspector_width = min(
+            680,
+            max(
+                350 if browser.width() + 40 < 1000 else 380,
+                round(browser.width() * 0.34),
+            ),
+        )
+        assert inspector.width() == expected_inspector_width
     finally:
         _close(bridge, engine, window)
 

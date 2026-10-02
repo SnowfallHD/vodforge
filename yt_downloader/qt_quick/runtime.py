@@ -68,6 +68,22 @@ class DownloadPreferences:
     write_info_json: bool = True
 
 
+class _WorkerEventQueue(queue.Queue[Any]):
+    """Put-only worker sink retaining the originating execution object."""
+
+    def __init__(self, target: queue.Queue[tuple[str, Any]], job: DownloadJob) -> None:
+        super().__init__()
+        self._target = target
+        self._job = job
+
+    def put(self, item: Any, block: bool = True, timeout: float | None = None) -> None:
+        self._target.put(
+            ("worker_event", {"job": self._job, "event": item}),
+            block=block,
+            timeout=timeout,
+        )
+
+
 class DownloadRuntime:
     def __init__(self) -> None:
         self.events: queue.Queue[tuple[str, Any]] = queue.Queue()
@@ -82,6 +98,9 @@ class DownloadRuntime:
             )
         self.worker: threading.Thread | None = None
         self.active_job: DownloadJob | None = None
+        self._active_feedback_job: DownloadJob | None = None
+        self._active_status = "Preparing download"
+        self._active_progress = 0.0
         self._worker_app: DownloadWorkerCore | None = None
         self.provider_network = ProviderNetworkCoordinator()
         self._closing = False
@@ -89,6 +108,11 @@ class DownloadRuntime:
         self.product_telemetry: Any | None = None
         self.activity: list[dict[str, str]] = []
         for job in [*self.recovered, *self.queued]:
+            if job.retry_of_run_id:
+                job.preview_info = {
+                    **(job.preview_info or {}),
+                    "vodforge_issue_retry": True,
+                }
             self._activity_upsert(
                 job,
                 job.terminal_status or "Queued",
@@ -104,6 +128,25 @@ class DownloadRuntime:
     @property
     def busy(self) -> bool:
         return self.worker is not None and self.worker.is_alive()
+
+    @property
+    def active_status(self) -> str:
+        if self.active_job is None:
+            return ""
+        if self._active_feedback_job is not self.active_job:
+            return "Preparing download"
+        return self._active_status
+
+    @property
+    def active_progress(self) -> float:
+        if self.active_job is None or self._active_feedback_job is not self.active_job:
+            return 0.0
+        return self._active_progress
+
+    def _reset_active_feedback(self, job: DownloadJob) -> None:
+        self._active_feedback_job = job
+        self._active_status = "Preparing download"
+        self._active_progress = 0.0
 
     def start(
         self,
@@ -344,11 +387,9 @@ class DownloadRuntime:
             "vodforge_terminal_run_id",
         ):
             preview.pop(key, None)
-        # Only a retry admitted from Library Issues stays in that list while it
-        # is queued or running. Ordinary Forge downloads never acquire this flag.
-        current_preview = current_job.preview_info if current_job is not None else None
-        if current_preview and current_preview.get("vodforge_issue_retry"):
-            preview["vodforge_issue_retry"] = True
+        # Recovery membership belongs to the admitted terminal lineage, not the
+        # surface that initiated it. Ordinary new downloads never pass here.
+        preview["vodforge_issue_retry"] = True
         retry = replace(
             settings_job,
             url=url,
@@ -394,9 +435,8 @@ class DownloadRuntime:
         self.recovered = [
             job for job in self.recovered if job.run_id != previous.run_id
         ]
-        self.activity = [
-            item for item in self.activity if item["runId"] != previous.run_id
-        ]
+        # Recovery presentation follows the successor, while Activity retains
+        # the original attempt and its failure detail for investigation.
         return retry
 
     def _launch_next_queued(self) -> None:
@@ -467,7 +507,7 @@ class DownloadRuntime:
         # The production worker is now a UI-independent owner shared by Tk,
         # Qt, and the engineering harness.
         worker_app = DownloadWorkerCore()
-        worker_app.events = self.events
+        worker_app.events = _WorkerEventQueue(self.events, job)
         worker_app.cancel_requested = False
         worker_app.skip_video_requested = False
         worker_app.skip_url_requested = False
@@ -481,6 +521,7 @@ class DownloadRuntime:
         self._worker_app = worker_app
         self._history_error = False
         self.active_job = job
+        self._reset_active_feedback(job)
         self.worker = threading.Thread(
             target=worker_app._download_worker,
             args=(job,),
@@ -517,6 +558,20 @@ class DownloadRuntime:
                 daemon=True,
             ).start()
 
+    def dismiss_terminal(self, run_id: str) -> bool:
+        """Dismiss one durable terminal card without changing media or active work."""
+        if self.active_job is not None and self.active_job.run_id == run_id:
+            return False
+        if any(job.run_id == run_id for job in self.queued):
+            return False
+        matches = [job for job in self.recovered if job.run_id == run_id]
+        if len(matches) != 1:
+            return False
+        if not self.recovery.store.clear(run_id, terminal_only=True):
+            return False
+        self.recovered = [job for job in self.recovered if job is not matches[0]]
+        return True
+
     def remove_queued(self, run_id: str) -> bool:
         matches = [job for job in self.queued if job.run_id == run_id]
         if len(matches) != 1:
@@ -536,11 +591,39 @@ class DownloadRuntime:
             except queue.Empty:
                 break
             kind, payload = event
+            if kind == "worker_event":
+                if payload["job"] is not self.active_job:
+                    continue
+                event = payload["event"]
+                kind, payload = event
+                # Source-bearing context is flattened below for UI display.
+                # Forward it only after validating the captured worker owner;
+                # the queue cannot safely unwrap envelopes on its own.
+                retain_context = getattr(self.events, "retain_context_event", None)
+                if retain_context is not None:
+                    retain_context(event)
+            if self.active_job is not None and kind in {
+                "status",
+                "progress",
+                "progress_determinate",
+            }:
+                if self._active_feedback_job is not self.active_job:
+                    self._reset_active_feedback(self.active_job)
+                if kind == "status":
+                    self._active_status = str(payload)
+                elif payload is not None:
+                    self._active_progress = max(0.0, min(100.0, float(payload)))
             if kind == "history_record" and isinstance(payload, dict):
                 try:
                     self._record_history(payload)
                 except (HistoryError, OSError, ValueError):
                     self._history_error = True
+                    if self.active_job is not None:
+                        if self._active_feedback_job is not self.active_job:
+                            self._reset_active_feedback(self.active_job)
+                        self._active_status = (
+                            "Output saved, but Library history needs attention."
+                        )
                     result.append(
                         ("status", "Output saved, but Library history needs attention.")
                     )
@@ -552,7 +635,10 @@ class DownloadRuntime:
                     and job is self.active_job
                     and isinstance(info, dict)
                 ):
-                    if (job.preview_info or {}).get("vodforge_issue_retry") is True:
+                    if (
+                        job.retry_of_run_id
+                        or (job.preview_info or {}).get("vodforge_issue_retry") is True
+                    ):
                         job.preview_info = {**info, "vodforge_issue_retry": True}
                     else:
                         job.preview_info = info

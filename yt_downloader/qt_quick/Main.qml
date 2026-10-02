@@ -139,6 +139,11 @@ Window {
     }
     Connections {
         target: bridge
+        function onOperationFeedback(message) {
+            operationNotice.message = message
+            operationNotice.open()
+            operationNoticeTimer.restart()
+        }
         function onOutputFolderRecoveryRequested(message) {
             outputFolderRecoveryPopup.message = message
             outputFolderRecoveryPopup.open()
@@ -158,6 +163,7 @@ Window {
         }
         function onEditorialRequested() { editorialPopup.open() }
         function onFileActionRequested() { fileActionPopup.open() }
+        function onLibraryRemovalRequested() { libraryRemovalPopup.open() }
         function onSourceAccepted() { urlInput.text = "" }
         function onSourcePrepared(url) { urlInput.text = url }
         function onMissingMediaRequested() { missingMediaPopup.open() }
@@ -634,9 +640,36 @@ Window {
     }
     FolderDialog {
         id: outputFolderDialog
+        objectName: "outputFolderDialog"
         title: "Choose output folder"
+        currentFolder: bridge.outputFolderUrl
+        onVisibleChanged: { if (visible) currentFolder = bridge.outputFolderUrl }
         onAccepted: bridge.chooseOutputUrl(selectedFolder)
     }
+    StonePopup {
+        id: operationNotice
+        objectName: "operationNotice"
+        property string message: ""
+        x: Math.max(10, (window.width - width) / 2)
+        y: bridge.selection === "Forge"
+            ? Math.min(window.height - height - 18,
+                       forgeComposerAuxRow.mapToItem(window.contentItem, 0, forgeComposerAuxRow.height).y + 8)
+            : window.height - height - 18
+        width: Math.min(440, window.width - 30)
+        height: noticeText.implicitHeight + 28
+        padding: 14
+        modal: false
+        focus: false
+        Text {
+            id: noticeText
+            text: operationNotice.message
+            width: parent.width
+            color: theme.text
+            font.pixelSize: 14
+            wrapMode: Text.WordWrap
+        }
+    }
+    Timer { id: operationNoticeTimer; interval: 3500; onTriggered: operationNotice.close() }
     FolderDialog {
         id: libraryMoveFolderDialog
         title: "Move saved media to"
@@ -1008,6 +1041,7 @@ Window {
                     onActivated: urlListDialog.open()
                 }
                 RowLayout {
+                    id: forgeComposerAuxRow
                     spacing: 6
                     Text {
                         text: "Save to"
@@ -1022,6 +1056,9 @@ Window {
                         Layout.preferredHeight: 34
                         interactive: true
                         accessibilityLabel: "Choose output folder"
+                        HoverHandler { id: forgeDestinationHover }
+                        ToolTip.visible: forgeDestinationHover.hovered
+                        ToolTip.text: bridge.outputPath
                         onActivated: outputFolderDialog.open()
                         RowLayout {
                             anchors.fill: parent
@@ -1176,7 +1213,7 @@ Window {
                           "Showing " + window.selectedForgeRun.status.toLowerCase() + " run: " + window.selectedForgeRun.title :
                           window.selectedForgeRun.kind === "queued" ?
                           "Showing queued run: " + window.selectedForgeRun.title :
-                          window.selectedForgeRun.kind === "active" ? bridge.status :
+                          window.selectedForgeRun.kind === "active" ? window.selectedForgeRun.status :
                           bridge.history.length ? "Loaded " + bridge.history.length + " downloaded media item(s) from history." : "Ready for a new run."
                     color: theme.muted; font.pixelSize: 14
                     Layout.fillWidth: true; elide: Text.ElideRight
@@ -1500,8 +1537,8 @@ Window {
             x: 10; y: 10; spacing: 5
             StoneButton {
                 objectName: "miniPlayerPause"
-                label: window.mediaPlayer && window.mediaPlayer.playbackState === MediaPlayer.PlayingState ? "Ⅱ" : "▶"
-                accessibilityLabel: label === "Ⅱ" ? "Pause mini player" : "Play mini player"
+                sceneIcon: window.mediaPlayer && window.mediaPlayer.playbackState === MediaPlayer.PlayingState ? "pause" : "play"
+                accessibilityLabel: sceneIcon === "pause" ? "Pause mini player" : "Play mini player"
                 width: 32; height: 30
                 onActivated: {
                     if (!window.mediaPlayer) return
@@ -1698,7 +1735,7 @@ Window {
         x: Math.max(0, (window.width - width) / 2)
         y: Math.max(0, (window.height - height) / 2)
         width: Math.min(490, window.width - 40)
-        height: 250
+        height: bridge.fileActionReviewOwner ? 330 : 250
         padding: 18
         modal: true
         closePolicy: bridge.fileActionBusy ? Popup.NoAutoClose : Popup.CloseOnEscape
@@ -1720,6 +1757,31 @@ Window {
                 Layout.fillWidth: true
             }
             Item { Layout.fillHeight: true }
+            RowLayout {
+                visible: !!bridge.fileActionReviewOwner
+                Layout.fillWidth: true
+                StoneButton {
+                    objectName: "fileActionFindFile"
+                    label: "Find saved file…"
+                    Layout.fillWidth: true
+                    onActivated: {
+                        window.pendingRelinkOwner = bridge.fileActionReviewOwner
+                        fileActionPopup.close()
+                        relinkFileDialog.open()
+                    }
+                }
+                StoneButton {
+                    objectName: "fileActionForgetCard"
+                    label: "Remove Library card"
+                    Layout.fillWidth: true
+                    onActivated: {
+                        if (bridge.prepareLibraryRemoval(bridge.fileActionReviewOwner)) {
+                            fileActionPopup.close()
+                            libraryRemovalPopup.open()
+                        }
+                    }
+                }
+            }
             RowLayout {
                 Layout.fillWidth: true
                 StoneButton {
@@ -2239,9 +2301,12 @@ Window {
                         Layout.fillWidth: true
                         StoneField {
                             Layout.fillWidth: true; Layout.preferredHeight: 42
+                            HoverHandler { id: settingsDestinationHover }
+                            ToolTip.visible: settingsDestinationHover.hovered
+                            ToolTip.text: bridge.outputPath
                             Text { anchors.fill: parent; anchors.leftMargin: 14; anchors.rightMargin: 14; verticalAlignment: Text.AlignVCenter; text: bridge.outputPath; color: theme.text; elide: Text.ElideMiddle; font.pixelSize: 14 }
                         }
-                        StoneButton { label: "Browse"; Layout.preferredWidth: 95; Layout.preferredHeight: 40; onActivated: outputFolderDialog.open() }
+                        StoneButton { label: "Browse"; Layout.preferredWidth: 95; Layout.preferredHeight: 40; ToolTip.visible: hovered; ToolTip.text: bridge.outputPath; onActivated: outputFolderDialog.open() }
                     }
                     Text { text: "BATCH AND PLAYLISTS"; color: theme.accent; font.pixelSize: 13; font.bold: true }
                     RowLayout {

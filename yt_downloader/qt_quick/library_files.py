@@ -248,9 +248,19 @@ class QtLibraryFiles:
                         "already-missing Library entry(s)?"
                     )
                 if not self.eligible:
+                    reasons = []
+                    if counts.get("unavailable", 0):
+                        reasons.append("The saved location could not be accessed.")
+                    if counts.get("ambiguous", 0):
+                        reasons.append(
+                            "The saved files could not be matched to one Library item."
+                        )
+                    if counts.get("changed", 0):
+                        reasons.append("The selected Library item has changed.")
                     self.status = (
-                        "No selected files could be verified. Nothing will change."
+                        " ".join(reasons) or "No selected files could be verified."
                     )
+                    self.status += " No files will change. Find the saved file or remove only its Library card."
             elif kind == "pending":
                 self.pending = payload
                 self.plan = None

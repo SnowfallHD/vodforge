@@ -9,6 +9,9 @@ Item {
     property var appBridge
     readonly property var model: appBridge.libraryFolders
     readonly property bool showInspector: Window.window && Window.window.width >= 920 && Window.window.height >= 740
+    // Viewport geometry owns column widths; metadata must never widen a column.
+    readonly property real inspectorColumnWidth: Math.min(680, Math.max(
+        browser.width + 40 < 1000 ? 350 : 380, Math.round(browser.width * 0.34)))
     readonly property string navigationKey: model.mode + ":" + model.path
     property bool showFolderOpening: false
     readonly property bool checkingFolder: !!model.checkingFolder
@@ -319,7 +322,7 @@ Item {
             id: selectedInspector
             visible: browser.showInspector
             Layout.minimumWidth: Layout.preferredWidth
-            Layout.preferredWidth: visible ? (browser.width + 40 < 1000 ? 350 : 380) : 0
+            Layout.preferredWidth: visible ? browser.inspectorColumnWidth : 0
             Layout.maximumWidth: Layout.preferredWidth
             Layout.fillHeight: true
             targetPanelBottom: viewport.mapToItem(selectedInspector, 0, viewport.height).y

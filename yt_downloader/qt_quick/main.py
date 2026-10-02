@@ -362,6 +362,8 @@ class Bridge(QObject):
     pointerGestureEnded = Signal()
     outputFolderRecoveryRequested = Signal(str)
     statusChanged = Signal()
+    operationFeedback = Signal(str)
+    libraryRemovalRequested = Signal()
     outputPathChanged = Signal()
     selectionChanged = Signal()
     progressChanged = Signal()
@@ -640,10 +642,19 @@ class Bridge(QObject):
             else "Ready"
         )
         saved_output = str(self._settings.get("output_dir") or "")
+        try:
+            saved_output_available = bool(saved_output) and Path(saved_output).is_dir()
+        except OSError:
+            # Keep the chosen path when a provider/permission probe fails. Opening
+            # the app must not require access to every retained output folder;
+            # download admission still validates it before writing any media.
+            saved_output_available = True
+            self._status = (
+                "The saved output folder is unavailable. Choose another folder "
+                "before starting a download."
+            )
         self._output_path = (
-            saved_output
-            if saved_output and Path(saved_output).is_dir()
-            else str(Path.home() / "Downloads")
+            saved_output if saved_output_available else str(Path.home() / "Downloads")
         )
         self._selection = "Forge"
         self._progress = 0.0
@@ -703,6 +714,19 @@ class Bridge(QObject):
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
         self._save_timer.timeout.connect(self._save_preferences)
+        self._feedback_ready = True
+
+    @property
+    def _status(self) -> str:
+        return self._status_text
+
+    @_status.setter
+    def _status(self, message: str) -> None:
+        # User actions have one feedback channel. Execution presentation comes
+        # exclusively from the runtime's owner-bound active projection.
+        self._status_text = message
+        if getattr(self, "_feedback_ready", False):
+            self.operationFeedback.emit(message)
 
     @Property(str, notify=statusChanged)
     def status(self) -> str:
@@ -763,6 +787,19 @@ class Bridge(QObject):
     @Property(bool, notify=fileActionChanged)
     def fileActionEligible(self) -> bool:
         return self._files.phase == "preview" and self._files.eligible
+
+    @Property(str, notify=fileActionChanged)
+    def fileActionReviewOwner(self) -> str:
+        plan = self._files.plan
+        if self._files.phase != "preview" or self._files.eligible or plan is None:
+            return ""
+        if len(plan.items) != 1:
+            return ""
+        selected = plan.items[0]
+        item = self._saved_item_for_owner(selected.owner)
+        if item is None or record_fingerprint(item) != selected.fingerprint:
+            return ""
+        return selected.owner
 
     @Property(bool, notify=fileActionChanged)
     def fileActionRecovery(self) -> bool:
@@ -901,6 +938,63 @@ class Bridge(QObject):
         if not self._folder_file_path or not path.parent.is_dir():
             return False
         return QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.parent)))
+
+    @Property(_QVARIANT_MAP, notify=historyChanged)
+    def inspectorRecoveryActions(self) -> dict[str, Any]:
+        """Offer actions for the exact displayed owner, not a mutable list index."""
+        if self._library_scene_route != "folders" or not self._folder_inspector_key:
+            return {}
+        item = self.libraryFolderInspector
+        job = self._issue_job(self._issue_run_id) if self._issue_run_id else None
+        location = (
+            str(job.output_dir) if job is not None else str(item.get("location") or "")
+        )
+        path = Path(location) if location else None
+        folder = (
+            path
+            if job is not None or item.get("folder")
+            else path.parent
+            if path
+            else None
+        )
+        try:
+            can_open_location = folder is not None and folder.is_dir()
+        except OSError:
+            can_open_location = False
+        return {
+            "selectionKey": self._folder_inspector_key,
+            "location": location,
+            "canOpenLocation": can_open_location,
+            "dismissRunId": job.run_id
+            if job is not None
+            and job in self._runtime.recovered
+            and job.terminal_status in {"Failed", "Stopped", "Skipped"}
+            else "",
+            "savedOwner": str(item.get("owner") or self._missing_issue_owner or ""),
+        }
+
+    @Slot(str, result=bool)
+    def openInspectorLocation(self, selection_key: str) -> bool:
+        if self._selection != "Library" or selection_key != self._folder_inspector_key:
+            return False
+        actions = self.inspectorRecoveryActions
+        if not actions.get("canOpenLocation"):
+            return False
+        path = Path(str(actions["location"]))
+        job = self._issue_job(self._issue_run_id) if self._issue_run_id else None
+        if job is None and not self.libraryFolderInspector.get("folder"):
+            path = path.parent
+        return QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
+    @Slot(str, result=bool)
+    def requestInspectorLibraryRemoval(self, selection_key: str) -> bool:
+        if self._selection != "Library" or selection_key != self._folder_inspector_key:
+            return False
+        owner = str(self.inspectorRecoveryActions.get("savedOwner") or "")
+        if not owner or not self.prepareLibraryRemoval(owner):
+            return False
+        self.libraryRemovalRequested.emit()
+        return True
 
     @Slot(str, str, str, result=bool)
     def saveSelectedFolderMetadata(
@@ -1359,6 +1453,11 @@ class Bridge(QObject):
                 self._recovery_source_url, self._output_path
             )
         return self._output_path
+
+    @Property(QUrl, notify=outputPathChanged)
+    def outputFolderUrl(self) -> QUrl:
+        """Initialize the chooser from the current destination, never app cwd."""
+        return QUrl.fromLocalFile(self.outputPath)
 
     @Property(str, notify=selectionChanged)
     def selection(self) -> str:
@@ -2119,7 +2218,9 @@ class Bridge(QObject):
         )
 
     def _recovery_progress_label(self) -> str:
-        message = self._status.casefold()
+        message = self._runtime.active_status.casefold()
+        if "prepar" in message:
+            return "Preparing"
         if "transcod" in message or "convert" in message:
             return "Transcoding"
         if "download" in message:
@@ -2685,9 +2786,9 @@ class Bridge(QObject):
                     "detail": str(
                         preview.get("uploader") or preview.get("channel") or ""
                     ),
-                    "status": self._status,
+                    "status": self._runtime.active_status,
                     "type": active.output_type.value,
-                    "progress": self._progress,
+                    "progress": self._runtime.active_progress,
                     "duration": format_duration(preview.get("duration")),
                     "_artwork_info": preview,
                 }
@@ -3337,6 +3438,7 @@ class Bridge(QObject):
             "source": source,
             "source_editable": not bool(source),
             "output_dir": output_dir,
+            "output_url": QUrl.fromLocalFile(output_dir).toString(),
             "output_type": job.output_type.value,
             "export_mode": job.export_mode.value,
             "quality": job.quality_label
@@ -3461,6 +3563,7 @@ class Bridge(QObject):
             self._set_status("Select an existing output folder.")
             return
         self._issue_settings["output_dir"] = str(path)
+        self._issue_settings["output_url"] = QUrl.fromLocalFile(str(path)).toString()
         self.historyChanged.emit()
 
     @Slot(result=bool)
@@ -4309,6 +4412,43 @@ class Bridge(QObject):
             self.statusChanged.emit()
             return False
         return self.createCollection(name, owners)
+
+    @Slot("QVariantList", result="QVariantList")
+    def resolveLibrarySelection(self, targets: list[dict[str, Any]]) -> list[str]:
+        """Expand current screen entities only when an action is requested."""
+        if self._selection != "Library" or not targets:
+            return []
+        scene = self.libraryScene
+        groups = {
+            (str(group["kind"]), str(group["key"])): group for group in scene["groups"]
+        }
+        media = {str(item["owner"]) for item in scene["media"]}
+        seen: set[tuple[str, str]] = set()
+        owners: list[str] = []
+        for target in targets:
+            if not isinstance(target, dict):
+                return []
+            kind = target.get("kind")
+            key = target.get("owner") if kind == "media" else target.get("key")
+            if not isinstance(kind, str) or not isinstance(key, str) or not key:
+                return []
+            identity = (kind, key)
+            if identity in seen:
+                return []
+            seen.add(identity)
+            if kind == "media":
+                if key not in media:
+                    return []
+                owners.append(key)
+            else:
+                group = groups.get(identity)
+                if group is None:
+                    return []
+                owners.extend(group["owners"])
+        resolved = list(dict.fromkeys(owners))
+        if any(self._saved_item_for_owner(owner) is None for owner in resolved):
+            return []
+        return resolved
 
     @Slot("QVariantList", result="QVariantList")
     def collectionOwnersForArchiveSelection(self, owners: list[str]) -> list[str]:
@@ -5486,12 +5626,10 @@ class Bridge(QObject):
         try:
             removed = self._runtime.remove_queued(run_id)
         except RunStateError:
-            self._status = "The queued run could not be removed safely."
-            self.statusChanged.emit()
+            self.operationFeedback.emit("The queued run could not be removed safely.")
             return False
         if removed:
-            self._status = "Queued run removed."
-            self.statusChanged.emit()
+            self.operationFeedback.emit("Queued run removed.")
             self.activityChanged.emit()
             self.historyChanged.emit()
         return removed
@@ -5499,6 +5637,24 @@ class Bridge(QObject):
     @Slot(str, result=bool)
     def retryTerminal(self, run_id: str) -> bool:
         return self._admit_retry(run_id)
+
+    @Slot(str, result=bool)
+    def dismissTerminal(self, run_id: str) -> bool:
+        try:
+            dismissed = self._runtime.dismiss_terminal(run_id)
+        except RunStateError:
+            self.operationFeedback.emit(
+                "The interrupted run could not be dismissed safely."
+            )
+            return False
+        if dismissed:
+            self.operationFeedback.emit(
+                "Interrupted run dismissed. Saved files were kept."
+            )
+            self.historyChanged.emit()
+            self.activityChanged.emit()
+            self.runDeckChanged.emit()
+        return dismissed
 
     def _admit_retry(
         self,
@@ -5545,18 +5701,18 @@ class Bridge(QObject):
             self._status = str(exc)
             self.statusChanged.emit()
             return False
-        self._status = (
-            "Added retry to the queue."
-            if retry is not self._runtime.active_job
-            else "Retry started."
-        )
-        self.statusChanged.emit()
+        if retry is self._runtime.active_job:
+            self._status = "Retry started."
+            self.statusChanged.emit()
+        else:
+            self.operationFeedback.emit("Added retry to the queue.")
+        if stay_in_issues or self._issue_run_id == run_id:
+            self._issue_run_id = retry.run_id
+            self._folder_inspector_key = f"run:{retry.run_id}"
         self.activityChanged.emit()
         self.historyChanged.emit()
         self.runningChanged.emit()
         if stay_in_issues:
-            self._issue_run_id = retry.run_id
-            self._folder_inspector_key = f"run:{retry.run_id}"
             self.historyChanged.emit()
             self._record_update_feature("guidance", "recovery_selected")
         else:
@@ -5905,7 +6061,7 @@ class Bridge(QObject):
                 self._progress = max(0.0, min(100.0, float(payload)))
                 self.progressChanged.emit()
             elif kind == "status":
-                self._status = str(payload)
+                self._status_text = str(payload)
                 self._forge_activity.observe(self._forge_run_id, self._status)
                 self.statusChanged.emit()
                 active = self._runtime.active_job
@@ -5978,7 +6134,7 @@ class Bridge(QObject):
                         self._engagement.completed_download(active_job_before.run_id)
                     except (OSError, ValueError):
                         pass
-                self._status = str(payload)
+                self._status_text = str(payload)
                 self._forge_activity.observe(
                     self._forge_run_id,
                     {

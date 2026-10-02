@@ -19,7 +19,10 @@ Item {
     readonly property var projection: appBridge.playerScene
     readonly property bool wide: width >= 1080
     readonly property real videoAspect: 16 / 9
-    readonly property real stageMaxHeight: 450
+    readonly property real stageMaxHeight: Math.min(810, Math.max(450, width * 0.28))
+    readonly property real stageHeightLimit: Math.max(180, Math.min(stageMaxHeight, height - 205))
+    readonly property bool hasRelatedSide: wide && (projection.upNext || []).length > 0
+    readonly property real relatedSideWidth: hasRelatedSide ? Math.min(480, Math.max(310, width * 0.20)) : 0
     signal closeRequested()
     signal volumeRequested(real value)
     signal editDetailsRequested(string owner)
@@ -108,7 +111,12 @@ Item {
         height: 480
         color: "black"
         title: scene.projection.title || "VODForge Player"
-        flags: scene.presentationMode === "floating" ? Qt.Window | Qt.WindowStaysOnTopHint : Qt.Window
+        // Windows adds default decorations only for a bare Qt.Window. Adding
+        // the on-top hint requires requesting the native controls explicitly.
+        flags: Qt.Window | Qt.WindowTitleHint | Qt.WindowSystemMenuHint |
+               Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint |
+               Qt.WindowCloseButtonHint |
+               (scene.presentationMode === "floating" ? Qt.WindowStaysOnTopHint : 0)
         onClosing: scene.setPresentation("embedded")
         Shortcut {
             sequence: "Escape"
@@ -221,20 +229,21 @@ Item {
             }
 
             RowLayout {
-                width: scene.wide ? Math.min(parent.width, scene.stageMaxHeight * scene.videoAspect + 334) : parent.width
+                width: scene.wide ? Math.min(parent.width, scene.stageHeightLimit * scene.videoAspect +
+                                            scene.relatedSideWidth + (scene.hasRelatedSide ? spacing : 0)) : parent.width
                 x: (parent.width - width) / 2
                 spacing: 24
                 Column {
                     id: stageColumn
                     objectName: "playerStageColumn"
                     Layout.fillWidth: true
-                    Layout.preferredWidth: scene.wide ? scene.stageMaxHeight * scene.videoAspect : scene.width
+                    Layout.preferredWidth: scene.wide ? scene.stageHeightLimit * scene.videoAspect : scene.width
                     spacing: 10
 
                     Item {
                         id: mediaStage
                         objectName: "playerMediaStage"
-                        height: Math.max(180, Math.min(scene.stageMaxHeight, parent.width / scene.videoAspect, scene.height - 205))
+                        height: Math.max(180, Math.min(scene.stageHeightLimit, parent.width / scene.videoAspect))
                         width: Math.min(parent.width, height * scene.videoAspect)
                         x: (parent.width - width) / 2
                         clip: true
@@ -308,9 +317,10 @@ Item {
                 }
 
                 Column {
+                    id: relatedSide
                     objectName: "playerRelatedSide"
-                    visible: scene.wide && (scene.projection.upNext || []).length > 0
-                    Layout.preferredWidth: visible ? 310 : 0
+                    visible: scene.hasRelatedSide
+                    Layout.preferredWidth: scene.relatedSideWidth
                     Layout.alignment: Qt.AlignTop
                     spacing: 9
                     Text {
@@ -323,7 +333,7 @@ Item {
                         model: (scene.projection.upNext || []).slice(0, 4)
                         StoneField {
                             required property var modelData
-                            width: 310
+                            width: relatedSide.width
                             height: 83
                             RowLayout {
                                 anchors.fill: parent
