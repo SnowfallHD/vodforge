@@ -43,6 +43,7 @@ jobs:
       - name: Run backend tests without Qt renderer modules
         env:
           QT_QUICK_BACKEND: software
+          QT_QUICK_CONTROLS_STYLE: Basic
         run: >-
           python -m pytest -q
           --ignore=tests/test_qt_analytics_session.py
@@ -105,9 +106,20 @@ jobs:
           --ignore=tests/test_qt_thumbnail_reduction.py
           --ignore=tests/test_qt_translated_subtitle_preferences.py
           --ignore=tests/test_qt_watch_group_tile_aspect.py
+          --ignore=engineering-quality/tests/test_qt_analytics_session.py
+          --ignore=engineering-quality/tests/test_qt_diagnostic_gate.py
+          --ignore=engineering-quality/tests/test_qt_library_files.py
+          --ignore=engineering-quality/tests/test_qt_library_projection.py
+          --ignore=engineering-quality/tests/test_qt_library_removal.py
+          --ignore=engineering-quality/tests/test_qt_local_telemetry.py
+          --ignore=engineering-quality/tests/test_qt_port_owner_review.py
+          --ignore=engineering-quality/tests/test_qt_stone_button_accessibility.py
+          --ignore=engineering-quality/tests/test_qt_update_session.py
+          --ignore=engineering-quality/tests/test_qt_worker_owner.py
       - name: Run Qt component tests in a fresh process
         env:
           QT_QUICK_BACKEND: software
+          QT_QUICK_CONTROLS_STYLE: Basic
         run: >-
           python -m pytest -q
           tests/test_qt_analytics_session.py
@@ -169,9 +181,20 @@ jobs:
           tests/test_qt_thumbnail_reduction.py
           tests/test_qt_translated_subtitle_preferences.py
           tests/test_qt_watch_group_tile_aspect.py
+          engineering-quality/tests/test_qt_analytics_session.py
+          engineering-quality/tests/test_qt_diagnostic_gate.py
+          engineering-quality/tests/test_qt_library_files.py
+          engineering-quality/tests/test_qt_library_projection.py
+          engineering-quality/tests/test_qt_library_removal.py
+          engineering-quality/tests/test_qt_local_telemetry.py
+          engineering-quality/tests/test_qt_port_owner_review.py
+          engineering-quality/tests/test_qt_stone_button_accessibility.py
+          engineering-quality/tests/test_qt_update_session.py
+          engineering-quality/tests/test_qt_worker_owner.py
       - name: Run Qt scene tests in a fresh process
         env:
           QT_QUICK_BACKEND: software
+          QT_QUICK_CONTROLS_STYLE: Basic
         run: python -m pytest -q tests/test_qt_scene_port.py
       - name: Execute Windows updater fault cases
         if: runner.os == 'Windows'

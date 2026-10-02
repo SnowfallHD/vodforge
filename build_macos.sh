@@ -41,7 +41,7 @@ fi
   # Build policy belongs to the packaged bytes, not to source tests that may
   # create live Qt bridges and telemetry owners in the same process.
   unset VODFORGE_UI VODFORGE_BUILD_TELEMETRY VODFORGE_BUILD_VERSION VODFORGE_DIST_DIR
-  QT_QUICK_BACKEND=software "$python_bin" -m pytest -q \
+  QT_QUICK_CONTROLS_STYLE=Basic QT_QUICK_BACKEND=software "$python_bin" -m pytest -q \
     --ignore=tests/test_qt_action_feedback_ownership.py \
     --ignore=tests/test_qt_file_recovery_actions.py \
     --ignore=tests/test_qt_floating_player_chrome.py \
@@ -100,8 +100,18 @@ fi
     --ignore=tests/test_qt_selectable_information.py \
     --ignore=tests/test_qt_thumbnail_reduction.py \
     --ignore=tests/test_qt_translated_subtitle_preferences.py \
-    --ignore=tests/test_qt_watch_group_tile_aspect.py
-  QT_QUICK_BACKEND=software "$python_bin" -m pytest -q \
+    --ignore=tests/test_qt_watch_group_tile_aspect.py \
+    --ignore=engineering-quality/tests/test_qt_analytics_session.py \
+    --ignore=engineering-quality/tests/test_qt_diagnostic_gate.py \
+    --ignore=engineering-quality/tests/test_qt_library_files.py \
+    --ignore=engineering-quality/tests/test_qt_library_projection.py \
+    --ignore=engineering-quality/tests/test_qt_library_removal.py \
+    --ignore=engineering-quality/tests/test_qt_local_telemetry.py \
+    --ignore=engineering-quality/tests/test_qt_port_owner_review.py \
+    --ignore=engineering-quality/tests/test_qt_stone_button_accessibility.py \
+    --ignore=engineering-quality/tests/test_qt_update_session.py \
+    --ignore=engineering-quality/tests/test_qt_worker_owner.py
+  QT_QUICK_CONTROLS_STYLE=Basic QT_QUICK_BACKEND=software "$python_bin" -m pytest -q \
     tests/test_qt_action_feedback_ownership.py \
     tests/test_qt_file_recovery_actions.py \
     tests/test_qt_floating_player_chrome.py \
@@ -159,8 +169,18 @@ fi
     tests/test_qt_selectable_information.py \
     tests/test_qt_thumbnail_reduction.py \
     tests/test_qt_translated_subtitle_preferences.py \
-    tests/test_qt_watch_group_tile_aspect.py
-  QT_QUICK_BACKEND=software "$python_bin" -m pytest -q tests/test_qt_scene_port.py
+    tests/test_qt_watch_group_tile_aspect.py \
+    engineering-quality/tests/test_qt_analytics_session.py \
+    engineering-quality/tests/test_qt_diagnostic_gate.py \
+    engineering-quality/tests/test_qt_library_files.py \
+    engineering-quality/tests/test_qt_library_projection.py \
+    engineering-quality/tests/test_qt_library_removal.py \
+    engineering-quality/tests/test_qt_local_telemetry.py \
+    engineering-quality/tests/test_qt_port_owner_review.py \
+    engineering-quality/tests/test_qt_stone_button_accessibility.py \
+    engineering-quality/tests/test_qt_update_session.py \
+    engineering-quality/tests/test_qt_worker_owner.py
+  QT_QUICK_CONTROLS_STYLE=Basic QT_QUICK_BACKEND=software "$python_bin" -m pytest -q tests/test_qt_scene_port.py
 )
 
 ui_mode="${VODFORGE_UI:-tk}"

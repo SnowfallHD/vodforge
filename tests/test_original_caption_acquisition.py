@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+
 from yt_downloader.app import (
     apply_original_caption_options,
     build_vod_ffmpeg_command,
