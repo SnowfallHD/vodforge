@@ -5702,7 +5702,7 @@ class Bridge(QObject):
             self.statusChanged.emit()
             return False
         if retry is self._runtime.active_job:
-            self._status = "Retry started."
+            self._status_text = "Retry started."
             self.statusChanged.emit()
         else:
             self.operationFeedback.emit("Added retry to the queue.")
@@ -6432,9 +6432,12 @@ class Bridge(QObject):
             self.progressChanged.emit()
             self.runningChanged.emit()
             queued = job is not self._runtime.active_job
-            self._status = (
-                "Added to download queue." if queued else "Preparing download…"
-            )
+            # Accepted execution is presented by the owner-bound run status.
+            # Queue admission remains action feedback; preparing is not a toast.
+            if queued:
+                self._status = "Added to download queue."
+            else:
+                self._status_text = "Preparing download…"
             outcome = "queued" if queued else "started"
             self.activityChanged.emit()
         self.statusChanged.emit()

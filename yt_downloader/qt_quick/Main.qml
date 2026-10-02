@@ -650,10 +650,14 @@ Window {
         id: operationNotice
         objectName: "operationNotice"
         property string message: ""
-        x: Math.max(10, (window.width - width) / 2)
+        x: bridge.selection === "Forge"
+            ? Math.max(10, Math.min(window.width - width - 10,
+                forgeCommandRow.mapToItem(window.contentItem, 0, 0).x
+                + (forgeCommandRow.width - width) / 2))
+            : Math.max(10, (window.width - width) / 2)
         y: bridge.selection === "Forge"
-            ? Math.min(window.height - height - 18,
-                       forgeComposerAuxRow.mapToItem(window.contentItem, 0, forgeComposerAuxRow.height).y + 8)
+            ? Math.max(10, Math.min(window.height - height - 18,
+                       forgeComposerAuxRow.mapToItem(window.contentItem, 0, forgeComposerAuxRow.height).y + 8))
             : window.height - height - 18
         width: Math.min(440, window.width - 30)
         height: noticeText.implicitHeight + 28
@@ -965,6 +969,7 @@ Window {
             spacing: 8
 
             RowLayout {
+                id: forgeCommandRow
                 objectName: "forgeCommandRow"
                 Layout.fillWidth: true
                 Layout.minimumWidth: 0
