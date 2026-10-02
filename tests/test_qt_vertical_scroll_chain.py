@@ -64,9 +64,9 @@ Window {
     "start,delta,expected_inner,expected_outer",
     [
         (100, -80, 180, 0),  # inner can still move
-        (360, -80, 380, 60),  # same event crosses bottom: only remainder
+        (360, -80, 380, 0),  # edge-reaching gesture stays inner
         (380, -80, 380, 80),  # bottom continues onto page
-        (20, 80, 0, -60),  # same event crosses top
+        (20, 80, 0, 0),  # edge-reaching gesture stays inner
         (0, 80, 0, -80),  # top continues onto page
         (380, 80, 300, 0),  # reversal at bottom stays inner
         (0, -80, 80, 0),  # reversal at top stays inner
@@ -168,3 +168,73 @@ def test_outer_edge_does_not_replay_delta(scroll_scene):
     app.processEvents()
     assert inner.property("contentY") == 380
     assert outer.property("contentY") == 700
+
+
+@pytest.mark.parametrize("at_top", [False, True])
+def test_phase_gesture_reaching_edge_keeps_momentum_until_new_begin(
+    scroll_scene, at_top
+):
+    app, window, outer, inner_view, inner = scroll_scene
+    if at_top:
+        outer.setProperty("contentY", 100)
+        inner_view.setProperty("y", 100)
+    inner.setProperty("contentY", 20 if at_top else 360)
+    point = inner_view.mapToScene(QPointF(40, 40))
+    delta = 80 if at_top else -80
+    before = outer.property("contentY")
+
+    def send(dy, phase):
+        event = QWheelEvent(
+            point,
+            point,
+            QPoint(0, dy),
+            QPoint(),
+            Qt.NoButton,
+            Qt.NoModifier,
+            phase,
+            False,
+        )
+        QGuiApplication.sendEvent(window, event)
+        app.processEvents()
+
+    send(delta, Qt.ScrollBegin)
+    send(delta, Qt.ScrollUpdate)
+    send(0, Qt.ScrollEnd)
+    send(delta, Qt.ScrollMomentum)
+    assert outer.property("contentY") == before
+    assert inner.property("contentY") == (0 if at_top else 380)
+    send(delta, Qt.ScrollBegin)
+    assert outer.property("contentY") == pytest.approx(before - delta)
+
+
+def test_mouse_idle_boundary_and_reversal(scroll_scene):
+    app, window, outer, inner_view, inner = scroll_scene
+    inner.setProperty("contentY", 360)
+    point = inner_view.mapToScene(QPointF(40, 40))
+
+    def send(dy):
+        event = QWheelEvent(
+            point,
+            point,
+            QPoint(),
+            QPoint(0, dy * 120 // 80),
+            Qt.NoButton,
+            Qt.NoModifier,
+            Qt.NoScrollPhase,
+            False,
+        )
+        QGuiApplication.sendEvent(window, event)
+        app.processEvents()
+
+    send(-80)
+    send(-80)
+    assert outer.property("contentY") == 0
+    send(80)
+    assert inner.property("contentY") == 300
+    send(-80)
+    idle = inner_view.findChild(QObject, "verticalScrollGestureIdle")
+    assert idle.property("interval") == 180
+    # Deliver the actual idle timer signal deterministically, without sleep.
+    idle.triggered.emit()
+    send(-80)
+    assert outer.property("contentY") == 80
