@@ -26,6 +26,7 @@ from PySide6.QtCore import (
     Property,
     QCoreApplication,
     QEvent,
+    QLocale,
     QObject,
     QPointF,
     QProcess,
@@ -69,6 +70,10 @@ from yt_downloader.archive_observations import (
 from yt_downloader.archive_paths import ArchivePath
 from yt_downloader.archive_relink import record_fingerprint
 from yt_downloader.archive_work import ArchiveWorkOwner
+from yt_downloader.caption_languages import (
+    PROVIDER_SUBTITLE_LANGUAGES,
+    translated_subtitle_language,
+)
 from yt_downloader.cloud_funnel import (
     InstallationIdentityError,
     cloud_page_url,
@@ -267,6 +272,7 @@ class _SubmitJobOptions(TypedDict):
     cookie_browser: str | None
     nvenc_applicable: bool | None
     tags: list[str] | None
+    translated_subtitle_language: str | None
 
 
 def qt_image(source: Image.Image) -> QImage:
@@ -618,6 +624,12 @@ class Bridge(QObject):
             if preferences.use_nvenc
             else preferences
         )
+        try:
+            self._translated_subtitle_language = translated_subtitle_language(
+                self._settings.get("translated_subtitle_language")
+            )
+        except ValueError:
+            self._translated_subtitle_language = None
         self._nvenc_probe: QProcess | None = None
         if sys.platform == "win32":
             QTimer.singleShot(0, self._start_nvenc_probe)
@@ -2460,6 +2472,39 @@ class Bridge(QObject):
     def downloadOptions(self) -> dict[str, bool]:
         return asdict(self._download_preferences)
 
+    @Property(str, notify=downloadOptionsChanged)
+    def translatedSubtitleLanguage(self) -> str:
+        return self._translated_subtitle_language or ""
+
+    @Property(str, notify=downloadOptionsChanged)
+    def translatedSubtitleLabel(self) -> str:
+        code = self._translated_subtitle_language
+        return (QLocale(code).nativeLanguageName() or code) if code else "Off"
+
+    @Property(_QVARIANT_LIST, constant=True)
+    def subtitleLanguageChoices(self) -> list[dict[str, str]]:
+        choices = [{"code": "", "label": "Off"}]
+        languages = [
+            {
+                "code": code,
+                "label": (QLocale(code).nativeLanguageName() or code) + f" ({code})",
+            }
+            for code in PROVIDER_SUBTITLE_LANGUAGES
+        ]
+        return choices + sorted(languages, key=lambda entry: entry["label"].casefold())
+
+    @Slot(str)
+    def setTranslatedSubtitleLanguage(self, value: str) -> None:
+        try:
+            selected = translated_subtitle_language(value)
+        except ValueError:
+            return
+        if selected == self._translated_subtitle_language:
+            return
+        self._translated_subtitle_language = selected
+        self.downloadOptionsChanged.emit()
+        self._schedule_preferences_save()
+
     @Property(bool, notify=nvencAvailableChanged)
     def nvencAvailable(self) -> bool:
         return self._nvenc_available
@@ -3069,6 +3114,7 @@ class Bridge(QObject):
             "mp3": self.mp3Values,
             "tags": self._current_extra_tags(),
             "batch_count": len(self._batch_urls),
+            "translated_subtitle_language": self._translated_subtitle_language,
         }
         return {
             "heading": "Chosen output settings (not measured output)",
@@ -3655,6 +3701,7 @@ class Bridge(QObject):
                 urls=[previous_source],
                 batch_mode=False,
                 cookie_source=access,
+                translated_subtitle_language=job.translated_subtitle_language,
                 cookie_file=job.cookie_file,
                 cookie_browser=job.cookie_browser,
                 tags=job.tags,
@@ -5078,6 +5125,7 @@ class Bridge(QObject):
             "export_mode": self._export_mode,
             "appearance_theme": self._appearance_theme,
             "custom_accent": self._custom_accent,
+            "translated_subtitle_language": self._translated_subtitle_language,
             **self.downloadOptions,
             **self._manual_values,
             **self._mp3_values,
@@ -5758,6 +5806,7 @@ class Bridge(QObject):
                     cookie_file=self._cookie_file,
                     cookie_browser=self._cookie_browser,
                     tags=self._current_extra_tags(),
+                    translated_subtitle_language=self._translated_subtitle_language,
                     nvenc_applicable=self.nvencAvailable,
                 )
             retry = self._runtime.retry_terminal(run_id, current_job=current_job)
@@ -6446,6 +6495,7 @@ class Bridge(QObject):
                 "cookie_browser": self._cookie_browser,
                 "tags": self._current_extra_tags(),
                 "nvenc_applicable": self.nvencAvailable,
+                "translated_subtitle_language": self._translated_subtitle_language,
             }
             preview = self._preview_download_info
             if (

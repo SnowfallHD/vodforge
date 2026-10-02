@@ -23,6 +23,9 @@ from yt_downloader.app import (
     terminate_all_active_child_processes,
     validate_output_directory_access,
 )
+from yt_downloader.caption_languages import (
+    translated_subtitle_language as validate_subtitle_language,
+)
 from yt_downloader.cookie_inputs import (
     cookie_inputs_for_source,
     windows_chromium_cookie_warning,
@@ -166,6 +169,7 @@ class DownloadRuntime:
         cookie_browser: str | None = None,
         tags: list[str] | None = None,
         nvenc_applicable: bool | None = None,
+        translated_subtitle_language: str | None = None,
     ) -> DownloadJob:
         if self._closing:
             raise RuntimeError("VODForge is closing.")
@@ -191,6 +195,7 @@ class DownloadRuntime:
             cookie_browser=cookie_browser,
             tags=tags,
             nvenc_applicable=nvenc_applicable,
+            translated_subtitle_language=translated_subtitle_language,
         )
         return self.start_job(job)
 
@@ -239,6 +244,7 @@ class DownloadRuntime:
         cookie_browser: str | None = None,
         tags: list[str] | None = None,
         nvenc_applicable: bool | None = None,
+        translated_subtitle_language: str | None = None,
     ) -> DownloadJob:
         """Validate current Forge inputs without admitting a run."""
         preferences = preferences or DownloadPreferences()
@@ -272,6 +278,11 @@ class DownloadRuntime:
         validate_output_directory_access(output_dir)
         job = DownloadJob(
             url=url,
+            translated_subtitle_language=validate_subtitle_language(
+                translated_subtitle_language
+            )
+            if selected_type == OutputType.MP4
+            else None,
             urls=selected_urls,
             output_dir=output_dir,
             output_type=selected_type,

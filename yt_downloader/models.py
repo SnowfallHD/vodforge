@@ -192,6 +192,7 @@ class DownloadJob:
     failure_stage: str = "preparation"
     # Display provenance only; never selects an encoder or restores authentication.
     nvenc_applicable: bool | None = None
+    translated_subtitle_language: str | None = None
 
 
 @dataclass(frozen=True)

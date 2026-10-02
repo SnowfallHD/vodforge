@@ -9,6 +9,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from .caption_languages import translated_subtitle_language
 from .forge_activity import terminal_activity_evidence
 from .history import (
     application_data_dir,
@@ -218,6 +219,7 @@ def serialize_download_job(job: DownloadJob) -> dict[str, Any]:
         "write_thumbnail": job.write_thumbnail,
         "embed_metadata": job.embed_metadata,
         "write_info_json": job.write_info_json,
+        "translated_subtitle_language": job.translated_subtitle_language,
         "tags": [sanitize_durable_text(value)[:500] for value in job.tags[:500]],
         "batch_mode": job.batch_mode,
         "preview_info": _safe_preview(job.preview_info),
@@ -297,6 +299,9 @@ def deserialize_download_job(
             write_thumbnail=_required_bool(payload, "write_thumbnail"),
             embed_metadata=_required_bool(payload, "embed_metadata"),
             write_info_json=_required_bool(payload, "write_info_json"),
+            translated_subtitle_language=translated_subtitle_language(
+                payload.get("translated_subtitle_language")
+            ),
             tags=[str(value)[:500] for value in payload.get("tags", [])[:500]],
             batch_mode=_required_bool(payload, "batch_mode"),
             preview_info=_safe_preview(payload.get("preview_info")),

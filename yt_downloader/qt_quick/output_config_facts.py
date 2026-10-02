@@ -23,6 +23,7 @@ def job_config(job: DownloadJob) -> dict[str, Any]:
         "write_thumbnail": job.write_thumbnail,
         "embed_metadata": job.embed_metadata,
         "write_info_json": job.write_info_json,
+        "translated_subtitle_language": job.translated_subtitle_language,
         "tags": list(job.tags),
         "batch_count": len(job.urls) if job.batch_mode else 0,
         "access": "Public"
@@ -145,6 +146,8 @@ def chosen_config_facts(
     else:
         add("Encoding", "Stream copy (best available Opus or AAC)")
     add("Thumbnail file", toggle("write_thumbnail") if mp4 else "N/A (audio only)")
+    if mp4:
+        add("Translated subtitles", config.get("translated_subtitle_language") or "Off")
     add("Info JSON file", toggle("write_info_json") if mp4 else "N/A (audio only)")
     add("Ignore playlists", toggle("single_video_only"))
     if config.get("batch_count"):

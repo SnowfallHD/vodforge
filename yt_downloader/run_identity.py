@@ -93,6 +93,8 @@ def job_output_settings(job: DownloadJob) -> dict[str, Any]:
         "embed_metadata": job.embed_metadata,
         "write_info_json": job.write_info_json,
     }
+    if job.translated_subtitle_language:
+        common["mp4"]["translated_subtitle_language"] = job.translated_subtitle_language
     if job.export_mode is ExportMode.MANUAL_OVERRIDE:
         common["mp4"]["manual"] = {
             "video_bitrate_kbps": job.manual_settings.video_bitrate_kbps,
@@ -246,6 +248,7 @@ def job_output_profile_details(job: DownloadJob) -> str:
                 f"Embedded thumbnail: {'Yes' if mp4['embed_thumbnail'] else 'No'}",
                 f"Separate thumbnail: {'Yes' if mp4['write_thumbnail'] else 'No'}",
                 f"Metadata file: {'Yes' if mp4['write_info_json'] else 'No'}",
+                f"Translated subtitles: {mp4.get('translated_subtitle_language') or 'Off'}",
             )
         )
     if job.tags:

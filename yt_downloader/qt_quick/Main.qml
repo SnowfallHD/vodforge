@@ -274,7 +274,7 @@ Window {
             !updatePopup.visible && !accessPopup.visible &&
             !localConversionPopup.visible && !localProfilePopup.visible &&
             !formatMenu.visible && !optionsMenu.visible &&
-            !settingsQualityMenu.visible && !settingsOutputModeMenu.visible)
+            !settingsQualityMenu.visible && !settingsOutputModeMenu.visible && !translatedSubtitleMenu.visible)
     }
     AnchoredPopup {
         id: helpMenu
@@ -2288,7 +2288,7 @@ Window {
     StonePopup {
         id: settingsPopup
         objectName: "downloadSettingsPopup"
-        onClosed: { settingsQualityMenu.close(); settingsOutputModeMenu.close(); appearanceThemeMenu.close(); helpMenu.close() }
+        onClosed: { translatedSubtitleMenu.close(); settingsQualityMenu.close(); settingsOutputModeMenu.close(); appearanceThemeMenu.close(); helpMenu.close() }
         function observeVisiblePro() {
             if (!opened || !proButton.visible) return
             const point = proButton.mapToItem(contentItem, 0, 0)
@@ -2430,6 +2430,24 @@ Window {
                         Layout.fillWidth: true
                         backend: bridge
                         colors: theme
+                    }
+                    RowLayout {
+                        visible: window.outputFormat === "MP4"
+                        Layout.fillWidth: true
+                        Text { text: "Translated subtitles"; color: theme.muted; font.pixelSize: 14; Layout.fillWidth: true }
+                        StoneButton {
+                            id: translatedSubtitleButton
+                            objectName: "translatedSubtitleButton"
+                            label: bridge.translatedSubtitleLabel
+                            Layout.preferredWidth: 90; Layout.preferredHeight: 38
+                            onActivated: { translatedSubtitleMenu.anchorItem = this; translatedSubtitleMenu.toggleFrom(this) }
+                        }
+                    }
+                    Text {
+                        visible: window.outputFormat === "MP4"
+                        text: "For future downloads, save original captions and the selected provider translation when available."
+                        color: theme.muted; font.pixelSize: 12; wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
                     }
                     Text { visible: window.outputFormat === "MP4"; text: "MP4 OPTIONS"; color: theme.accent; font.pixelSize: 13; font.bold: true }
                     Repeater {
@@ -3055,4 +3073,33 @@ Window {
             }
         }
     }
+    AnchoredPopup {
+        id: translatedSubtitleMenu
+        objectName: "translatedSubtitleMenu"
+        parent: window.contentItem
+        scrollViewport: settingsBody
+        width: 270; height: Math.min(320, window.height - 48)
+        padding: 4
+        ScrollView {
+            anchors.fill: parent
+            clip: true
+            contentWidth: availableWidth
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+            Column {
+                width: parent.width
+                spacing: 1
+                Repeater {
+                    model: bridge.subtitleLanguageChoices
+                    StoneButton {
+                        required property var modelData
+                        width: parent.width; height: 40
+                        label: modelData.label
+                        selected: bridge.translatedSubtitleLanguage === modelData.code
+                        onActivated: { bridge.setTranslatedSubtitleLanguage(modelData.code); translatedSubtitleMenu.close() }
+                    }
+                }
+            }
+        }
+    }
+
 }
