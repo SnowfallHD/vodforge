@@ -1796,6 +1796,10 @@ def test_qt_player_caption_track_uses_shared_controls_and_safe_fit(
             "yuv420p",
             "-c:s",
             "mov_text",
+            "-metadata:s:s:0",
+            "language=eng",
+            "-metadata:s:s:0",
+            "handler_name=Original captions (manual)",
             "-shortest",
             str(media),
         ],
@@ -1824,33 +1828,17 @@ def test_qt_player_caption_track_uses_shared_controls_and_safe_fit(
         bridge.playbackUrlChanged.emit()
         bridge.select("Watch")
         app.processEvents()
+        bridge._subtitles.load(media)
+        deadline = time.monotonic() + 5
+        while bridge._subtitles.loading and time.monotonic() < deadline:
+            app.processEvents()
+            time.sleep(0.02)
+        assert bridge._subtitles.state["originalAvailable"]
         scene.setProperty("videoFill", True)
         window.findChild(QObject, "playerCaptionsButton").activated.emit()
         app.processEvents()
-        popup = window.findChild(QObject, "playerCaptionsMenu")
-        assert popup.property("visible")
-        repeaters = [
-            item
-            for item in popup.findChildren(QObject)
-            if item.metaObject().className().startswith("QQuickRepeater")
-        ]
-        assert len(repeaters) == 1
-        controls = {
-            item.property("label"): item
-            for item in [
-                *popup.findChildren(QObject),
-                *repeaters[0].parent().childItems(),
-            ]
-            if item.property("label") is not None
-        }
-        track_label = next(
-            label
-            for label in controls
-            if str(label).endswith("Track 1") or label == "Caption track 1"
-        )
-        controls[track_label].activated.emit()
-        app.processEvents()
-        assert player.activeSubtitleTrack() == 0
+        assert not window.findChild(QObject, "playerCaptionsMenu").property("visible")
+        assert player.activeSubtitleTrack() == -1
         assert not scene.property("videoFill")
         player.play()
         caption = window.findChild(QObject, "embeddedCaptionText")
@@ -1864,7 +1852,7 @@ def test_qt_player_caption_track_uses_shared_controls_and_safe_fit(
         player.pause()
         window.findChild(QObject, "playerFillButton").activated.emit()
         assert not scene.property("videoFill")
-        controls["Captions off"].activated.emit()
+        window.findChild(QObject, "playerCaptionsButton").activated.emit()
         app.processEvents()
         assert player.activeSubtitleTrack() == -1
         assert scene.property("videoFill")
@@ -1872,20 +1860,9 @@ def test_qt_player_caption_track_uses_shared_controls_and_safe_fit(
         app.processEvents()
         window.findChild(QObject, "presentationCaptionsButton").activated.emit()
         app.processEvents()
-        presentation_menu = window.findChild(QObject, "presentationCaptionsMenu")
-        assert presentation_menu.property("visible")
-        repeater = next(
-            item
-            for item in presentation_menu.findChildren(QObject)
-            if item.metaObject().className().startswith("QQuickRepeater")
+        assert not window.findChild(QObject, "presentationCaptionsMenu").property(
+            "visible"
         )
-        track = next(
-            item
-            for item in repeater.parent().childItems()
-            if str(item.property("label")).endswith("Track 1")
-            or item.property("label") == "Caption track 1"
-        )
-        track.activated.emit()
         player.setPosition(0)
         player.play()
         presentation_caption = window.findChild(QObject, "presentationCaptionText")
@@ -2187,13 +2164,13 @@ def test_caption_menu_fits_content_and_preserves_bounded_scroll(
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
     tracks = ",".join(
-        '{stringValue: function(key) { return "English" }}' for _ in range(track_count)
+        f'{{index: {index}, label: "English"}}' for index in range(track_count)
     )
     component = QQmlComponent(engine)
     component.setData(
         (
-            "import QtQuick\nCaptionTracks { player: ({ activeSubtitleTrack: -1, "
-            "subtitleTracks: [" + tracks + "] }) }"
+            "import QtQuick\nCaptionTracks { selectedIndex: -1; "
+            "tracks: [" + tracks + "] }"
         ).encode(),
         QUrl.fromLocalFile(str(Path(qt_main.__file__).with_name("CaptionProbe.qml"))),
     )

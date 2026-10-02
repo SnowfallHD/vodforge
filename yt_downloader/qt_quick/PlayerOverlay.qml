@@ -23,7 +23,13 @@ Item {
     signal fullscreenRequested()
     signal floatingRequested()
     signal optionsRequested(var anchor)
-    signal captionsRequested(var anchor)
+    property bool originalCaptionsAvailable: false
+    property bool originalCaptionsEnabled: false
+    property bool translatedSubtitlesAvailable: false
+    property bool translatedSubtitlesEnabled: false
+    property string captionStatus: ""
+    signal captionsRequested()
+    signal subtitlesRequested(var anchor)
     signal previewRequested(real seconds)
 
     property bool presentationAvailable: true
@@ -33,8 +39,8 @@ Item {
     readonly property bool interactionHeld: seek.pressed || volumeSlider.pressed || menuOpen || keyboardEngaged
     readonly property real minimumControlsWidth: playControl.width + backControl.width + forwardControl.width
         + muteControl.width + 5 * 3 + 50 + compactTimeMetrics.advanceWidth
-        + captionsControl.width + optionsControl.width + floatingControl.width + fullscreenControl.width
-        + 3 * 3 + 48
+        + captionsControl.width + subtitlesControl.width + optionsControl.width + floatingControl.width + fullscreenControl.width
+        + 4 * 3 + 48
     TextMetrics {
         id: compactTimeMetrics
         font: timeLabel.font
@@ -267,8 +273,25 @@ Item {
             id: captionsControl
             objectName: controls.controlPrefix === "player" ? "playerCaptionsButton" : "presentationCaptionsButton"
             width: 38; height: 36; label: ""; sceneIcon: "captions"
-            accessibilityLabel: "Captions"; transientMaterial: false
-            onActivated: controls.captionsRequested(this)
+            accessibilityLabel: controls.originalCaptionsAvailable ? "Captions: " + (controls.originalCaptionsEnabled ? "On" : "Off") : "Captions unavailable: " + controls.captionStatus
+            transientMaterial: false
+            enabled: controls.originalCaptionsAvailable
+            selected: controls.originalCaptionsEnabled
+            ToolTip.visible: hovered
+            ToolTip.text: controls.originalCaptionsAvailable ? "Original-language captions: " + (controls.originalCaptionsEnabled ? "On" : "Off") : (controls.captionStatus || "No identified original captions saved")
+            onActivated: controls.captionsRequested()
+        }
+        StoneButton {
+            id: subtitlesControl
+            objectName: controls.controlPrefix === "player" ? "playerSubtitlesButton" : "presentationSubtitlesButton"
+            width: 38; height: 36; label: "Sub"; sceneIcon: ""
+            accessibilityLabel: controls.translatedSubtitlesAvailable ? "Translated subtitles: " + (controls.translatedSubtitlesEnabled ? "On" : "Off") : "Translated subtitles unavailable: none saved"
+            transientMaterial: false
+            enabled: controls.translatedSubtitlesAvailable
+            selected: controls.translatedSubtitlesEnabled
+            ToolTip.visible: hovered
+            ToolTip.text: controls.translatedSubtitlesAvailable ? "Translated subtitles" : "No translated subtitles saved in this video"
+            onActivated: controls.subtitlesRequested(this)
         }
         StoneButton {
             id: optionsControl

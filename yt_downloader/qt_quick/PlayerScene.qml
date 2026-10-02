@@ -20,6 +20,15 @@ Item {
     property string displayedOwner: ""
     property bool restoreFillAfterCaptions: false
     property int requestedCaptionTrack: -2
+    readonly property var subtitleSession: appBridge.playbackCaptions || null
+    readonly property var captionState: subtitleSession ? subtitleSession.state : ({originalAvailable: false, originalEnabled: false, translations: [], translationIndex: -1, message: "No saved captions available"})
+    readonly property bool captionsActive: captionState.originalEnabled || captionState.translationIndex >= 0
+    readonly property var captionText: {
+        const state = captionState
+        return subtitleSession ? subtitleSession.textAt(player ? player.position : 0) : ({original: "", translation: ""})
+    }
+    onCaptionsActiveChanged: captionTrackChanged()
+
     readonly property var activeVideoSurface: presentationMode === "embedded" ? videoSurface : presentationVideo
     readonly property string activeSurfaceName: activeVideoSurface.objectName
     readonly property var projection: appBridge.playerScene
@@ -94,33 +103,26 @@ Item {
     }
     function captionTrackChanged() {
         if (!player) return
-        const active = player.activeSubtitleTrack
-        if (active >= 0 && videoFill) {
+        // Both text renderers share this player's clock; suppress Qt's single track.
+        if (player.activeSubtitleTrack >= 0) player.activeSubtitleTrack = -1
+        if (captionsActive && videoFill) {
             videoFill = false
             restoreFillAfterCaptions = true
             appBridge.recordPresentation("caption_fit_applied")
-        } else if (active < 0 && requestedCaptionTrack === -1 && restoreFillAfterCaptions) {
+        } else if (!captionsActive && restoreFillAfterCaptions) {
             videoFill = true
             restoreFillAfterCaptions = false
             appBridge.recordPresentation("caption_fill_restored")
         }
-        if (active === requestedCaptionTrack) requestedCaptionTrack = -2
+    }
+    function toggleOriginalCaptions() {
+        if (subtitleSession) subtitleSession.toggleOriginal()
     }
     function selectCaption(index) {
-        if (!player || index < -1 || index >= player.subtitleTracks.length) return
-        requestedCaptionTrack = index
-        if (index >= 0 && videoFill) {
-            videoFill = false
-            restoreFillAfterCaptions = true
-            appBridge.recordPresentation("caption_fit_applied")
-        }
-        player.activeSubtitleTrack = index
-        captionTrackChanged()
-        if (player.activeSubtitleTrack === index)
-            appBridge.recordPresentation("captions_selected")
+        if (subtitleSession) subtitleSession.selectTranslation(index)
     }
     function toggleFill() {
-        if (!videoFill && player && player.activeSubtitleTrack >= 0) {
+        if (!videoFill && captionsActive) {
             appBridge.recordPresentation("caption_fill_unavailable")
             return
         }
@@ -268,8 +270,9 @@ Item {
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 68
             width: parent.width - 36
-            text: presentationVideo.videoSink ? presentationVideo.videoSink.subtitleText : ""
-            visible: text.length > 0 && scene.player && scene.player.activeSubtitleTrack >= 0
+            text: [scene.captionText.original, scene.captionText.translation].filter(function(value) { return value.length > 0 }).join("\n\n")
+            textFormat: Text.PlainText
+            visible: text.length > 0
             color: "white"
             style: Text.Outline
             styleColor: "#09090d"
@@ -298,14 +301,21 @@ Item {
             onFullscreenRequested: scene.presentationMode === "fullscreen" ? scene.exitPresentation() : scene.setPresentation("fullscreen")
             onFloatingRequested: scene.setPresentation(scene.presentationMode === "floating" ? "embedded" : "floating")
             onOptionsRequested: function(anchor) { scene.showOptions(anchor) }
-            onCaptionsRequested: function(anchor) { presentationCaptionMenu.anchorItem = anchor; presentationCaptionMenu.toggleFrom(anchor) }
+            originalCaptionsAvailable: scene.captionState.originalAvailable
+            originalCaptionsEnabled: scene.captionState.originalEnabled
+            translatedSubtitlesAvailable: scene.captionState.translations.length > 0
+            translatedSubtitlesEnabled: scene.captionState.translationIndex >= 0
+            captionStatus: scene.captionState.message
+            onCaptionsRequested: scene.toggleOriginalCaptions()
+            onSubtitlesRequested: function(anchor) { presentationCaptionMenu.anchorItem = anchor; presentationCaptionMenu.toggleFrom(anchor) }
             onPreviewRequested: function(seconds) { scene.appBridge.hoverPlaybackPreview(seconds) }
         }
         CaptionTracks {
             id: presentationCaptionMenu
             objectName: "presentationCaptionsMenu"
             parent: presentationWindow.contentItem
-            player: scene.player
+            tracks: scene.captionState.translations
+            selectedIndex: scene.captionState.translationIndex
             onTrackRequested: function(index) { scene.selectCaption(index) }
         }
     }
@@ -413,8 +423,9 @@ Item {
                             anchors.bottom: parent.bottom
                             anchors.bottomMargin: 110
                             width: parent.width - 28
-                            text: videoSurface.videoSink ? videoSurface.videoSink.subtitleText : ""
-                            visible: scene.presentationMode === "embedded" && text.length > 0 && scene.player && scene.player.activeSubtitleTrack >= 0
+                            text: [scene.captionText.original, scene.captionText.translation].filter(function(value) { return value.length > 0 }).join("\n\n")
+                            textFormat: Text.PlainText
+                            visible: scene.presentationMode === "embedded" && text.length > 0
                             color: "white"
                             style: Text.Outline
                             styleColor: "#09090d"
@@ -457,7 +468,13 @@ Item {
                             onFullscreenRequested: scene.setPresentation("fullscreen")
                             onFloatingRequested: scene.setPresentation("floating")
                             onOptionsRequested: function(anchor) { scene.showOptions(anchor) }
-                            onCaptionsRequested: function(anchor) { captionsMenu.anchorItem = anchor; captionsMenu.toggleFrom(anchor) }
+                            originalCaptionsAvailable: scene.captionState.originalAvailable
+                            originalCaptionsEnabled: scene.captionState.originalEnabled
+                            translatedSubtitlesAvailable: scene.captionState.translations.length > 0
+                            translatedSubtitlesEnabled: scene.captionState.translationIndex >= 0
+                            captionStatus: scene.captionState.message
+                            onCaptionsRequested: scene.toggleOriginalCaptions()
+                            onSubtitlesRequested: function(anchor) { captionsMenu.anchorItem = anchor; captionsMenu.toggleFrom(anchor) }
                             onPreviewRequested: function(seconds) { scene.appBridge.hoverPlaybackPreview(seconds) }
                         }
                     }
@@ -736,7 +753,8 @@ Item {
         objectName: "playerCaptionsMenu"
         parent: scene
         scrollViewport: viewport
-        player: scene.player
+        tracks: scene.captionState.translations
+        selectedIndex: scene.captionState.translationIndex
         onTrackRequested: function(index) { scene.selectCaption(index) }
     }
     AnchoredPopup {

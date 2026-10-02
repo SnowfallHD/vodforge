@@ -69,6 +69,8 @@ HISTORY_METADATA_KEYS = (
     "vodforge_archive_root",
     RETRY_JOB_METADATA_KEY,
     "vodforge_output_config_display",
+    "vodforge_caption_summary",
+    "vodforge_subtitle_tracks",
 )
 
 MAX_CHAPTERS = 500
@@ -589,6 +591,14 @@ def sanitize_history_record(
             from .output_config_snapshot import sanitize_output_config_display
 
             value = sanitize_output_config_display(value)
+        elif key == "vodforge_subtitle_tracks":
+            from .subtitle_cues import sanitize_subtitle_tracks
+
+            value = sanitize_subtitle_tracks(value)
+        elif key == "vodforge_caption_summary":
+            from .subtitle_cues import sanitize_caption_summary
+
+            value = sanitize_caption_summary(value)
         elif key == "vodforge_archive_root":
             try:
                 value = (

@@ -196,6 +196,7 @@ from yt_downloader.qt_quick.scene_projection import (
     watch_progress,
     watch_scene,
 )
+from yt_downloader.qt_quick.subtitle_session import SubtitleSession
 from yt_downloader.qt_quick.support import QtSupportSession
 from yt_downloader.qt_quick.update_session import QtUpdateSession
 from yt_downloader.quality_e2e import (
@@ -561,6 +562,7 @@ class Bridge(QObject):
         self._playback_path: Path | None = None
         self._playback_record: dict[str, Any] | None = None
         self._previews = QtPreviewSession(DownloaderApp._find_ffmpeg())
+        self._subtitles = SubtitleSession(DownloaderApp._find_ffmpeg(), self)
         self._playback_position = 0.0
         self._playback_duration = 0.0
         self._playback_status: PlaybackStatus = "Ready"
@@ -1508,6 +1510,10 @@ class Bridge(QObject):
     @Property(QUrl, notify=playbackUrlChanged)
     def playbackUrl(self) -> QUrl:
         return self._playback_url
+
+    @Property(QObject, constant=True)
+    def playbackCaptions(self) -> QObject:
+        return self._subtitles
 
     @Property(_QVARIANT_LIST, notify=playbackUrlChanged)
     def playbackChapters(self) -> list[dict[str, Any]]:
@@ -5187,6 +5193,9 @@ class Bridge(QObject):
         self._playback_url = QUrl.fromLocalFile(str(path))
         self._playback_origin_selection = self._selection
         self._playback_generation += 1
+        self._subtitles.load(
+            path, self._playback_record.get("vodforge_caption_summary")
+        )
         if queue_token is not None:
             self._watch_queue.attach(self, self._runtime.history[index], queue_token)
         self.playbackUrlChanged.emit()
@@ -5226,6 +5235,7 @@ class Bridge(QObject):
             self._playback_operation = None
         self._playback_path = None
         self._playback_record = None
+        self._subtitles.load(None)
         self._previews.load(None)
         self.playbackPreviewsChanged.emit()
         self._playback_url = QUrl()
@@ -6262,6 +6272,7 @@ class Bridge(QObject):
             self._save_timer.stop()
             self._save_preferences()
         self._watch_queue.cancel()
+        self._subtitles.load(None)
         self._previews.close()
         self._metadata.close()
         if self._import_pending:
