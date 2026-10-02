@@ -1106,6 +1106,14 @@ def move_files(
                 if str(recorded_artifact(row)) == str(target_folder / item.source.name)
             )
             prospective_row["vodforge_archive_root"] = str(destination)
+            retry_job = prospective_row.get("vodforge_retry_job")
+            if isinstance(retry_job, dict):
+                # This item's future retry follows its reviewed new root. Copy
+                # the snapshot so failed publication cannot mutate the source.
+                prospective_row["vodforge_retry_job"] = {
+                    **retry_job,
+                    "output_dir": str(destination),
+                }
             new_index = next(
                 i
                 for i, row in enumerate(current)

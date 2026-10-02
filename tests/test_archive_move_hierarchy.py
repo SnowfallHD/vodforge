@@ -88,11 +88,21 @@ def test_repeated_move_after_restart_preserves_retry_configuration(tmp_path):
 
     root = tmp_path / "old"
     record = fixture(root, "channel/playlist/video", "a")
+    record["vodforge_retry_job"].update(
+        {
+            "use_nvenc": False,
+            "manual_settings": {"video_crf": 20},
+            "write_info_json": True,
+        }
+    )
     execute(tmp_path, [record])
     history = tmp_path / "history.json"
     restarted = load_history(history)
     assert restarted[0]["vodforge_archive_root"] == str(tmp_path / "new")
-    assert restarted[0]["vodforge_retry_job"] == record["vodforge_retry_job"]
+    assert restarted[0]["vodforge_retry_job"] == {
+        **record["vodforge_retry_job"],
+        "output_dir": str(tmp_path / "new"),
+    }
     destination = tmp_path / "third"
     destination.mkdir()
     proposal = ops.plan_move_operation(
@@ -106,7 +116,11 @@ def test_repeated_move_after_restart_preserves_retry_configuration(tmp_path):
     assert (destination / "channel/playlist/video/video.mp4").read_bytes() == b"a"
     assert not (tmp_path / "new/channel").exists()
     assert load_history(history)[0]["vodforge_archive_root"] == str(destination)
-    assert second.records[0]["vodforge_retry_job"] == record["vodforge_retry_job"]
+    assert second.records[0]["vodforge_retry_job"] == {
+        **record["vodforge_retry_job"],
+        "output_dir": str(destination),
+    }
+    assert record["vodforge_retry_job"]["output_dir"] == str(root)
 
 
 def test_recovery_prunes_only_new_proven_root_after_verified_cleanup(tmp_path):
@@ -137,3 +151,47 @@ def test_recovery_prunes_only_new_proven_root_after_verified_cleanup(tmp_path):
     assert recovered.outcomes[0][1] == "completed"
     assert not (root / "channel").exists()
     assert (destination / "channel/playlist/video/video.mp4").read_bytes() == b"a"
+
+
+def test_failed_move_keeps_original_retry_root_and_options(tmp_path):
+    from copy import deepcopy
+
+    from yt_downloader.history import load_history
+
+    root = tmp_path / "old"
+    record = fixture(root, "channel/video", "a")
+    record["vodforge_retry_job"].update(
+        {
+            "use_nvenc": False,
+            "manual_settings": {"video_crf": 20},
+            "write_info_json": True,
+        }
+    )
+    original = deepcopy(record)
+    destination = tmp_path / "new"
+    destination.mkdir()
+    history = tmp_path / "history.json"
+    ops._save_durable_history(history, [record])
+    proposal = ops.plan_move_operation(
+        [record], [history_archive_owner(record)], destination
+    )
+
+    def interrupt(stage):
+        if stage == "before_history":
+            raise OSError("fixture publication prevented")
+
+    result = ops.move_files(
+        proposal,
+        [record],
+        destination,
+        history,
+        tmp_path / "file-operations",
+        boundary=interrupt,
+    )
+    assert result.outcomes[0][1] == "needs_attention"
+    assert result.records[0]["vodforge_retry_job"] == original["vodforge_retry_job"]
+    assert (
+        load_history(history)[0]["vodforge_retry_job"] == original["vodforge_retry_job"]
+    )
+    assert record == original
+    assert Path(record["vodforge_output_path"]).read_bytes() == b"a"
