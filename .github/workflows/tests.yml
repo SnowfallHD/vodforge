@@ -77,6 +77,7 @@ jobs:
           --ignore=tests/test_qt_action_feedback_ownership.py
           --ignore=tests/test_qt_floating_player_chrome.py
           --ignore=tests/test_qt_player_responsive_stage.py
+          --ignore=tests/test_qt_saved_output_access.py
           --ignore=tests/test_qt_legacy_preset_preferences.py
           --ignore=tests/test_qt_library_details_copy.py
           --ignore=tests/test_qt_library_window_model.py
@@ -122,6 +123,7 @@ jobs:
           tests/test_qt_action_feedback_ownership.py
           tests/test_qt_floating_player_chrome.py
           tests/test_qt_player_responsive_stage.py
+          tests/test_qt_saved_output_access.py
           tests/test_qt_legacy_preset_preferences.py
           tests/test_qt_library_details_copy.py
           tests/test_qt_library_window_model.py
