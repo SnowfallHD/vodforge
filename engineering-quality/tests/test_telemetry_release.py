@@ -56,6 +56,8 @@ def telemetry_fixture(candidate, platform="macos"):
     import json
     import uuid
 
+    from quality_harness import telemetry_release
+
     from yt_downloader.product_telemetry import PRODUCT_EVENT_NAMES
     from yt_downloader.telemetry_features import FEATURE_ACTIONS
 
@@ -65,7 +67,7 @@ def telemetry_fixture(candidate, platform="macos"):
     events += [
         {"event_name": "feature_used", "feature": feature, "action": action}
         for feature, actions in FEATURE_ACTIONS.items()
-        if feature != "announcement"
+        if feature != "announcement" or telemetry_release.SHOWCASE_MODE != "none"
         for action in actions
     ]
     first_attempt = str(uuid.uuid4())
@@ -355,7 +357,8 @@ def test_private_development_artifact_cannot_satisfy_release_telemetry():
     assert release_checks([data], c)[1]["status"] == "failed"
 
 
-def test_silent_release_rejects_announcement_event():
+def test_silent_release_rejects_announcement_event(monkeypatch):
+    monkeypatch.setattr("quality_harness.telemetry_release.SHOWCASE_MODE", "none")
     data = telemetry_fixture(candidate())
     data["snapshots"]["events_complete"]["events"].append(
         {
@@ -413,3 +416,12 @@ def test_release_readback_rejects_contradictory_presentation_action():
     dimensions.update(missing_image_bucket="0", missing_image_role="none")
     event["dimensions"] = json.dumps(dimensions)
     assert validate_journey(data)
+
+
+def test_enabled_release_requires_announcement_observations(monkeypatch):
+    monkeypatch.setattr("quality_harness.telemetry_release.SHOWCASE_MODE", "whats-new")
+    data = telemetry_fixture(candidate())
+    assert validate_journey(data) == []
+    events = data["snapshots"]["events_complete"]["events"]
+    events[:] = [event for event in events if event.get("feature") != "announcement"]
+    assert any("Missing feature/action" in error for error in validate_journey(data))
