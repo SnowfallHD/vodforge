@@ -92,17 +92,12 @@ Column {
                 width: parent.width
                 elide: Text.ElideRight
             }
-            Text {
+            OutputPathField {
                 objectName: "libraryFolderSelectedLocation"
-                horizontalAlignment: inspector.item.folder ? Text.AlignHCenter : Text.AlignLeft
-                text: inspector.item.location || ""
-                color: theme.muted
-                font.pixelSize: 12
+                visible: !inspector.recoveryActions.location && !!path
+                path: inspector.item.location || ""
                 width: parent.width
-                elide: Text.ElideRight
-                HoverHandler { id: selectedLocationHover }
-                ToolTip.visible: selectedLocationHover.hovered && !!text
-                ToolTip.text: text
+                height: 34
             }
             Text {
                 objectName: "libraryFolderSelectedSummary"

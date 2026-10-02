@@ -22,11 +22,23 @@ StoneField {
         visible: pathHover.hovered && !!field.path
         text: field.path
         width: Math.min(420, Math.max(80, field.Window.window ? field.Window.window.width - 32 : 420))
-        contentItem: Text {
-            text: field.path
-            color: theme.text
-            font.pixelSize: 13
-            wrapMode: Text.WrapAnywhere
+        height: Math.min(implicitHeight, field.Window.window ? field.Window.window.height - 32 : 480)
+        contentItem: Flickable {
+            objectName: "outputPathTooltipViewport"
+            implicitHeight: fullPathText.implicitHeight
+            contentHeight: fullPathText.implicitHeight
+            contentWidth: width
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            Text {
+                id: fullPathText
+                objectName: "outputPathTooltipText"
+                width: parent.width
+                text: field.path
+                color: theme.text
+                font.pixelSize: 13
+                wrapMode: Text.WrapAnywhere
+            }
         }
     }
     RowLayout {

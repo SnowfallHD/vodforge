@@ -41,7 +41,8 @@ def test_retry_chooser_and_tooltips_use_exact_inspector_path():
         in source
     )
     assert 'ToolTip.text: inspector.issueSettings.output_dir || ""' in source
-    assert "ToolTip.visible: selectedLocationHover.hovered && !!text" in source
+    assert "visible: !inspector.recoveryActions.location && !!path" in source
+    assert "selectedLocationHover" not in source
     assert (
         "(inspector.item.source || []).slice(0, 1).concat((inspector.item.output || []).slice(0, 1))"
         in source
