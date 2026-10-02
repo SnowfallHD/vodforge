@@ -24,7 +24,13 @@ Window {
         // A route can hide an editor without Qt releasing its keyboard focus.
         // Retire only that hidden owner; shared visible editors/popups keep focus.
         if (item && !item.visible) {
-            item.focus = false
+            // Clear hidden focus scopes too: focusing the window otherwise
+            // restores their remembered child after the editor is retired.
+            let owner = item
+            while (owner && !owner.visible) {
+                owner.focus = false
+                owner = owner.parent
+            }
             window.contentItem.forceActiveFocus(Qt.OtherFocusReason)
         }
     }
