@@ -1,3 +1,4 @@
+import re
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
@@ -93,13 +94,22 @@ def test_macos_release_preflight_keeps_each_qt_module_out_of_backend_process():
     tests_workflow = (ROOT / ".github" / "workflows" / "tests.yml").read_text(
         encoding="utf-8"
     )
-    qt_modules = sorted((ROOT / "tests").glob("test_qt_*.py"))
+    qt_modules = sorted((ROOT / "tests").glob("test_qt_*.py")) + sorted(
+        (ROOT / "engineering-quality" / "tests").glob("test_qt_*.py")
+    )
     assert qt_modules
     for module in qt_modules:
-        name = f"tests/{module.name}"
+        name = module.relative_to(ROOT).as_posix()
         for runner in (macos_build, tests_workflow):
             assert runner.count(f"--ignore={name}") == 1
-            assert runner.count(name) == 2
+            assert (
+                len(
+                    re.findall(
+                        r"(?<![\w/.-])" + re.escape(name) + r"(?![\w/.-])", runner
+                    )
+                )
+                == 2
+            )
 
 
 def test_release_builds_pin_yt_dlp_with_matching_ejs_scripts():
