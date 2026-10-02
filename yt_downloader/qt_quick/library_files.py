@@ -238,10 +238,18 @@ class QtLibraryFiles:
                 self.phase = "preview"
                 counts = payload.counts
                 ready, missing = counts.get("ready", 0), counts.get("missing", 0)
+                unknown_roots = sum(
+                    item.reason == "hierarchy_root_unknown" for item in payload.items
+                )
                 if self.action == "move":
                     self.status = (
                         f"Move {ready} verified item(s) to {self.destination}?"
                     )
+                    if unknown_roots:
+                        self.status += (
+                            f" {unknown_roots} item(s) cannot move because their original "
+                            "archive root is not recorded. Their files will be kept."
+                        )
                 else:
                     self.status = (
                         f"Move {ready} file(s) to Trash and remove {missing} "
@@ -249,7 +257,12 @@ class QtLibraryFiles:
                     )
                 if not self.eligible:
                     reasons = []
-                    if counts.get("unavailable", 0):
+                    if unknown_roots:
+                        reasons.append(
+                            "The original archive root is not recorded, so the "
+                            "saved folder hierarchy cannot be preserved safely."
+                        )
+                    if counts.get("unavailable", 0) > unknown_roots:
                         reasons.append("The saved location could not be accessed.")
                     if counts.get("ambiguous", 0):
                         reasons.append(
