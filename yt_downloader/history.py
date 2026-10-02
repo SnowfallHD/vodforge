@@ -704,6 +704,11 @@ def _guard_file_operation_history(path: Path, records: list[dict[str, Any]]) -> 
 
 
 def save_history(path: Path, records: list[dict[str, Any]]) -> None:
+    # A cached projection is not permission to replace a ledger that has become
+    # unreadable or corrupt since startup. Validate only the main document here;
+    # replaying pending mutations would recurse into this persistence boundary.
+    # An actually absent ledger still permits its first normal write.
+    _load_history_records(path)
     _guard_file_operation_history(path, records)
     payload = {
         "schema_version": HISTORY_SCHEMA_VERSION,
