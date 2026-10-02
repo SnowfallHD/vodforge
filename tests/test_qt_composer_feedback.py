@@ -36,9 +36,10 @@ def test_notice_tracks_composer_bounds(feedback_scene, width, height):
             origin.x() + (composer.width() - notice.property("width")) / 2,
         ),
     )
-    assert notice.property("x") == pytest.approx(expected_x, abs=1)
-    assert notice.property("y") >= bottom.y()
-    assert notice.property("y") + notice.property("height") <= height - 18
+    notice_origin = notice.mapToItem(window.contentItem(), QPointF(0, 0))
+    assert notice_origin.x() == pytest.approx(expected_x, abs=1)
+    assert notice_origin.y() >= bottom.y()
+    assert notice_origin.y() + notice.property("height") <= height - 18
     assert not notice.property("modal")
 
 
@@ -127,3 +128,61 @@ def test_system_reduced_motion_unavailable_falls_back(monkeypatch):
     assert not main._system_reduced_motion()
     monkeypatch.setattr(main.sys, "platform", "win32")
     assert not main._system_reduced_motion()
+
+
+@pytest.mark.parametrize("width,height", [(720, 560), (820, 560), (1100, 800)])
+def test_long_notice_expands_below_stationary_composer(feedback_scene, width, height):
+    from PySide6.QtTest import QTest
+
+    _app, bridge, window = feedback_scene
+    window.setWidth(width)
+    window.setHeight(height)
+    QTest.qWait(100)
+    composer = window.findChild(QObject, "forgeCommandRow")
+    before = (composer.x(), composer.y(), composer.width(), composer.height())
+    hero = window.findChild(QObject, "forgeHeroArtwork")
+    original_hero_y = hero.mapToItem(window.contentItem(), QPointF(0, 0)).y()
+    notice = window.findChild(QObject, "operationNotice")
+    notice.setProperty("reducedMotion", True)
+    bridge.operationFeedback.emit("Settings need review before continuing. " * 20)
+    QTest.qWait(100)
+    hero_y = hero.mapToItem(window.contentItem(), QPointF(0, 0)).y()
+    assert hero_y > original_hero_y
+    notice_y = notice.mapToItem(window.contentItem(), QPointF(0, 0)).y()
+    assert hero_y >= notice_y + notice.height()
+    assert before == (composer.x(), composer.y(), composer.width(), composer.height())
+    assert notice_y + notice.height() <= height - 18
+    notice.setProperty("expanded", False)
+    QTest.qWait(100)
+    assert hero.mapToItem(window.contentItem(), QPointF(0, 0)).y() == pytest.approx(
+        original_hero_y, abs=1
+    )
+    assert before == (composer.x(), composer.y(), composer.width(), composer.height())
+
+
+def test_compact_notice_overflow_reaches_deck_and_tracks_scroll(feedback_scene):
+    from PySide6.QtTest import QTest
+
+    _app, bridge, window = feedback_scene
+    window.resize(820, 560)
+    QTest.qWait(100)
+    viewport = window.findChild(QObject, "forgeViewport")
+    flickable = viewport.property("contentItem")
+    notice = window.findChild(QObject, "operationNotice")
+    notice.setProperty("reducedMotion", True)
+    bridge.operationFeedback.emit("Settings need review before continuing. " * 20)
+    QTest.qWait(100)
+    assert flickable.property("contentY") == 0
+    assert flickable.property("contentHeight") > viewport.height()
+    before = notice.mapToItem(window.contentItem(), QPointF(0, 0)).y()
+    bottom = flickable.property("contentHeight") - flickable.property("height")
+    flickable.setProperty("contentY", bottom)
+    QTest.qWait(100)
+    after = notice.mapToItem(window.contentItem(), QPointF(0, 0)).y()
+    assert after == pytest.approx(before - bottom, abs=1)
+    deck = window.findChild(QObject, "forgeRunDeck")
+    deck_bottom = deck.mapToItem(window.contentItem(), QPointF(0, deck.height())).y()
+    viewport_bottom = viewport.mapToItem(
+        window.contentItem(), QPointF(0, viewport.height())
+    ).y()
+    assert deck_bottom <= viewport_bottom + 1

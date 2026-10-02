@@ -649,7 +649,7 @@ Window {
     ComposerNotice {
         id: operationNotice
         objectName: "operationNotice"
-        parent: window.contentItem
+        parent: bridge.selection === "Forge" ? forgeNoticeLayer : window.contentItem
         reducedMotion: bridge.reducedMotion
         availableWidth: Math.max(120, Math.min(440, window.width - 30))
         x: bridge.selection === "Forge"
@@ -657,8 +657,7 @@ Window {
                 forgeComposerShell.x + (forgeComposerShell.width - width) / 2))
             : Math.max(10, (window.width - width) / 2)
         y: bridge.selection === "Forge"
-            ? Math.max(10, Math.min(window.height - height - 18,
-                forgeComposerShell.y + forgeComposerShell.height - 1))
+            ? forgeComposerShell.y + forgeComposerShell.height - 1
             : window.height - height - 18
     }
     Timer { id: operationNoticeTimer; interval: 3500; onTriggered: operationNotice.close() }
@@ -769,15 +768,23 @@ Window {
     property string selectedSavedOwner: ""
     property var pendingFileOwners: []
 
+    Item {
+        id: forgeNoticeLayer
+        parent: window.contentItem
+        x: forgeViewport.x + forgeViewport.parent.x - 8
+        y: forgeViewport.y + forgeViewport.parent.y - 8
+        width: forgeViewport.width + 16
+        height: forgeViewport.height + 8
+        clip: true
+        visible: bridge.selection === "Forge"
+    }
     Rectangle {
         id: forgeComposerShell
         objectName: "forgeComposerShell"
-        parent: window.contentItem
+        parent: forgeNoticeLayer
         visible: bridge.selection === "Forge"
-        x: forgeCommandRow.x + forgeCommandRow.parent.x
-            + forgeCommandRow.parent.parent.x - 8
-        y: forgeCommandRow.y + forgeCommandRow.parent.y
-            + forgeCommandRow.parent.parent.y - 8
+        x: forgeCommandRow.x
+        y: forgeCommandRow.y - forgeViewport.contentItem.contentY
         width: forgeCommandRow.width + 16
         height: forgeLocalRow.y + forgeLocalRow.height - forgeCommandRow.y + 16
         radius: 16
@@ -961,8 +968,11 @@ Window {
             color: theme.border
         }
 
-        ColumnLayout {
-            objectName: "forgeScene"
+        ScrollView {
+            id: forgeViewport
+            objectName: "forgeViewport"
+            implicitHeight: 0
+            implicitWidth: 0
             visible: bridge.selection === "Forge"
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -970,6 +980,15 @@ Window {
             Layout.leftMargin: window.forgeHorizontalPad
             Layout.rightMargin: window.forgeHorizontalPad
             Layout.topMargin: window.forgeTopPad - 2
+            clip: true
+            contentWidth: availableWidth
+            contentHeight: forgeScene.height
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+            ColumnLayout {
+            id: forgeScene
+            objectName: "forgeScene"
+            width: forgeViewport.availableWidth
+            height: Math.max(forgeViewport.availableHeight, implicitHeight)
             spacing: 8
 
             RowLayout {
@@ -1105,7 +1124,8 @@ Window {
             RowLayout {
                 Layout.fillWidth: true
                 Layout.preferredHeight: window.compactHeight ? 70 : 128
-                Layout.topMargin: window.compactHeight ? 4 : 16
+                Layout.topMargin: (window.compactHeight ? 4 : 16)
+                    + operationNotice.reveal * operationNotice.height
                 spacing: window.compactHeight ? 16 : 28
                 Item {
                     objectName: "forgeHeroArtwork"
@@ -1245,6 +1265,7 @@ Window {
             RowLayout {
                 Layout.fillWidth: true
                 Layout.preferredHeight: window.compactHeight ? 116 : 185
+                Layout.minimumHeight: window.compactHeight ? 157 : 185
                 spacing: 16
                 ColumnLayout {
                     id: forgeLivePane
@@ -1411,6 +1432,7 @@ Window {
                 Layout.fillWidth: true
                 Layout.preferredHeight: window.compactHeight ? 115 : 139
             }
+        }
         }
 
         LibraryScene {
