@@ -42,6 +42,23 @@ fi
   # create live Qt bridges and telemetry owners in the same process.
   unset VODFORGE_UI VODFORGE_BUILD_TELEMETRY VODFORGE_BUILD_VERSION VODFORGE_DIST_DIR
   QT_QUICK_BACKEND=software "$python_bin" -m pytest -q \
+    --ignore=tests/test_qt_action_feedback_ownership.py \
+    --ignore=tests/test_qt_file_recovery_actions.py \
+    --ignore=tests/test_qt_floating_player_chrome.py \
+    --ignore=tests/test_qt_folder_columns_responsive.py \
+    --ignore=tests/test_qt_inspector_action_contract.py \
+    --ignore=tests/test_qt_inspector_actions.py \
+    --ignore=tests/test_qt_inspector_description_geometry.py \
+    --ignore=tests/test_qt_inspector_recovery_details.py \
+    --ignore=tests/test_qt_library_group_selection.py \
+    --ignore=tests/test_qt_library_playlist_art.py \
+    --ignore=tests/test_qt_overflow_action_pointer.py \
+    --ignore=tests/test_qt_player_responsive_stage.py \
+    --ignore=tests/test_qt_retry_recovery_membership.py \
+    --ignore=tests/test_qt_runtime_event_ownership.py \
+    --ignore=tests/test_qt_saved_output_access.py \
+    --ignore=tests/test_qt_terminal_dismissal.py \
+    --ignore=tests/test_qt_worker_control_context.py \
     --ignore=tests/test_qt_analytics_session.py \
     --ignore=tests/test_qt_artwork_image.py \
     --ignore=tests/test_qt_metadata_preview.py \
@@ -67,6 +84,23 @@ fi
     --ignore=tests/test_qt_material_visibility.py \
     --ignore=tests/test_qt_interaction_invariants.py
   QT_QUICK_BACKEND=software "$python_bin" -m pytest -q \
+    tests/test_qt_action_feedback_ownership.py \
+    tests/test_qt_file_recovery_actions.py \
+    tests/test_qt_floating_player_chrome.py \
+    tests/test_qt_folder_columns_responsive.py \
+    tests/test_qt_inspector_action_contract.py \
+    tests/test_qt_inspector_actions.py \
+    tests/test_qt_inspector_description_geometry.py \
+    tests/test_qt_inspector_recovery_details.py \
+    tests/test_qt_library_group_selection.py \
+    tests/test_qt_library_playlist_art.py \
+    tests/test_qt_overflow_action_pointer.py \
+    tests/test_qt_player_responsive_stage.py \
+    tests/test_qt_retry_recovery_membership.py \
+    tests/test_qt_runtime_event_ownership.py \
+    tests/test_qt_saved_output_access.py \
+    tests/test_qt_terminal_dismissal.py \
+    tests/test_qt_worker_control_context.py \
     tests/test_qt_analytics_session.py \
     tests/test_qt_artwork_image.py \
     tests/test_qt_metadata_preview.py \

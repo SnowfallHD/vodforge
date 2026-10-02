@@ -1,7 +1,5 @@
 """Description viewport fits beneath real selected-item recovery details."""
 
-from pathlib import Path
-
 import pytest
 from PySide6.QtCore import QObject, QPointF
 
@@ -19,6 +17,8 @@ def test_description_viewport_fits_after_recovery_controls(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    capture_dir = tmp_path / "captures"
+    capture_dir.mkdir()
     app = qt_app()
     record = saved(
         tmp_path / ("long-folder-" * 12),
@@ -58,10 +58,7 @@ def test_description_viewport_fits_after_recovery_controls(
             )
             app.processEvents()
             capture = window.grabWindow()
-            root = (
-                Path(__file__).parents[2]
-                / "integration-evidence/inspector-description-geometry"
-            )
+            root = capture_dir
             assert capture.save(str(root / "description-820x740-compact.png"))
             return
         window.findChild(QObject, "libraryFolderDescriptionTab").activated.emit()
@@ -69,10 +66,7 @@ def test_description_viewport_fits_after_recovery_controls(
             app.processEvents()
         scroll = window.findChild(QObject, "libraryFolderDescriptionScroll")
         controls = window.findChild(QObject, "libraryInspectorRecoveryDetails")
-        root = (
-            Path(__file__).parents[2]
-            / "integration-evidence/inspector-description-geometry"
-        )
+        root = capture_dir
         assert window.grabWindow().save(str(root / f"layout-{width}x{height}.png"))
         assert controls.isVisible()
         assert scroll.height() > 40
@@ -82,10 +76,7 @@ def test_description_viewport_fits_after_recovery_controls(
         assert text.property("text") == record["description"]
         assert text.height() > scroll.height()
         capture = window.grabWindow()
-        root = (
-            Path(__file__).parents[2]
-            / "integration-evidence/inspector-description-geometry"
-        )
+        root = capture_dir
         capture.save(str(root / f"description-{width}x{height}.png"))
     finally:
         bridge.close()
