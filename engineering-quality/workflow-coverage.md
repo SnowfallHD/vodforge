@@ -1,173 +1,176 @@
 # Practical workflow discovery and click counts
 
-This harness addition keeps the existing gates and reports source models separately
-from independently observed UI paths. It does not change release thresholds.
-The reviewed product base is `974e6aff28fa2c421344ddf0d7b128dabf15b0bd`;
-released `c6684b2` remains the negative-control baseline.
+This bounded harness preserves existing gates and distinguishes conditional source
+models, witnessed headless paths and historical native observations. No thresholds
+change. Product base: `974e6aff28fa2c421344ddf0d7b128dabf15b0bd`; released
+`c6684b2` remains the product negative control. Later integration source needs its
+own evidence; these observations cannot be relabeled as successor acceptance.
 
-## Run it
-
-From this checkout, using the project's existing Python environment:
+## Run and inspect
 
 ```sh
 PYTHONPATH=engineering-quality /Users/coop/Dev/vodforge/.venv/bin/python -m quality_harness.workflow_coverage --summary
 PYTHONPATH=engineering-quality /Users/coop/Dev/vodforge/.venv/bin/python -m quality_harness.workflow_coverage > /tmp/vodforge-workflow-matrix.json
-QT_QPA_PLATFORM=offscreen /Users/coop/Dev/vodforge/.venv/bin/python -m pytest tests/test_workflow_coverage.py -q
-```
-
-To collect the maintained offscreen pointer observation and include it in the report:
-
-```sh
-VODFORGE_WORKFLOW_EVIDENCE=/tmp/vodforge-workflow-observation.json QT_QPA_PLATFORM=offscreen /Users/coop/Dev/vodforge/.venv/bin/python -m pytest tests/test_workflow_coverage.py -q -k headless_pointer
+VODFORGE_WORKFLOW_EVIDENCE=/tmp/vodforge-workflow-observation.json QT_QPA_PLATFORM=offscreen /Users/coop/Dev/vodforge/.venv/bin/python -m pytest tests/test_workflow_coverage.py -q
 PYTHONPATH=engineering-quality /Users/coop/Dev/vodforge/.venv/bin/python -m quality_harness.workflow_coverage --evidence /tmp/vodforge-workflow-observation.json --summary
 ```
 
-The default full JSON includes every location × feature/candidate pair. `--summary`
-is a compact denominator readback. Nothing installs, launches a native window,
-changes an ordinary profile, or sends telemetry. Tests use temporary isolated profiles.
+Optional `--native-observations <owner-manifest.json>` imports hash-verified historical
+observations separately. The importer requires matching nonempty source revision,
+process/window ownership, visible window, normal exit, no survivors and artifact
+hashes. It never converts predecessor observations into current validated edges.
+Tests use temporary profiles and offscreen Qt; this harness does not launch native
+windows, install software or send telemetry. Integration owns native input.
 
-## Two catalogs and the discovery denominator
+## Two catalogs and discovery
 
-`LOCATION_CATALOG` declares the four main screens and baseline context.
-`FEATURE_CATALOG` declares eight important operations, their preconditions and
-production call names/aliases. Adding declarations expands the crossproduct.
-Source discovery also expands both catalogs automatically: all QML component
-contexts, popup/dialog/menu instances, Python constant routes, and all QML handlers.
-Undeclared input handlers, forwarding connections and unreviewed events are separate
-categories. They remain visible rather than disappearing from the report.
+The semantic location catalog includes root screens, Python route constants,
+instantiated menus/dialogs/windows and selected run states. Source-defined popup
+inheritance is resolved: this discovered two CaptionTracks popup consumers that
+name-suffix heuristics missed. Reusable component definitions are excluded as locations
+with reasons, while their bindings remain inspectable.
 
-On the fixed base, discovery finds **37 QML files, 1,332 lexical object candidates,
-478 handler sites and 33 signal declarations**. The catalogs contain **120 location
-candidates × 473 feature/control/event candidates = 56,760 pairs**. Feature categories
-are **8 named operations, 284 additional input-handler candidates, 39 forwarding
-candidates, and 142 unreviewed event candidates**. These are source sites, not 473
-distinct user actions or proven visible controls. Repeated delegates and shared
-components need runtime identity/multiplicity review.
+The semantic feature catalog consolidates bridge commands and local UI operations,
+retaining all parameterized source entries. Same-file signal adapters and their
+consumer consolidate into one operation. Named operations have aliases: Find media
+includes missing-media review, item menu and file menu openers. Input declarations
+without callbacks remain editable/selectable controls; focus costs one click, while
+typing, dragging and keyboard work are explicitly outside the click metric. Read-only
+fields remain distinct viewing controls. Handler operations and editing a field can
+be different semantic features; these are discovered families, not a certified count
+of all practical product actions.
 
-The source model supplies conditional paths for **2,936 pairs**, including **69
-above three clicks**; **53,824 remain unresolved**. A real offscreen pointer click
-on Forge's All N runs control changes the production bridge to Library: **one
-validated pair and one observed handler site out of 478**. Native coverage is **zero**.
-The same offscreen scene read finds 1,293 Qt interactive candidates: 119 have
-a literal source-name match and 1,174 remain unmapped. Framework internals,
-unnamed controls and repeated delegates are included in this candidate denominator;
-it is not a count of 1,174 missing product actions. Name matches do not prove bindings
-or effective visibility. Native integration retains sole GUI ownership.
+Every source site remains classified: user input, forwarding, signal declaration,
+lifecycle, renderer adapter, alternative input or unreviewed state listener. No
+unreviewed listener is silently treated as a user action or not applicable. Raw
+candidate coverage remains separate for auditing. Adding either catalog expands its
+literal crossproduct; absent connections retain null validated counts.
 
-## Click semantics and representative output
+On this product base: **37 QML files, 1,332 lexical object candidates, 478 handlers,
+33 signal declarations and 27 input declarations**. Semantic discovery reports
+**100 locations × 259 feature/control families = 25,900 pairs**. Conditional models
+cover **4,655 pairs**, including **110 above three clicks**; **21,229 are unresolved**
+and **16 have directly source-guarded selected-run not-applicable contracts**.
+The latter never substitute another selected owner. Only **one pair** has current
+headless validated reachability. Three historical Windows journeys cover **two
+semantic pairs**; current native validated edges remain **zero**.
 
-One visible actionable control costs one click. Menu opening, navigation, selection,
-and confirmation are separate steps. A confirmation handler counts as confirmation,
-not as a second invented action. A source model enumerates primary entry alternatives
-and takes the least cost conditional path. Safety steps are retained. Right-click and
-keyboard alternatives remain a separate unverified field.
+Raw candidates are separately **130 locations × 467 candidates = 60,710 pairs**.
+Classification denominators: 282 user-input handlers, 53 forwarding sites, 33 signal
+declarations, 27 input declarations, 118 unreviewed state listeners, 11 lifecycle
+sites, 11 alternative-input sites and 3 renderer adapters. Lexical scanning is not
+a QML compiler or runtime proof. Dynamic states and repeated delegates remain open.
 
-These examples start on each main screen's home baseline without a selected item:
+The actual supplied headless scene reads **1,293 raw Qt candidate instances**:
+**299 user-control instances**, consolidated into **263 runtime families**, with
+**994 auditable infrastructure/adapter exclusions**. Of user-control instances,
+**169 lack a literal source-name match**. Exclusions distinguish timers, keyboard
+attachments, dialog configuration, overlays, explicitly noninteractive instances
+and unnamed left-button wrappers. Independent named or right-click MouseAreas
+remain controls. These counts describe this one scene, including hidden instances,
+not every app window or a count of missing product features.
 
-| Control/operation | Forge | Library | Watch | Activity |
-|---|---:|---:|---:|---:|
-| Retry a terminal run | 3 | 4 | 4 | 4 |
-| Open Find media chooser | 5 | 4 | 5 | 5 |
-| Open saved output location | 3 | 2 | 3 | 3 |
-| Open Trash review for saved media | 4 | 3 | 4 | 4 |
+## Click semantics and findings
 
-Opening Find media from Forge is modeled as Library → Folders → Issues → select missing
-item → Find media. Starting on Library/Issues reduces that model to selection →
-Find media (two clicks). Queue removal from Library is modeled as Forge → select
-queued owner → menu → Remove (four). Trash review is selection plus menu plus
-review action from Library; **this counts opening review, not successful deletion**.
-The destructive confirmation is a separate discovered handler and must be connected
-and observed before a total successful-delete journey can be certified.
+Navigation, menu opening, selection, action and safety confirmation are separate
+steps. A directly visible action is one click; menu plus action is two. An already
+open popup does not invent selection/navigation steps. Confirmations are retained.
+Source models take the least cost among known conditional entry paths. Validated
+paths take the shortest among supplied witnessed edges; neither proves global
+native optimality. Null is unknown, never zero or unreachable.
 
-These are conditional source models, not measured native shortest paths. In particular,
-component containment, main navigation declarations and source popup ancestry cannot
-prove actual visible bounds, modal dismissal, picker permissions or action eligibility.
-Unknown input contexts, dynamic screens and unclassified event sites get null counts.
-No action is declared unreachable merely because no native observation exists.
-A source-backed menu opener remains an explicit validation assumption in the model.
-High-value unresolved examples include Windows cloud-file verification/picker denial,
-actual destructive commit paths, generic Main.qml popup entry ownership, and floating
-player interactions. No native unreachable claim is established by this run.
+Representative conditional findings:
 
-## JSON contract
+| Starting context | Action | Clicks | Meaning |
+|---|---|---:|---|
+| selected failed Issue | Retry | 1 | correct selected target required |
+| selected terminal Forge run | menu then Dismiss | 2 | selection already made |
+| Library home | Forge, select queued run, menu, Remove | 4 | UX review, active owner must remain intact |
+| Forge home | Library, select item, menu, Find media | 4 | alternative to longer Issues route |
+| Library Issues | select missing item, Find media | 2 | source conditional |
+| any of three open media/item menus | Find media | 1 | popup already visible |
+| selected saved item | menu, Trash review, confirmation | 3 | necessary safety retained; successful delete unverified |
+| Forge idle | output chooser | 1 | historical native initial-directory/Cancel proof |
+| Forge idle | Settings then Browse | 2 | historical native initial-directory/Cancel proof |
 
-The full report uses `schema_version=1` and has `inventory` and `coverage`:
+The older five-click Forge→Issues Find model is retained in earlier evidence as a
+provisional model. Alias discovery now finds the four-click item-menu route; no
+native shortest-route measurement is implied. Unresolved async popup entry chains
+are not invented. No native unreachable claim is established. Windows Dropbox
+permission denial, OS shell success, destructive persistence, floating-player drag,
+all media/selection/player states and visual layout still need independent evidence.
+A graph cannot certify cropping, chrome, glyph quality or ultrawide polish.
 
-- `inventory.files` binds every scanned file by SHA-256; `inventory.sites` includes
-  file/line, source handler expression, calls, owner type, ancestor menus, source
-  properties, binding SHA-256 and whole-file SHA-256.
-- `coverage.catalogs.locations` has `id`, `kind`, `baseline`.
-  `coverage.catalogs.features` has `id`, `kind`, `sites`, `primary_entries`,
-  `precondition`, and optional source call declarations.
-- `coverage.coverage.goals` contains one row per pair: `from`, `feature`, `to`,
-  baseline, precondition, `modeled` count/path/step types/confidence/status,
-  `validated_click_count`, witnessed `path`, validated status and alternatives.
-- `coverage.matrix_denominator`, `feature_kind_counts`, `status_counts`,
-  `modeled_status_counts`, and `coverage.coverage.counts` are separate denominators.
-  `exhaustive_catalog_crossproduct=true`; `exhaustive_app_coverage=false`.
+## JSON and evidence contract
 
-An observation file contains `edges` (or an `evidence.edges` wrapper). Each edge has
-`from`, `to`, `site`, `binding_sha256`, `file_sha256`, `tier` (`headless_ui` or
-`native_ui`), `receipt`, `visible=true`, `enabled=true`, and an ordered `steps` list.
-Step tokens are `navigation`, `menu`, `selection`, `action`, `confirmation`.
-An action target is `action:<feature-id>`. A location target is its catalog ID.
-The receipt is a pointer to independently reviewable evidence, not an automatic
-attestation that a claim is true. Changed/missing binding, changed whole file,
-source-only claims, missing receipts, hidden/disabled controls and undefined step
-types cannot establish validated reachability. Shortest validated paths are shortest
-among supplied witnessed edges, not a proof of all possible alternatives.
+Schema 2 separates `inventory`, `candidate_coverage`, `semantic_coverage` and
+`historical_native_receipts`. Semantic `catalogs` exposes entries, source reasons,
+classifications and assumptions. `rows` contains every location×feature pair with
+modeled click count/path/status, separately validated count/path/status, preconditions
+and optional historical observations. `exhaustive_app_coverage=false`: only the
+registered catalog crossproduct is exhaustive.
 
-Currently observed statuses are `reachable`, `ux_review`, or `unverified`. The harness
-deliberately does not infer `unreachable` or `not_applicable` from absent observations:
-those require an explicit reviewed item-state/applicability contract. That enrollment
-is still outstanding. Null counts mean unresolved availability/route, not zero clicks.
+Source records bind file, line, owner, expression, calls, ancestor contexts, binding
+SHA-256 and whole-file SHA-256. Runtime records retain instance name/type/signals,
+visibility/enabled state, source matches, family and exclusion reasons. No signal is
+invoked during inventory. Runtime matching is evidence to review, not proof of a
+source connection or effective visibility at a particular item state.
 
-`runtime_controls(scene, inventory)` reads the supplied Qt scene without invoking
-controls and returns candidate instances, their actual names/types/input methods,
-visibility/enabled properties, literal source-name matches and unresolved instances.
-The maintained headless observation includes this runtime inventory. New unnamed or
-dynamic controls cannot disappear behind a handwritten success map. Further scenes
-and windows remain unobserved.
+Witnessed edges require `from`, `to`, `site`, matching `binding_sha256` and
+`file_sha256`, tier `headless_ui`/`native_ui`, independently reviewable `receipt`,
+`visible=true`, `enabled=true`, and ordered step tokens (`navigation`, `menu`,
+`selection`, `action`, `confirmation`). Missing/changed/hidden/disabled evidence is
+rejected. An unrelated rejected edge cannot erase a valid path. The historical
+importer verifies artifacts but still preserves each original observation's limits.
+Legacy `handler_candidates` accounting includes input declarations enrolled for
+witnessing; inventory keeps the 478-handler and 27-input denominators separate.
 
-## State consistency and failure learning
+## State consistency and negative controls
 
-`reconcile_views` compares independently read projections with canonical run identity,
-state, origin and retry lineage, including expected membership and duplicate identity.
-It detects stale state, a wrong target, a wrong predecessor, omitted views and duplicate
-rows. Synthetic fault tests validate these rules, not the product by themselves.
+`reconcile_views` compares independent projections with authoritative run identity,
+state, origin and retry lineage, expected membership and duplicate identity. Fault
+controls cover stale state, wrong target/predecessor, omitted views and duplicates.
+These synthetic faults validate the checker; they are not product acceptance.
 
-A production-owner journey separately admits a Forge terminal retry while another
-owner is active, selects its Issues inspector, reads Run Deck and the durable queue,
-removes the queued retry, then rechecks Issues, Run Deck and durable queue. It requires
-new attempt identity, original lineage, Queued parity, removal parity, and preservation
-of the independent active owner's status. The Issues inspector does not expose full
-lineage in its public projection; full cross-screen lineage attestation remains an
-explicit limitation. No hidden mutation supplies lineage to that view.
+A separate production-owner journey admits a terminal Forge retry while another
+owner is active, selects its Issues inspector, reads Run Deck and durable queue,
+removes the queued retry, then checks all three again. It requires new attempt
+identity, lineage, Queued/removal parity and preserved independent active status.
+Issues lacks public full-lineage projection, so that cross-screen claim stays open.
 
-Existing `component_inventory` primarily scans legacy Python button constructors;
-`interaction_coverage` deliberately leaves usability unenrolled. Existing retry tests
-checked admission or individual views, but did not automatically discover absent
-controls or measure paths from arbitrary contexts. These checks preserve that useful
-coverage and add source discovery, literal cost accounting and bounded shared-state
-outcome assertions.
+Existing component inventory mainly scanned legacy Python constructors; interaction
+coverage left usability unenrolled. Existing retry tests checked admission or single
+views, missing absent controls and cross-view membership. New source-binding and
+production-owner tests **both fail released c6684b2** (missing Dismiss; retry absent
+from Issues) and pass this base. Useful existing checks are preserved.
 
-The new source-binding and production-owner journey tests both fail on released
-`c6684b2`: the Dismiss binding is absent, and a Forge-admitted queued retry is absent
-from Issues. Both pass on `974e6af`. Removed bindings also erase modeled reachability;
-stale/wrong-target/wrong-lineage mutations produce findings. The focused suite passes
-20 tests. The two prior-source failure logs are retained in the local evidence directory
-rather than relabeled as acceptance. The initial fixture setup failed on assigning a
-read-only status property; the corrected fixture supplies a real owner status event.
+Additional classifier negative controls fail the preserved initial draft for valid
+path survival, nonempty native revision, nested Issues navigation and independent
+right-click controls. Discovery tests also cover inherited popups, signal-consumer
+consolidation and fields without callbacks. Original failure receipts are retained;
+no receipt is rewritten into acceptance. The focused suite passes **35 tests**;
+the preserved draft fails **six representative cases** (including three invalid
+revision values). Ruff, formatting and diff checks pass. Evidence is retained locally
+in `build/workflow-evidence/semantic-focused.txt`, `prior-c6684b2.txt`,
+`adopted-draft-negative-current.txt`, `semantic-summary.json`,
+`semantic-report.json.gz` and `semantic-ux-review.json`.
 
-## Remaining enrollment and review
+## Draft provenance and remaining work
 
-Review the 39 forwarding sites against their component signal consumers, then classify
-the 142 lifecycle/event candidates. Resolve Main.qml contextual entry ownership and
-state-specific availability before expanding successful effect journeys. Derive runtime
-item-state catalogs (including missing/denied files, selections, active/queued/terminal
-attempts and modal states), then compare scene inventories to source candidates and
-review explicit not-applicable/unreachable cases. Add a few real native clicked
-journeys through the integration owner, binding exact product revision, profile,
-window, selected owner and durable outcome. Do not turn the provisional candidate
-catalog into an exhaustive runtime or visual-polish claim. No full rebuild/matrix,
-production change, publication, ordinary app replacement or threshold relaxation.
+Before this follow-up adopted the semantic draft, unexplained uncommitted module/test
+changes appeared in the dedicated worktree. Parent and integration denied assigning
+another writer. Historical authorship remains unknown; absence of another OS writer
+was not proved. Parent explicitly authorized sole ownership/adoption after preserving
+the original three files, patch and hashes outside the worktree at
+`/tmp/vodforge-workflow-draft-20261001/` (`provenance.json`). Subsequent edits were
+reviewed, corrected and guarded by expected file hashes. This provenance is not
+silently attributed to a known author.
+
+Complete source/runtime state enrollment, review 118 listeners and 53 forwarding
+sites, resolve 169 unmatched runtime user controls, and collect a few exact-revision
+native outcome journeys through integration. Current state catalogs cover selected
+run attempts, not every saved-media/provider/player state. Unreachable declarations
+require an explicit reviewed applicability contract and actual evidence. This is a
+bounded extensible harness improvement, not exhaustive UI/release acceptance.
+No product changes, full rebuild/matrix, publication, normal app replacement or
+threshold weakening are part of this work.
