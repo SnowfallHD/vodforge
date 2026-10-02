@@ -23,6 +23,8 @@ def _fixture(tmp_path: Path) -> tuple[qt_files.QtLibraryFiles, dict[str, Any], P
         "vodforge_recorded_at": "2026-09-23T00:00:00+00:00",
         "vodforge_output_path": str(media),
         "vodforge_output_dir": str(folder),
+        # Both synthetic item folders are direct children of this owned root.
+        "vodforge_archive_root": str(tmp_path),
     }
     history = tmp_path / "history.json"
     save_history(history, [row])
