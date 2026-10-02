@@ -430,7 +430,7 @@ Item {
                         spacing: 12
                         readonly property var items: scene.route === modelData.route ? modelData.items : []
                         readonly property real cardWidth: Math.max(164, (width - 36) / 4)
-                        readonly property real cardHeight: modelData.route === "channels" ? 82 : Math.min(450, cardWidth * 9 / 16) + 53
+                        readonly property real cardHeight: modelData.route === "channels" ? 82 * Math.max(1, Math.min(2, cardWidth / 260)) : Math.min(450, cardWidth * 9 / 16) + 53
                         readonly property int columns: Math.max(1, Math.floor((width + spacing) / (cardWidth + spacing)))
                         readonly property real rowStride: cardHeight + spacing
                         readonly property int totalRows: Math.ceil(items.length / columns)
