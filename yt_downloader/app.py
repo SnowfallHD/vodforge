@@ -3065,6 +3065,15 @@ def package_downloaded_media_from_staging(
     return packaged
 
 
+def software_transcode_thread_budget() -> int:
+    """Reserve two logical CPUs where possible, with at most four worker threads.
+
+    FFmpeg can still perform additional audio/I/O work; this is a conservative
+    codec/filter budget, not a process-wide CPU quota. Throughput may decrease.
+    """
+    return max(1, min(4, (os.cpu_count() or 1) - 2))
+
+
 def build_vod_ffmpeg_command(
     ffmpeg: str,
     source: Path,
@@ -3094,6 +3103,22 @@ def build_vod_ffmpeg_command(
         )
     # Explicit Custom CRF remains x264; automatic presets carry calibrated CQ.
     use_nvenc = use_nvenc and (video_crf is None or nvenc_cq is not None)
+    # Scope decoder and encoder options separately around -i. Restrict only the
+    # software path; preserve NVENC's existing hardware encoding contract.
+    thread_budget = str(software_transcode_thread_budget())
+    software_input_args = (
+        [
+            "-threads:v:0",
+            thread_budget,
+            "-filter_threads",
+            thread_budget,
+            "-filter_complex_threads",
+            thread_budget,
+        ]
+        if not use_nvenc
+        else []
+    )
+    software_output_args = ["-threads:v:0", thread_budget] if not use_nvenc else []
     video_bitrate = f"{int(video_bitrate_kbps)}k"
     audio_bitrate = f"{int(audio_bitrate_kbps)}k"
     buffer_size = f"{int(video_bitrate_kbps) * 2}k"
@@ -3258,10 +3283,12 @@ def build_vod_ffmpeg_command(
         "-hide_banner",
         "-loglevel",
         "warning",
+        *software_input_args,
         "-i",
         str(source),
         *map_args,
         *video_args,
+        *software_output_args,
         "-movflags",
         "+faststart",
         "-c:a",
