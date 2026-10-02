@@ -520,7 +520,9 @@ Item {
                 spacing: 12
                 readonly property int columns: Math.max(1, Math.min(4, Math.floor((width + spacing) / 200)))
                 readonly property real cardWidth: Math.max(164, (width - spacing * (columns - 1)) / columns)
-                readonly property real rowStride: 174
+                readonly property real artworkHeight: Math.min(450, cardWidth * 9 / 16)
+                readonly property real cardHeight: artworkHeight + 49
+                readonly property real rowStride: cardHeight + spacing
                 readonly property int displayCount: scene.route === "home" ? Math.min(scene.videos.length, columns) : scene.videos.length
                 readonly property int totalRows: Math.ceil(displayCount / columns)
                 readonly property real scrollTop: viewport.contentItem.contentY - y
@@ -543,7 +545,7 @@ Item {
                     StoneButton {
                         required property var modelData
                         width: mediaFlow.cardWidth
-                        height: 162
+                        height: mediaFlow.cardHeight
                         label: ""
                         accessibilityLabel: "Play " + modelData.title
                         onActivated: scene.appBridge.openLibraryOwner(modelData.owner)
@@ -551,8 +553,8 @@ Item {
                             objectName: "watchMediaArtworkImage"
                             x: parent.artworkFaceInset; y: parent.artworkFaceInset
                             width: parent.width - parent.artworkFaceInset * 2
-                            height: 113 - parent.artworkFaceInset
-                            cover: true
+                            height: mediaFlow.artworkHeight - parent.artworkFaceInset
+                            cover: false
                             inset: 0
                             source: {
                                 const revision = scene.appBridge.artworkRevision
@@ -561,8 +563,8 @@ Item {
                             pending: source.toString().length === 0 && scene.appBridge.artworkRevision >= 0 &&
                                 scene.appBridge.mediaArtworkState(modelData.owner) === "pending"
                         }
-                        Text { x: 11; y: 115; width: parent.width - 22; text: modelData.title; color: theme.text; font.pixelSize: 14; font.bold: true; elide: Text.ElideRight }
-                        Text { x: 11; y: 139; width: parent.width - 22; text: modelData.creator; color: theme.muted; font.pixelSize: 12; elide: Text.ElideRight }
+                        Text { x: 11; y: mediaFlow.artworkHeight + 2; width: parent.width - 22; text: modelData.title; color: theme.text; font.pixelSize: 14; font.bold: true; elide: Text.ElideRight }
+                        Text { x: 11; y: mediaFlow.artworkHeight + 26; width: parent.width - 22; text: modelData.creator; color: theme.muted; font.pixelSize: 12; elide: Text.ElideRight }
                     }
                 }
                 Item {
