@@ -51,6 +51,17 @@ Item {
         function onContentRectChanged() { Qt.callLater(scene.refreshDisplayedAspect) }
         function onSourceRectChanged() { Qt.callLater(scene.refreshDisplayedAspect) }
     }
+    Connections {
+        target: scene.player
+        ignoreUnknownSignals: true
+        function onVideoOutputChanged() { scene.scheduleRetainedFrame() }
+    }
+    Connections {
+        target: scene.player && scene.player.videoOutput ? scene.player.videoOutput.videoSink : null
+        function onVideoFrameChanged() {
+            scene.appBridge.retainPlaybackFrame(scene.player.videoOutput, scene.displayedOwner)
+        }
+    }
     readonly property real stageMaxHeight: Math.max(180, height - 145)
     readonly property real stageHeightLimit: stageMaxHeight
     function eligibleCards(rows) {
@@ -99,6 +110,25 @@ Item {
                     scene.presentationMode === "fullscreen" &&
                     presentationWindow.visibility === Window.Windowed)
                 scene.exitPresentation()
+        })
+    }
+    function scheduleEmbeddedRetirement() {
+        const epoch = presentationEpoch
+        const owner = displayedOwner
+        Qt.callLater(function() {
+            if (scene.presentationEpoch === epoch && scene.displayedOwner === owner &&
+                    scene.presentationMode === "embedded" && presentationWindow.visible)
+                presentationWindow.hide()
+        })
+    }
+    function scheduleRetainedFrame() {
+        const epoch = presentationEpoch
+        const owner = displayedOwner
+        const surface = activeVideoSurface
+        Qt.callLater(function() {
+            if (scene.presentationEpoch === epoch && scene.displayedOwner === owner &&
+                    scene.activeVideoSurface === surface)
+                scene.appBridge.restorePlaybackFrame(surface, owner)
         })
     }
     function captionTrackChanged() {
@@ -165,6 +195,7 @@ Item {
             Qt.callLater(presentationWindow.applyNaturalInitialSize)
         }
         changingPresentationWindow = false
+        scheduleRetainedFrame()
     }
     onProjectionChanged: {
         const owner = projection.owner || ""
@@ -227,7 +258,14 @@ Item {
                 height = Math.round(naturalWidth / displayedAspect)
             }
         }
+        onVisibleChanged: {
+            if (visible && scene.presentationMode === "embedded") scene.scheduleEmbeddedRetirement()
+        }
         onVisibilityChanged: function(visibility) {
+            if (scene.presentationMode === "embedded") {
+                if (visible) scene.scheduleEmbeddedRetirement()
+                return
+            }
             if (scene.presentationMode !== "fullscreen") return
             if (visibility === Window.FullScreen) scene.fullscreenEntered = true
             else if (visibility === Window.Windowed && scene.fullscreenEntered &&

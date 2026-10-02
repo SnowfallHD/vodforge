@@ -38,6 +38,7 @@ from PySide6.QtCore import (
     Slot,
 )
 from PySide6.QtGui import QDesktopServices, QFont, QGuiApplication, QImage, QWindow
+from PySide6.QtMultimedia import QMediaPlayer, QVideoFrame, QVideoSink
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickImageProvider, QQuickItem
 from PySide6.QtQuickControls2 import QQuickStyle
@@ -580,6 +581,10 @@ class Bridge(QObject):
         self._playback_chapters: list[dict[str, Any]] = []
         self._playback_heatmap: list[dict[str, float]] = []
         self._playback_generation = 0
+        self._playback_retained_frame = QVideoFrame()
+        self._playback_frame_owner = ""
+        self._playback_frame_generation = -1
+        self._playback_frame_url = ""
         self._watch_queue_observations: dict[str, Any] = {}
         self._watch_queue = WatchQueueOwner(
             records=lambda: self._runtime.history,
@@ -5241,6 +5246,10 @@ class Bridge(QObject):
         self._playback_url = QUrl.fromLocalFile(str(path))
         self._playback_origin_selection = self._selection
         self._playback_generation += 1
+        self._playback_retained_frame = QVideoFrame()
+        self._playback_frame_owner = ""
+        self._playback_frame_generation = -1
+        self._playback_frame_url = ""
         self._subtitles.load(
             path, self._playback_record.get("vodforge_caption_summary")
         )
@@ -5283,6 +5292,10 @@ class Bridge(QObject):
             self._playback_operation = None
         self._playback_path = None
         self._playback_record = None
+        self._playback_retained_frame = QVideoFrame()
+        self._playback_frame_owner = ""
+        self._playback_frame_generation = -1
+        self._playback_frame_url = ""
         self._subtitles.load(None)
         self._previews.load(None)
         self.playbackPreviewsChanged.emit()
@@ -5641,6 +5654,61 @@ class Bridge(QObject):
             (width, height),
         )
         return {"width": width, "height": height, "x": x, "y": y, "overflow": overflow}
+
+    def _owned_playback_sink(self, surface: QObject, owner: str) -> QVideoSink | None:
+        window = self._window
+        if (
+            self._closed
+            or window is None
+            or self._playback_record is None
+            or history_archive_owner(self._playback_record) != owner
+        ):
+            return None
+        if surface.objectName() not in {
+            "watchVideoSurface",
+            "watchPresentationVideoSurface",
+            "miniVideoSurface",
+        }:
+            return None
+        if window.findChild(QObject, surface.objectName()) is not surface:
+            return None
+        sink = surface.property("videoSink")
+        player = window.findChild(QMediaPlayer, "watchMediaPlayer")
+        if (
+            not isinstance(sink, QVideoSink)
+            or player is None
+            or player.videoSink() is not sink
+            or player.source() != self._playback_url
+        ):
+            return None
+        return sink
+
+    @Slot(QObject, str)
+    def retainPlaybackFrame(self, surface: QObject, owner: str) -> None:
+        sink = self._owned_playback_sink(surface, owner)
+        if sink is None:
+            return
+        frame = sink.videoFrame()
+        if frame.isValid():
+            self._playback_retained_frame = QVideoFrame(frame)
+            self._playback_frame_owner = owner
+            self._playback_frame_generation = self._playback_generation
+            self._playback_frame_url = self._playback_url.toString()
+
+    @Slot(QObject, str)
+    def restorePlaybackFrame(self, surface: QObject, owner: str) -> None:
+        sink = self._owned_playback_sink(surface, owner)
+        if (
+            sink is None
+            or self._playback_frame_owner != owner
+            or self._playback_frame_generation != self._playback_generation
+            or self._playback_frame_url != self._playback_url.toString()
+            or not self._playback_retained_frame.isValid()
+            or sink.videoFrame().isValid()
+        ):
+            return
+        # Re-present one retained decoded frame, without advancing/restarting audio.
+        sink.setVideoFrame(self._playback_retained_frame)
 
     @Slot(str)
     def recordPresentation(self, action: str) -> None:
@@ -6322,6 +6390,10 @@ class Bridge(QObject):
             self._save_preferences()
         self._watch_queue.cancel()
         self._subtitles.load(None)
+        self._playback_retained_frame = QVideoFrame()
+        self._playback_frame_owner = ""
+        self._playback_frame_generation = -1
+        self._playback_frame_url = ""
         self._previews.close()
         self._metadata.close()
         if self._import_pending:

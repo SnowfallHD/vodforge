@@ -110,6 +110,10 @@ class SubtitleSession(QObject):
                     )
                     if language != "C":
                         row["label"] = f"{language} · Track {row['index'] + 1}"
+            labels = [row["label"] for row in self.catalog["translations"]]
+            for number, row in enumerate(self.catalog["translations"], 1):
+                if labels.count(row["label"]) > 1:
+                    row["label"] += f" ({number})"
             self.message = (
                 "Saved captions unavailable"
                 if error
