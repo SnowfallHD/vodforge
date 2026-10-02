@@ -1296,18 +1296,28 @@ def test_qt_folder_inspector_follows_tk_selection_and_compact_detail(
         panel = window.findChild(QObject, "libraryFolderDetailsPanel")
         open_details = window.findChild(QObject, "libraryFolderOpenDetails")
         assert 130 <= panel.height() <= 240
-        assert (
-            0
-            < panel.mapToItem(None, 0, 0).y()
-            - open_details.mapToItem(None, 0, open_details.height()).y()
-            < 70
-        )
+        footer = window.findChild(QObject, "libraryInspectorActionFooter")
+        footer_top = footer.mapToItem(None, 0, 0).y()
+        assert panel.mapToItem(None, 0, panel.height()).y() < footer_top
+        assert open_details.parentItem() is footer
+        assert open_details.isVisible()
+        assert abs(open_details.mapToItem(None, 0, 0).y() - footer_top) <= 1
+        footer_bottom = footer.mapToItem(None, 0, footer.height()).y()
         description_tab = window.findChild(QObject, "libraryFolderDescriptionTab")
         tab_top = description_tab.mapToItem(None, 0, 0).y()
         description_tab.activated.emit()
         app.processEvents()
         assert abs(description_tab.mapToItem(None, 0, 0).y() - tab_top) < 1
-        assert panel.height() >= 360
+        assert abs(footer.mapToItem(None, 0, footer.height()).y() - footer_bottom) <= 1
+        assert (
+            0
+            <= footer.mapToItem(None, 0, 0).y()
+            - panel.mapToItem(None, 0, panel.height()).y()
+            <= 10
+        )
+        assert (
+            window.findChild(QObject, "libraryFolderDescriptionScroll").height() >= 120
+        )
         assert (
             window.findChild(QObject, "libraryFolderDescriptionText").property("text")
             == record["description"]
@@ -1371,6 +1381,14 @@ def test_qt_folder_description_attests_real_rendered_visibility(tmp_path, monkey
         payload = json.loads(receipts[0].read_text(encoding="utf-8"))
         assert payload["verified"], payload
         assert payload["renderer"] == "qt"
+        assert payload["layout_contract"] == "qt_reader_with_pinned_footer"
+        assert payload["footer_mapped_and_viewable"]
+        assert payload["footer_action_mapped_and_viewable"]
+        assert payload["location_mapped_and_viewable"]
+        assert abs(payload["footer_table_bottom_delta_px"]) <= 2
+        assert abs(payload["reader_footer_gap_delta_px"]) <= 2
+        assert payload["description_viewport_bounds"]["height"] >= 120
+        assert payload["path_ellipsized"]
         assert title not in receipts[0].read_text(encoding="utf-8")
     finally:
         window.close()
@@ -3307,7 +3325,36 @@ def test_qt_popup_and_navigation_materials_use_shared_renderer():
     qml_root = Path(qt_main.__file__).parent
     qml_sources = [path.read_text(encoding="utf-8") for path in qml_root.glob("*.qml")]
     assert qml_sources
-    assert all("background: Rectangle" not in source for source in qml_sources)
+
+    def assert_shared_surfaces(filename, source):
+        # Only bounded text tooltips have the approved flat theme surface.
+        allowed = []
+        if filename in {"OutputPathField.qml", "PlayerOverlay.qml"}:
+            for match in re.finditer(r"\bToolTip\s*\{", source):
+                depth = 1
+                end = match.end()
+                while depth and end < len(source):
+                    depth += (source[end] == "{") - (source[end] == "}")
+                    end += 1
+                body = source[match.start() : end]
+                if "width: Math.min(" in body and "Text.WrapAnywhere" in body:
+                    allowed.append((match.start(), end))
+        for match in re.finditer(r"background:\s*Rectangle\s*\{", source):
+            assert any(start <= match.start() < end for start, end in allowed), filename
+
+    for path in qml_root.glob("*.qml"):
+        assert_shared_surfaces(path.name, path.read_text(encoding="utf-8"))
+    for filename in ("OutputPathField.qml", "PlayerOverlay.qml"):
+        source = (qml_root / filename).read_text(encoding="utf-8")
+        with pytest.raises(AssertionError):
+            assert_shared_surfaces(
+                filename, source + "\nRectangle { background: Rectangle {} }"
+            )
+        with pytest.raises(AssertionError):
+            assert_shared_surfaces(
+                filename, source.replace("width: Math.min(", "width: Math.max(")
+            )
+
     assert all(
         not re.search(r"(?<!Stone)\b(?:ToolButton|RoundButton|Button)\s*\{", source)
         for source in qml_sources

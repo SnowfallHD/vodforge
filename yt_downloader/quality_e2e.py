@@ -9,7 +9,7 @@ import sys
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Protocol, overload
+from typing import Protocol, cast, overload
 
 QUALITY_E2E_MODE_ENV = "VODFORGE_QUALITY_E2E"
 QUALITY_E2E_NONCE_ENV = "VODFORGE_QUALITY_E2E_SESSION_NONCE"
@@ -515,6 +515,12 @@ def write_quality_e2e_qt_library_visibility_receipt(
     library_table_visible: bool,
     description_scroll_at_start: bool,
     library_invariant_receipt: _LibraryInvariantReceipt,
+    location_visible: bool = True,
+    footer_bounds: Mapping[str, int] | None = None,
+    footer_action_bounds: Mapping[str, int] | None = None,
+    footer_visible: bool = False,
+    footer_action_visible: bool = False,
+    details_footer_gap_px: int = 8,
     environ: Mapping[str, str] | None = None,
     pid: int | None = None,
     recorded_at: str | None = None,
@@ -527,7 +533,7 @@ def write_quality_e2e_qt_library_visibility_receipt(
     receipt_path, nonce, window_token, launch_id = _library_visibility_envelope(
         environment
     )
-    bounds = (
+    bounds: tuple[Mapping[str, int], ...] = (
         rail_bounds,
         details_bounds,
         library_table_bounds,
@@ -535,6 +541,14 @@ def write_quality_e2e_qt_library_visibility_receipt(
         description_viewport_bounds,
         description_text_bounds,
     )
+    if footer_bounds is not None:
+        if (
+            footer_action_bounds is None
+            or type(details_footer_gap_px) is not int
+            or not 0 <= details_footer_gap_px <= 24
+        ):
+            raise QualityE2EAttestationError("quality-E2E Qt footer context is invalid")
+        bounds = (*bounds, footer_bounds, footer_action_bounds)
     if any(
         any(type(item.get(name)) is not int for name in ("x", "y", "width", "height"))
         or item["width"] <= 0
@@ -552,6 +566,42 @@ def write_quality_e2e_qt_library_visibility_receipt(
     )
     table_bottom = library_table_bounds["y"] + library_table_bounds["height"]
     bottom_delta = description_bottom - table_bottom
+    details_bottom = details_bounds["y"] + details_bounds["height"]
+    minimum_reader_height = 120
+    minimum_details_height = 360
+    layout_verified = (
+        abs(bottom_delta) <= QUALITY_E2E_LIBRARY_BOTTOM_ALIGNMENT_TOLERANCE_PX
+    )
+    footer_alignment_delta = None
+    reader_footer_delta = None
+    if footer_bounds is not None:
+        footer_bottom = footer_bounds["y"] + footer_bounds["height"]
+        footer_alignment_delta = footer_bottom - table_bottom
+        reader_footer_delta = (
+            footer_bounds["y"] - details_bottom - details_footer_gap_px
+        )
+        available_height = (
+            table_bottom
+            - footer_bounds["height"]
+            - details_footer_gap_px
+            - details_bounds["y"]
+        )
+        minimum_details_height = min(360, available_height)
+        layout_verified = bool(
+            footer_visible
+            and footer_action_visible
+            and _bounds_inside(footer_bounds, rail_bounds)
+            and _bounds_inside(
+                cast(Mapping[str, int], footer_action_bounds), footer_bounds
+            )
+            and description_viewport_bounds["height"] >= minimum_reader_height
+            and abs(footer_alignment_delta)
+            <= QUALITY_E2E_LIBRARY_BOTTOM_ALIGNMENT_TOLERANCE_PX
+            and abs(reader_footer_delta)
+            <= QUALITY_E2E_LIBRARY_BOTTOM_ALIGNMENT_TOLERANCE_PX
+            and abs(description_bottom - details_bottom)
+            <= QUALITY_E2E_LIBRARY_BOTTOM_ALIGNMENT_TOLERANCE_PX
+        )
     first_line_visible = bool(
         description_scroll_at_start
         and description_text_bounds["y"] >= description_viewport_bounds["y"]
@@ -575,13 +625,14 @@ def write_quality_e2e_qt_library_visibility_receipt(
         and heading_visible
         and description_visible
         and library_table_visible
-        and details_bounds["height"] >= 360
+        and details_bounds["height"] >= minimum_details_height
         and _bounds_inside(details_bounds, rail_bounds)
         and _bounds_inside(description_heading_bounds, details_bounds)
         and _bounds_inside(description_viewport_bounds, details_bounds)
-        and abs(bottom_delta) <= QUALITY_E2E_LIBRARY_BOTTOM_ALIGNMENT_TOLERANCE_PX
+        and layout_verified
         and first_line_visible
         and title_truncated
+        and location_visible
         and location_truncated
         and displayed_title_visible_lines >= QUALITY_E2E_MIN_TITLE_VISIBLE_LINES
         and projection_clean
@@ -641,6 +692,23 @@ def write_quality_e2e_qt_library_visibility_receipt(
         "recorded_at": recorded_at
         or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
+    if footer_bounds is not None:
+        payload.update(
+            {
+                "layout_contract": "qt_reader_with_pinned_footer",
+                "footer_bounds": dict(footer_bounds),
+                "footer_action_bounds": dict(
+                    cast(Mapping[str, int], footer_action_bounds)
+                ),
+                "footer_mapped_and_viewable": footer_visible,
+                "footer_action_mapped_and_viewable": footer_action_visible,
+                "location_mapped_and_viewable": location_visible,
+                "footer_table_bottom_delta_px": footer_alignment_delta,
+                "reader_footer_gap_delta_px": reader_footer_delta,
+                "details_minimum_available_height_px": minimum_details_height,
+                "minimum_description_viewport_height_px": minimum_reader_height,
+            }
+        )
     _write_exclusive_private_json(receipt_path, payload)
     return receipt_path
 

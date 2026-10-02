@@ -4037,10 +4037,21 @@ class Bridge(QObject):
             "scroll": "libraryFolderDescriptionScroll",
             "description": "libraryFolderDescriptionText",
             "title": "libraryFolderSelectedTitle",
-            "location": "libraryFolderSelectedLocation",
+            "location": "libraryInspectorExactLocation",
+            "footer": "libraryInspectorActionFooter",
+            "footer_action": "libraryFolderOpenDetails",
         }
         items = {key: window.findChild(QObject, name) for key, name in names.items()}
         if any(item is None for item in items.values()):
+            return False
+        if not items["location"].isVisible():
+            items["location"] = window.findChild(
+                QObject, "libraryFolderSelectedLocation"
+            )
+        if items["location"] is None:
+            return False
+        location_text = items["location"].findChild(QObject, "outputPathText")
+        if location_text is None:
             return False
         rail = items["rail"]
         if rail.property("section") != "Description" or not rail.isVisible():
@@ -4073,7 +4084,14 @@ class Bridge(QObject):
                 2, int(items["title"].property("lineCount") or 0)
             ),
             title_truncated=bool(items["title"].property("truncated")),
-            location_truncated=bool(items["location"].property("truncated")),
+            location_truncated=bool(location_text.property("truncated")),
+            location_visible=items["location"].isVisible()
+            and location_text.isVisible(),
+            footer_bounds=bounds(items["footer"]),
+            footer_action_bounds=bounds(items["footer_action"]),
+            footer_visible=items["footer"].isVisible(),
+            footer_action_visible=items["footer_action"].isVisible(),
+            details_footer_gap_px=round(float(rail.property("spacing") or 0)),
             rail_bounds=bounds(rail),
             details_bounds=bounds(items["details"]),
             library_table_bounds=bounds(items["table"]),
