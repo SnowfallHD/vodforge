@@ -13,6 +13,8 @@ Item {
     property bool interactive: true
     property bool quiet: false
     property string size: "default"
+    readonly property bool overflowGlyph: !icon.length && !sceneIcon.length &&
+            ["⋯", "⋮", "…"].indexOf(label) >= 0
     readonly property bool hovered: mouse.containsMouse
     readonly property bool activeFace: (hoverMaterial && hovered) || activeFocus || selected
     // Artwork cards keep their content inside the same inset face in every state.
@@ -73,7 +75,7 @@ Item {
         Text {
             id: caption
             objectName: "stoneButtonCaption"
-            visible: control.label.length > 0
+            visible: control.label.length > 0 && !control.overflowGlyph
             text: control.label
             readonly property real availableWidth: Math.max(0, control.width
                     - ((control.icon.length || control.sceneIcon.length) ? buttonMetrics[control.size].iconPixels + (control.label.length ? 8 : 0) : 0))
@@ -88,6 +90,32 @@ Item {
             font.pixelSize: buttonMetrics[control.size].fontPixels
             font.weight: control.quiet && control.selected ? Font.DemiBold : Font.Normal
             anchors.verticalCenter: parent.verticalCenter
+        }
+    }
+    // Overflow punctuation has font-dependent bearings and baseline placement.
+    // Draw the shared symbol around the face centre, independent of text metrics.
+    Item {
+        id: overflowDots
+        objectName: "stoneButtonOverflowGlyph"
+        visible: control.overflowGlyph
+        anchors.fill: parent
+        readonly property real span: buttonMetrics[control.size].fontPixels
+        readonly property real diameter: Math.max(2, span * 0.15)
+        readonly property bool vertical: control.label === "⋮"
+        Repeater {
+            model: 3
+            Rectangle {
+                required property int index
+                width: overflowDots.diameter
+                height: width
+                radius: width / 2
+                antialiasing: true
+                x: overflowDots.width / 2 - width / 2 +
+                   (overflowDots.vertical ? 0 : (index - 1) * overflowDots.span * 0.26)
+                y: overflowDots.height / 2 - height / 2 +
+                   (overflowDots.vertical ? (index - 1) * overflowDots.span * 0.26 : 0)
+                color: caption.color
+            }
         }
     }
     MouseArea {
