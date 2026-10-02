@@ -26,11 +26,23 @@ Item {
     signal captionsRequested(var anchor)
     signal previewRequested(real seconds)
 
+    property bool presentationAvailable: true
     property bool surfaceHovered: false
     property bool menuOpen: false
     readonly property bool keyboardEngaged: focusInside(Window.window ? Window.window.activeFocusItem : null)
     readonly property bool interactionHeld: seek.pressed || volumeSlider.pressed || menuOpen || keyboardEngaged
-    readonly property real minimumControlsWidth: leftActions.width + rightActions.width + 48
+    readonly property real minimumControlsWidth: playControl.width + backControl.width + forwardControl.width
+        + muteControl.width + 5 * 3 + 50 + compactTimeMetrics.advanceWidth
+        + captionsControl.width + optionsControl.width + floatingControl.width + fullscreenControl.width
+        + 3 * 3 + 48
+    TextMetrics {
+        id: compactTimeMetrics
+        font: timeLabel.font
+        text: {
+            const position = Math.floor((controls.player ? controls.player.position : 0) / 1000)
+            return Math.floor(position / 60) + ":" + ("0" + position % 60).slice(-2)
+        }
+    }
     function focusInside(item) {
         while (item) {
             if (item === controls) return true
@@ -41,7 +53,7 @@ Item {
     function reveal() { surfaceHovered = true }
     objectName: controlPrefix === "player" ? "embeddedPlayerOverlay" : "presentationPlayerOverlay"
     height: 104
-    visible: surfaceHovered || interactionHeld
+    visible: presentationAvailable && (surfaceHovered || interactionHeld)
     onPlayerChanged: { lastPreviewImage = "" }
     onPreviewsChanged: {
         if (previews.length && previews[0].image)
@@ -176,6 +188,7 @@ Item {
         anchors.bottomMargin: 14
         spacing: compact ? 3 : 8
         StoneButton {
+            id: playControl
             objectName: "playerOverlayPlay"
             width: 38; height: 36
             label: ""
@@ -185,6 +198,7 @@ Item {
             onActivated: controls.playPauseRequested()
         }
         StoneButton {
+            id: backControl
             objectName: "playerOverlayBack10"
             width: 38; height: 36; label: ""
             sceneIcon: "backward"; accessibilityLabel: "Jump back 10 seconds"
@@ -192,6 +206,7 @@ Item {
             onActivated: controls.seekRequested(Math.max(0, (controls.player ? controls.player.position : 0) / 1000 - 10))
         }
         StoneButton {
+            id: forwardControl
             objectName: "playerOverlayForward10"
             width: 38; height: 36; label: ""
             sceneIcon: "forward"; accessibilityLabel: "Jump forward 10 seconds"
@@ -199,6 +214,7 @@ Item {
             onActivated: controls.seekRequested(((controls.player ? controls.player.position : 0) / 1000) + 10)
         }
         StoneButton {
+            id: muteControl
             objectName: "playerOverlayMute"
             width: 38; height: 36; label: ""
             sceneIcon: controls.volume <= 0 ? "muted" : "volume"
@@ -226,6 +242,7 @@ Item {
             }
         }
         Text {
+            id: timeLabel
             objectName: "playerOverlayTime"
             anchors.verticalCenter: parent.verticalCenter
             text: {
@@ -247,18 +264,21 @@ Item {
         anchors.bottomMargin: 14
         spacing: compact ? 3 : 8
         StoneButton {
+            id: captionsControl
             objectName: controls.controlPrefix === "player" ? "playerCaptionsButton" : "presentationCaptionsButton"
             width: 38; height: 36; label: ""; sceneIcon: "captions"
             accessibilityLabel: "Captions"; transientMaterial: false
             onActivated: controls.captionsRequested(this)
         }
         StoneButton {
+            id: optionsControl
             objectName: "playerOverlayOptions"
             width: 38; height: 36; label: ""; sceneIcon: "settings"
             accessibilityLabel: "Playback options"; transientMaterial: false
             onActivated: controls.optionsRequested(this)
         }
         StoneButton {
+            id: floatingControl
             objectName: "playerOverlayFloating"
             width: 38; height: 36; label: ""; sceneIcon: "floating"
             accessibilityLabel: controls.floating ? "Return to main window" : "Watch in floating window"
@@ -266,6 +286,7 @@ Item {
             onActivated: controls.floatingRequested()
         }
         StoneButton {
+            id: fullscreenControl
             objectName: "playerOverlayFullscreen"
             width: 38; height: 36; label: ""; sceneIcon: "fullscreen"
             accessibilityLabel: controls.fullscreen ? "Exit full screen" : "Full screen"

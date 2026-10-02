@@ -12,6 +12,12 @@ Item {
     property alias videoSurface: videoSurface
     property string presentationMode: "embedded"
     property bool videoFill: false
+    property string previousPresentationMode: "embedded"
+    property string fullscreenReturnMode: "embedded"
+    property bool changingPresentationWindow: false
+    property bool fullscreenEntered: false
+    property int presentationEpoch: 0
+    property string displayedOwner: ""
     property bool restoreFillAfterCaptions: false
     property int requestedCaptionTrack: -2
     readonly property var activeVideoSurface: presentationMode === "embedded" ? videoSurface : presentationVideo
@@ -69,6 +75,23 @@ Item {
         presentationMode = mode
         appBridge.recordPresentation(mode === "embedded" ? "returned" : mode)
     }
+    function exitPresentation() {
+        if (presentationMode === "fullscreen") {
+            presentationMode = fullscreenReturnMode
+            appBridge.recordPresentation(fullscreenReturnMode === "embedded" ? "returned" : "floating")
+        } else setPresentation("embedded")
+    }
+    function scheduleNativeFullscreenExit() {
+        const epoch = presentationEpoch
+        const owner = displayedOwner
+        // Defer until native setVisibility completes; bind to this owner/state.
+        Qt.callLater(function() {
+            if (scene.presentationEpoch === epoch && scene.displayedOwner === owner &&
+                    scene.presentationMode === "fullscreen" &&
+                    presentationWindow.visibility === Window.Windowed)
+                scene.exitPresentation()
+        })
+    }
     function captionTrackChanged() {
         if (!player) return
         const active = player.activeSubtitleTrack
@@ -119,16 +142,39 @@ Item {
         restoreFillAfterCaptions = false
     }
     onPresentationModeChanged: {
+        presentationEpoch += 1
+        if (presentationMode === "fullscreen") {
+            fullscreenReturnMode = previousPresentationMode === "floating" ? "floating" : "embedded"
+            fullscreenEntered = false
+        } else fullscreenEntered = false
+        previousPresentationMode = presentationMode
+        playerOptions.close()
+        captionsMenu.close()
+        presentationCaptionMenu.close()
+        changingPresentationWindow = true
         if (presentationMode === "embedded") {
-            // Hiding a fullscreen Cocoa window leaves its native Space alive.
-            // Retire fullscreen before moving the video back into the app.
             if (presentationWindow.visibility === Window.FullScreen)
                 presentationWindow.showNormal()
             presentationWindow.hide()
         } else if (presentationMode === "fullscreen") presentationWindow.showFullScreen()
-        else presentationWindow.showNormal()
+        else {
+            presentationWindow.naturalSizePending = !videoFill
+            presentationWindow.showNormal()
+            Qt.callLater(presentationWindow.applyNaturalInitialSize)
+        }
+        changingPresentationWindow = false
     }
     onProjectionChanged: {
+        const owner = projection.owner || ""
+        if (owner !== displayedOwner) {
+            displayedOwner = owner
+            videoFill = false
+            restoreFillAfterCaptions = false
+            presentationWindow.naturalSizePending = true
+            if (presentationMode === "fullscreen" && fullscreenEntered &&
+                    presentationWindow.visibility === Window.Windowed)
+                scheduleNativeFullscreenExit()
+        }
         if (projection.kind !== "video" && presentationMode !== "embedded")
             presentationMode = "embedded"
     }
@@ -141,6 +187,53 @@ Item {
         height: 480
         minimumWidth: Math.ceil(presentationOverlay.minimumControlsWidth)
         minimumHeight: presentationOverlay.height
+        function enforceMinimumSize() {
+            if (width < minimumWidth) width = minimumWidth
+            if (height < minimumHeight) height = minimumHeight
+        }
+        onWidthChanged: Qt.callLater(enforceMinimumSize)
+        onHeightChanged: Qt.callLater(enforceMinimumSize)
+        onMinimumWidthChanged: Qt.callLater(enforceMinimumSize)
+        onMinimumHeightChanged: Qt.callLater(enforceMinimumSize)
+        property bool naturalSizePending: true
+        property bool naturalSizeLimited: false
+        readonly property real displayedAspect: {
+            const rect = presentationVideo.contentRect
+            return presentationVideo.sourceRect.width > 0 && rect.width > 0 && rect.height > 0
+                ? rect.width / rect.height : 16 / 9
+        }
+        function applyNaturalInitialSize() { naturalSizeTimer.restart() }
+        Timer {
+            id: naturalSizeTimer
+            interval: 16
+            onTriggered: presentationWindow.settleNaturalInitialSize()
+        }
+        function settleNaturalInitialSize() {
+            if (!visible || scene.presentationMode !== "floating" || scene.videoFill ||
+                    !naturalSizePending || presentationVideo.sourceRect.width <= 0) return
+            naturalSizePending = false
+            const geometry = scene.appBridge.initialPlayerGeometry(presentationWindow, displayedAspect)
+            if (geometry.width > 0 && geometry.height > 0) {
+                naturalSizeLimited = geometry.overflow
+                width = geometry.width
+                height = geometry.height
+                x = geometry.x
+                y = geometry.y
+            } else {
+                const naturalWidth = Math.max(minimumWidth, minimumHeight * displayedAspect, width)
+                width = Math.round(naturalWidth)
+                height = Math.round(naturalWidth / displayedAspect)
+            }
+        }
+        onVisibilityChanged: function(visibility) {
+            if (scene.presentationMode !== "fullscreen") return
+            if (visibility === Window.FullScreen) scene.fullscreenEntered = true
+            else if (visibility === Window.Windowed && scene.fullscreenEntered &&
+                     !scene.changingPresentationWindow) {
+                // A synchronous hide can be undone by the outer native call.
+                scene.scheduleNativeFullscreenExit()
+            }
+        }
         color: "black"
         title: scene.projection.title || "VODForge Player"
         // Windows adds default decorations only for a bare Qt.Window. Adding
@@ -153,7 +246,7 @@ Item {
         Shortcut {
             sequence: "Escape"
             enabled: presentationWindow.visible
-            onActivated: scene.setPresentation("embedded")
+            onActivated: scene.exitPresentation()
         }
         VideoOutput {
             id: presentationVideo
@@ -161,6 +254,11 @@ Item {
             anchors.fill: parent
             fillMode: scene.videoFill ? VideoOutput.PreserveAspectCrop : VideoOutput.PreserveAspectFit
             endOfStreamPolicy: VideoOutput.KeepLastFrame
+            onContentRectChanged: Qt.callLater(presentationWindow.applyNaturalInitialSize)
+            Connections {
+                target: presentationVideo.videoSink
+                function onVideoFrameChanged() { Qt.callLater(presentationWindow.applyNaturalInitialSize) }
+            }
             TapHandler { onTapped: scene.togglePlayback() }
         }
         HoverHandler { id: presentationHover }
@@ -197,7 +295,7 @@ Item {
             onPlayPauseRequested: scene.togglePlayback()
             onSeekRequested: function(seconds) { scene.seekTo(seconds) }
             onVolumeRequested: function(value) { scene.volumeRequested(value) }
-            onFullscreenRequested: scene.setPresentation(scene.presentationMode === "fullscreen" ? "embedded" : "fullscreen")
+            onFullscreenRequested: scene.presentationMode === "fullscreen" ? scene.exitPresentation() : scene.setPresentation("fullscreen")
             onFloatingRequested: scene.setPresentation(scene.presentationMode === "floating" ? "embedded" : "floating")
             onOptionsRequested: function(anchor) { scene.showOptions(anchor) }
             onCaptionsRequested: function(anchor) { presentationCaptionMenu.anchorItem = anchor; presentationCaptionMenu.toggleFrom(anchor) }
@@ -298,6 +396,7 @@ Item {
                         VideoOutput {
                             id: videoSurface
                             objectName: "watchVideoSurface"
+                            visible: scene.presentationMode === "embedded"
                             endOfStreamPolicy: VideoOutput.KeepLastFrame
                             anchors.fill: parent
                             fillMode: scene.videoFill ? VideoOutput.PreserveAspectCrop : VideoOutput.PreserveAspectFit
@@ -305,6 +404,7 @@ Item {
                         HoverHandler { id: embeddedHover }
                         MouseArea {
                             anchors.fill: videoSurface
+                            enabled: scene.presentationMode === "embedded"
                             onClicked: scene.togglePlayback()
                         }
                         Text {
@@ -314,7 +414,7 @@ Item {
                             anchors.bottomMargin: 110
                             width: parent.width - 28
                             text: videoSurface.videoSink ? videoSurface.videoSink.subtitleText : ""
-                            visible: text.length > 0 && scene.player && scene.player.activeSubtitleTrack >= 0
+                            visible: scene.presentationMode === "embedded" && text.length > 0 && scene.player && scene.player.activeSubtitleTrack >= 0
                             color: "white"
                             style: Text.Outline
                             styleColor: "#09090d"
@@ -322,8 +422,25 @@ Item {
                             horizontalAlignment: Text.AlignHCenter
                             wrapMode: Text.WordWrap
                         }
+                        Rectangle {
+                            objectName: "inlinePlaybackElsewhere"
+                            anchors.fill: parent
+                            visible: scene.presentationMode !== "embedded"
+                            color: "#b309090d"
+                            StoneButton {
+                                objectName: "inlinePlaybackReturn"
+                                anchors.centerIn: parent
+                                width: Math.min(parent.width - 24, 240)
+                                height: 42
+                                label: scene.presentationMode === "fullscreen" && scene.fullscreenReturnMode === "embedded"
+                                    ? "Exit fullscreen" : "Exit external player"
+                                accessibilityLabel: label + "; return playback to Watch"
+                                onActivated: scene.setPresentation("embedded")
+                            }
+                        }
                         PlayerOverlay {
                             id: embeddedOverlay
+                            presentationAvailable: scene.presentationMode === "embedded"
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.bottom: parent.bottom

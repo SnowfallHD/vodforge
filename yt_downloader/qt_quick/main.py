@@ -5548,6 +5548,42 @@ class Bridge(QObject):
             except (OSError, ValueError):
                 pass
 
+    @Slot(QObject, float, result=_QVARIANT_MAP)
+    def initialPlayerGeometry(self, window: QObject, aspect: float) -> dict[str, Any]:
+        from PySide6.QtGui import QWindow
+
+        from yt_downloader.qt_quick.player_geometry import (
+            clamp_player_origin,
+            initial_player_client_size,
+        )
+
+        if (
+            self._window is None
+            or self._window.findChild(QObject, "watchPresentationWindow") is not window
+        ):
+            return {}
+        if not isinstance(window, QWindow) or window.screen() is None:
+            return {}
+        available = window.screen().availableGeometry()
+        margins = window.frameMargins()
+        try:
+            width, height, overflow = initial_player_client_size(
+                window.width(),
+                aspect,
+                (available.width(), available.height()),
+                (margins.left() + margins.right(), margins.top() + margins.bottom()),
+                (window.minimumWidth(), window.minimumHeight()),
+            )
+        except ValueError:
+            return {}
+        x, y = clamp_player_origin(
+            (window.x(), window.y()),
+            (available.x(), available.y(), available.width(), available.height()),
+            (margins.left(), margins.top(), margins.right(), margins.bottom()),
+            (width, height),
+        )
+        return {"width": width, "height": height, "x": x, "y": y, "overflow": overflow}
+
     @Slot(str)
     def recordPresentation(self, action: str) -> None:
         if (
