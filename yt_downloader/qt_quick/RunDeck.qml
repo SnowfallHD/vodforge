@@ -67,7 +67,7 @@ Item {
         RowLayout {
             id: deckHeader
             Layout.fillWidth: true
-            Text { text: "RUN DECK"; color: theme.muted; font.pixelSize: 12; font.bold: true; Layout.fillWidth: true }
+            Text { text: "RUN DECK"; color: theme.muted; font.pixelSize: 12; font.bold: true; elide: Text.ElideRight; Layout.minimumWidth: 0; Layout.fillWidth: true }
             // This hover trigger has one held face. Pointer presses navigate;
             // they do not introduce StoneButton's separate click-face state.
             Item {
@@ -162,7 +162,21 @@ Item {
         }
         RowLayout {
             Layout.fillWidth: true
-            Text { text: deck.workSummary; color: theme.muted; font.pixelSize: 12; Layout.fillWidth: true }
+            Text {
+                id: summaryLabel
+                text: deck.workSummary
+                color: theme.muted
+                font.pixelSize: 12
+                // The aggregate line can exceed the remaining footer width.
+                // Keep it in its own slot instead of painting over the policy.
+                elide: Text.ElideRight
+                Layout.minimumWidth: 0
+                Layout.fillWidth: true
+                Accessible.name: text
+                ToolTip.visible: truncated && summaryHover.hovered
+                ToolTip.text: text
+                HoverHandler { id: summaryHover }
+            }
             Text { text: "Runs process one at a time"; color: theme.muted; font.pixelSize: 12 }
         }
     }
