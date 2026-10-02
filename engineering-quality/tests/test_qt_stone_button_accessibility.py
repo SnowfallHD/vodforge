@@ -11,10 +11,11 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6")
 
-from PySide6.QtCore import QCoreApplication, QEvent, QObject, QPointF, QUrl
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, QPoint, QPointF, QUrl
 from PySide6.QtGui import QAccessible, QAccessibleActionInterface, QGuiApplication
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtQuickControls2 import QQuickStyle
+from PySide6.QtTest import QTest
 
 from tests.test_run_identity import make_job
 from yt_downloader.qt_quick.main import Bridge, create_engine
@@ -29,6 +30,21 @@ def accessible_descendants(root):
         yield from accessible_descendants(child)
 
 
+def hover_embedded_video(window_object) -> None:
+    """Use real offscreen hit geometry to reveal the intentionally hover-only AX controls."""
+    QTest.qWait(100)
+    surface = window_object.findChild(QObject, "watchVideoSurface")
+    assert surface is not None
+    assert surface.isVisible() and surface.width() > 0 and surface.height() > 0
+    point = surface.mapToScene(QPointF(surface.width() / 2, surface.height() / 2))
+    assert 0 <= point.x() < window_object.width()
+    assert 0 <= point.y() < window_object.height()
+    QTest.mouseMove(window_object, QPoint(round(point.x()), round(point.y())))
+    QTest.qWait(80)
+    overlay = window_object.findChild(QObject, "embeddedPlayerOverlay")
+    assert overlay.property("controlsShown")
+
+
 def test_stone_buttons_expose_named_press_actions_and_hide_other_views(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -36,7 +52,8 @@ def test_stone_buttons_expose_named_press_actions_and_hide_other_views(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
     application = QGuiApplication.instance() or QGuiApplication([])
-    QQuickStyle.setStyle("Basic")
+    if QQuickStyle.name() != "Basic":
+        QQuickStyle.setStyle("Basic")
     bridge = Bridge(None)
     engine = create_engine(bridge)
     try:
@@ -44,12 +61,15 @@ def test_stone_buttons_expose_named_press_actions_and_hide_other_views(
         application.processEvents()
         window = QAccessible.queryAccessibleInterface(engine.rootObjects()[0])
         assert window is not None
-        buttons = {
-            child.text(QAccessible.Name): child
-            for index in range(window.childCount())
-            if (child := window.child(index)) is not None
-            and child.role() == QAccessible.Button
-        }
+        # Basic controls may expose nested accessible wrappers. Find the real
+        # named buttons recursively; prefer a visible instance over a hidden alias.
+        buttons = {}
+        for child in accessible_descendants(window):
+            if child.role() != QAccessible.Button:
+                continue
+            name = child.text(QAccessible.Name)
+            if name not in buttons or buttons[name].state().invisible:
+                buttons[name] = child
         for label in ("Forge", "Library", "Watch", "Activity", "Settings", "Download"):
             assert label in buttons
             assert not buttons[label].state().invisible
@@ -96,7 +116,10 @@ def test_stone_buttons_expose_named_press_actions_and_hide_other_views(
         assert bridge.selection == "Library"
         application.processEvents()
         library_nav = next(
-            child for name, child in buttons.items() if name.startswith("All Media, ")
+            child
+            for child in accessible_descendants(window)
+            if child.role() == QAccessible.Button
+            and child.text(QAccessible.Name).startswith("All Media, ")
         )
         assert not library_nav.state().invisible
         buttons["Watch"].actionInterface().doAction(
@@ -110,6 +133,7 @@ def test_stone_buttons_expose_named_press_actions_and_hide_other_views(
         bridge._playback_url = QUrl.fromLocalFile(str(tmp_path / "fixture.mp4"))
         bridge.playbackUrlChanged.emit()
         application.processEvents()
+        hover_embedded_video(engine.rootObjects()[0])
         transport = [
             child
             for child in accessible_descendants(window)
@@ -137,7 +161,8 @@ def test_compact_header_and_player_transport_stay_inside_minimum_window(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
     application = QGuiApplication.instance() or QGuiApplication([])
-    QQuickStyle.setStyle("Basic")
+    if QQuickStyle.name() != "Basic":
+        QQuickStyle.setStyle("Basic")
     bridge = Bridge(None)
     engine = create_engine(bridge)
     try:
@@ -240,6 +265,7 @@ def test_compact_header_and_player_transport_stay_inside_minimum_window(
         for _ in range(5):
             application.processEvents()
         assert inside(visible_button("← Back"))
+        hover_embedded_video(window_object)
         assert inside(visible_button("Play"))
     finally:
         engine.deleteLater()
