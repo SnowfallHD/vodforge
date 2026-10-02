@@ -19,6 +19,15 @@ Window {
     property real playerVolume: 0.8
     readonly property bool editingText: activeFocusItem instanceof TextInput ||
                                        activeFocusItem instanceof TextEdit
+    function retireHiddenSceneFocus() {
+        const item = window.activeFocusItem
+        // A route can hide an editor without Qt releasing its keyboard focus.
+        // Retire only that hidden owner; shared visible editors/popups keep focus.
+        if (item && !item.visible) {
+            item.focus = false
+            window.contentItem.forceActiveFocus(Qt.OtherFocusReason)
+        }
+    }
     property string pendingRelinkOwner: ""
     property string missingAction: ""
     property string pendingRelinkFolderPath: ""
@@ -139,6 +148,10 @@ Window {
     }
     Connections {
         target: bridge
+        function onSelectionChanged() {
+            // Visibility bindings must settle before testing the outgoing owner.
+            Qt.callLater(window.retireHiddenSceneFocus)
+        }
         function onOperationFeedback(message) {
             operationNotice.message = message
             operationNotice.open()
