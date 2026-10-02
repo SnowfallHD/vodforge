@@ -109,6 +109,8 @@ Item {
         visible: false
         width: 780
         height: 480
+        minimumWidth: Math.ceil(presentationOverlay.minimumControlsWidth)
+        minimumHeight: presentationOverlay.height
         color: "black"
         title: scene.projection.title || "VODForge Player"
         // Windows adds default decorations only for a bare Qt.Window. Adding
@@ -131,7 +133,7 @@ Item {
             endOfStreamPolicy: VideoOutput.KeepLastFrame
             TapHandler { onTapped: scene.togglePlayback() }
         }
-        HoverHandler { onPointChanged: presentationOverlay.reveal() }
+        HoverHandler { id: presentationHover }
         Text {
             objectName: "presentationCaptionText"
             anchors.horizontalCenter: parent.horizontalCenter
@@ -153,6 +155,9 @@ Item {
             anchors.right: parent.right
             anchors.bottom: parent.bottom
             controlPrefix: "presentation"
+            surfaceHovered: presentationHover.hovered
+            menuOpen: playerOptions.visible || presentationCaptionMenu.visible
+            chapters: scene.appBridge.playbackChapters
             player: scene.player
             volume: scene.volume
             previews: scene.appBridge.playbackPreviews
@@ -267,7 +272,7 @@ Item {
                             anchors.fill: parent
                             fillMode: scene.videoFill ? VideoOutput.PreserveAspectCrop : VideoOutput.PreserveAspectFit
                         }
-                        HoverHandler { onPointChanged: embeddedOverlay.reveal() }
+                        HoverHandler { id: embeddedHover }
                         MouseArea {
                             anchors.fill: videoSurface
                             onClicked: scene.togglePlayback()
@@ -292,6 +297,9 @@ Item {
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.bottom: parent.bottom
+                            surfaceHovered: embeddedHover.hovered
+                            menuOpen: playerOptions.visible || captionsMenu.visible
+                            chapters: scene.appBridge.playbackChapters
                             player: scene.player
                             volume: scene.volume
                             previews: scene.appBridge.playbackPreviews

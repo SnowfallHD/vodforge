@@ -8,6 +8,7 @@ Item {
     required property var player
     required property real volume
     property var previews: []
+    property var chapters: []
     property url fallbackArtwork: ""
     property url lastPreviewImage: ""
     property real hoverSeconds: 0
@@ -15,7 +16,7 @@ Item {
     property bool fullscreen: false
     property bool floating: false
     property bool compact: width < 660
-    property bool controlsShown: true
+    readonly property bool controlsShown: visible
     signal playPauseRequested()
     signal seekRequested(real seconds)
     signal volumeRequested(real value)
@@ -25,45 +26,26 @@ Item {
     signal captionsRequested(var anchor)
     signal previewRequested(real seconds)
 
-    function reveal() {
-        controlsShown = true
-        if (player && player.playbackState === MediaPlayer.PlayingState)
-            hideTimer.restart()
+    property bool surfaceHovered: false
+    property bool menuOpen: false
+    readonly property bool keyboardEngaged: focusInside(Window.window ? Window.window.activeFocusItem : null)
+    readonly property bool interactionHeld: seek.pressed || volumeSlider.pressed || menuOpen || keyboardEngaged
+    readonly property real minimumControlsWidth: leftActions.width + rightActions.width + 48
+    function focusInside(item) {
+        while (item) {
+            if (item === controls) return true
+            item = item.parent
+        }
+        return false
     }
-
+    function reveal() { surfaceHovered = true }
     objectName: controlPrefix === "player" ? "embeddedPlayerOverlay" : "presentationPlayerOverlay"
     height: 104
-    visible: controlsShown
-    onPlayerChanged: { controlsShown = true; lastPreviewImage = "" }
+    visible: surfaceHovered || interactionHeld
+    onPlayerChanged: { lastPreviewImage = "" }
     onPreviewsChanged: {
         if (previews.length && previews[0].image)
             lastPreviewImage = previews[0].image
-    }
-    HoverHandler {
-        onHoveredChanged: {
-            if (hovered) {
-                controls.reveal()
-                hideTimer.stop()
-            } else if (controls.player && controls.player.playbackState === MediaPlayer.PlayingState)
-                hideTimer.restart()
-        }
-    }
-    Timer {
-        id: hideTimer
-        interval: 3000
-        onTriggered: {
-            if (controls.player && controls.player.playbackState === MediaPlayer.PlayingState)
-                controls.controlsShown = false
-        }
-    }
-    Connections {
-        target: controls.player
-        function onPlaybackStateChanged() {
-            controls.controlsShown = true
-            if (controls.player.playbackState === MediaPlayer.PlayingState)
-                hideTimer.restart()
-            else hideTimer.stop()
-        }
     }
 
     // The single lower scrim belongs to the video overlay, as in the native player.
@@ -73,6 +55,15 @@ Item {
             GradientStop { position: 0; color: "#00000000" }
             GradientStop { position: 1; color: "#dd000000" }
         }
+    }
+    Text {
+        objectName: "playerCurrentChapterTitle"
+        x: 18; y: 0
+        width: parent.width - 36
+        text: chapterTrack.currentChapter
+        color: "white"
+        font.pixelSize: 11
+        elide: Text.ElideRight
     }
     Basic.Slider {
         id: seek
@@ -88,7 +79,13 @@ Item {
         to: Math.max(1, controls.player ? controls.player.duration : 0)
         value: controls.player ? controls.player.position : 0
         onMoved: controls.seekRequested(value / 1000)
-        background: PlayerTrack { position: seek.visualPosition }
+        background: ChapterSeekTrack {
+            id: chapterTrack
+            objectName: "playerChapterTrack"
+            position: seek.visualPosition
+            duration: seek.to / 1000
+            chapters: controls.player && controls.player.duration > 0 ? controls.chapters : []
+        }
         handle: Rectangle {
             x: 5 + seek.visualPosition * (seek.width - 20)
             y: seek.height / 2 - 5
@@ -117,7 +114,7 @@ Item {
         id: hoverPreview
         objectName: "playerSeekPreview"
         visible: seekHover.containsMouse && controls.player && controls.player.duration > 0
-        width: 160; height: 112; radius: 7
+        width: 160; height: chapterTrack.chapterAt(controls.hoverSeconds) ? 132 : 112; radius: 7
         x: Math.max(4, Math.min(controls.width - width - 4, seekHover.x + seekHover.mouseX - width / 2))
         y: -height + 9
         color: "#f009090d"
@@ -132,6 +129,20 @@ Item {
             smooth: true
         }
         Text {
+            objectName: "playerHoverChapterTitle"
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.margins: 6
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 25
+            text: chapterTrack.chapterAt(controls.hoverSeconds)
+            visible: !!text
+            color: "white"
+            font.pixelSize: 11
+            elide: Text.ElideRight
+            horizontalAlignment: Text.AlignHCenter
+        }
+        Text {
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 5
@@ -143,6 +154,7 @@ Item {
     }
     Row {
         id: leftActions
+        objectName: "playerOverlayLeftActions"
         anchors.left: parent.left
         anchors.leftMargin: 18
         anchors.bottom: parent.bottom
@@ -213,6 +225,7 @@ Item {
     }
     Row {
         id: rightActions
+        objectName: "playerOverlayRightActions"
         anchors.right: parent.right
         anchors.rightMargin: 18
         anchors.bottom: parent.bottom
