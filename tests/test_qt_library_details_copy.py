@@ -245,11 +245,7 @@ def test_fact_copy_targets_do_not_add_row_gaps_or_clip_wrapped_values(
             for item in visual_descendants(window.contentItem())
             if item.objectName() == f"libraryFactRow_{section}_{next_label}"
         )
-        texts = [
-            item
-            for item in row.childItems()
-            if item.metaObject().className().startswith("QQuickText")
-        ]
+        texts = [item for item in row.childItems() if item.property("text") is not None]
         assert row.height() == max(
             30, *(item.property("implicitHeight") for item in texts)
         )

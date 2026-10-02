@@ -509,7 +509,8 @@ Column {
                          ["Failed", "Stopped", "Skipped"].indexOf(inspector.item.status) >= 0
                 onActivated: inspector.appBridge.downloadSelectedIssue()
             }
-            Text {
+            SelectableText {
+                objectName: "libraryIssueStatusText"
                 text: inspector.appBridge.status !== "Ready" ? inspector.appBridge.status : ""
                 visible: text.length > 0
                 color: theme.muted; font.pixelSize: 12
@@ -608,8 +609,9 @@ Column {
                     height: Math.min(54, Math.max(18, tagsText.implicitHeight))
                     clip: true
                     ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-                    Text {
+                    SelectableText {
                         id: tagsText
+                        objectName: "libraryInspectorTagsText"
                         text: (inspector.item.tags || []).join(", ") || "No tags yet"
                         width: parent.width
                         color: theme.text
@@ -657,7 +659,7 @@ Column {
                 height: parent.height - y
                 clip: true
                 ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-                Text {
+                SelectableText {
                     objectName: "libraryFolderDescriptionText"
                     text: inspector.item.descriptionInput || ""
                     width: descriptionScroll.availableWidth

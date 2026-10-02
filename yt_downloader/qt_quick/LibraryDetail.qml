@@ -154,7 +154,7 @@ Item {
                             height: Math.max(78, descriptionPanel.height - 112)
                             clip: true
                             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-                            Text {
+                            SelectableText {
                                 objectName: "libraryDescriptionText"
                                 text: detail.item.description || ""
                                 width: descriptionScroll.availableWidth
@@ -348,8 +348,10 @@ Item {
                                         height: Math.max(30, factLabel.implicitHeight, factValue.implicitHeight)
                                         spacing: 12
                                         Text { id: factLabel; y: (parent.height - height) / 2; text: modelData.label; width: Math.min(138, parent.width * 0.29); color: theme.muted; font.pixelSize: 14; wrapMode: Text.WordWrap }
-                                        Text {
+                                        SelectableText {
                                             id: factValue
+                                            objectName: "libraryFactValue_" + factsPanel.section + "_" + modelData.label
+                                            selectionEnabled: modelData.label !== "Source URL"
                                             y: (parent.height - height) / 2
                                             text: modelData.value
                                             width: parent.width - Math.min(138, parent.width * 0.29) - 12 -
@@ -358,14 +360,9 @@ Item {
                                             font.pixelSize: 14; wrapMode: Text.WrapAnywhere
                                             MouseArea {
                                                 anchors.fill: parent
+                                                enabled: modelData.label === "Source URL"
                                                 cursorShape: Qt.PointingHandCursor
-                                                onClicked: {
-                                                    if (modelData.label === "Source URL") detail.appBridge.openLibrarySource(detail.item.owner)
-                                                    else detail.appBridge.copyLibraryFact(
-                                                        detail.item.owner,
-                                                        factsPanel.section,
-                                                        modelData.label)
-                                                }
+                                                onClicked: detail.appBridge.openLibrarySource(detail.item.owner)
                                             }
                                         }
                                         CopyButton {
