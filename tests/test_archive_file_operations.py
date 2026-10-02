@@ -20,6 +20,7 @@ def item(tmp_path):
     media = folder / "video.mp4"
     media.write_bytes(b"fixture media")
     return {
+        "vodforge_retry_job": {"output_dir": str(tmp_path.resolve())},
         "id": "fixture-id",
         "title": "Fixture",
         "vodforge_output_type": "MP4",
@@ -862,6 +863,7 @@ def test_bulk_move_duplicate_folder_names_are_visible_conflicts(
         id="other",
         vodforge_output_dir=str(folder),
         vodforge_output_path=str(path),
+        vodforge_retry_job={"output_dir": str(folder.parent)},
     )
     records = [item, other]
     proposal = ops.plan_move_operation(

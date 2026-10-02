@@ -90,6 +90,7 @@ class FileOperationItem:
     artifacts: tuple[ArtifactEvidence, ...] = ()
     # Root-to-parent identity proofs detect a redirected ancestor on recheck.
     ancestors: tuple[tuple[Path, int, int], ...] = ()
+    reason: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -304,6 +305,59 @@ def plan_file_operation(
     return FileOperationPlan(snapshot, tuple(items))
 
 
+def _move_root(record: Mapping[str, Any], source: Path) -> Path | None:
+    job = record.get("vodforge_retry_job")
+    value = job.get("output_dir") if isinstance(job, Mapping) else None
+    if not isinstance(value, str) or not value:
+        return None
+    root = Path(value)
+    if not root.is_absolute() or root == source.parent:
+        return None
+    return root if source.parent.is_relative_to(root) else None
+
+
+def _move_target(record: Mapping[str, Any], source: Path, destination: Path) -> Path:
+    root = _move_root(record, source)
+    relative = source.parent.relative_to(root) if root else Path(source.parent.name)
+    return destination / relative
+
+
+def _ensure_move_parents(destination: Path, target: Path) -> None:
+    # Never traverse a redirect or overwrite a leaf. Shared hierarchy containers
+    # may already exist; each observed parent is validated before proceeding.
+    current = destination
+    directory_evidence(current)
+    for part in target.parent.relative_to(destination).parts:
+        current = current / part
+        try:
+            current.mkdir(mode=0o700)
+        except FileExistsError:
+            pass
+        directory_evidence(current)
+
+
+def _prune_move_source(record: Mapping[str, Any], item: FileOperationItem) -> None:
+    if item.source is None:
+        return
+    root = _move_root(record, item.source)
+    if root is None:
+        return
+    proofs = {path: (device, inode) for path, device, inode in item.ancestors}
+    current = item.source.parent
+    while current != root and current.is_relative_to(root):
+        try:
+            observed = current.lstat()
+            if _redirect(observed) or proofs.get(current) != (
+                observed.st_dev,
+                observed.st_ino,
+            ):
+                return
+            current.rmdir()  # Atomic empty-only removal; unrelated siblings stop it.
+        except OSError:
+            return
+        current = current.parent
+
+
 def plan_move_operation(
     records: Sequence[Mapping[str, Any]],
     owners: Sequence[str],
@@ -314,8 +368,11 @@ def plan_move_operation(
     """Include visible destination conflicts before the user confirms Move."""
     plan = plan_file_operation(records, owners, cancelled=cancelled)
     directory_evidence(destination)
+    record_by_owner = {history_archive_owner(dict(row)): row for row in records}
     folders = Counter(
-        item.source.parent.name.casefold()
+        str(
+            _move_target(record_by_owner[item.owner], item.source, destination)
+        ).casefold()
         for item in plan.items
         if item.state == "ready" and item.source is not None
     )
@@ -330,7 +387,12 @@ def plan_move_operation(
         if item.state != "ready" or item.source is None:
             items.append(item)
             continue
-        target = destination / item.source.parent.name
+        if _move_root(record_by_owner[item.owner], item.source) is None:
+            items.append(
+                replace(item, state="unavailable", reason="hierarchy_root_unknown")
+            )
+            continue
+        target = _move_target(record_by_owner[item.owner], item.source, destination)
         proposed = ArchivePath.parse(str(target))
         reserved = any(
             _ownership_key(claim)[: len(proposed.key)] == _ownership_key(proposed)
@@ -347,7 +409,7 @@ def plan_move_operation(
         conflict = (
             reserved
             or existing
-            or folders[item.source.parent.name.casefold()] > 1
+            or folders[str(target).casefold()] > 1
             or item.source.parent in target.parents
         )
         items.append(replace(item, state="conflict") if conflict else item)
@@ -975,7 +1037,17 @@ def move_files(
                 raise ValueError("Selected files changed")
             if directory_evidence(destination) != destination_proof:
                 raise ValueError("The destination changed")
-            target_folder = destination / item.source.parent.name
+            source_record = next(
+                row for row in records if history_archive_owner(dict(row)) == item.owner
+            )
+            target_folder = _move_target(source_record, item.source, destination)
+            if any(
+                len(str(target_folder / artifact.path.name).encode("utf-16-le")) // 2
+                > 240
+                for artifact in item.artifacts
+            ):
+                raise ValueError("Output path is too long; choose another destination")
+            _ensure_move_parents(destination, target_folder)
             # Refuse a destination inside the source folder, including the same
             # folder. The directory proofs above have already excluded aliases.
             if (
@@ -1094,6 +1166,17 @@ def move_files(
         journal.write()
     except (OSError, ValueError) as journal_error:
         raise FileOperationUncertain(journal.path) from journal_error
+    # Prune only after the complete durable receipt: old pending receipts keep
+    # their original directory-proof recovery contract unchanged.
+    if journal.document["state"] == "completed":
+        for item in plan.items:
+            if (item.owner, "completed") in outcomes:
+                source_record = next(
+                    row
+                    for row in records
+                    if history_archive_owner(dict(row)) == item.owner
+                )
+                _prune_move_source(source_record, item)
     return FileOperationResult(tuple(current), tuple(outcomes), journal.path)
 
 
