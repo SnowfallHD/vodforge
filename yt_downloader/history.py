@@ -66,6 +66,7 @@ HISTORY_METADATA_KEYS = (
     "vodforge_archive_annotation_owner",
     "vodforge_progress_key",
     "vodforge_relinked",
+    "vodforge_archive_root",
     RETRY_JOB_METADATA_KEY,
     "vodforge_output_config_display",
 )
@@ -588,6 +589,13 @@ def sanitize_history_record(
             from .output_config_snapshot import sanitize_output_config_display
 
             value = sanitize_output_config_display(value)
+        elif key == "vodforge_archive_root":
+            try:
+                value = (
+                    str(ArchivePath.parse(value)) if isinstance(value, str) else None
+                )
+            except ValueError:
+                value = None
         elif key == RETRY_JOB_METADATA_KEY:
             value = _json_safe(dict(value)) if isinstance(value, dict) else None
         elif key in {"webpage_url", "original_url"}:

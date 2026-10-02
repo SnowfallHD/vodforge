@@ -81,3 +81,59 @@ def test_existing_nested_destination_never_overwritten(tmp_path):
         [record], [history_archive_owner(record)], destination
     )
     assert plan.counts == {"conflict": 1}
+
+
+def test_repeated_move_after_restart_preserves_retry_configuration(tmp_path):
+    from yt_downloader.history import load_history
+
+    root = tmp_path / "old"
+    record = fixture(root, "channel/playlist/video", "a")
+    execute(tmp_path, [record])
+    history = tmp_path / "history.json"
+    restarted = load_history(history)
+    assert restarted[0]["vodforge_archive_root"] == str(tmp_path / "new")
+    assert restarted[0]["vodforge_retry_job"] == record["vodforge_retry_job"]
+    destination = tmp_path / "third"
+    destination.mkdir()
+    proposal = ops.plan_move_operation(
+        restarted, [history_archive_owner(restarted[0])], destination
+    )
+    assert proposal.counts == {"ready": 1}
+    second = ops.move_files(
+        proposal, restarted, destination, history, tmp_path / "file-operations"
+    )
+    assert second.outcomes[0][1] == "completed"
+    assert (destination / "channel/playlist/video/video.mp4").read_bytes() == b"a"
+    assert not (tmp_path / "new/channel").exists()
+    assert load_history(history)[0]["vodforge_archive_root"] == str(destination)
+    assert second.records[0]["vodforge_retry_job"] == record["vodforge_retry_job"]
+
+
+def test_recovery_prunes_only_new_proven_root_after_verified_cleanup(tmp_path):
+    root = tmp_path / "old"
+    record = fixture(root, "channel/playlist/video", "a")
+    destination = tmp_path / "new"
+    destination.mkdir()
+    history = tmp_path / "history.json"
+    ops._save_durable_history(history, [record])
+    proposal = ops.plan_move_operation(
+        [record], [history_archive_owner(record)], destination
+    )
+
+    def interrupt(stage):
+        if stage == "history_saved":
+            raise OSError("fixture interrupted")
+
+    result = ops.move_files(
+        proposal,
+        [record],
+        destination,
+        history,
+        tmp_path / "file-operations",
+        boundary=interrupt,
+    )
+    assert result.outcomes[0][1] == "cleanup_pending"
+    recovered = ops.recover_move_cleanup(result.journal, result.records, history)
+    assert recovered.outcomes[0][1] == "completed"
+    assert not (root / "channel").exists()
+    assert (destination / "channel/playlist/video/video.mp4").read_bytes() == b"a"

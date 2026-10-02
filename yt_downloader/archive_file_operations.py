@@ -307,7 +307,9 @@ def plan_file_operation(
 
 def _move_root(record: Mapping[str, Any], source: Path) -> Path | None:
     job = record.get("vodforge_retry_job")
-    value = job.get("output_dir") if isinstance(job, Mapping) else None
+    value = record.get("vodforge_archive_root")
+    if value is None:
+        value = job.get("output_dir") if isinstance(job, Mapping) else None
     if not isinstance(value, str) or not value:
         return None
     root = Path(value)
@@ -1055,7 +1057,12 @@ def move_files(
                 or item.source.parent in target_folder.parents
             ):
                 raise ValueError("Choose another destination")
-            journal.update(index, "claim_requested", destination=str(target_folder))
+            journal.update(
+                index,
+                "claim_requested",
+                destination=str(target_folder),
+                source_archive_root=str(_move_root(source_record, item.source)),
+            )
             target_folder.mkdir(mode=0o700)
             target_proof = directory_evidence(target_folder)
             journal.update(
@@ -1093,6 +1100,12 @@ def move_files(
             prospective = _relocate_one(
                 current, item.owner, target_folder / item.source.name
             )
+            prospective_row = next(
+                row
+                for row in prospective
+                if str(recorded_artifact(row)) == str(target_folder / item.source.name)
+            )
+            prospective_row["vodforge_archive_root"] = str(destination)
             new_index = next(
                 i
                 for i, row in enumerate(current)
@@ -1433,6 +1446,21 @@ def recover_move_cleanup(
         outcomes.append((entry["owner"], "completed"))
     journal.document["state"] = "completed"
     journal.write()
+    for entry in document["items"]:
+        if entry.get("state") == "completed" and entry.get("source_archive_root"):
+            source = Path(entry["source"])
+            item = FileOperationItem(
+                entry["owner"],
+                entry["fingerprint"],
+                source,
+                "ready",
+                ancestors=tuple(
+                    (Path(p), int(d), int(i)) for p, d, i in entry["ancestors"]
+                ),
+            )
+            _prune_move_source(
+                {"vodforge_archive_root": entry["source_archive_root"]}, item
+            )
     return FileOperationResult(tuple(current), tuple(outcomes), receipt)
 
 
