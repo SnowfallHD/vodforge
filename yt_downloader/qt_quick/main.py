@@ -2075,6 +2075,10 @@ class Bridge(QObject):
                 attachment += "\n\nYouTube source link: " + source
         return attachment.strip() or "No diagnostic attachments selected."
 
+    @Property(bool, constant=True)
+    def whatsNewAvailable(self) -> bool:
+        return bool(SHOWCASE_MODE == "whats-new" and SHOWCASE_ID and HIGHLIGHTS)
+
     @Property(str, notify=editorialChanged)
     def editorialHeading(self) -> str:
         return {
@@ -4374,6 +4378,22 @@ class Bridge(QObject):
         if not self._support.close():
             return False
         self.supportChanged.emit()
+        return True
+
+    @Slot(result=bool)
+    def openWhatsNew(self) -> bool:
+        if (
+            not self.whatsNewAvailable
+            or not self._analytics.settled
+            or self._editorial_kind
+            or self._support.kind
+        ):
+            return False
+        self._editorial_kind = "whats-new"
+        self._editorial_slides = HIGHLIGHTS
+        self.editorialChanged.emit()
+        self.editorialRequested.emit()
+        self._record_update_feature("announcement", "shown")
         return True
 
     @Slot(result=bool)

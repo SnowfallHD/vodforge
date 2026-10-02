@@ -108,6 +108,7 @@ def test_output_settings_try_it_releases_modal_before_opening_settings():
         seen,
         lambda: True,
         mode="whats-new",
+        highlights=tuple(h for h in HIGHLIGHTS if h.key == "output-settings"),
         open_settings=lambda: opened.append(root.grab_current()),
     )
     try:

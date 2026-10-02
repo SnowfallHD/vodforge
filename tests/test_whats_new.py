@@ -28,31 +28,46 @@ class Seen:
 
 
 def WhatsNewOwner(*args, **kwargs):
-    # Keep evergreen showcase behavior covered while this release is silent.
+    # Keep evergreen showcase behavior explicit in owner tests.
     kwargs.setdefault("mode", "whats-new")
     return ReleaseWhatsNewOwner(*args, **kwargs)
 
 
-@pytest.mark.parametrize("seen", ["", SHOWCASE_ID, "older-release"])
-def test_next_release_has_no_announcement_or_telemetry(seen):
+@pytest.mark.parametrize(
+    ("seen", "pending"), [("", True), (SHOWCASE_ID, False), ("older-release", True)]
+)
+def test_upcoming_release_explicitly_enables_orientation(seen, pending):
     events = []
     owner = ReleaseWhatsNewOwner(
         None, Seen(seen), lambda: True, on_feature=events.append
     )
-    assert not owner.pending
-    assert owner.highlights == ()
-    owner.start()
-    owner.show()
-    assert owner.panel is None
-    assert events == []
-
-
-def test_output_settings_catalog_remains_available_for_future_releases():
-    assert [h.key for h in HIGHLIGHTS] == ["output-settings"]
-    owner = WhatsNewOwner(None, Seen("0.2.0-youtube-access-tip"), lambda: True)
-    assert owner.pending
-    assert owner.heading == "What’s new"
+    assert owner.pending is pending
     assert owner.highlights == HIGHLIGHTS
+    assert owner.heading == "What’s new"
+    assert events == []  # Eligibility alone does not announce a display.
+
+
+def test_orientation_catalog_names_real_destinations_and_supported_previews():
+    assert [h.key for h in HIGHLIGHTS] == [
+        "workspace",
+        "watch",
+        "library",
+        "output-settings",
+        "captions",
+    ]
+    copy = " ".join(h.description for h in HIGHLIGHTS)
+    for destination in (
+        "Forge",
+        "Watch",
+        "Activity",
+        "Library",
+        "My Files",
+        "Issues & Recovery",
+        "Settings",
+    ):
+        assert destination in copy
+    owner = WhatsNewOwner(None, Seen("output-settings-presets-v2"), lambda: True)
+    assert owner.pending and owner.highlights == HIGHLIGHTS
 
 
 def test_showcase_dismissal_survives_settings_reload(tmp_path):

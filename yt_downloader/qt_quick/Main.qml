@@ -282,9 +282,10 @@ Window {
         parent: window.contentItem
         preferAbove: true
         width: 235
-        height: 152
+        height: helpMenuContent.implicitHeight + 2 * padding + 2
         padding: 3
         Column {
+            id: helpMenuContent
             anchors.fill: parent
             spacing: 3
             StoneButton {
@@ -296,6 +297,13 @@ Window {
                 width: parent.width; height: 46
                 label: "Write a review"
                 onActivated: { helpMenu.close(); settingsPopup.close(); bridge.openSupport("review") }
+            }
+            StoneButton {
+                objectName: "helpWhatsNew"
+                width: parent.width; height: 46
+                visible: bridge.whatsNewAvailable
+                label: "What’s new"
+                onActivated: { helpMenu.close(); settingsPopup.close(); bridge.openWhatsNew() }
             }
             StoneButton {
                 width: parent.width; height: 46

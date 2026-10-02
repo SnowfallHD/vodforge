@@ -38,21 +38,48 @@ class FeatureHighlight:
 # Editorial opt-in: change this ID ONLY when intentionally shipping a new
 # showcase. A new app version, patch release, or release-note edit is not enough.
 # An empty highlights tuple disables the showcase. Keep copy factual and short.
-SHOWCASE_ID = "output-settings-presets-v2"
+SHOWCASE_ID = "workspace-orientation-v1"
 HIGHLIGHTS = (
     FeatureHighlight(
+        "workspace",
+        "A place for every step",
+        "Use Forge for downloads, Watch for playback, Library to organize media, and "
+        "Activity for run details. The Run Deck stays with you between views.",
+        NativePreview.ACTIVITY,
+    ),
+    FeatureHighlight(
+        "watch",
+        "Your saved media in Watch",
+        "Open Watch to browse videos, playlists and channels. Play a title inline, "
+        "then use Pop out or Fullscreen to keep watching.",
+        NativePreview.PLAYER,
+    ),
+    FeatureHighlight(
+        "library",
+        "Find and organize in Library",
+        "Browse All Media, Playlists or Channels. Open My Files for folders and "
+        "Issues & Recovery. Select an item for details, tags, notes and file actions.",
+        NativePreview.LIBRARY,
+    ),
+    FeatureHighlight(
         "output-settings",
-        "Output settings for your next step",
-        "Source-aware MP4 presets for your next task, tuned for CPU and optional NVIDIA "
-        "encoding on Windows. Choose a preset or Custom in Settings → Optimize for.",
+        "Your download choices",
+        "Forge shows the chosen options for your next download. Open Settings "
+        "to adjust presets, YouTube access and the output folder.",
         NativePreview.OUTPUT_SETTINGS,
+    ),
+    FeatureHighlight(
+        "captions",
+        "Captions and translated subtitles",
+        "Use Captions for a saved original track and Subtitles for a saved translation. "
+        "To request a translation with a new MP4, choose its language in Settings.",
+        NativePreview.TRANSPORT,
     ),
 )
 
-
 # Release editorial switch: choose one surface, never both. Keep the current
-# mode until a release explicitly opts into the tip and changes SHOWCASE_ID.
-SHOWCASE_MODE = "none"
+# mode until a release explicitly changes its editorial choice and SHOWCASE_ID.
+SHOWCASE_MODE = "whats-new"
 DID_YOU_KNOW_HIGHLIGHTS = (
     FeatureHighlight(
         "youtube-access-tip",
