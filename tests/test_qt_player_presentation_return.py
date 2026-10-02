@@ -1,7 +1,9 @@
 """Fullscreen/native exit restores the originating surface and inline recovery."""
 
+import time
+
 import pytest
-from PySide6.QtCore import Property, QObject, Qt
+from PySide6.QtCore import Property, QEventLoop, QObject, Qt, QTimer
 from PySide6.QtGui import QImage
 from PySide6.QtMultimedia import QVideoFrame
 from PySide6.QtQuick import QQuickWindow
@@ -112,7 +114,13 @@ def test_initial_popout_uses_actual_rotated_frame_and_media_reset(player_scene):
     frame.setRotationAngle(QVideoFrame.Rotation90)
     surface = floating.findChild(QObject, "watchPresentationVideoSurface")
     surface.property("videoSink").setVideoFrame(frame)
-    QTest.qWait(30)
+    # Source/content rect updates restart the initial-size timer. Wait for its
+    # actual completion instead of assuming it fires within 30 ms under load.
+    deadline = time.monotonic() + 1.0
+    while floating.property("naturalSizePending") and time.monotonic() < deadline:
+        loop = QEventLoop()
+        QTimer.singleShot(10, loop.quit)
+        loop.exec()
     flush(app)
     assert floating.property("displayedAspect") == pytest.approx(9 / 16)
     assert floating.width() / floating.height() == pytest.approx(9 / 16, abs=0.01)
