@@ -3,7 +3,6 @@
 import time
 
 import pytest
-
 from PySide6.QtCore import QUrl
 
 from tests.test_qt_scene_port import make_job, qt_app, qt_main, saved
