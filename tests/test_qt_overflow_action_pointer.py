@@ -31,8 +31,8 @@ def _click(window, point, button):
 
 
 def test_overflow_fifth_owner_right_click_retry_admits_exact_run(
-    run_scene,
-    tmp_path,  # noqa: F811 - imported pytest fixture
+    run_scene,  # noqa: F811 - imported pytest fixture
+    tmp_path,
 ):
     app, bridge, window, trigger, overflow = run_scene
     # Freeze background refresh for a deterministic populated ordering; the real
