@@ -612,6 +612,28 @@ Item {
                         onActivated: scene.importRequested()
                     }
                 }
+                Flow {
+                    objectName: "librarySelectionBar"
+                    visible: scene.selectionMode
+                    width: parent.width
+                    height: visible ? childrenRect.height : 0
+                    spacing: 12
+                    Text {
+                        text: scene.selectedEntityCount ? scene.selectedEntityCount + " selected" : "Select items"
+                        color: theme.muted
+                        font.pixelSize: 14
+                        height: 40
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    StoneButton {
+                        objectName: "librarySelectionActionsButton"
+                        visible: scene.selectedEntityCount > 0
+                        label: "Actions…"
+                        width: 175
+                        height: 40
+                        onActivated: { selectionActions.anchorItem = this; selectionActions.toggleFrom(this) }
+                    }
+                }
                 Item {
                     id: routeGroupsSlot
                     objectName: "libraryRouteGroupsSlot"
@@ -633,27 +655,6 @@ Item {
                         scene.appBridge.setLibrarySearch("")
                         scene.appBridge.setLibraryCategory("All categories")
                         scene.appBridge.navigateLibrary("all")
-                    }
-                }
-                Flow {
-                    visible: scene.selectionMode
-                    width: parent.width
-                    height: visible ? 40 : 0
-                    spacing: 12
-                    Text {
-                        text: scene.selectedEntityCount ? scene.selectedEntityCount + " selected" : "Select items"
-                        color: theme.muted
-                        font.pixelSize: 14
-                        height: 40
-                        verticalAlignment: Text.AlignVCenter
-                    }
-                    StoneButton {
-                        objectName: "librarySelectionActionsButton"
-                        visible: scene.selectedEntityCount > 0
-                        label: "Actions…"
-                        width: 175
-                        height: 40
-                        onActivated: { selectionActions.anchorItem = this; selectionActions.toggleFrom(this) }
                     }
                 }
                 Flow {
