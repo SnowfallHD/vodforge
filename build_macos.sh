@@ -60,6 +60,7 @@ fi
     --ignore=tests/test_qt_terminal_dismissal.py \
     --ignore=tests/test_qt_worker_control_context.py \
     --ignore=tests/test_qt_analytics_session.py \
+    --ignore=tests/test_qt_artwork_continuity.py \
     --ignore=tests/test_qt_artwork_image.py \
     --ignore=tests/test_qt_metadata_preview.py \
     --ignore=tests/test_qt_presentation_diagnostics.py \
@@ -130,6 +131,7 @@ fi
     tests/test_qt_terminal_dismissal.py \
     tests/test_qt_worker_control_context.py \
     tests/test_qt_analytics_session.py \
+    tests/test_qt_artwork_continuity.py \
     tests/test_qt_artwork_image.py \
     tests/test_qt_metadata_preview.py \
     tests/test_qt_presentation_diagnostics.py \
