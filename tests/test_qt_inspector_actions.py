@@ -222,15 +222,17 @@ def test_inspector_full_path_is_preserved_in_bounded_panel(scene, tmp_path, widt
     inspector = window.findChild(QObject, "libraryFolderInspector")
     panel = window.findChild(QObject, "libraryInspectorRecoveryDetails")
     path = window.findChild(QObject, "libraryInspectorExactLocation")
-    assert path.property("text") == bridge.inspectorRecoveryActions["location"]
-    assert len(path.property("text")) > 300
+    assert path.property("path") == bridge.inspectorRecoveryActions["location"]
+    assert len(path.property("path")) > 300
     assert inspector.property("visible") == (width == 1100)
     assert inspector.width() <= window.width()
     if inspector.property("visible"):
         assert panel.width() == pytest.approx(inspector.width())
         assert 0 < panel.height() <= 168
         assert 0 < path.width() <= panel.width()
-        assert path.property("lineCount") > 1
+        assert path.height() == 34
+        label = path.findChild(QObject, "outputPathText")
+        assert label.property("lineCount") == 1
 
 
 @pytest.mark.parametrize("failure", [PermissionError("denied"), OSError("offline")])

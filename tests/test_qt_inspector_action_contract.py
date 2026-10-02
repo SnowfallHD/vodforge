@@ -8,14 +8,10 @@ from yt_downloader.qt_quick import main as qt_main
 def test_inspector_actions_use_authoritative_selection_and_keep_file_actions_separate():
     source = (Path(qt_main.__file__).parent / "LibraryFolderInspector.qml").read_text()
     start = source.index('objectName: "libraryInspectorRecoveryDetails"')
-    end = source.index("id: openCurrentFolder", start)
-    panel = source[start:end]
-    assert "height: 52" in panel
-    assert (
-        'wrapMode: inspector.section === "Description" ? Text.NoWrap : Text.WrapAnywhere'
-        in panel
-    )
-    assert "VerticalScrollChain { nestedScrollView: recoveryDetailsScroll }" in panel
+    panel = source[start:]
+    assert "id: recoveryActionsRow" in source
+    assert "id: recoveryDetailsScroll" not in source
+    assert 'path: inspector.recoveryActions.location || ""' in source
     assert "visible: !!inspector.recoveryActions.canOpenLocation" in panel
     assert "openInspectorLocation(inspector.recoveryActions.selectionKey)" in panel
     assert "visible: !!inspector.recoveryActions.dismissRunId" in panel

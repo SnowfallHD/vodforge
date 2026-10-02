@@ -115,75 +115,16 @@ Column {
             }
         }
     }
-    StoneField {
-        objectName: "libraryInspectorRecoveryDetails"
-        visible: !!inspector.recoveryActions.selectionKey &&
-                 (!!inspector.recoveryActions.location || inspector.recoveryActions.canOpenLocation ||
-                  !!inspector.recoveryActions.dismissRunId || !!inspector.recoveryActions.savedOwner)
+    OutputPathField {
+        id: recoveryPath
+        objectName: "libraryInspectorExactLocation"
+        visible: !!inspector.recoveryActions.location
         width: parent.width
-        // Keep tab positions stable while full paths remain vertically scrollable.
-        height: 52
-        ScrollView {
-            id: recoveryDetailsScroll
-            anchors.fill: parent
-            anchors.margins: 2
-            clip: true
-            contentWidth: availableWidth
-            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-            VerticalScrollChain { nestedScrollView: recoveryDetailsScroll }
-            Column {
-                id: recoveryDetailsContent
-                width: recoveryDetailsScroll.availableWidth
-                spacing: 2
-                Text {
-                    objectName: "libraryInspectorExactLocation"
-                    visible: !!text
-                    width: parent.width
-                    text: inspector.recoveryActions.location || ""
-                    wrapMode: inspector.section === "Description" ? Text.NoWrap : Text.WrapAnywhere
-                    elide: inspector.section === "Description" ? Text.ElideRight : Text.ElideNone
-                    color: theme.muted
-                    font.pixelSize: 12
-                    HoverHandler { id: recoveryLocationHover }
-                    ToolTip.visible: recoveryLocationHover.hovered && !!text
-                    ToolTip.text: text
-                }
-                Flow {
-                    width: parent.width
-                    height: childrenRect.height
-                    spacing: 4
-                StoneButton {
-                    objectName: "libraryInspectorOpenLocation"
-                    visible: !!inspector.recoveryActions.canOpenLocation
-                    width: Math.min(parent.width, implicitWidth)
-                    height: 28
-                    size: "inline"
-                    label: "Open location"
-                    onActivated: inspector.appBridge.openInspectorLocation(inspector.recoveryActions.selectionKey)
-                }
-                StoneButton {
-                    objectName: "libraryInspectorDismissRun"
-                    visible: !!inspector.recoveryActions.dismissRunId
-                    width: Math.min(parent.width, implicitWidth)
-                    height: 28
-                    size: "inline"
-                    label: "Dismiss run"
-                    accessibilityLabel: "Dismiss run; keep downloaded files"
-                    onActivated: inspector.appBridge.dismissTerminal(inspector.recoveryActions.dismissRunId)
-                }
-                StoneButton {
-                    objectName: "libraryInspectorRemoveCard"
-                    visible: !!inspector.recoveryActions.savedOwner
-                    width: Math.min(parent.width, implicitWidth)
-                    height: 28
-                    size: "inline"
-                    label: "Remove Library card"
-                    accessibilityLabel: "Remove Library card; keep downloaded files"
-                    onActivated: inspector.appBridge.requestInspectorLibraryRemoval(inspector.recoveryActions.selectionKey)
-                }
-                }
-            }
-        }
+        height: 34
+        path: inspector.recoveryActions.location || ""
+        interactive: !!inspector.recoveryActions.canOpenLocation
+        accessibilityLabel: "Open output location"
+        onActivated: inspector.appBridge.openInspectorLocation(inspector.recoveryActions.selectionKey)
     }
     StoneButton {
         id: openCurrentFolder
@@ -586,15 +527,6 @@ Column {
         title: "Choose output folder for this retry"
         onAccepted: inspector.appBridge.chooseIssueOutputUrl(selectedFolder)
     }
-    StoneButton {
-        id: openDetails
-        objectName: "libraryFolderOpenDetails"
-        label: "Open details"
-        width: parent.width; height: 40
-        visible: !!inspector.item.owner
-        enabled: !!inspector.item.owner
-        onActivated: inspector.appBridge.openSelectedLibraryFolderDetail()
-    }
     Row {
         id: tabs
         visible: !!inspector.item.owner
@@ -625,7 +557,7 @@ Column {
         height: inspector.section === "Item" ? itemColumn.childrenRect.height + 20 :
             // The selected-item controls above this panel are content-dependent.
             // Use the rendered panel position rather than an incomplete height sum.
-            Math.max(80, inspector.targetPanelBottom - detailsPanel.y)
+            Math.max(40, inspector.targetPanelBottom - detailsPanel.y - recoveryFooter.height - inspector.spacing)
         Item {
             anchors.fill: parent
             anchors.margins: 10
@@ -740,5 +672,63 @@ Column {
                 }
             }
         }
+    }
+    Item {
+        width: parent.width
+        height: Math.max(0, inspector.targetPanelBottom - y - recoveryFooter.height - inspector.spacing)
+    }
+    Column {
+        id: recoveryFooter
+        objectName: "libraryInspectorActionFooter"
+        width: inspector.width
+        spacing: 6
+        height: implicitHeight
+        StoneButton {
+            id: openDetails
+            objectName: "libraryFolderOpenDetails"
+            label: "Open details"
+            width: parent.width; height: 40
+            visible: !!inspector.item.owner
+            enabled: !!inspector.item.owner
+            onActivated: inspector.appBridge.openSelectedLibraryFolderDetail()
+        }
+        Flow {
+            id: recoveryActionsRow
+            objectName: "libraryInspectorRecoveryDetails"
+            visible: !!inspector.recoveryActions.selectionKey
+            width: inspector.width
+            height: childrenRect.height
+            spacing: 4
+            StoneButton {
+                objectName: "libraryInspectorOpenLocation"
+                visible: !!inspector.recoveryActions.canOpenLocation
+                width: Math.min(parent.width, implicitWidth)
+                height: 28
+                size: "inline"
+                label: "Open location"
+                onActivated: inspector.appBridge.openInspectorLocation(inspector.recoveryActions.selectionKey)
+            }
+            StoneButton {
+                objectName: "libraryInspectorDismissRun"
+                visible: !!inspector.recoveryActions.dismissRunId
+                width: Math.min(parent.width, implicitWidth)
+                height: 28
+                size: "inline"
+                label: "Dismiss run"
+                accessibilityLabel: "Dismiss run; keep downloaded files"
+                onActivated: inspector.appBridge.dismissTerminal(inspector.recoveryActions.dismissRunId)
+            }
+            StoneButton {
+                objectName: "libraryInspectorRemoveCard"
+                visible: !!inspector.recoveryActions.savedOwner
+                width: Math.min(parent.width, implicitWidth)
+                height: 28
+                size: "inline"
+                label: "Remove Library card"
+                accessibilityLabel: "Remove Library card; keep downloaded files"
+                onActivated: inspector.appBridge.requestInspectorLibraryRemoval(inspector.recoveryActions.selectionKey)
+            }
+        }
+
     }
 }

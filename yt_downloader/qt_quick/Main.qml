@@ -1079,35 +1079,14 @@ Window {
                         Layout.leftMargin: 7
                         Layout.preferredWidth: 52
                     }
-                    StoneField {
+                    OutputPathField {
                         objectName: "forgeDestinationField"
                         Layout.preferredWidth: window.forgeDensity === "compact" ? 170 : window.forgeDensity === "balanced" ? 210 : 240
                         Layout.preferredHeight: 34
+                        path: bridge.outputPath
                         interactive: true
                         accessibilityLabel: "Choose output folder"
-                        HoverHandler { id: forgeDestinationHover }
-                        ToolTip.visible: forgeDestinationHover.hovered
-                        ToolTip.text: bridge.outputPath
                         onActivated: outputFolderDialog.open()
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: 12
-                            anchors.rightMargin: 12
-                            spacing: 8
-                            Image {
-                                source: "image://vodforge/icon/folder.png/r" + bridge.themeRevision
-                                Layout.preferredWidth: 18
-                                Layout.preferredHeight: 18
-                                fillMode: Image.PreserveAspectFit
-                            }
-                            Text {
-                                text: bridge.outputPath
-                                color: theme.text
-                                font.pixelSize: 15
-                                elide: Text.ElideLeft
-                                Layout.fillWidth: true
-                            }
-                        }
                     }
                 }
                 Item { Layout.fillWidth: true }
