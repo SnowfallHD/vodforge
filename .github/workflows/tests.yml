@@ -73,6 +73,7 @@ jobs:
           --ignore=tests/test_qt_library_group_selection.py
           --ignore=tests/test_qt_runtime_event_ownership.py
           --ignore=tests/test_qt_worker_control_context.py
+          --ignore=tests/test_qt_overflow_action_pointer.py
           --ignore=tests/test_qt_action_feedback_ownership.py
           --ignore=tests/test_qt_floating_player_chrome.py
           --ignore=tests/test_qt_player_responsive_stage.py
@@ -117,6 +118,7 @@ jobs:
           tests/test_qt_library_group_selection.py
           tests/test_qt_runtime_event_ownership.py
           tests/test_qt_worker_control_context.py
+          tests/test_qt_overflow_action_pointer.py
           tests/test_qt_action_feedback_ownership.py
           tests/test_qt_floating_player_chrome.py
           tests/test_qt_player_responsive_stage.py
