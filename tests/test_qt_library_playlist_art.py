@@ -1,11 +1,11 @@
 """Playlist artwork retains its full frame as responsive cards resize."""
 
+import time
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QEventLoop, QTimer, QUrl
 from PySide6.QtGui import QColor, QImage, QPainter
-from PySide6.QtTest import QTest
 
 from tests.test_qt_scene_port import qt_app, saved, visual_item
 from yt_downloader.qt_quick import main as qt_main
@@ -19,6 +19,13 @@ def test_playlist_art_frame(tmp_path, monkeypatch, width, real_art):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
     app = qt_app()
+    assert app is not None
+
+    def settle(milliseconds):
+        loop = QEventLoop()
+        QTimer.singleShot(milliseconds, loop.quit)
+        loop.exec()
+
     bridge = qt_main.Bridge(None)
     bridge._runtime.history = [saved(tmp_path, "Fictional media", "MP4")]
     if real_art:
@@ -42,12 +49,15 @@ def test_playlist_art_frame(tmp_path, monkeypatch, width, real_art):
         bridge.select("Library")
         bridge.navigateLibrary("playlists")
         for _ in range(3):
-            app.processEvents()
+            settle(10)
         art = visual_item(window.contentItem(), "libraryGroupArtworkImage")
         assert art is not None
         window.grabWindow()
-        QTest.qWait(250)
-        app.processEvents()
+        settle(25)
+        if real_art:
+            deadline = time.monotonic() + 2
+            while art.property("waitingForPaint") and time.monotonic() < deadline:
+                settle(20)
         assert abs(art.width() / art.height() - 16 / 9) < 0.01
         assert art.property("cover") is False
         card = art.parentItem()
@@ -70,4 +80,4 @@ def test_playlist_art_frame(tmp_path, monkeypatch, width, real_art):
     finally:
         bridge.close()
         engine.deleteLater()
-        app.processEvents()
+        settle(0)
