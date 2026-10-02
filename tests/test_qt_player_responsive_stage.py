@@ -1,7 +1,9 @@
 """Player and recommendations share viewport growth without stretching video."""
 
+from itertools import pairwise
+
 import pytest
-from PySide6.QtCore import QCoreApplication, QEvent, QObject
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, QPointF
 
 from tests.test_qt_scene_port import qt_app, saved
 from yt_downloader.qt_quick import main as qt_main
@@ -27,7 +29,13 @@ def test_player_stage_and_recommendations_grow_with_viewport(tmp_path, monkeypat
         compact = window.findChild(QObject, "playerRelatedCompact")
         scene = window.findChild(QObject, "watchPlayerScene")
         sizes = []
-        for width, height in ((820, 650), (1100, 800), (1280, 800), (2400, 1200)):
+        for width, height in (
+            (820, 650),
+            (1100, 800),
+            (1280, 800),
+            (1600, 900),
+            (2400, 1200),
+        ):
             window.resize(width, height)
             for _ in range(8):
                 app.processEvents()
@@ -36,12 +44,27 @@ def test_player_stage_and_recommendations_grow_with_viewport(tmp_path, monkeypat
             assert bool(side.property("visible")) == bool(scene.property("wide"))
             assert bool(compact.property("visible")) != bool(scene.property("wide"))
             if side.property("visible"):
-                assert 310 <= side.width() <= 480
+                # The bounded sidebar leaves the majority of the row for video.
+                assert 270 <= side.width() <= 360
+                row = stage.parentItem().parentItem()
+                assert stage.width() >= row.width() * 0.65
+                assert stage.width() >= scene.width() * 0.60
+                assert side.width() <= scene.width() * 0.30
+                for item in (stage, side):
+                    origin = item.mapToItem(scene, QPointF(0, 0))
+                    assert origin.x() >= -1
+                    assert origin.x() + item.width() <= scene.width() + 1
+                    assert origin.y() >= -1
+                    assert origin.y() + item.height() <= scene.height() + 1
                 gap = side.x() - (stage.parentItem().x() + stage.x() + stage.width())
                 assert 15 <= gap <= 40
                 sizes.append((stage.width(), side.width()))
-        assert sizes[1][0] > sizes[0][0] * 1.3
-        assert sizes[1][1] > sizes[0][1] * 1.3
+        assert len(sizes) == 3
+        assert all(after[0] > before[0] for before, after in pairwise(sizes))
+        assert all(after[1] >= before[1] for before, after in pairwise(sizes))
+        assert sizes[-1][0] > sizes[0][0] * 1.5
+        assert sizes[-1][1] > sizes[0][1]
+        assert sizes[-1][1] == pytest.approx(360)
     finally:
         window.close()
         engine.deleteLater()
