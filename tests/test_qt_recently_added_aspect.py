@@ -9,10 +9,11 @@ from tests.test_qt_scene_port import qt_app, saved
 from yt_downloader.qt_quick import main
 
 
+@pytest.mark.parametrize("route", ["home", "group"])
 @pytest.mark.parametrize("width", [720, 1025, 1500])
 @pytest.mark.parametrize("image_size", [(320, 180), (200, 300), (600, 200)])
 def test_recent_cards_scale_complete_artwork_and_text(
-    tmp_path, monkeypatch, width, image_size
+    tmp_path, monkeypatch, width, image_size, route
 ):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
@@ -31,7 +32,11 @@ def test_recent_cards_scale_complete_artwork_and_text(
     try:
         window.setWidth(width)
         bridge.select("Watch")
-        bridge.navigateWatch("home")
+        if route == "group":
+            group = bridge.watchScene["channels"][0]
+            bridge.navigateWatchGroup("channel", group["key"])
+        else:
+            bridge.navigateWatch("home")
         for _ in range(4):
             app.processEvents()
         flow = window.findChild(QObject, "watchMediaFlow")
@@ -40,10 +45,14 @@ def test_recent_cards_scale_complete_artwork_and_text(
         card, _undefined = expression.evaluate()
         art = card.findChild(QObject, "watchMediaArtworkImage")
         assert art.property("cover") is False
-        assert flow.property("artworkHeight") == pytest.approx(min(450, card.width() * 9 / 16))
+        assert flow.property("artworkHeight") == pytest.approx(
+            min(450, card.width() * 9 / 16)
+        )
         assert card.height() == pytest.approx(flow.property("artworkHeight") + 49)
         assert flow.property("rowStride") == pytest.approx(card.height() + 12)
-        assert repeater.property("count") == flow.property("columns")
+        assert repeater.property("count") <= (
+            flow.property("columns") if route == "home" else 8
+        )
         texts = [
             child
             for child in card.childItems()

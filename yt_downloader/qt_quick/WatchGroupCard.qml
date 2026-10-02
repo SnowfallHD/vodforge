@@ -7,7 +7,8 @@ StoneButton {
     property var group: ({})
     readonly property bool channel: group.kind === "channel"
     signal chosen()
-    height: channel ? 82 : 161
+    readonly property real artworkHeight: Math.min(450, width * 9 / 16)
+    height: channel ? 82 : artworkHeight + 53
     label: ""
     accessibilityLabel: (group.title || "") + ", " + (group.count || 0) + " saved item(s)"
     onActivated: chosen()
@@ -17,9 +18,9 @@ StoneButton {
         x: card.channel ? card.artworkFaceInset + 1 : card.artworkFaceInset
         y: card.channel ? card.artworkFaceInset + 2 : card.artworkFaceInset
         width: card.channel ? 64 - (card.artworkFaceInset - 7) * 2 : parent.width - card.artworkFaceInset * 2
-        height: card.channel ? width : 108 - card.artworkFaceInset
+        height: card.channel ? width : card.artworkHeight - card.artworkFaceInset
         circular: card.channel
-        cover: !card.channel
+        cover: false
         inset: 0
         source: {
             const revision = card.appBridge.artworkRevision
@@ -31,7 +32,7 @@ StoneButton {
     }
     Text {
         x: card.channel ? 82 : 9
-        y: card.channel ? 20 : 113
+        y: card.channel ? 20 : card.artworkHeight + 5
         width: parent.width - x - 8
         text: card.group.title || ""
         color: theme.text
@@ -41,7 +42,7 @@ StoneButton {
     }
     Text {
         x: card.channel ? 82 : 9
-        y: card.channel ? 44 : 137
+        y: card.channel ? 44 : card.artworkHeight + 29
         width: parent.width - x - 8
         text: (card.group.count || 0) + " saved"
         color: theme.muted

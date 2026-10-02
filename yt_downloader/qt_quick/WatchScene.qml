@@ -365,7 +365,7 @@ Item {
                         width: parent.width
                         height: visible ? (section.items.length === 0 ?
                             (modelData.route === "channels" ? 96 : 100) :
-                            (modelData.route === "channels" ? 101 : 180)) : 0
+                            (modelData.route === "channels" ? 101 : Math.min(450, 225 * 9 / 16) + 72)) : 0
                         clip: true
                         ScrollBar.vertical.policy: ScrollBar.AlwaysOff
                         ScrollBar.horizontal.policy: ScrollBar.AsNeeded
@@ -430,7 +430,7 @@ Item {
                         spacing: 12
                         readonly property var items: scene.route === modelData.route ? modelData.items : []
                         readonly property real cardWidth: Math.max(164, (width - 36) / 4)
-                        readonly property real cardHeight: modelData.route === "channels" ? 82 : 161
+                        readonly property real cardHeight: modelData.route === "channels" ? 82 : Math.min(450, cardWidth * 9 / 16) + 53
                         readonly property int columns: Math.max(1, Math.floor((width + spacing) / (cardWidth + spacing)))
                         readonly property real rowStride: cardHeight + spacing
                         readonly property int totalRows: Math.ceil(items.length / columns)
