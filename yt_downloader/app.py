@@ -2818,6 +2818,9 @@ def compact_video_metadata(
         "best_thumbnail": sanitize_durable_thumbnail_record(thumb),
         "vodforge_output_type": metadata_output_type(info).value,
         "vodforge_encoding_summary": info.get("vodforge_encoding_summary"),
+        "vodforge_caption_summary": sanitized_caption_summary(
+            info.get("vodforge_caption_summary")
+        ),
     }
     return {
         key: value for key, value in compact.items() if value not in (None, "", [], {})
@@ -3087,6 +3090,7 @@ def build_vod_ffmpeg_command(
     use_nvenc: bool = False,
     preserve_attached_picture: bool = False,
     preserve_metadata: bool | None = None,
+    preserve_caption_metadata: bool = False,
     video_crf: int | None = None,
     nvenc_cq: int | None = None,
     keyframe_seconds: float | None = None,
@@ -3255,7 +3259,7 @@ def build_vod_ffmpeg_command(
         if fps and math.isfinite(fps) and fps > 0:
             video_args.extend(["-r:v:0", f"{fps:.8f}"])
     primary_video_map = "0:V:0" if preserve_attached_picture else "0:v:0"
-    map_args = ["-map", primary_video_map, "-map", "0:a:0?"]
+    map_args = ["-map", primary_video_map, "-map", "0:a:0?", "-map", "0:s?"]
     artwork_args: list[str] = []
     if preserve_attached_picture:
         map_args.extend(("-map", "0:v:disp:attached_pic:0?"))
@@ -3276,6 +3280,8 @@ def build_vod_ffmpeg_command(
     metadata_args: list[str] = []
     if preserve_metadata is not None:
         metadata_args.extend(("-map_metadata", "0" if preserve_metadata else "-1"))
+    if preserve_caption_metadata:
+        metadata_args.extend(("-map_metadata:s:s", "0:s:s"))
     return [
         ffmpeg,
         "-y",
@@ -3299,6 +3305,8 @@ def build_vod_ffmpeg_command(
         str(audio_sample_rate),
         "-ac",
         str(audio_channels),
+        "-c:s",
+        "mov_text",
         *metadata_args,
         *artwork_args,
         "-nostats",
@@ -3897,6 +3905,7 @@ def transcode_to_vod_streaming_settings(
     use_nvenc: bool = False,
     preserve_attached_picture: bool = False,
     preserve_metadata: bool | None = None,
+    preserve_caption_metadata: bool = False,
     control_check: Any | None = None,
 ) -> Path:
     """Re-encode an MP4 to the selected VODForge delivery plan."""
@@ -3933,6 +3942,7 @@ def transcode_to_vod_streaming_settings(
             use_nvenc=use_nvenc,
             preserve_attached_picture=preserve_attached_picture,
             preserve_metadata=preserve_metadata,
+            preserve_caption_metadata=preserve_caption_metadata,
             video_crf=plan.video_crf if plan else None,
             nvenc_cq=plan.nvenc_cq if plan else None,
             keyframe_seconds=plan.keyframe_seconds if plan else None,
@@ -4937,6 +4947,97 @@ def _build_playlist_detection_options(
     return options
 
 
+def sanitized_caption_summary(value: Any) -> dict[str, str] | None:
+    if not isinstance(value, dict):
+        return None
+    language = value.get("language")
+    kind = value.get("source_kind")
+    if (
+        not isinstance(language, str)
+        or not re.fullmatch(r"[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*", language)
+        or kind not in ("manual", "automatic")
+        or value.get("role") != "original"
+    ):
+        return None
+    return {"language": language, "source_kind": kind, "role": "original"}
+
+
+def require_original_caption_stream(probe: dict[str, Any]) -> None:
+    """Do not commit a claimed caption download whose subtitle stream is missing."""
+    if not any(
+        isinstance(stream, dict) and stream.get("codec_type") == "subtitle"
+        for stream in probe.get("streams", [])
+    ):
+        raise RuntimeError(
+            "Original-language captions could not be embedded or preserved; no output was committed. Retry the download."
+        )
+
+
+def original_caption_selection(info: dict[str, Any]) -> tuple[str, str] | None:
+    """Select one evidenced original language, never a guessed translation."""
+    automatic = info.get("automatic_captions") or {}
+    manual = info.get("subtitles") or {}
+    if not isinstance(automatic, dict) or not isinstance(manual, dict):
+        return None
+    original_languages = {
+        key.removesuffix("-orig")
+        for key, tracks in automatic.items()
+        if isinstance(key, str) and key.endswith("-orig") and tracks
+    }
+    for audio in info.get("formats") or []:
+        if (
+            isinstance(audio, dict)
+            and audio.get("language_preference") == 10
+            and isinstance(audio.get("language"), str)
+            and audio.get("acodec") not in (None, "none")
+        ):
+            original_languages.add(audio["language"])
+    if len(original_languages) != 1:
+        return None
+    language = next(iter(original_languages))
+    if not re.fullmatch(r"[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*", language):
+        return None
+    if manual.get(language):
+        return language, "manual"
+    original_key = f"{language}-orig"
+    if automatic.get(original_key):
+        return original_key, "automatic"
+    return None
+
+
+def apply_original_caption_options(
+    options: dict[str, Any], info: dict[str, Any]
+) -> dict[str, Any]:
+    """Acquire only the original caption track inside the owned staging tree."""
+    selection = original_caption_selection(info)
+    if selection is None:
+        return info
+    key, kind = selection
+    language = key.removesuffix("-orig")
+    prepared = dict(info)
+    prepared["vodforge_caption_summary"] = {
+        "language": language,
+        "source_kind": kind,
+        "role": "original",
+    }
+    source = "subtitles" if kind == "manual" else "automatic_captions"
+    prepared[source] = {
+        language: [
+            {**track, "name": f"Original captions ({kind})"}
+            for track in info[source][key]
+            if isinstance(track, dict)
+        ]
+    }
+    options.update(
+        writesubtitles=kind == "manual",
+        writeautomaticsub=kind == "automatic",
+        subtitleslangs=[re.escape(language)],
+        subtitlesformat="vtt/srt/best",
+    )
+    options["postprocessors"].append({"key": "FFmpegEmbedSubtitle"})
+    return prepared
+
+
 def _build_item_preflight_options(
     job: DownloadJob,
     *,
@@ -5467,6 +5568,9 @@ class DownloadWorkerCore:
                     use_nvenc=job.use_nvenc,
                     preserve_attached_picture=job.embed_thumbnail,
                     preserve_metadata=job.embed_metadata,
+                    preserve_caption_metadata=bool(
+                        info.get("vodforge_original_caption_expected")
+                    ),
                     control_check=control_check,
                 )
                 write_diagnostic(
@@ -5508,6 +5612,8 @@ class DownloadWorkerCore:
                 expected_tags=job.tags if embed_metadata else None,
                 control_check=control_check,
             )
+            if info.get("vodforge_original_caption_expected"):
+                require_original_caption_stream(probe_data)
             validated_staged.append((staged_info, staged_path, probe_data))
         control_check()
         write_diagnostic(
@@ -6142,6 +6248,14 @@ class DownloadWorkerCore:
             staging_dir=staging_dir,
             format_selector=plan.format_selector,
         )
+        transfer_info = analyzed_item.preflight_info
+        if job.output_type == OutputType.MP4:
+            transfer_info = apply_original_caption_options(options, transfer_info)
+            if "subtitleslangs" not in options:
+                self._emit_job_log(
+                    job,
+                    f"{item.label}: original-language captions unavailable or language unverified; no translated track selected.",
+                )
         options["noplaylist"] = True
         # Preflight already loaded the selected cookie source. Reuse its
         # in-memory session jar instead of reopening a browser profile or file.
@@ -6156,7 +6270,7 @@ class DownloadWorkerCore:
             _download_preflight_result_step,
             ytdlp_module,
             options,
-            analyzed_item.preflight_info,
+            transfer_info,
             tuple(analyzed_item.session_cookies),
             control_check=control_check,
         )
@@ -6181,6 +6295,9 @@ class DownloadWorkerCore:
             ),
             job.output_type,
         )
+        if "subtitleslangs" in options:
+            info["vodforge_original_caption_expected"] = True
+            info["vodforge_caption_summary"] = transfer_info["vodforge_caption_summary"]
         info = annotate_job_metadata(job, info)
         encoding_summary = analyzed_item.display_info.get("vodforge_encoding_summary")
         if encoding_summary:
@@ -6220,6 +6337,16 @@ class DownloadWorkerCore:
                 f"{item.label}: yt-dlp completed without producing the expected "
                 f"{expected_extension} file."
             )
+
+        if downloaded_item.metadata.get("vodforge_original_caption_expected"):
+            ffprobe = _ffprobe_for_ffmpeg(downloaded_item.ffmpeg)
+            if not ffprobe:
+                raise RuntimeError("FFprobe is required to verify downloaded captions.")
+            for _staged_info, staged_video in staged_media:
+                probe = run_ffprobe_json(
+                    ffprobe, staged_video, control_check=control_check
+                )
+                require_original_caption_stream(probe)
 
         custom_cover_for_cache: Path | None = None
         custom_cover_path = job.mp3_settings.custom_cover_art_path
