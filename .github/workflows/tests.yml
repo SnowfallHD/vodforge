@@ -87,6 +87,24 @@ jobs:
           --ignore=tests/test_qt_vertical_scroll_chain.py
           --ignore=tests/test_qt_material_visibility.py
           --ignore=tests/test_qt_interaction_invariants.py
+          --ignore=tests/test_qt_composer_feedback.py
+          --ignore=tests/test_qt_dual_captions.py
+          --ignore=tests/test_qt_hidden_scene_focus.py
+          --ignore=tests/test_qt_library_selection_bar_placement.py
+          --ignore=tests/test_qt_move_dialog_content_fit.py
+          --ignore=tests/test_qt_move_root_notice.py
+          --ignore=tests/test_qt_output_path_layout.py
+          --ignore=tests/test_qt_overflow_glyph_centering.py
+          --ignore=tests/test_qt_player_frame_handoff.py
+          --ignore=tests/test_qt_player_hover_aspect.py
+          --ignore=tests/test_qt_player_presentation_return.py
+          --ignore=tests/test_qt_player_related_fallback.py
+          --ignore=tests/test_qt_recently_added_aspect.py
+          --ignore=tests/test_qt_run_deck_responsive_labels.py
+          --ignore=tests/test_qt_selectable_information.py
+          --ignore=tests/test_qt_thumbnail_reduction.py
+          --ignore=tests/test_qt_translated_subtitle_preferences.py
+          --ignore=tests/test_qt_watch_group_tile_aspect.py
       - name: Run Qt component tests in a fresh process
         env:
           QT_QUICK_BACKEND: software
@@ -133,6 +151,24 @@ jobs:
           tests/test_qt_vertical_scroll_chain.py
           tests/test_qt_material_visibility.py
           tests/test_qt_interaction_invariants.py
+          tests/test_qt_composer_feedback.py
+          tests/test_qt_dual_captions.py
+          tests/test_qt_hidden_scene_focus.py
+          tests/test_qt_library_selection_bar_placement.py
+          tests/test_qt_move_dialog_content_fit.py
+          tests/test_qt_move_root_notice.py
+          tests/test_qt_output_path_layout.py
+          tests/test_qt_overflow_glyph_centering.py
+          tests/test_qt_player_frame_handoff.py
+          tests/test_qt_player_hover_aspect.py
+          tests/test_qt_player_presentation_return.py
+          tests/test_qt_player_related_fallback.py
+          tests/test_qt_recently_added_aspect.py
+          tests/test_qt_run_deck_responsive_labels.py
+          tests/test_qt_selectable_information.py
+          tests/test_qt_thumbnail_reduction.py
+          tests/test_qt_translated_subtitle_preferences.py
+          tests/test_qt_watch_group_tile_aspect.py
       - name: Run Qt scene tests in a fresh process
         env:
           QT_QUICK_BACKEND: software
