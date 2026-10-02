@@ -1765,29 +1765,50 @@ Window {
         x: Math.max(0, (window.width - width) / 2)
         y: Math.max(0, (window.height - height) / 2)
         width: Math.min(490, window.width - 40)
-        height: bridge.fileActionReviewOwner ? 330 : 250
+        height: Math.min(window.height - 40,
+                fileActionContent.implicitHeight + topPadding + bottomPadding)
         padding: 18
         modal: true
         closePolicy: bridge.fileActionBusy ? Popup.NoAutoClose : Popup.CloseOnEscape
         ColumnLayout {
+            id: fileActionContent
             anchors.fill: parent
             spacing: 12
             Text {
+                id: fileActionHeading
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
                 text: bridge.fileActionRecovery ? "Review interrupted file change" :
                     bridge.fileActionName === "move" ? "Move saved media" : "Saved media files"
                 color: theme.text
                 font.pixelSize: 21
                 font.bold: true
             }
-            Text {
-                text: bridge.fileActionStatus
-                color: theme.muted
-                font.pixelSize: 15
-                wrapMode: Text.WordWrap
+            ScrollView {
+                id: fileActionBody
+                objectName: "fileActionBodyScroll"
                 Layout.fillWidth: true
+                // Long reports scroll inside the same shared shell; footer stays visible.
+                Layout.preferredHeight: Math.min(fileActionMessage.implicitHeight,
+                    Math.max(48, window.height - 40 - fileActionPopup.topPadding -
+                        fileActionPopup.bottomPadding - fileActionHeading.implicitHeight -
+                        fileActionFooter.implicitHeight -
+                        (fileActionReviewRow.visible ? fileActionReviewRow.implicitHeight : 0) -
+                        fileActionContent.spacing * (fileActionReviewRow.visible ? 3 : 2)))
+                clip: true
+                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                Text {
+                    id: fileActionMessage
+                    objectName: "fileActionBodyMessage"
+                    text: bridge.fileActionStatus
+                    color: theme.muted
+                    font.pixelSize: 15
+                    wrapMode: Text.WordWrap
+                    width: fileActionBody.availableWidth
+                }
             }
-            Item { Layout.fillHeight: true }
             RowLayout {
+                id: fileActionReviewRow
                 visible: !!bridge.fileActionReviewOwner
                 Layout.fillWidth: true
                 StoneButton {
@@ -1813,8 +1834,10 @@ Window {
                 }
             }
             RowLayout {
+                id: fileActionFooter
                 Layout.fillWidth: true
                 StoneButton {
+                    objectName: "fileActionConfirmButton"
                     visible: bridge.fileActionEligible
                     label: bridge.fileActionName === "move" ? "Move verified media" : "Move to Trash"
                     Layout.fillWidth: true
@@ -1837,7 +1860,8 @@ Window {
                 }
                 Item { Layout.fillWidth: true }
                 StoneButton {
-                    label: "Close"
+                    objectName: "fileActionDismissButton"
+                    label: bridge.fileActionName === "move" && bridge.fileActionEligible ? "Cancel" : "Close"
                     enabled: !bridge.fileActionBusy
                     Layout.preferredWidth: 90
                     Layout.preferredHeight: 40
