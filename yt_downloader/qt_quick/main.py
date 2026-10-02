@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import os
 import re
@@ -356,6 +357,19 @@ class Materials(QQuickImageProvider):
         size.setWidth(image.width())
         size.setHeight(image.height())
         return image
+
+
+def _system_reduced_motion() -> bool:
+    """Read the macOS accessibility preference without changing system state."""
+    if sys.platform != "darwin":
+        return False
+    try:
+        appkit = importlib.import_module("AppKit")
+        return bool(
+            appkit.NSWorkspace.sharedWorkspace().accessibilityDisplayShouldReduceMotion()
+        )
+    except (ImportError, AttributeError, RuntimeError):
+        return False
 
 
 class Bridge(QObject):
@@ -2560,6 +2574,10 @@ class Bridge(QObject):
     @Property(str, notify=extraTagsChanged)
     def extraTags(self) -> str:
         return self._extra_tags
+
+    @Property(bool, constant=True)
+    def reducedMotion(self) -> bool:
+        return _system_reduced_motion()
 
     @Property(str, notify=appearanceChanged)
     def appearanceTheme(self) -> str:

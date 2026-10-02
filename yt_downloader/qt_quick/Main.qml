@@ -646,32 +646,20 @@ Window {
         onVisibleChanged: { if (visible) currentFolder = bridge.outputFolderUrl }
         onAccepted: bridge.chooseOutputUrl(selectedFolder)
     }
-    StonePopup {
+    ComposerNotice {
         id: operationNotice
         objectName: "operationNotice"
-        property string message: ""
+        parent: window.contentItem
+        reducedMotion: bridge.reducedMotion
+        availableWidth: Math.max(120, Math.min(440, window.width - 30))
         x: bridge.selection === "Forge"
             ? Math.max(10, Math.min(window.width - width - 10,
-                forgeCommandRow.mapToItem(window.contentItem, 0, 0).x
-                + (forgeCommandRow.width - width) / 2))
+                forgeComposerShell.x + (forgeComposerShell.width - width) / 2))
             : Math.max(10, (window.width - width) / 2)
         y: bridge.selection === "Forge"
             ? Math.max(10, Math.min(window.height - height - 18,
-                       forgeComposerAuxRow.mapToItem(window.contentItem, 0, forgeComposerAuxRow.height).y + 8))
+                forgeComposerShell.y + forgeComposerShell.height - 1))
             : window.height - height - 18
-        width: Math.min(440, window.width - 30)
-        height: noticeText.implicitHeight + 28
-        padding: 14
-        modal: false
-        focus: false
-        Text {
-            id: noticeText
-            text: operationNotice.message
-            width: parent.width
-            color: theme.text
-            font.pixelSize: 14
-            wrapMode: Text.WordWrap
-        }
     }
     Timer { id: operationNoticeTimer; interval: 3500; onTriggered: operationNotice.close() }
     FolderDialog {
@@ -780,6 +768,22 @@ Window {
     property string outputFormat: bridge.outputFormat
     property string selectedSavedOwner: ""
     property var pendingFileOwners: []
+
+    Rectangle {
+        id: forgeComposerShell
+        objectName: "forgeComposerShell"
+        parent: window.contentItem
+        visible: bridge.selection === "Forge"
+        x: forgeCommandRow.x + forgeCommandRow.parent.x
+            + forgeCommandRow.parent.parent.x - 8
+        y: forgeCommandRow.y + forgeCommandRow.parent.y
+            + forgeCommandRow.parent.parent.y - 8
+        width: forgeCommandRow.width + 16
+        height: forgeLocalRow.y + forgeLocalRow.height - forgeCommandRow.y + 16
+        radius: 16
+        color: theme.bg
+        border.color: theme.border
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -1033,6 +1037,7 @@ Window {
             }
 
             RowLayout {
+                id: forgeLocalRow
                 objectName: "forgeLocalRow"
                 Layout.fillWidth: true
                 Layout.minimumWidth: 0

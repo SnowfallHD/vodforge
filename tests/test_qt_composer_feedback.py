@@ -60,3 +60,70 @@ def test_admitted_run_preparing_is_not_notice(feedback_scene, tmp_path, monkeypa
     assert spy.count() == 1
     assert "Settings" in spy.at(0)[0]
     assert window.property("selectedForgeRun")["status"] == selected["status"]
+
+
+def test_notice_morph_retains_composer_geometry_and_retracts(feedback_scene):
+    from PySide6.QtTest import QTest
+
+    _app, bridge, window = feedback_scene
+    QTest.qWait(100)
+    composer = window.findChild(QObject, "forgeCommandRow")
+    original = (composer.x(), composer.y(), composer.width(), composer.height())
+    bridge.operationFeedback.emit("Choose an output folder")
+    notice = window.findChild(QObject, "operationNotice")
+    QTest.qWait(100)
+    assert 0 < notice.property("reveal") < 1
+    QTest.qWait(350)
+    assert notice.property("reveal") == pytest.approx(1)
+    assert notice.width() < composer.width()
+    assert original == (composer.x(), composer.y(), composer.width(), composer.height())
+    notice.setProperty("expanded", False)
+    QTest.qWait(100)
+    assert 0 < notice.property("reveal") < 1
+    QTest.qWait(350)
+    assert not notice.isVisible()
+    assert original == (composer.x(), composer.y(), composer.width(), composer.height())
+
+
+def test_notice_reduced_motion_and_long_text_clamp(feedback_scene):
+    app, bridge, window = feedback_scene
+    notice = window.findChild(QObject, "operationNotice")
+    notice.setProperty("reducedMotion", True)
+    bridge.operationFeedback.emit("Long settings notice " * 80)
+    app.processEvents()
+    assert notice.property("reveal") == 1
+    assert notice.width() <= 440
+    assert notice.height() <= 116
+    notice.setProperty("expanded", False)
+    app.processEvents()
+    assert notice.property("reveal") == 0
+
+
+@pytest.mark.parametrize("preference", [False, True])
+def test_system_reduced_motion_reads_mac_preference(monkeypatch, preference):
+    from types import SimpleNamespace
+
+    from yt_downloader.qt_quick import main
+
+    workspace = SimpleNamespace(
+        accessibilityDisplayShouldReduceMotion=lambda: preference
+    )
+    appkit = SimpleNamespace(
+        NSWorkspace=SimpleNamespace(sharedWorkspace=lambda: workspace)
+    )
+    monkeypatch.setattr(main.sys, "platform", "darwin")
+    monkeypatch.setattr(main.importlib, "import_module", lambda _name: appkit)
+    assert main._system_reduced_motion() is preference
+
+
+def test_system_reduced_motion_unavailable_falls_back(monkeypatch):
+    from yt_downloader.qt_quick import main
+
+    def unavailable(_name):
+        raise ImportError("not installed")
+
+    monkeypatch.setattr(main.sys, "platform", "darwin")
+    monkeypatch.setattr(main.importlib, "import_module", unavailable)
+    assert not main._system_reduced_motion()
+    monkeypatch.setattr(main.sys, "platform", "win32")
+    assert not main._system_reduced_motion()
