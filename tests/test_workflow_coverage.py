@@ -3,7 +3,7 @@
 import copy
 import sys
 from dataclasses import replace
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import pytest
 
@@ -665,3 +665,15 @@ def test_data_entry_control_without_callback_remains_in_semantic_catalog(tmp_pat
     assert field["input_callbacks"] == []
     assert "typing" in field["non_click_steps"]
     assert catalog["classification_counts"]["declared_input_control"] == 1
+
+
+def test_inventory_keeps_source_identity_with_windows_relative_paths(monkeypatch):
+    baseline = inventory(ROOT)
+    relative_to = Path.relative_to
+
+    def windows_relative_path(path, *args, **kwargs):
+        return PureWindowsPath(relative_to(path, *args, **kwargs).as_posix())
+
+    monkeypatch.setattr(Path, "relative_to", windows_relative_path)
+    observed = inventory(ROOT)
+    assert observed == baseline

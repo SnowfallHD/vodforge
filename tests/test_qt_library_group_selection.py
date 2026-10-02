@@ -87,7 +87,9 @@ def test_group_checkbox_counts_one_entity_and_prunes_stale(
 
 
 def test_actions_expand_only_at_dispatch():
-    source = (Path(qt_main.__file__).parent / "LibraryScene.qml").read_text()
+    source = (Path(qt_main.__file__).parent / "LibraryScene.qml").read_text(
+        encoding="utf-8"
+    )
     assert "resolveLibrarySelection(scene.selectionTargets())" in source
     assert "selectedOwners = group.owners.slice()" not in source
     assert "for (const owner of modelData.owners)" not in source

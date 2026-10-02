@@ -2,14 +2,18 @@
 
 import time
 
+import pytest
+
 from PySide6.QtCore import QUrl
 
 from tests.test_qt_scene_port import make_job, qt_app, qt_main, saved
 from yt_downloader.history import history_archive_owner, save_history
+from yt_downloader.qt_quick import library_files
 
 
+@pytest.mark.parametrize("trash_available", [True, False])
 def test_unreachable_saved_path_can_forget_card_without_deleting_files(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, trash_available
 ):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
@@ -23,16 +27,25 @@ def test_unreachable_saved_path_can_forget_card_without_deleting_files(
     save_history(bridge._runtime.history_path, [item])
     unrelated = tmp_path / "unrelated.mp4"
     unrelated.write_bytes(b"keep this file")
+    monkeypatch.setattr(
+        library_files, "system_trash_available", lambda: trash_available
+    )
     try:
-        assert bridge.startFileAction("delete", owner, QUrl())
-        for _ in range(100):
-            bridge._pump()
-            if bridge._files.phase == "preview":
-                break
-            time.sleep(0.01)
+        started = bridge.startFileAction("delete", owner, QUrl())
+        if trash_available:
+            assert started
+            for _ in range(100):
+                bridge._pump()
+                if bridge._files.phase == "preview":
+                    break
+                time.sleep(0.01)
+            assert "could not be accessed" in bridge.fileActionStatus
+            assert bridge.fileActionReviewOwner == owner
+        else:
+            assert not started
+            assert "Trash is unavailable" in bridge.fileActionStatus
+            assert bridge.fileActionReviewOwner == ""
         assert not bridge.fileActionEligible
-        assert "could not be accessed" in bridge.fileActionStatus
-        assert bridge.fileActionReviewOwner == owner
         assert not bridge.confirmFileAction()
         assert bridge.prepareLibraryRemoval(owner)
         assert bridge.confirmLibraryRemoval()

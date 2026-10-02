@@ -366,7 +366,7 @@ def _state_contracts(root: Path) -> list[dict[str, Any]]:
 
 def inventory(root: Path) -> dict[str, Any]:
     files = [
-        scan_qml(str(p.relative_to(root)), p.read_text(encoding="utf-8"))
+        scan_qml(p.relative_to(root).as_posix(), p.read_text(encoding="utf-8"))
         for p in sorted((root / "yt_downloader/qt_quick").glob("*.qml"))
     ]
     inherited = {Path(file["file"]).stem: file["root_type"] for file in files}
