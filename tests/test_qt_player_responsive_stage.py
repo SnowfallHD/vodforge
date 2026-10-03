@@ -32,8 +32,8 @@ def test_player_stage_and_recommendations_grow_with_viewport(tmp_path, monkeypat
         for width, height in (
             (820, 650),
             (1100, 800),
-            (1280, 800),
-            (1600, 900),
+            (1440, 800),
+            (1800, 900),
             (2400, 1200),
         ):
             window.resize(width, height)
@@ -41,8 +41,12 @@ def test_player_stage_and_recommendations_grow_with_viewport(tmp_path, monkeypat
                 app.processEvents()
             assert stage.width() / stage.height() == pytest.approx(16 / 9, abs=0.02)
             assert stage.width() <= stage.parentItem().width() + 1
-            assert bool(side.property("visible")) == bool(scene.property("wide"))
-            assert bool(compact.property("visible")) != bool(scene.property("wide"))
+            assert bool(side.property("visible")) == bool(
+                scene.property("hasRelatedSide")
+            )
+            assert bool(compact.property("visible")) != bool(
+                scene.property("hasRelatedSide")
+            )
             if side.property("visible"):
                 # The bounded sidebar leaves the majority of the row for video.
                 assert 270 <= side.width() <= 360

@@ -832,7 +832,12 @@ Window {
             objectName: "focusHeader"
             Layout.fillWidth: true
             Layout.preferredHeight: stacked ? 100 : 44
-            readonly property bool compact: window.width < 960
+            // Keep the compact lockup until the expanded brand and minimum
+            // search field fit. A fixed 960px switch briefly wrapped this row,
+            // then unwrapped it a few pixels later, shrinking Watch in between.
+            readonly property bool compact: window.width < 960 || width <
+                nativeHeaderInset + 150 + navWidth +
+                ((bridge.selection === "Library" || bridge.selection === "Watch") ? 193 : 0) + 72
             readonly property int nativeHeaderInset: Qt.platform.os === "osx" ? 82 : 0
             readonly property int brandWidth: nativeHeaderInset + (compact ? 46 : 150)
             readonly property int searchWidth: Math.max(compact ? 124 : 185,

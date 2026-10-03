@@ -77,8 +77,12 @@ Item {
     readonly property bool relatedFallback: primaryRelated.length === 0
     readonly property var relatedCards: relatedFallback ? recentCards : primaryRelated
     readonly property bool relatedLoading: projection.loading === true || !projection.owner
-    readonly property bool hasRelatedSide: wide
-    readonly property real relatedSideWidth: hasRelatedSide ? Math.min(360, Math.max(270, width * 0.22)) : 0
+    readonly property real preferredRelatedSideWidth: Math.min(360, Math.max(270, width * 0.22))
+    // Admit the side rail only after the primary frame already fits at its
+    // height limit. Crossing a width breakpoint must not take space from it.
+    readonly property bool hasRelatedSide: wide && viewport.availableWidth >=
+        stageHeightLimit * videoAspect + preferredRelatedSideWidth + 24
+    readonly property real relatedSideWidth: hasRelatedSide ? preferredRelatedSideWidth : 0
     signal closeRequested()
     signal volumeRequested(real value)
     signal editDetailsRequested(string owner)
@@ -613,7 +617,7 @@ Item {
 
             Column {
                 objectName: "playerRelatedCompact"
-                visible: !scene.wide
+                visible: !scene.hasRelatedSide
                 width: parent.width
                 spacing: 8
                 Text { text: scene.relatedFallback ? "RECENTLY ADDED" : scene.projection.queued ? "UP NEXT" : "MORE TO WATCH"; color: theme.muted; font.pixelSize: 12; font.bold: true }

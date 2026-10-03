@@ -11,10 +11,13 @@ from tests.test_qt_scene_port import qt_app, saved
 from yt_downloader.qt_quick import main
 
 
-@pytest.mark.parametrize("width,height", [(820, 560), (1280, 800), (1920, 1080)])
+@pytest.mark.parametrize(
+    "width,height,expected_side",
+    [(820, 560, False), (1280, 800, False), (1920, 800, True), (1920, 1080, False)],
+)
 @pytest.mark.parametrize("others", [0, 1, 3])
 def test_player_local_fallback_is_owner_safe_and_balanced(
-    tmp_path, monkeypatch, width, height, others
+    tmp_path, monkeypatch, width, height, expected_side, others
 ):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
@@ -52,18 +55,18 @@ def test_player_local_fallback_is_owner_safe_and_balanced(
         assert len(cards) == others
         assert len({row["owner"] for row in cards}) == others
         assert bridge.playerScene["owner"] not in {row["owner"] for row in cards}
-        assert side.property("visible") is (width >= 1080)
-        assert compact.property("visible") is (width < 1080)
+        assert side.property("visible") is expected_side
+        assert compact.property("visible") is (not expected_side)
         stage = window.findChild(QObject, "playerMediaStage")
         assert stage.width() / stage.height() == pytest.approx(16 / 9)
         assert stage.height() <= scene.height()
-        if width >= 1080:
+        if expected_side:
             assert stage.width() > scene.width() * 0.55
             assert 270 <= side.width() <= 360
         add = window.findChild(
             QObject,
             "playerRelatedAddMedia"
-            if width >= 1080
+            if expected_side
             else "playerRelatedCompactAddMedia",
         )
         assert add.property("visible") is (others == 0)
