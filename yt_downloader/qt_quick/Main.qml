@@ -221,6 +221,7 @@ Window {
         id: editorialPopup
         parent: window.contentItem
         slides: bridge.editorialSlides
+        reducedMotion: bridge.reducedMotion
         heading: bridge.editorialHeading
         finishLabel: bridge.editorialFinishLabel
         onAcknowledged: function(tryIt) {

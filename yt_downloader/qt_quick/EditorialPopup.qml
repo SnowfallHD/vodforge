@@ -10,6 +10,8 @@ StonePopup {
     property string finishLabel: "Done"
     property int index: 0
     property bool completed: false
+    property bool reducedMotion: false
+    readonly property bool hasRecording: !!current.recording
     readonly property var current: slides.length ? slides[Math.max(0, Math.min(index, slides.length - 1))] : ({})
     signal acknowledged(bool tryIt)
     function finish(tryIt) {
@@ -20,7 +22,7 @@ StonePopup {
     onOpened: { index = 0; completed = false }
     onClosed: { if (!completed) editorial.acknowledged(false) }
     width: Math.min(490, parent.width - 40)
-    height: Math.min(470, parent.height - 40)
+    height: Math.min(hasRecording ? 550 : 470, parent.height - 40)
     x: Math.max(0, (parent.width - width) / 2)
     y: Math.max(0, (parent.height - height) / 2)
     padding: 20
@@ -63,7 +65,17 @@ StonePopup {
             objectName: "editorialPreviewRegion"
             Layout.fillWidth: true
             Layout.fillHeight: true
+            RecordedFeaturePreview {
+                anchors.fill: parent
+                visible: editorial.hasRecording
+                active: editorial.visible && editorial.hasRecording
+                reducedMotion: editorial.reducedMotion
+                recordingSource: editorial.hasRecording ? assetUrl + "whats-new/" + editorial.current.recording : ""
+                posterSource: editorial.current.poster ? assetUrl + "whats-new/" + editorial.current.poster : ""
+                description: editorial.current.description || ""
+            }
             FeaturePreview {
+                visible: !editorial.hasRecording
                 previewKey: editorial.current.preview || ""
                 anchors.centerIn: parent
                 width: Math.min(preferredWidth, parent.width - 20)

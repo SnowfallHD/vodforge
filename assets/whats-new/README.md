@@ -1,9 +1,25 @@
-# Historical showcase captures
+# Feature preview assets
 
-> Superseded by the [native exhibit renderer](../../docs/whats-new-native-previews.md).
-> These PNGs are historical QA references, not the current slide assets. Do not
-> add screenshots of controls for new highlights. The notes below describe the
-> former capture workflow. Current public screenshots are in [assets/readme](../readme/README.md).
+The user-requested release orientation will use short, actual VODForge UI recordings
+produced in Shotbase, with a visible cursor, deliberate interaction, readable result
+and a clean loop reset. Do not generate mock UI or reuse private desktop recordings.
+Use only an isolated synthetic profile, with camera, microphone and system audio off.
+
+The optional recorded-preview renderer accepts paired packaged MP4/JPG basenames.
+It decodes only the visible slide, pauses outside the foreground, releases hidden
+media, and uses the poster for reduced motion. Existing welcome/tip exhibits remain
+available. No recorded feature clips are enabled until their reviewed files and
+explicit packaging inputs are present.
+
+Capture/export identity, source revision, action timestamps, original/export hashes,
+codec/dimensions/duration and any crop/zoom/trim must be recorded outside the source
+worktree. Capturing an older build does not establish successor native acceptance.
+The initial silent decoder test pattern is a test fixture, not a feature recording.
+
+The release catalog excludes longstanding Everyday/Optimized for presets. Watch
+and Library are described as updated views/actions, not newly introduced destinations.
+
+## Historical showcase captures
 
 These are native VODForge UI captures, not generated UI mockups. Activity is a
 direct Forge capture after a real YouTube download (DMSUSyAy0qM), with telemetry

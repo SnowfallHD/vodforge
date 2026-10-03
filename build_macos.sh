@@ -73,6 +73,7 @@ fi
     --ignore=tests/test_qt_telemetry_coverage.py \
     --ignore=tests/test_qt_fullscreen_native.py \
     --ignore=tests/test_qt_whats_new.py \
+    --ignore=tests/test_qt_recorded_feature_preview.py \
     --ignore=tests/test_qt_output_config.py \
     --ignore=tests/test_qt_settings_theme.py \
     --ignore=tests/test_qt_scroll_lifecycle.py \
@@ -145,6 +146,7 @@ fi
     tests/test_qt_telemetry_coverage.py \
     tests/test_qt_fullscreen_native.py \
     tests/test_qt_whats_new.py \
+    tests/test_qt_recorded_feature_preview.py \
     tests/test_qt_output_config.py \
     tests/test_qt_settings_theme.py \
     tests/test_qt_scroll_lifecycle.py \

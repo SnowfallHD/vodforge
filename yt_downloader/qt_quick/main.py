@@ -2106,6 +2106,8 @@ class Bridge(QObject):
                 "title": slide.title,
                 "description": slide.description,
                 "preview": slide.preview.value,
+                "recording": slide.recording,
+                "poster": slide.poster,
             }
             for slide in self._editorial_slides
         ]

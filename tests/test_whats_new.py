@@ -52,10 +52,12 @@ def test_orientation_catalog_names_real_destinations_and_supported_previews():
         "workspace",
         "watch",
         "library",
-        "output-settings",
         "captions",
     ]
     copy = " ".join(h.description for h in HIGHLIGHTS)
+    assert "Everyday" not in copy
+    assert "Optimized for" not in copy
+    assert HIGHLIGHTS[1].title == "An updated Watch player"
     for destination in (
         "Forge",
         "Watch",
@@ -167,3 +169,38 @@ def test_start_is_idempotent_and_close_cancels_wait():
     assert cancelled == ["timer"]
     scheduled[0]()
     assert owner.panel is None
+
+
+def test_recorded_editorial_assets_are_paired_packaged_basenames():
+    slide = FeatureHighlight(
+        "clip",
+        "Clip",
+        "Actual UI",
+        NativePreview.PLAYER,
+        recording="watch-transfer.mp4",
+        poster="watch-transfer.jpg",
+    )
+    assert slide.recording == "watch-transfer.mp4"
+    for name in (
+        "../private.mp4",
+        "https://example.test/clip.mp4",
+        "/tmp/clip.mp4",
+        "clip.mov",
+    ):
+        with pytest.raises(ValueError, match="packaged asset basename"):
+            FeatureHighlight(
+                "clip",
+                "Clip",
+                "Actual UI",
+                NativePreview.PLAYER,
+                recording=name,
+                poster="watch-transfer.jpg",
+            )
+    with pytest.raises(ValueError, match="both a clip and poster"):
+        FeatureHighlight(
+            "clip",
+            "Clip",
+            "Actual UI",
+            NativePreview.PLAYER,
+            recording="watch-transfer.mp4",
+        )

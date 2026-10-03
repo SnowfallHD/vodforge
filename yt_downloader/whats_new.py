@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -29,10 +30,17 @@ class FeatureHighlight:
     title: str
     description: str
     preview: NativePreview
+    recording: str = ""
+    poster: str = ""
 
     def __post_init__(self) -> None:
         if not isinstance(self.preview, NativePreview):
             raise TypeError("What's New requires a supported native preview")
+        if bool(self.recording) != bool(self.poster):
+            raise ValueError("Recorded previews require both a clip and poster")
+        for name, extension in ((self.recording, "mp4"), (self.poster, "jpg")):
+            if name and not re.fullmatch(r"[a-z0-9][a-z0-9-]*\." + extension, name):
+                raise ValueError("Recorded previews require a packaged asset basename")
 
 
 # Editorial opt-in: change this ID ONLY when intentionally shipping a new
@@ -42,35 +50,28 @@ SHOWCASE_ID = "workspace-orientation-v1"
 HIGHLIGHTS = (
     FeatureHighlight(
         "workspace",
-        "A place for every step",
-        "Use Forge for downloads, Watch for playback, Library to organize media, and "
-        "Activity for run details. The Run Deck stays with you between views.",
+        "Feedback beside your download",
+        "Forge keeps URL feedback beside the download controls. Selected-run details "
+        "stay separate from new input notices, with Activity available for the full log.",
         NativePreview.ACTIVITY,
     ),
     FeatureHighlight(
         "watch",
-        "Your saved media in Watch",
-        "Open Watch to browse videos, playlists and channels. Play a title inline, "
-        "then use Pop out or Fullscreen to keep watching.",
+        "An updated Watch player",
+        "Watch keeps the video in view as the layout changes. Move playback between "
+        "the main player, Pop out and Fullscreen without starting it over.",
         NativePreview.PLAYER,
     ),
     FeatureHighlight(
         "library",
-        "Find and organize in Library",
-        "Browse All Media, Playlists or Channels. Open My Files for folders and "
-        "Issues & Recovery. Select an item for details, tags, notes and file actions.",
+        "Clearer file and recovery actions",
+        "Library brings file actions back into the selected item. In My Files, open "
+        "Issues & Recovery to find a missing file, retry a download or dismiss an issue.",
         NativePreview.LIBRARY,
     ),
     FeatureHighlight(
-        "output-settings",
-        "Your download choices",
-        "Forge shows the chosen options for your next download. Open Settings "
-        "to adjust presets, YouTube access and the output folder.",
-        NativePreview.OUTPUT_SETTINGS,
-    ),
-    FeatureHighlight(
         "captions",
-        "Captions and translated subtitles",
+        "Independent captions and subtitles",
         "Use Captions for a saved original track and Subtitles for a saved translation. "
         "To request a translation with a new MP4, choose its language in Settings.",
         NativePreview.TRANSPORT,
