@@ -285,7 +285,7 @@ Item {
             id: subtitlesControl
             objectName: controls.controlPrefix === "player" ? "playerSubtitlesButton" : "presentationSubtitlesButton"
             // Keep the short label readable instead of eliding it into baseline dots.
-            width: 46; height: 36; label: "Sub"; sceneIcon: ""
+            width: 44; height: 36; label: "Sub"; sceneIcon: ""
             accessibilityLabel: controls.translatedSubtitlesAvailable ? "Translated subtitles: " + (controls.translatedSubtitlesEnabled ? "On" : "Off") : "Translated subtitles unavailable: none saved"
             transientMaterial: false
             enabled: controls.translatedSubtitlesAvailable
