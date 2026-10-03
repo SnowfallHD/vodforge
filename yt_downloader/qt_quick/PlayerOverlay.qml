@@ -284,7 +284,8 @@ Item {
         StoneButton {
             id: subtitlesControl
             objectName: controls.controlPrefix === "player" ? "playerSubtitlesButton" : "presentationSubtitlesButton"
-            width: 38; height: 36; label: "Sub"; sceneIcon: ""
+            // Keep the short label readable instead of eliding it into baseline dots.
+            width: 46; height: 36; label: "Sub"; sceneIcon: ""
             accessibilityLabel: controls.translatedSubtitlesAvailable ? "Translated subtitles: " + (controls.translatedSubtitlesEnabled ? "On" : "Off") : "Translated subtitles unavailable: none saved"
             transientMaterial: false
             enabled: controls.translatedSubtitlesAvailable

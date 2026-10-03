@@ -6417,3 +6417,50 @@ def test_qt_one_click_update_verifies_waits_then_handoffs_once(
         bridge._runtime.queued = []
         bridge._local_running = False
         bridge.close()
+
+
+def test_qt_player_subtitle_label_fits_and_is_centered(tmp_path, monkeypatch):
+    from PySide6.QtCore import QUrl
+    from PySide6.QtQml import QQmlContext, QQmlEngine
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    bridge = qt_main.Bridge(None)
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    context = QQmlContext(QQmlEngine.contextForObject(window))
+    component = QQmlComponent(
+        engine,
+        QUrl.fromLocalFile(str(Path(qt_main.__file__).parent / "PlayerOverlay.qml")),
+    )
+    overlay = component.createWithInitialProperties(
+        {"player": None, "volume": 0.5}, context
+    )
+    assert overlay is not None, component.errors()
+    overlay.setParentItem(window.contentItem())
+    overlay.setProperty("surfaceHovered", True)
+    try:
+        for prefix in ("player", "presentation"):
+            overlay.setProperty("controlPrefix", prefix)
+            for width in (520, 820, 1100):
+                overlay.setWidth(width)
+                app.processEvents()
+                button = overlay.findChild(QObject, prefix + "SubtitlesButton")
+                caption = button.findChild(QObject, "stoneButtonCaption")
+                assert button.property("label") == "Sub"
+                assert not caption.property("truncated")
+                assert caption.width() >= caption.implicitWidth()
+                center = caption.mapToItem(
+                    button, caption.width() / 2, caption.height() / 2
+                )
+                assert abs(center.x() - button.width() / 2) <= 0.5
+                assert abs(center.y() - button.height() / 2) <= 0.5
+                assert overlay.property("minimumControlsWidth") <= width
+    finally:
+        overlay.deleteLater()
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
