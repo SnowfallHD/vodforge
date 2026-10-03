@@ -66,15 +66,4 @@ Item {
             }
         }
     }
-    StoneButton {
-        objectName: "recordedPreviewPause"
-        anchors.right: parent.right
-        anchors.bottom: parent.bottom
-        anchors.margins: 6
-        visible: preview.loadRecording
-        label: preview.pausedByUser ? "Play" : "Pause"
-        accessibilityLabel: label + " recorded preview"
-        size: "inline"
-        onActivated: preview.pausedByUser = !preview.pausedByUser
-    }
 }

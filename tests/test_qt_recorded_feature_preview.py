@@ -79,6 +79,7 @@ def test_recorded_preview_decodes_silently_and_releases_hidden_media(
     preview = component.create(context)
     assert preview is not None, component.errors()
     preview.setParentItem(window.contentItem())
+    assert preview.findChild(QObject, "recordedPreviewPause") is None
     preview.setWidth(430)
     preview.setHeight(242)
     preview.setProperty("recordingSource", QUrl.fromLocalFile(str(movie)))
