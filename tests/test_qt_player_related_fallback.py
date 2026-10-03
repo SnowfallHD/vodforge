@@ -13,7 +13,7 @@ from yt_downloader.qt_quick import main
 
 @pytest.mark.parametrize(
     "width,height,expected_side",
-    [(820, 560, False), (1280, 800, False), (1920, 800, True), (1920, 1080, False)],
+    [(820, 560, True), (1280, 800, True), (1920, 800, True), (1920, 1080, True)],
 )
 @pytest.mark.parametrize("others", [0, 1, 3])
 def test_player_local_fallback_is_owner_safe_and_balanced(
@@ -56,12 +56,12 @@ def test_player_local_fallback_is_owner_safe_and_balanced(
         assert len({row["owner"] for row in cards}) == others
         assert bridge.playerScene["owner"] not in {row["owner"] for row in cards}
         assert side.property("visible") is expected_side
-        assert compact.property("visible") is (not expected_side)
+        assert compact is None
         stage = window.findChild(QObject, "playerMediaStage")
         assert stage.width() / stage.height() == pytest.approx(16 / 9)
         assert stage.height() <= scene.height()
         if expected_side:
-            assert stage.width() > scene.width() * 0.55
+            assert stage.width() > scene.width() * 0.50
             assert 270 <= side.width() <= 360
         add = window.findChild(
             QObject,
@@ -70,9 +70,24 @@ def test_player_local_fallback_is_owner_safe_and_balanced(
             else "playerRelatedCompactAddMedia",
         )
         assert add.property("visible") is (others == 0)
-        assert (
-            window.findChild(QObject, "playerRecentRail").property("visible") is False
+        assert window.findChild(QObject, "playerRecentRail").property("visible") is (
+            others == 0
         )
+        empty = window.findChild(QObject, "playerRelatedEmptyState")
+        assert empty.property("visible") is (others == 0)
+        if others == 0:
+            assert (
+                window.findChild(QObject, "playerSidePlaceholderRepeater").property(
+                    "count"
+                )
+                == 2
+            )
+            assert (
+                window.findChild(QObject, "playerBottomPlaceholderRepeater").property(
+                    "count"
+                )
+                >= 1
+            )
         assert scene.property("relatedLoading") is False
         bridge._playback_record = None
         bridge.playerSceneChanged.emit()

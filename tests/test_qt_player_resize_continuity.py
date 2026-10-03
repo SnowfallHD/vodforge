@@ -71,9 +71,11 @@ def test_header_and_related_admission_preserve_primary_video_size(
                 )
             )
             assert stage.width() / stage.height() == pytest.approx(16 / 9, abs=0.01)
-            assert bool(compact.property("visible")) != bool(side.property("visible"))
+            assert compact is None
+            assert stage.x() == 0
+            assert stage.parentItem().parentItem().x() == 0
         assert {row[1] for row in samples} == {44}
-        assert {row[-1] for row in samples} == {False, True}
+        assert {row[-1] for row in samples} == {True}
         # Preserve the existing 12→20px outer gutters (at most16px total).
         # Header wrapping and sidebar admission previously lost~100–170px.
         assert all(after[3] >= before[3] - 16 for before, after in pairwise(samples)), (

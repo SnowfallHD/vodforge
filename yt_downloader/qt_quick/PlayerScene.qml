@@ -77,12 +77,11 @@ Item {
     readonly property bool relatedFallback: primaryRelated.length === 0
     readonly property var relatedCards: relatedFallback ? recentCards : primaryRelated
     readonly property bool relatedLoading: projection.loading === true || !projection.owner
-    readonly property real preferredRelatedSideWidth: Math.min(360, Math.max(270, width * 0.22))
-    // Admit the side rail only after the primary frame already fits at its
-    // height limit. Crossing a width breakpoint must not take space from it.
-    readonly property bool hasRelatedSide: wide && viewport.availableWidth >=
-        stageHeightLimit * videoAspect + preferredRelatedSideWidth + 24
-    readonly property real relatedSideWidth: hasRelatedSide ? preferredRelatedSideWidth : 0
+    // Keep the same two-column composition through every supported width.
+    // The rail grows continuously; the primary frame receives the remainder.
+    readonly property real preferredRelatedSideWidth: Math.min(360, Math.max(270, viewport.availableWidth * 0.27))
+    readonly property bool hasRelatedSide: true
+    readonly property real relatedSideWidth: preferredRelatedSideWidth
     signal closeRequested()
     signal volumeRequested(real value)
     signal editDetailsRequested(string owner)
@@ -414,15 +413,16 @@ Item {
             }
 
             RowLayout {
-                width: scene.wide ? Math.min(parent.width, scene.stageHeightLimit * scene.videoAspect +
-                                            scene.relatedSideWidth + (scene.hasRelatedSide ? spacing : 0)) : parent.width
-                x: (parent.width - width) / 2
+                width: Math.min(parent.width, scene.stageHeightLimit * scene.videoAspect +
+                                scene.relatedSideWidth + spacing)
+                x: 0
                 spacing: 24
                 Column {
                     id: stageColumn
                     objectName: "playerStageColumn"
                     Layout.fillWidth: true
-                    Layout.preferredWidth: scene.wide ? scene.stageHeightLimit * scene.videoAspect : scene.width
+                    Layout.preferredWidth: Math.max(1, parent.width - scene.relatedSideWidth - parent.spacing)
+                    Layout.minimumWidth: 0
                     spacing: 10
 
                     Item {
@@ -430,7 +430,7 @@ Item {
                         objectName: "playerMediaStage"
                         height: Math.max(1, Math.min(scene.stageHeightLimit, parent.width / scene.videoAspect))
                         width: Math.min(parent.width, height * scene.videoAspect)
-                        x: (parent.width - width) / 2
+                        x: 0
                         clip: true
                         layer.enabled: true
                         layer.effect: MultiEffect {
@@ -535,6 +535,8 @@ Item {
                     objectName: "playerRelatedSide"
                     visible: scene.hasRelatedSide
                     Layout.preferredWidth: scene.relatedSideWidth
+                    Layout.minimumWidth: scene.relatedSideWidth
+                    Layout.maximumWidth: scene.relatedSideWidth
                     Layout.alignment: Qt.AlignTop
                     spacing: 9
                     Text {
@@ -548,6 +550,15 @@ Item {
                         visible: scene.relatedCards.length === 0
                         width: parent.width
                         spacing: 10
+                        Repeater {
+                            objectName: "playerSidePlaceholderRepeater"
+                            model: 2
+                            WatchPlaceholderCard {
+                                width: relatedSide.width
+                                height: width * 9 / 16 + 34
+                                sectionTitle: "Recently Added"
+                            }
+                        }
                         Text {
                             width: parent.width
                             text: scene.relatedLoading ? "Loading saved media…" : "Add something to watch"
@@ -586,7 +597,7 @@ Item {
                                     pending: source.toString().length === 0 &&
                                         scene.appBridge.sizedMediaArtworkState(modelData.owner, 244, 138) === "pending"
                                     Layout.preferredWidth: 92
-                                    Layout.preferredHeight: 58
+                                    Layout.preferredHeight: 92 * 9 / 16
                                     inset: 0
                                 }
                                 ColumnLayout {
@@ -616,45 +627,6 @@ Item {
             }
 
             Column {
-                objectName: "playerRelatedCompact"
-                visible: !scene.hasRelatedSide
-                width: parent.width
-                spacing: 8
-                Text { text: scene.relatedFallback ? "RECENTLY ADDED" : scene.projection.queued ? "UP NEXT" : "MORE TO WATCH"; color: theme.muted; font.pixelSize: 12; font.bold: true }
-                Text {
-                    visible: scene.relatedCards.length === 0
-                    width: parent.width
-                    text: scene.relatedLoading ? "Loading saved media…" : "Save another video in Forge to build your watch list."
-                    color: theme.muted
-                    wrapMode: Text.WordWrap
-                }
-                StoneButton {
-                    objectName: "playerRelatedCompactAddMedia"
-                    visible: scene.relatedCards.length === 0 && !scene.relatedLoading
-                    label: "Add something to watch"
-                    onActivated: scene.appBridge.selectHome("Forge")
-                }
-                ScrollView {
-                    visible: scene.relatedCards.length > 0
-                    id: relatedRail
-                    objectName: "playerRelatedRail"
-                    width: parent.width
-                    height: 164
-                    clip: true
-                    ScrollBar.vertical.policy: ScrollBar.AlwaysOff
-                    ScrollBar.horizontal.policy: ScrollBar.AsNeeded
-                    RailWheelHandler { horizontalView: relatedRail; verticalView: viewport }
-                    Row {
-                        spacing: 12
-                        Repeater {
-                            model: scene.relatedCards
-                            PlayerThumbnailCard { appBridge: scene.appBridge }
-                        }
-                    }
-                }
-            }
-
-            Column {
                 objectName: "watchChapters"
                 visible: scene.appBridge.playbackChapters.length > 0
                 width: parent.width
@@ -677,7 +649,7 @@ Item {
 
             Column {
                 objectName: "playerRecentRail"
-                visible: !scene.relatedFallback && scene.recentCards.length > 0
+                visible: (!scene.relatedFallback && scene.recentCards.length > 0) || scene.relatedCards.length === 0
                 width: parent.width
                 spacing: 8
                 Text { text: "RECENTLY ADDED"; color: theme.muted; font.pixelSize: 12; font.bold: true }
@@ -695,8 +667,17 @@ Item {
                     Row {
                         spacing: 12
                         Repeater {
-                            model: scene.recentCards.slice(0, 8)
+                            model: scene.relatedFallback ? [] : scene.recentCards.slice(0, 8)
                             PlayerThumbnailCard { appBridge: scene.appBridge }
+                        }
+                        Repeater {
+                            objectName: "playerBottomPlaceholderRepeater"
+                            model: scene.relatedCards.length === 0 ? Math.max(1, Math.ceil(recentRail.width / 220)) : 0
+                            WatchPlaceholderCard {
+                                width: 207
+                                height: 150
+                                sectionTitle: "Recently Added"
+                            }
                         }
                     }
                 }

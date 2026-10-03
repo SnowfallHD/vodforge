@@ -28,6 +28,8 @@ def test_player_stage_and_recommendations_grow_with_viewport(tmp_path, monkeypat
         side = window.findChild(QObject, "playerRelatedSide")
         compact = window.findChild(QObject, "playerRelatedCompact")
         scene = window.findChild(QObject, "watchPlayerScene")
+        overlay = window.findChild(QObject, "embeddedPlayerOverlay")
+        caption = window.findChild(QObject, "embeddedCaptionText")
         sizes = []
         for width, height in (
             (820, 650),
@@ -41,19 +43,24 @@ def test_player_stage_and_recommendations_grow_with_viewport(tmp_path, monkeypat
                 app.processEvents()
             assert stage.width() / stage.height() == pytest.approx(16 / 9, abs=0.02)
             assert stage.width() <= stage.parentItem().width() + 1
+            assert stage.x() == 0
+            assert stage.parentItem().parentItem().x() == 0
+            assert overlay.width() == pytest.approx(stage.width())
+            assert overlay.property("minimumControlsWidth") <= stage.width()
+            assert 0 <= caption.x()
+            assert caption.x() + caption.width() <= stage.width()
+            assert side.property("visible") is True
             assert bool(side.property("visible")) == bool(
                 scene.property("hasRelatedSide")
             )
-            assert bool(compact.property("visible")) != bool(
-                scene.property("hasRelatedSide")
-            )
+            assert compact is None
             if side.property("visible"):
                 # The bounded sidebar leaves the majority of the row for video.
                 assert 270 <= side.width() <= 360
                 row = stage.parentItem().parentItem()
-                assert stage.width() >= row.width() * 0.65
-                assert stage.width() >= scene.width() * 0.60
-                assert side.width() <= scene.width() * 0.30
+                assert stage.width() >= row.width() * 0.60
+                assert stage.width() >= scene.width() * 0.50
+                assert side.width() <= scene.width() * 0.37
                 for item in (stage, side):
                     origin = item.mapToItem(scene, QPointF(0, 0))
                     assert origin.x() >= -1
@@ -63,7 +70,7 @@ def test_player_stage_and_recommendations_grow_with_viewport(tmp_path, monkeypat
                 gap = side.x() - (stage.parentItem().x() + stage.x() + stage.width())
                 assert 15 <= gap <= 40
                 sizes.append((stage.width(), side.width()))
-        assert len(sizes) == 3
+        assert len(sizes) == 5
         assert all(after[0] > before[0] for before, after in pairwise(sizes))
         assert all(after[1] >= before[1] for before, after in pairwise(sizes))
         assert sizes[-1][0] > sizes[0][0] * 1.5
