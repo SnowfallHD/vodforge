@@ -1761,9 +1761,12 @@ def test_qt_player_related_side_and_recent_artwork_rail_follow_later_design(
         stage = window.findChild(QObject, "playerMediaStage")
         stage_column = window.findChild(QObject, "playerStageColumn")
         assert window.findChild(QObject, "watchMoments") is None
+        # A tall primary stage keeps related cards below until both columns fit.
+        # Preserve the wide side-placement and compact ownership checks too.
         for width, height, side_visible in (
-            (1280, 800, True),
-            (1920, 1080, True),
+            (1280, 800, False),
+            (1920, 800, True),
+            (1920, 1080, False),
             (820, 560, False),
         ):
             window.resize(width, height)
