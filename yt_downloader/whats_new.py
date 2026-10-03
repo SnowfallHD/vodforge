@@ -54,6 +54,8 @@ HIGHLIGHTS = (
         "Forge keeps URL feedback beside the download controls. Selected-run details "
         "stay separate from new input notices, with Activity available for the full log.",
         NativePreview.ACTIVITY,
+        recording="forge-feedback.mp4",
+        poster="forge-feedback.jpg",
     ),
     FeatureHighlight(
         "watch",
@@ -61,6 +63,8 @@ HIGHLIGHTS = (
         "Watch keeps the video in view as the layout changes. Move playback between "
         "the main player, Pop out and Fullscreen without starting it over.",
         NativePreview.PLAYER,
+        recording="watch-player.mp4",
+        poster="watch-player.jpg",
     ),
     FeatureHighlight(
         "library",
@@ -68,6 +72,8 @@ HIGHLIGHTS = (
         "Library brings file actions back into the selected item. In My Files, open "
         "Issues & Recovery to find a missing file, retry a download or dismiss an issue.",
         NativePreview.LIBRARY,
+        recording="library-actions.mp4",
+        poster="library-actions.jpg",
     ),
     FeatureHighlight(
         "captions",
@@ -75,6 +81,8 @@ HIGHLIGHTS = (
         "Use Captions for a saved original track and Subtitles for a saved translation. "
         "To request a translation with a new MP4, choose its language in Settings.",
         NativePreview.TRANSPORT,
+        recording="captions-player.mp4",
+        poster="captions-player.jpg",
     ),
 )
 

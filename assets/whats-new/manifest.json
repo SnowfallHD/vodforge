@@ -1,0 +1,54 @@
+{
+  "schema": 1,
+  "tool": "Shotbase 1.5.0",
+  "content": "Synthetic offline QA media and fictional records; recorded application interactions",
+  "editing": "Temporal cuts and privacy crop in Shotbase; delivery scaling and compression only outside editor",
+  "audio": "No audio streams; application preview also muted",
+  "acceptance_scope": "Feature demonstrations, not successor native qualification",
+  "clips": [
+    {
+      "key": "forge-feedback",
+      "recording": "forge-feedback.mp4",
+      "poster": "forge-feedback.jpg",
+      "sha256": "c639a4a57ca9e7de8e761622d96679f04e4d4450a0480daf67e39a56dd3eb206",
+      "poster_sha256": "e739bb6c2dc39085540cdc8b41f7261382163b5374693a44c46ae58d3800caa4",
+      "duration_seconds": 3.958008,
+      "width": 960,
+      "height": 302,
+      "capture_source_commit": "056a3761577a374a3abc1cac79049ee20325c7a1"
+    },
+    {
+      "key": "watch-player",
+      "recording": "watch-player.mp4",
+      "poster": "watch-player.jpg",
+      "sha256": "8d682b26d8dfe51550f477149bcefa8b8cb377ae2bc1c4b9426b74017beeef57",
+      "poster_sha256": "b9ac23ac99cf566d7388cb68c955de332a5dbd61d46714d86666b829ed8570ec",
+      "duration_seconds": 4.208333,
+      "width": 960,
+      "height": 544,
+      "capture_source_commit": "056a3761577a374a3abc1cac79049ee20325c7a1"
+    },
+    {
+      "key": "library-actions",
+      "recording": "library-actions.mp4",
+      "poster": "library-actions.jpg",
+      "sha256": "599dcdb20580fbde984710577a5c518611ef915d8a376c5bd95180304a2df6a3",
+      "poster_sha256": "2a7b0bfb0e50546281c812e7fe913d6b52c80eba004fd24b66c959c4aab51a06",
+      "duration_seconds": 4.5,
+      "width": 960,
+      "height": 554,
+      "capture_source_commit": "d699201cd2ab6d2bdfe91038106097b6bf9261df"
+    },
+    {
+      "key": "captions-player",
+      "recording": "captions-player.mp4",
+      "poster": "captions-player.jpg",
+      "sha256": "b0ca98730de126945a11b751652b1dd62a379c6f158a09d20dc47deb4cf348d5",
+      "poster_sha256": "b6cdd902299bcb6be126ac7617f14e33241155e72213f83932db9ae68fbf7958",
+      "duration_seconds": 6.958333,
+      "width": 960,
+      "height": 646,
+      "capture_source_commit": "d699201cd2ab6d2bdfe91038106097b6bf9261df"
+    }
+  ]
+}

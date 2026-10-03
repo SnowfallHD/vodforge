@@ -204,3 +204,35 @@ def test_recorded_editorial_assets_are_paired_packaged_basenames():
             NativePreview.PLAYER,
             recording="watch-transfer.mp4",
         )
+
+
+def test_recorded_showcase_manifest_integrity_and_explicit_packaging():
+    import hashlib
+    import json
+    from pathlib import Path
+
+    root = Path(__file__).parents[1]
+    assets = root / "assets/whats-new"
+    manifest = json.loads((assets / "manifest.json").read_text())
+    entries = manifest["clips"]
+    assert len(entries) == len(HIGHLIGHTS) == 4
+    assert {(h.recording, h.poster) for h in HIGHLIGHTS} == {
+        (entry["recording"], entry["poster"]) for entry in entries
+    }
+    names = {"manifest.json"}
+    for entry in entries:
+        assert 3 < entry["duration_seconds"] < 8
+        assert entry["width"] == 960
+        for field, hash_field in (("recording", "sha256"), ("poster", "poster_sha256")):
+            name = entry[field]
+            assert Path(name).name == name
+            payload = (assets / name).read_bytes()
+            assert hashlib.sha256(payload).hexdigest() == entry[hash_field]
+            names.add(name)
+    assert sum((assets / name).stat().st_size for name in names) < 12_000_000
+    for script, separator in (("build_macos.sh", ":"), ("build_windows.ps1", ";")):
+        source = (root / script).read_text()
+        for name in names:
+            assert f"assets/whats-new/{name}{separator}assets/whats-new" in source
+    public = (assets / "manifest.json").read_text()
+    assert "/Users/" not in public and "launch_id" not in public

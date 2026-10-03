@@ -23,8 +23,12 @@ def wait_until(predicate, timeout=3):
     assert predicate()
 
 
+@pytest.mark.parametrize(
+    "asset",
+    [None, "forge-feedback", "watch-player", "library-actions", "captions-player"],
+)
 def test_recorded_preview_decodes_silently_and_releases_hidden_media(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, asset
 ):
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
@@ -33,28 +37,31 @@ def test_recorded_preview_decodes_silently_and_releases_hidden_media(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
     movie = tmp_path / "decoder-fixture.mp4"
-    subprocess.run(
-        [
-            ffmpeg,
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-f",
-            "lavfi",
-            "-i",
-            "color=c=red:s=320x180:r=20",
-            "-t",
-            "1",
-            "-an",
-            "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
-            str(movie),
-        ],
-        check=True,
-        timeout=15,
-    )
+    if asset:
+        movie = Path(__file__).parents[1] / "assets/whats-new" / f"{asset}.mp4"
+    else:
+        subprocess.run(
+            [
+                ffmpeg,
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=red:s=320x180:r=20",
+                "-t",
+                "1",
+                "-an",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                str(movie),
+            ],
+            check=True,
+            timeout=15,
+        )
     qt_app()
     bridge = main.Bridge(None)
     engine = main.create_engine(bridge)
@@ -91,6 +98,14 @@ def test_recorded_preview_decodes_silently_and_releases_hidden_media(
         )
         assert player.audioOutput().isMuted()
         assert player.audioOutput().volume() == 0
+        wait_until(lambda: player.duration() > 0)
+        player.setPosition(player.duration() - 100)
+        wait_until(
+            lambda: (
+                player.position() < 500
+                and player.playbackState() == QMediaPlayer.PlayingState
+            )
+        )
         preview.setProperty("pausedByUser", True)
         wait_until(lambda: player.playbackState() == QMediaPlayer.PausedState)
         assert preview.property("frameReady")

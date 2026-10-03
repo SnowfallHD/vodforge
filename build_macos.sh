@@ -299,6 +299,15 @@ fi
   --add-data "$icon_asset_dir:assets/icons/lucide" \
   --add-data "assets/watch-welcome-scenic.png:assets" \
   --add-data "assets/preview_thumbnails/alpine-lake.jpg:assets/preview_thumbnails" \
+  --add-data "assets/whats-new/forge-feedback.mp4:assets/whats-new" \
+  --add-data "assets/whats-new/forge-feedback.jpg:assets/whats-new" \
+  --add-data "assets/whats-new/watch-player.mp4:assets/whats-new" \
+  --add-data "assets/whats-new/watch-player.jpg:assets/whats-new" \
+  --add-data "assets/whats-new/library-actions.mp4:assets/whats-new" \
+  --add-data "assets/whats-new/library-actions.jpg:assets/whats-new" \
+  --add-data "assets/whats-new/captions-player.mp4:assets/whats-new" \
+  --add-data "assets/whats-new/captions-player.jpg:assets/whats-new" \
+  --add-data "assets/whats-new/manifest.json:assets/whats-new" \
   --add-data "THIRD_PARTY_NOTICES.md:." \
   --add-binary "$ffmpeg:." \
   --add-binary "$ffprobe:." \
