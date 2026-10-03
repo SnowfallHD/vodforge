@@ -216,6 +216,8 @@ def test_recorded_showcase_manifest_integrity_and_explicit_packaging():
     manifest = json.loads((assets / "manifest.json").read_text())
     entries = manifest["clips"]
     assert len(entries) == len(HIGHLIGHTS) == 4
+    # Full-window previews must share a visual footprint across the carousel.
+    assert {(entry["width"], entry["height"]) for entry in entries} == {(960, 646)}
     assert {(h.recording, h.poster) for h in HIGHLIGHTS} == {
         (entry["recording"], entry["poster"]) for entry in entries
     }
