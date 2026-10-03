@@ -15,10 +15,18 @@ Item {
     property bool foreground: Window.window && Window.window.active
     readonly property bool loadRecording: active && visible && windowVisible && !reducedMotion && recordingSource.toString().length > 0
     readonly property bool playRecording: loadRecording && foreground && !pausedByUser
-    readonly property bool frameReady: recordingLoader.item && recordingLoader.item.frameReady
+    readonly property bool frameReady: recordingLoader.item &&
+        recordingLoader.item.sourceOwner.toString() === recordingSource.toString() && recordingLoader.item.frameReady
+    readonly property var mediaPlayer: recordingLoader.item ? recordingLoader.item.mediaPlayer : null
     Accessible.role: Accessible.Graphic
     Accessible.name: description
-    onRecordingSourceChanged: pausedByUser = false
+    // Each slide owns a separate decoder/output. Queued frames from a retired
+    // source must never be adopted by a newly selected slide.
+    onRecordingSourceChanged: {
+        pausedByUser = false
+        recordingLoader.sourceComponent = null
+        recordingLoader.sourceComponent = recordingComponent
+    }
 
     Image {
         objectName: "recordedPreviewPoster"
@@ -33,7 +41,15 @@ Item {
         objectName: "recordedPreviewLoader"
         anchors.fill: parent
         active: preview.loadRecording
-        sourceComponent: Item {
+        sourceComponent: recordingComponent
+        onLoaded: item.sourceOwner = preview.recordingSource
+    }
+    Component {
+        id: recordingComponent
+        Item {
+            id: recording
+            property url sourceOwner: ""
+            property alias mediaPlayer: player
             readonly property bool frameReady: video.sourceRect.width > 0
             function syncPlayback() {
                 if (preview.playRecording) player.play()
@@ -41,7 +57,7 @@ Item {
             }
             Connections {
                 target: preview
-                function onPlayRecordingChanged() { recordingLoader.item.syncPlayback() }
+                function onPlayRecordingChanged() { recording.syncPlayback() }
             }
             Component.onDestruction: player.stop()
             VideoOutput {
@@ -54,14 +70,14 @@ Item {
             MediaPlayer {
                 id: player
                 objectName: "recordedPreviewPlayer"
-                source: preview.recordingSource
+                source: recording.sourceOwner
                 loops: MediaPlayer.Infinite
                 videoOutput: video
                 audioOutput: AudioOutput { muted: true; volume: 0 }
                 onSourceChanged: video.clearOutput()
                 onMediaStatusChanged: {
                     if (recordingLoader.item && (mediaStatus === MediaPlayer.LoadedMedia || mediaStatus === MediaPlayer.BufferedMedia))
-                        recordingLoader.item.syncPlayback()
+                        recording.syncPlayback()
                 }
             }
         }

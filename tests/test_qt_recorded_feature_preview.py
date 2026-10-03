@@ -84,17 +84,45 @@ def test_recorded_preview_decodes_silently_and_releases_hidden_media(
     preview.setHeight(242)
     preview.setProperty("recordingSource", QUrl.fromLocalFile(str(movie)))
     preview.setProperty("foreground", True)
+
+    def current_player():
+        return preview.property("mediaPlayer")
+
     try:
         assert not preview.property("loadRecording")
         preview.setProperty("active", True)
-        wait_until(
-            lambda: preview.findChild(QObject, "recordedPreviewPlayer") is not None
-        )
-        player = preview.findChild(QObject, "recordedPreviewPlayer")
+        wait_until(lambda: current_player() is not None)
+        player = current_player()
         wait_until(
             lambda: (
                 player.playbackState() == QMediaPlayer.PlayingState
                 and preview.property("frameReady")
+            )
+        )
+        # Paging must retire the old decoder/output owner, including rapid reversals.
+        for key in (
+            "watch-player",
+            "captions-player",
+            "forge-feedback",
+            "library-actions",
+            "watch-player",
+        ):
+            old_player = player
+            target = Path(__file__).parents[1] / "assets/whats-new" / f"{key}.mp4"
+            if player.source() == QUrl.fromLocalFile(str(target)):
+                continue
+            preview.setProperty("recordingSource", QUrl.fromLocalFile(str(target)))
+            player = current_player()
+            assert player is not old_player
+            wait_until(
+                lambda player=player, target=target: (
+                    player.source() == QUrl.fromLocalFile(str(target))
+                )
+            )
+        wait_until(
+            lambda: (
+                preview.property("frameReady")
+                and player.playbackState() == QMediaPlayer.PlayingState
             )
         )
         assert player.audioOutput().isMuted()
@@ -114,27 +142,21 @@ def test_recorded_preview_decodes_silently_and_releases_hidden_media(
         preview.setProperty("pausedByUser", False)
         assert not preview.property("playRecording")
         preview.setProperty("reducedMotion", True)
-        wait_until(lambda: preview.findChild(QObject, "recordedPreviewPlayer") is None)
+        wait_until(lambda: current_player() is None)
         assert not preview.property("loadRecording")
         preview.setProperty("reducedMotion", False)
         preview.setProperty("foreground", True)
-        wait_until(
-            lambda: preview.findChild(QObject, "recordedPreviewPlayer") is not None
-        )
+        wait_until(lambda: current_player() is not None)
         preview.setProperty("active", False)
-        wait_until(lambda: preview.findChild(QObject, "recordedPreviewPlayer") is None)
+        wait_until(lambda: current_player() is None)
         preview.setProperty("active", True)
-        wait_until(
-            lambda: preview.findChild(QObject, "recordedPreviewPlayer") is not None
-        )
+        wait_until(lambda: current_player() is not None)
         preview.setVisible(False)
-        wait_until(lambda: preview.findChild(QObject, "recordedPreviewPlayer") is None)
+        wait_until(lambda: current_player() is None)
         preview.setVisible(True)
-        wait_until(
-            lambda: preview.findChild(QObject, "recordedPreviewPlayer") is not None
-        )
+        wait_until(lambda: current_player() is not None)
         window.hide()
-        wait_until(lambda: preview.findChild(QObject, "recordedPreviewPlayer") is None)
+        wait_until(lambda: current_player() is None)
         assert bridge._playback_binding is None
     finally:
         preview.deleteLater()
