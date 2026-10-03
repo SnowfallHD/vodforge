@@ -236,3 +236,44 @@ def test_recorded_showcase_manifest_integrity_and_explicit_packaging():
             assert f"assets/whats-new/{name}{separator}assets/whats-new" in source
     public = (assets / "manifest.json").read_text()
     assert "/Users/" not in public and "launch_id" not in public
+
+
+@pytest.mark.parametrize("highlight", HIGHLIGHTS, ids=lambda item: item.key)
+def test_recorded_showcase_poster_matches_opening_frame(highlight):
+    import io
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    from PIL import Image, ImageChops, ImageStat
+
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        pytest.skip("Existing FFmpeg is required to compare decoded opening frames")
+    assets = Path(__file__).parents[1] / "assets/whats-new"
+    frame = subprocess.run(
+        [
+            ffmpeg,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            str(assets / highlight.recording),
+            "-frames:v",
+            "1",
+            "-f",
+            "image2pipe",
+            "-c:v",
+            "png",
+            "pipe:1",
+        ],
+        check=True,
+        capture_output=True,
+        timeout=15,
+    ).stdout
+    opening = Image.open(io.BytesIO(frame)).convert("RGB")
+    poster = Image.open(assets / highlight.poster).convert("RGB")
+    assert poster.size == opening.size
+    # JPEG compression is allowed; a different camera/result frame is not.
+    difference = ImageStat.Stat(ImageChops.difference(poster, opening))
+    assert max(difference.mean) < 4
