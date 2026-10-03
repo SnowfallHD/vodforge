@@ -3142,6 +3142,19 @@ def test_forge_simple_activity_shows_saved_steps_after_completion(
         assert "Checking the output" in friendly
         assert "Download complete" in friendly
         assert "selected format" not in friendly
+        assert "Finishing the download" in friendly
+        engine = qt_main.create_engine(bridge)
+        try:
+            window = engine.rootObjects()[0]
+            QTest.qWait(50)
+            activity = window.findChild(QObject, "forgeActivityLines")
+            assert activity is not None
+            assert activity.property("activityText") == friendly
+            assert len(activity.property("lines").toVariant()) == 6
+        finally:
+            window.close()
+            engine.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
     finally:
         bridge.close()
 

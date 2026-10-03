@@ -348,25 +348,39 @@ def sanitize_run_activity(value: Any) -> list[str]:
     """Bound app-owned, user-visible run activity before durable storage."""
     if not isinstance(value, list):
         return []
-    result: list[str] = []
+    from .forge_activity import _activity_stage_tags
+
+    retained: list[tuple[int, str]] = []
+    witnesses: list[tuple[int, str]] = []
+    reached: set[str] = set()
     total_chars = 0
-    for item in value:
+    for index, item in enumerate(value):
         line = str(item).replace("\x00", "").replace("\r", "").rstrip()
         if not line:
             continue
-        line = sanitize_durable_text(line)
-        line = line[:MAX_RUN_ACTIVITY_LINE_CHARS]
+        line = sanitize_durable_text(line)[:MAX_RUN_ACTIVITY_LINE_CHARS]
+        newly_reached = _activity_stage_tags(line) - reached
+        if newly_reached:
+            witnesses.append((index, line))
+            reached.update(newly_reached)
         remaining = MAX_RUN_ACTIVITY_CHARS - total_chars
-        if remaining <= 0:
+        if remaining > 0 and len(retained) < MAX_RUN_ACTIVITY_LINES:
+            bounded = line[:remaining]
+            retained.append((index, bounded))
+            total_chars += len(bounded)
+    # Reserve actual stage witnesses even when a long progress dump fills the
+    # prefix budget. Keep original order and the existing line/character limits.
+    required_indices = {index for index, _ in witnesses}
+    ordinary = [row for row in retained if row[0] not in required_indices]
+    remaining = MAX_RUN_ACTIVITY_CHARS - sum(len(line) for _, line in witnesses)
+    selected = list(witnesses)
+    for index, line in ordinary:
+        if len(selected) >= MAX_RUN_ACTIVITY_LINES or remaining <= 0:
             break
         line = line[:remaining]
-        if not line:
-            break
-        result.append(line)
-        total_chars += len(line)
-        if len(result) >= MAX_RUN_ACTIVITY_LINES:
-            break
-    return result
+        selected.append((index, line))
+        remaining -= len(line)
+    return [line for _, line in sorted(selected)]
 
 
 def history_output_dir(record: dict[str, Any]) -> Path | None:

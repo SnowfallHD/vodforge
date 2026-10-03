@@ -546,3 +546,52 @@ def test_invalid_history_is_reported_without_overwriting_source(tmp_path: Path):
         load_history(path)
 
     assert path.read_text(encoding="utf-8") == "not json"
+
+
+def test_history_activity_preserves_late_stage_witnesses_within_budgets(tmp_path):
+    from yt_downloader.forge_activity import friendly_saved_activity
+
+    activity = ["Video 1 of 1: selected format 231+251", "Video 1 of 1: downloading"]
+    activity += [f"[download] progress fragment {i} " + "x" * 300 for i in range(520)]
+    activity += [
+        "Video 1 of 1: FFmpeg command started",
+        "Video 1 of 1: validated output.mp4",
+        "Video 1 of 1: atomic commit completed",
+    ]
+    history = upsert_history(
+        [],
+        {"id": "late-stages", "vodforge_run_activity": activity},
+        tmp_path / "output",
+    )
+    path = tmp_path / "history.json"
+    save_history(path, history)
+    loaded = load_history(path)[0]["vodforge_run_activity"]
+    assert len(loaded) <= MAX_RUN_ACTIVITY_LINES
+    assert sum(map(len, loaded)) <= MAX_RUN_ACTIVITY_CHARS
+    assert friendly_saved_activity("Completed", loaded).splitlines() == [
+        "Getting video information",
+        "Downloading media",
+        "Converting media",
+        "Checking the output",
+        "Finishing the download",
+        "[success] Download complete",
+    ]
+    assert (
+        loaded.index(activity[-3])
+        < loaded.index(activity[-2])
+        < loaded.index(activity[-1])
+    )
+
+
+def test_history_activity_does_not_invent_unreached_steps():
+    from yt_downloader.forge_activity import friendly_saved_activity
+    from yt_downloader.history import sanitize_run_activity
+
+    activity = ["Video 1 of 1: downloading"] + ["progress " + "x" * 300] * 520
+    assert friendly_saved_activity(
+        "Stopped", sanitize_run_activity(activity)
+    ).splitlines() == ["Downloading media", "Download stopped"]
+    assert (
+        friendly_saved_activity("Completed", sanitize_run_activity([]))
+        == "[success] Download complete"
+    )
