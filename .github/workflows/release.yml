@@ -176,6 +176,24 @@ jobs:
           .venv/bin/python -m pip install -r requirements-dev.txt -r engineering-quality/requirements.txt
           qa_home=$(mktemp -d)
           HOME="$qa_home" LOCALAPPDATA="$qa_home" XDG_STATE_HOME="$qa_home" .venv/bin/python -m pytest engineering-quality/tests/test_qt_stone_button_accessibility.py tests/test_qt_player_hover_aspect.py -q
+      - name: Capture failed Intel hover event routing
+        if: ${{ failure() && inputs.artifacts_only && inputs.qa_macos_only && inputs.qa_intel_only }}
+        continue-on-error: true
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_QUICK_BACKEND: software
+          QT_QUICK_CONTROLS_STYLE: Basic
+          VODFORGE_DISABLE_TELEMETRY: "1"
+        run: |
+          qa_home=$(mktemp -d)
+          HOME="$qa_home" LOCALAPPDATA="$qa_home" XDG_STATE_HOME="$qa_home" .venv/bin/python engineering-quality/runners/trace-hover-fixture.py "$PWD" build/intel-hover-fixture-trace.json
+      - name: Preserve Intel hover diagnosis
+        if: ${{ always() && inputs.artifacts_only && inputs.qa_macos_only && inputs.qa_intel_only }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: intel-hover-diagnosis
+          path: build/intel-hover-fixture-trace.json
+          if-no-files-found: warn
       - name: Build unsigned macOS review application
         env:
           VODFORGE_UI: qt
