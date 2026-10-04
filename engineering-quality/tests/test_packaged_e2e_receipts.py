@@ -53,13 +53,22 @@ from yt_downloader.quality_e2e import (
 @pytest.mark.parametrize(
     "event_name", ("library_description_observed", "restart_observed")
 )
+@pytest.mark.parametrize("pinned_footer", (False, True))
 def test_qt_visibility_gate_binds_renderer_and_recomputes_geometry(
-    tmp_path, mutation, event_name
+    tmp_path, mutation, event_name, pinned_footer
 ):
     environment, *_ = _isolated_launch(tmp_path)
     fields = _qt_visibility_fields()
     fields["full_title"] = LIBRARY_DESCRIPTION_STRESS_SELECTED_TITLE
     fields["description_text"] = LIBRARY_DESCRIPTION_STRESS_DESCRIPTION
+    if pinned_footer:
+        fields.update(
+            details_bounds={"x": 700, "y": 300, "width": 380, "height": 278},
+            description_viewport_bounds={"x": 710, "y": 335, "width": 360, "height": 243},
+            footer_bounds={"x": 700, "y": 586, "width": 380, "height": 74},
+            footer_action_bounds={"x": 700, "y": 586, "width": 380, "height": 40},
+            footer_visible=True, footer_action_visible=True, location_visible=True,
+        )
     receipt_path = write_quality_e2e_qt_library_visibility_receipt(
         **fields, environ=environment, pid=7001
     )
@@ -90,6 +99,20 @@ def test_qt_visibility_gate_binds_renderer_and_recomputes_geometry(
         event_name=event_name,
     )
     assert result["verified"] is (mutation is None), result["errors"]
+
+
+
+@pytest.mark.parametrize("mutation", (
+    ("footer_bounds", {"x": 700, "y": 590, "width": 380, "height": 74}),
+    ("footer_action_bounds", {"x": 700, "y": 580, "width": 380, "height": 40}),
+    ("footer_mapped_and_viewable", False),
+    ("details_minimum_available_height_px", 360),
+    ("reader_footer_gap_delta_px", 1),
+))
+def test_qt_pinned_footer_rejects_changed_geometry_and_claims(tmp_path, mutation):
+    test_qt_visibility_gate_binds_renderer_and_recomputes_geometry(
+        tmp_path, mutation, "library_description_observed", True
+    )
 
 
 def test_qt_restart_visibility_requires_exact_observed_text(tmp_path):

@@ -1067,15 +1067,17 @@ def _qt_library_description_visibility_receipt(
     ):
         if payload.get(key) is not True:
             errors.append(f"Qt Library visibility receipt {key} is not true")
+    pinned_footer = payload.get("layout_contract") == "qt_reader_with_pinned_footer"
     bounds: dict[str, dict[str, int]] = {}
-    for key in (
+    required_bounds = (
         "rail_bounds",
         "details_bounds",
         "library_table_bounds",
         "description_heading_bounds",
         "description_viewport_bounds",
         "description_text_bounds",
-    ):
+    ) + (("footer_bounds", "footer_action_bounds") if pinned_footer else ())
+    for key in required_bounds:
         value = payload.get(key)
         if not isinstance(value, dict) or any(
             type(value.get(axis)) is not int
@@ -1085,7 +1087,7 @@ def _qt_library_description_visibility_receipt(
             errors.append(f"Qt Library visibility receipt {key} is invalid")
         else:
             bounds[key] = value
-    if len(bounds) == 6:
+    if len(bounds) == len(required_bounds):
         rail = bounds["rail_bounds"]
         details = bounds["details_bounds"]
         table = bounds["library_table_bounds"]
@@ -1104,14 +1106,46 @@ def _qt_library_description_visibility_receipt(
         bottom = viewport["y"] + viewport["height"]
         table_bottom = table["y"] + table["height"]
         delta = bottom - table_bottom
-        if details["height"] < 360 or not inside(details, rail):
+        minimum_details_height = 360
+        alignment_delta = delta
+        if pinned_footer:
+            footer = bounds["footer_bounds"]
+            action = bounds["footer_action_bounds"]
+            details_bottom = details["y"] + details["height"]
+            alignment_delta = footer["y"] + footer["height"] - table_bottom
+            gap_delta = footer["y"] - details_bottom - 8
+            # The rail pins actions to the table bottom and gives the reader
+            # the remaining height. Recompute this contract, never trust flags.
+            minimum_details_height = min(
+                360, table_bottom - footer["height"] - 8 - details["y"]
+            )
+            if (
+                not inside(footer, rail)
+                or not inside(action, footer)
+                or payload.get("footer_mapped_and_viewable") is not True
+                or payload.get("footer_action_mapped_and_viewable") is not True
+                or viewport["height"] < 120
+                or abs(gap_delta) > QUALITY_E2E_LIBRARY_BOTTOM_ALIGNMENT_TOLERANCE_PX
+                or abs(bottom - details_bottom)
+                > QUALITY_E2E_LIBRARY_BOTTOM_ALIGNMENT_TOLERANCE_PX
+            ):
+                errors.append("Qt Library pinned footer geometry is invalid")
+            for key, value in (
+                ("footer_table_bottom_delta_px", alignment_delta),
+                ("reader_footer_gap_delta_px", gap_delta),
+                ("details_minimum_available_height_px", minimum_details_height),
+                ("minimum_description_viewport_height_px", 120),
+            ):
+                if payload.get(key) != value:
+                    errors.append(f"Qt Library visibility receipt {key} mismatch")
+        if details["height"] < minimum_details_height or not inside(details, rail):
             errors.append("Qt Library details panel geometry is invalid")
         if not inside(heading, details) or not inside(viewport, details):
             errors.append("Qt Library description geometry is invalid")
         if not (viewport["y"] <= body["y"] < bottom):
             errors.append("Qt Library first description line is outside the viewport")
-        if abs(delta) > QUALITY_E2E_LIBRARY_BOTTOM_ALIGNMENT_TOLERANCE_PX:
-            errors.append("Qt Library description bottom is not table aligned")
+        if abs(alignment_delta) > QUALITY_E2E_LIBRARY_BOTTOM_ALIGNMENT_TOLERANCE_PX:
+            errors.append("Qt Library description/footer bottom is not table aligned")
         for key, value in (
             ("details_height_px", details["height"]),
             ("description_bottom_px", bottom),
