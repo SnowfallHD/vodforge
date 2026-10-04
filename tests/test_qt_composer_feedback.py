@@ -64,24 +64,37 @@ def test_admitted_run_preparing_is_not_notice(feedback_scene, tmp_path, monkeypa
 
 
 def test_notice_morph_retains_composer_geometry_and_retracts(feedback_scene):
+    from PySide6.QtCore import QElapsedTimer
     from PySide6.QtTest import QTest
+
+    def wait_for_animation(predicate):
+        deadline = QElapsedTimer()
+        deadline.start()
+        while not predicate() and deadline.elapsed() < 2000:
+            QTest.qWait(10)
+        assert predicate()
 
     _app, bridge, window = feedback_scene
     QTest.qWait(100)
     composer = window.findChild(QObject, "forgeCommandRow")
     original = (composer.x(), composer.y(), composer.width(), composer.height())
-    bridge.operationFeedback.emit("Choose an output folder")
     notice = window.findChild(QObject, "operationNotice")
-    QTest.qWait(100)
-    assert 0 < notice.property("reveal") < 1
-    QTest.qWait(350)
+    # Exercise animation independently of the runner's accessibility preference.
+    # Observe actual frames: a fixed sleep can miss the intermediate state when
+    # the event loop returns late on a busy hosted builder.
+    notice.setProperty("reducedMotion", False)
+    frames = []
+    notice.revealChanged.connect(lambda: frames.append(notice.property("reveal")))
+    bridge.operationFeedback.emit("Choose an output folder")
+    wait_for_animation(lambda: notice.property("reveal") == 1)
+    assert any(0 < value < 1 for value in frames)
     assert notice.property("reveal") == pytest.approx(1)
     assert notice.width() < composer.width()
     assert original == (composer.x(), composer.y(), composer.width(), composer.height())
+    frames.clear()
     notice.setProperty("expanded", False)
-    QTest.qWait(100)
-    assert 0 < notice.property("reveal") < 1
-    QTest.qWait(350)
+    wait_for_animation(lambda: not notice.isVisible())
+    assert any(0 < value < 1 for value in frames)
     assert not notice.isVisible()
     assert original == (composer.x(), composer.y(), composer.width(), composer.height())
 

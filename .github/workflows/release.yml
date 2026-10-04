@@ -12,6 +12,11 @@ on:
         required: false
         default: false
         type: boolean
+      qa_macos_only:
+        description: Build only Mac QA artifacts; honored only with artifacts_only
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -19,6 +24,7 @@ permissions:
 
 jobs:
   windows:
+    if: ${{ !(inputs.artifacts_only && inputs.qa_macos_only) }}
     runs-on: windows-latest
     environment: release
     steps:
