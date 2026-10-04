@@ -18,7 +18,7 @@ from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtTest import QTest
 
 from tests.test_run_identity import make_job
-from yt_downloader.qt_quick.main import Bridge, create_engine
+from yt_downloader.qt_quick.main import Bridge, SHOWCASE_ID, create_engine
 
 
 def accessible_descendants(root):
@@ -52,12 +52,6 @@ def hover_embedded_video(window_object) -> None:
     deadline = time.monotonic() + 2
     while not overlay.property("controlsShown") and time.monotonic() < deadline:
         QTest.qWait(10)
-        # Layout and popup teardown can move the hit target after the first
-        # event. Send adjacent in-surface moves through ordinary window routing;
-        # never assign handler/overlay state or bypass hit testing.
-        point = surface.mapToScene(QPointF(surface.width() / 2, surface.height() / 2))
-        QTest.mouseMove(window_object, QPoint(round(point.x()) + 1, round(point.y())))
-        QTest.mouseMove(window_object, QPoint(round(point.x()), round(point.y())))
     assert overlay.property("controlsShown"), {
         "surface_scene_center": (point.x(), point.y()),
         "surface_size": (surface.width(), surface.height()),
@@ -79,6 +73,12 @@ def test_stone_buttons_expose_named_press_actions_and_hide_other_views(
     if QQuickStyle.name() != "Basic":
         QQuickStyle.setStyle("Basic")
     bridge = Bridge(None)
+    # These tests exercise normal navigation/player AX, after orientation.
+    # The real 700 ms editorial timer otherwise opens a modal on slower hosts.
+    bridge._engagement.presented_welcome()
+    bridge._settings["whats_new_seen"] = SHOWCASE_ID
+    bridge.checkEditorial(True)
+    assert not bridge.editorialSlides
     engine = create_engine(bridge)
     try:
         assert engine.rootObjects()
@@ -188,6 +188,12 @@ def test_compact_header_and_player_transport_stay_inside_minimum_window(
     if QQuickStyle.name() != "Basic":
         QQuickStyle.setStyle("Basic")
     bridge = Bridge(None)
+    # These tests exercise normal navigation/player AX, after orientation.
+    # The real 700 ms editorial timer otherwise opens a modal on slower hosts.
+    bridge._engagement.presented_welcome()
+    bridge._settings["whats_new_seen"] = SHOWCASE_ID
+    bridge.checkEditorial(True)
+    assert not bridge.editorialSlides
     engine = create_engine(bridge)
     try:
         window_object = engine.rootObjects()[0]

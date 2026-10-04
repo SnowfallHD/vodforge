@@ -9,6 +9,11 @@ from PySide6 import __version__ as qt_binding
 import pytest
 spec=importlib.util.spec_from_file_location('ax_fixture',source/'engineering-quality/tests/test_qt_stone_button_accessibility.py')
 module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+if len(sys.argv)>3 and sys.argv[3]=='--modal-control':
+ original_engine=module.create_engine
+ def modal_engine(bridge):
+  engine=original_engine(bridge);bridge.openWelcomeTour();QGuiApplication.instance().processEvents();return engine
+ module.create_engine=modal_engine
 original=module.hover_embedded_video;started=time.monotonic();events=[];samples=[]
 app=QGuiApplication.instance() or QGuiApplication([])
 def capture(window):
