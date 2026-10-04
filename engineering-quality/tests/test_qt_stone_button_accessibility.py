@@ -39,9 +39,19 @@ def hover_embedded_video(window_object) -> None:
     point = surface.mapToScene(QPointF(surface.width() / 2, surface.height() / 2))
     assert 0 <= point.x() < window_object.width()
     assert 0 <= point.y() < window_object.height()
-    QTest.mouseMove(window_object, QPoint(round(point.x()), round(point.y())))
-    QTest.qWait(80)
     overlay = window_object.findChild(QObject, "embeddedPlayerOverlay")
+    # Each new window must receive an actual leave/enter transition even when
+    # a previous test left the process-wide pointer at the same hit position.
+    # Wait for the observed hover state instead of assuming an 80 ms schedule.
+    QTest.mouseMove(window_object, QPoint(-20, -20))
+    deadline = time.monotonic() + 2
+    while overlay.property("controlsShown") and time.monotonic() < deadline:
+        QTest.qWait(10)
+    assert not overlay.property("controlsShown")
+    QTest.mouseMove(window_object, QPoint(round(point.x()), round(point.y())))
+    deadline = time.monotonic() + 2
+    while not overlay.property("controlsShown") and time.monotonic() < deadline:
+        QTest.qWait(10)
     assert overlay.property("controlsShown")
 
 

@@ -17,6 +17,11 @@ on:
         required: false
         default: false
         type: boolean
+      qa_intel_only:
+        description: Retry only Intel Mac; honored only with artifacts_only and qa_macos_only
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -145,11 +150,7 @@ jobs:
   macos:
     strategy:
       matrix:
-        include:
-          - os: macos-15
-            architecture: arm64
-          - os: macos-15-intel
-            architecture: x64
+        include: ${{ fromJSON(inputs.artifacts_only && inputs.qa_macos_only && inputs.qa_intel_only && '[{"os":"macos-15-intel","architecture":"x64"}]' || '[{"os":"macos-15","architecture":"arm64"},{"os":"macos-15-intel","architecture":"x64"}]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
