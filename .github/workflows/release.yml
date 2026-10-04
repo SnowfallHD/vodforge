@@ -164,6 +164,18 @@ jobs:
           echo "$(brew --prefix python@3.13)/bin" >> "$GITHUB_PATH"
           echo "$(brew --prefix ffmpeg)/bin" >> "$GITHUB_PATH"
           echo "$(brew --prefix deno)/bin" >> "$GITHUB_PATH"
+      - name: Check Intel QA hover routing before full build
+        if: ${{ inputs.artifacts_only && inputs.qa_macos_only && inputs.qa_intel_only }}
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_QUICK_BACKEND: software
+          QT_QUICK_CONTROLS_STYLE: Basic
+          VODFORGE_DISABLE_TELEMETRY: "1"
+        run: |
+          python3.13 -m venv .venv
+          .venv/bin/python -m pip install -r requirements-dev.txt -r engineering-quality/requirements.txt
+          qa_home=$(mktemp -d)
+          HOME="$qa_home" LOCALAPPDATA="$qa_home" XDG_STATE_HOME="$qa_home" .venv/bin/python -m pytest engineering-quality/tests/test_qt_stone_button_accessibility.py tests/test_qt_player_hover_aspect.py -q
       - name: Build unsigned macOS review application
         env:
           VODFORGE_UI: qt

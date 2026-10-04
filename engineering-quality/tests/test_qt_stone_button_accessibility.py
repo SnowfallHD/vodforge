@@ -52,7 +52,21 @@ def hover_embedded_video(window_object) -> None:
     deadline = time.monotonic() + 2
     while not overlay.property("controlsShown") and time.monotonic() < deadline:
         QTest.qWait(10)
-    assert overlay.property("controlsShown")
+        # Layout and popup teardown can move the hit target after the first
+        # event. Send adjacent in-surface moves through ordinary window routing;
+        # never assign handler/overlay state or bypass hit testing.
+        point = surface.mapToScene(QPointF(surface.width() / 2, surface.height() / 2))
+        QTest.mouseMove(window_object, QPoint(round(point.x()) + 1, round(point.y())))
+        QTest.mouseMove(window_object, QPoint(round(point.x()), round(point.y())))
+    assert overlay.property("controlsShown"), {
+        "surface_scene_center": (point.x(), point.y()),
+        "surface_size": (surface.width(), surface.height()),
+        "surface_visible": surface.isVisible(),
+        "presentation_available": overlay.property("presentationAvailable"),
+        "surface_hovered": overlay.property("surfaceHovered"),
+        "window_visible": window_object.isVisible(),
+        "window_exposed": window_object.isExposed(),
+    }
 
 
 def test_stone_buttons_expose_named_press_actions_and_hide_other_views(
