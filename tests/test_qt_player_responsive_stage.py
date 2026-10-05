@@ -46,7 +46,15 @@ def test_player_stage_and_recommendations_grow_with_viewport(tmp_path, monkeypat
             assert stage.x() == 0
             assert stage.parentItem().parentItem().x() == 0
             assert overlay.width() == pytest.approx(stage.width())
-            assert overlay.property("minimumControlsWidth") <= stage.width()
+            # Fractional font advances can exceed the conservative twelve-point
+            # gap budget by a fraction of one layout point on a different font
+            # backend. Verify actual row bounds and separation as well.
+            assert overlay.property("minimumControlsWidth") <= stage.width() + 1
+            left_actions = overlay.findChild(QObject, "playerOverlayLeftActions")
+            right_actions = overlay.findChild(QObject, "playerOverlayRightActions")
+            assert left_actions.x() >= 0
+            assert left_actions.x() + left_actions.width() <= right_actions.x()
+            assert right_actions.x() + right_actions.width() <= stage.width()
             assert 0 <= caption.x()
             assert caption.x() + caption.width() <= stage.width()
             assert side.property("visible") is True
