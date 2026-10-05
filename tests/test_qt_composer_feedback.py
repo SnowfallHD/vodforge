@@ -145,6 +145,7 @@ def test_system_reduced_motion_unavailable_falls_back(monkeypatch):
 
 @pytest.mark.parametrize("width,height", [(720, 560), (820, 560), (1100, 800)])
 def test_long_notice_expands_below_stationary_composer(feedback_scene, width, height):
+    from PySide6.QtCore import QElapsedTimer
     from PySide6.QtTest import QTest
 
     _app, bridge, window = feedback_scene
@@ -166,7 +167,16 @@ def test_long_notice_expands_below_stationary_composer(feedback_scene, width, he
     assert before == (composer.x(), composer.y(), composer.width(), composer.height())
     assert notice_y + notice.height() <= height - 18
     notice.setProperty("expanded", False)
-    QTest.qWait(100)
+    # Reveal and the containing Qt Quick layout settle on separate event-loop
+    # turns. Wait for the measured result rather than sampling after 100 ms.
+    deadline = QElapsedTimer()
+    deadline.start()
+    while (
+        abs(hero.mapToItem(window.contentItem(), QPointF(0, 0)).y() - original_hero_y) > 1
+        and deadline.elapsed() < 2000
+    ):
+        QTest.qWait(10)
+    assert notice.property("reveal") == 0
     assert hero.mapToItem(window.contentItem(), QPointF(0, 0)).y() == pytest.approx(
         original_hero_y, abs=1
     )
