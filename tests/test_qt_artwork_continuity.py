@@ -44,7 +44,7 @@ def test_pending_artwork_retains_only_the_same_owner(tmp_path, change_owner, res
 
 def probe(root: Path, change_owner: bool, resize: bool):
     import time
-    from urllib.parse import urlencode
+    from urllib.parse import parse_qs, urlencode
 
     from PySide6.QtCore import QEventLoop, QMetaObject, QTimer, QUrl
     from PySide6.QtGui import QGuiApplication
@@ -54,9 +54,24 @@ def probe(root: Path, change_owner: bool, resize: bool):
 
     class DelayedProvider(ThumbnailReductionProvider):
         def requestImage(self, identifier, size, requested_size):
-            if "delay=1" in identifier:
+            # The fixture deliberately uses a provider URL as an owner source.
+            # Resize reduction can wrap that synthetic URL; production owner
+            # sources are local files. Resolve fixture wrappers while retaining
+            # the outer requested geometry and the delayed-load condition.
+            params = parse_qs(identifier)
+            delayed_request = params.get("delay") == ["1"]
+            source = params["source"][0]
+            prefix = "image://vodforge-thumbnails/"
+            while source.startswith(prefix):
+                nested = parse_qs(source[len(prefix):])
+                delayed_request |= nested.get("delay") == ["1"]
+                source = nested["source"][0]
+            params["source"] = [source]
+            if delayed_request:
                 time.sleep(0.35)
-            return super().requestImage(identifier, size, requested_size)
+            return super().requestImage(
+                urlencode(params, doseq=True), size, requested_size
+            )
 
     app = QGuiApplication([])
     view = QQuickView()
@@ -115,12 +130,19 @@ Rectangle {{ id:frame; width:120;height:72;color:"#202020"
         assert pixel.red() == 200 and pixel.blue() == 50, (
             "same-owner artwork cleared while derivative pending"
         )
-    settle(900)
-    final = view.grabWindow()
+    # Asynchronous consumers can queue behind the delayed provider. Await the
+    # asserted result with a bound; the pending-frame check stays at 50 ms.
+    expected_blue = 200 if change_owner else 50
+    deadline = time.monotonic() + 4
+    while True:
+        settle(50)
+        final = view.grabWindow()
+        if final.pixelColor(final.width() // 2, final.height() // 2).blue() == expected_blue:
+            break
+        if time.monotonic() >= deadline:
+            break
     final.save(str(root / "final.png"))
-    assert final.pixelColor(final.width() // 2, final.height() // 2).blue() == (
-        200 if change_owner else 50
-    )
+    assert final.pixelColor(final.width() // 2, final.height() // 2).blue() == expected_blue
     view.close()
     app.quit()
 
