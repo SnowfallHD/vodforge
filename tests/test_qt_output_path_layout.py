@@ -1,12 +1,25 @@
 """Shared path presentation and bottom Selected Item actions retain geometry."""
 
+import json
 import os
 from pathlib import Path
 
 import pytest
 from PySide6.QtCore import QObject
+from PySide6.QtQml import QQmlEngine, QQmlExpression
 
 from tests.test_qt_inspector_actions import scene, select_saved  # noqa: F401
+
+
+def set_fixture_path(field, value):
+    # QObject.setProperty leaves the source QML binding active: a later
+    # historyChanged restores First.mp4 while this layout probe expects its
+    # synthetic long path. A QML assignment deliberately replaces that binding.
+    expression = QQmlExpression(
+        QQmlEngine.contextForObject(field), field, "path = " + json.dumps(value)
+    )
+    expression.evaluate()
+    assert not expression.hasError(), expression.error().toString()
 
 
 @pytest.mark.parametrize("width,height", [(1100, 740), (1400, 900)])
@@ -21,7 +34,8 @@ def test_selected_path_tooltip_and_bottom_actions(scene, tmp_path, width, height
     header_path = inspector.findChild(QObject, "libraryFolderSelectedLocation")
     assert not header_path.isVisible()
     full_path = "/output/" + "unbroken-segment" * 45 + "/media.mp4"
-    path.setProperty("path", full_path)
+    set_fixture_path(path, full_path)
+    bridge.historyChanged.emit()
     tip = path.findChild(QObject, "outputPathTooltip")
     tip.setProperty("visible", True)
     for _ in range(8):
@@ -29,6 +43,7 @@ def test_selected_path_tooltip_and_bottom_actions(scene, tmp_path, width, height
     label = path.findChild(QObject, "outputPathText")
     assert label.property("lineCount") == 1
     assert label.property("truncated")
+    assert path.property("path") == full_path
     assert tip.property("text") == full_path
     assert tip.property("width") <= min(420, width - 32)
     tooltip_text = tip.findChild(QObject, "outputPathTooltipText")
@@ -57,7 +72,7 @@ def test_forge_path_tooltip_stays_inside_short_window(scene):  # noqa: F811
     window.resize(820, 560)
     bridge.select("Forge")
     field = window.findChild(QObject, "forgeDestinationField")
-    field.setProperty("path", "/output/" + "longsegment" * 250)
+    set_fixture_path(field, "/output/" + "longsegment" * 250)
     tip = field.findChild(QObject, "outputPathTooltip")
     tip.setProperty("visible", True)
     for _ in range(8):
