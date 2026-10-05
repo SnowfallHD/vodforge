@@ -23,13 +23,19 @@ on:
         default: false
         type: boolean
 
+      qa_final_intel_runtime:
+        description: Verify exact public signed Intel 0.2.4 artifact without rebuilding
+        required: false
+        default: false
+        type: boolean
+
 permissions:
   contents: write
   id-token: write
 
 jobs:
   windows:
-    if: ${{ !(inputs.artifacts_only && inputs.qa_macos_only) }}
+    if: ${{ !inputs.qa_final_intel_runtime && !(inputs.artifacts_only && inputs.qa_macos_only) }}
     runs-on: windows-latest
     environment: release
     steps:
@@ -148,6 +154,7 @@ jobs:
           if-no-files-found: error
 
   macos:
+    if: ${{ !inputs.qa_final_intel_runtime }}
     strategy:
       matrix:
         include: ${{ fromJSON(inputs.artifacts_only && inputs.qa_macos_only && inputs.qa_intel_only && '[{"os":"macos-15-intel","architecture":"x64"}]' || '[{"os":"macos-15","architecture":"arm64"},{"os":"macos-15-intel","architecture":"x64"}]') }}
@@ -207,7 +214,7 @@ jobs:
           if-no-files-found: error
 
   draft:
-    if: ${{ !inputs.artifacts_only }}
+    if: ${{ !inputs.qa_final_intel_runtime && !inputs.artifacts_only }}
     needs: [windows, macos]
     runs-on: ubuntu-latest
     steps:
@@ -234,3 +241,42 @@ jobs:
             --title "VODForge v${{ inputs.version }}" \
             --notes-file release-notes.md \
             --draft
+
+  final-signed-intel-runtime:
+    if: ${{ inputs.qa_final_intel_runtime && inputs.artifacts_only && inputs.version == '0.2.4' }}
+    permissions:
+      contents: read
+    runs-on: macos-15-intel
+    timeout-minutes: 15
+    steps:
+      - name: Download and verify exact published signed Intel archive
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = x86_64
+          mkdir receipts app profile
+          curl --fail --location --retry 2 -o released.zip https://github.com/SnowfallHD/vodforge/releases/download/v0.2.4/VODForge-macOS-x64-v0.2.4.zip
+          echo '234780370fdb24385b6f8faaee1e5e7abc6fd1fce51504b6b64992c87009c104  released.zip' | shasum -a 256 -c - | tee receipts/archive-sha256.txt
+          ditto -x -k released.zip app
+          test "$(cat app/VODForge.app/Contents/Resources/VODFORGE_VERSION)" = 0.2.4
+          test "$(cat app/VODForge.app/Contents/Resources/VODFORGE_BUILD_REVISION)" = c0da1d909fb417cf4c6db43333068f3566800b8c
+          test "$(cat app/VODForge.app/Contents/Resources/VODFORGE_TELEMETRY_POLICY)" = production
+          lipo -archs app/VODForge.app/Contents/MacOS/VODForge | tee receipts/architecture.txt
+          codesign --verify --deep --strict --verbose=2 app/VODForge.app > receipts/signature.log 2>&1
+          xcrun stapler validate app/VODForge.app > receipts/staple.log 2>&1
+          spctl --assess --type execute --verbose=2 app/VODForge.app > receipts/gatekeeper.log 2>&1
+      - name: Execute final signed native Intel runtime in isolated profile
+        env:
+          VODFORGE_DISABLE_TELEMETRY: '1'
+          QT_QPA_PLATFORM: offscreen
+          QT_QUICK_BACKEND: software
+        run: |
+          set -euo pipefail
+          HOME="$PWD/profile" LOCALAPPDATA="$PWD/profile" XDG_STATE_HOME="$PWD/profile" app/VODForge.app/Contents/MacOS/VODForge --runtime-smoke > receipts/runtime.log 2>&1
+          grep -F 'VODFORGE_RUNTIME_SMOKE version=0.2.4' receipts/runtime.log
+          grep -F 'VODFORGE_RUNTIME_SMOKE_OK' receipts/runtime.log
+          echo 'PASS: exact public signed Intel archive; native x86_64; isolated profile; telemetry disabled; offscreen runtime only' > receipts/result.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: final-signed-intel-024-runtime
+          path: receipts/
