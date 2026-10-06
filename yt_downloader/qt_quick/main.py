@@ -308,7 +308,8 @@ class Materials(QQuickImageProvider):
                 source = watch_welcome_emblem()
             elif parts[0] == "button" and len(parts) == 5:
                 width, height = int(parts[1]), int(parts[2])
-                if not (1 <= width <= 4096 and 1 <= height <= 512):
+                # StoneButton also paints responsive artwork cards, not only controls.
+                if not (1 <= width <= 4096 and 1 <= height <= 2048):
                     raise ValueError("button image dimensions out of bounds")
                 source = action_button_image(
                     width, height, accent=parts[4] == "1", state=parts[3]
