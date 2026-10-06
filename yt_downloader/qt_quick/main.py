@@ -4529,10 +4529,40 @@ class Bridge(QObject):
             return False
         return self.createCollection(name, owners)
 
+    @Slot(str, "QVariantList", result="QVariantList")
+    def resolveScopedLibrarySelection(
+        self, section: str, targets: list[dict[str, Any]]
+    ) -> list[str]:
+        """Reject cross-section or stale targets before opening any bulk action."""
+        if section not in {"groups", "media"} or not targets:
+            return []
+        route = self.libraryScene["route"]
+        group_route = route in {"channels", "playlists", "collections"}
+        if (section == "groups" and route != "home" and not group_route) or (
+            section == "media" and (group_route or route in {"detail", "folders"})
+        ):
+            return []
+        if any(
+            not isinstance(target, dict)
+            or (target.get("kind") == "media") != (section == "media")
+            for target in targets
+        ):
+            return []
+        return self.resolveLibrarySelection(targets)
+
     @Slot("QVariantList", result="QVariantList")
     def resolveLibrarySelection(self, targets: list[dict[str, Any]]) -> list[str]:
         """Expand current screen entities only when an action is requested."""
         if self._selection != "Library" or not targets:
+            return []
+        # A bulk action must never combine collection/group members and files.
+        if any(
+            not isinstance(target, dict) or not isinstance(target.get("kind"), str)
+            for target in targets
+        ):
+            return []
+        kinds = {target["kind"] for target in targets}
+        if "media" in kinds and len(kinds) > 1:
             return []
         scene = self.libraryScene
         groups = {
@@ -5325,6 +5355,7 @@ class Bridge(QObject):
     @Slot(bool)
     def closePlayback(self, keep_selection: bool = False) -> None:
         self._watch_queue.cancel()
+        had_playback = self._playback_binding is not None
         if self._playback_binding is not None:
             self._playback_binding.close()
             self._playback_binding = None
@@ -5342,6 +5373,10 @@ class Bridge(QObject):
         self._playback_url = QUrl()
         self.playbackUrlChanged.emit()
         self.playerSceneChanged.emit()
+        if keep_selection and had_playback:
+            # Mini-player close retires progress while retaining the browse route.
+            # Rebuild Watch only now so the latest played owner becomes its hero.
+            self.watchSceneChanged.emit()
         if not keep_selection:
             self.historyChanged.emit()
             self.returnToPlaybackOrigin()

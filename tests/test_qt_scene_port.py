@@ -1682,7 +1682,9 @@ def test_qt_library_player_video_click_and_escape_change_real_playback(
         bridge.close()
 
 
-def test_closing_mini_player_keeps_visible_watch_home_projection(tmp_path, monkeypatch):
+def test_closing_mini_player_refreshes_visible_watch_home_projection(
+    tmp_path, monkeypatch
+):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
@@ -1707,8 +1709,8 @@ def test_closing_mini_player_keeps_visible_watch_home_projection(tmp_path, monke
         assert scene.property("projection")["hero"]["title"] == "Z Played"
 
         # Playback can advance after Watch's home projection was painted.
-        # Closing the mini player must not pick another hero from that new
-        # progress snapshot or reset the page the viewer is looking at.
+        # Retain the painted hero during playback, then refresh on close
+        # without resetting the page the viewer is looking at.
         bridge._playback_url = QUrl.fromLocalFile(str(tmp_path / "Z Played.mp4"))
         bridge.playbackUrlChanged.emit()
         window.setProperty("miniPlayerActive", True)
@@ -1720,6 +1722,12 @@ def test_closing_mini_player_keeps_visible_watch_home_projection(tmp_path, monke
         assert progress.retire(session)
         assert bridge.watchScene["hero"]["title"] == "A First"
         assert scene.property("projection")["hero"]["title"] == "Z Played"
+        bridge._playback_binding = qt_main.PlaybackProgressBinding(
+            progress,
+            playing,
+            snapshot=bridge._playback_snapshot(),
+            seek=bridge._request_playback_seek,
+        )
 
         window.findChild(QObject, "miniPlayerClose").activated.emit()
         for _ in range(5):
@@ -1727,9 +1735,6 @@ def test_closing_mini_player_keeps_visible_watch_home_projection(tmp_path, monke
         assert bridge.playbackUrl.isEmpty()
         assert bridge.selection == "Watch"
         assert scene.property("route") == "home"
-        assert scene.property("projection")["hero"]["title"] == "Z Played"
-        bridge.historyChanged.emit()
-        app.processEvents()
         assert scene.property("projection")["hero"]["title"] == "A First"
     finally:
         window.close()
@@ -2295,7 +2300,11 @@ def test_retained_watch_hero_tracks_observed_replay_without_rebuilding_rails(
         reopened.load()
         assert reopened.for_record(record).position == 14
         assert not reopened.for_record(record).completed
-        assert scene.property("projection") == projection
+        # Close refreshes the persisted hero progress while retaining its owner.
+        refreshed = scene.property("projection")
+        assert refreshed["hero"]["owner"] == owner
+        assert refreshed["hero"]["progress"] == pytest.approx(14 / 255)
+        assert refreshed["route"] == projection["route"]
     finally:
         window.close()
         engine.deleteLater()

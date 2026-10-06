@@ -17,23 +17,52 @@ Item {
     property bool selectionMode: false
     property var selectedOwners: []
     property var selectedGroups: []
-    readonly property int selectedEntityCount: selectedOwners.length + selectedGroups.length
+    readonly property bool groupRoute: ["channels", "playlists", "collections"].indexOf(route) >= 0
+    property string selectionSection: groupRoute ? "groups" : "media"
+    readonly property bool groupSelectionMode: selectionMode && selectionSection === "groups"
+    readonly property bool mediaSelectionMode: selectionMode && selectionSection === "media"
+    readonly property int selectedEntityCount: groupSelectionMode ? selectedGroups.length :
+        mediaSelectionMode ? selectedOwners.length : 0
+    function startSelection(section) {
+        finishSelection()
+        if (section !== "groups" && section !== "media") return
+        if (section === "groups" && route !== "home" && !groupRoute) return
+        if (section === "media" && groupRoute) return
+        selectionSection = section
+        selectionMode = true
+    }
+    function selectAllSelection() {
+        reconcileSelection()
+        if (groupSelectionMode)
+            selectedGroups = groupFlow.items.map(item => ({kind: item.kind, key: item.key}))
+        else if (mediaSelectionMode)
+            selectedOwners = scene.media.map(item => item.owner)
+    }
+    function clearSelection() { selectedOwners = []; selectedGroups = [] }
+    function openSelectionActions(section, anchor) {
+        if (!selectionMode || selectionSection !== section) return
+        reconcileSelection()
+        if (!selectedEntityCount) return
+        selectionActions.anchorItem = anchor
+        selectionActions.toggleFrom(anchor)
+    }
     function groupSelected(group) {
         return selectedGroups.some(item => item.kind === group.kind && item.key === group.key)
     }
     function toggleGroup(group) {
-        if (!group || !groupFlow.items.some(item => item.kind === group.kind && item.key === group.key)) return
+        if (!groupSelectionMode || !group || !groupFlow.items.some(item => item.kind === group.kind && item.key === group.key)) return
         const existing = groupSelected(group)
         selectedGroups = existing ? selectedGroups.filter(item => item.kind !== group.kind || item.key !== group.key) :
             selectedGroups.concat([{kind: group.kind, key: group.key}])
     }
     function reconcileSelection() {
-        selectedOwners = selectedOwners.filter(owner => scene.media.some(item => item.owner === owner))
-        selectedGroups = selectedGroups.filter(group => groupFlow.items.some(item => item.kind === group.kind && item.key === group.key))
+        selectedOwners = mediaSelectionMode ? selectedOwners.filter(owner => scene.media.some(item => item.owner === owner)) : []
+        selectedGroups = groupSelectionMode ? selectedGroups.filter(group => groupFlow.items.some(item => item.kind === group.kind && item.key === group.key)) : []
     }
     function selectionTargets() {
         reconcileSelection()
-        return selectedGroups.slice().concat(selectedOwners.map(owner => ({kind: "media", owner: owner})))
+        return groupSelectionMode ? selectedGroups.slice() :
+            mediaSelectionMode ? selectedOwners.map(owner => ({kind: "media", owner: owner})) : []
     }
     property string groupMenuKind: ""
     property string groupMenuKey: ""
@@ -44,14 +73,14 @@ Item {
         })
     }
     function toggleSelection(owner) {
-        if (!owner || !scene.media.some(function(item) { return item.owner === owner })) return
+        if (!mediaSelectionMode || !owner || !scene.media.some(function(item) { return item.owner === owner })) return
         var next = selectedOwners.slice()
         var index = next.indexOf(owner)
         if (index >= 0) next.splice(index, 1)
         else next.push(owner)
         selectedOwners = next
     }
-    function finishSelection() { selectedOwners = []; selectedGroups = []; selectionMode = false }
+    function finishSelection() { selectionActions.close(); clearSelection(); selectionMode = false }
     function resetViewport() {
         if (viewport && viewport.contentItem) viewport.contentItem.contentY = 0
     }
@@ -85,6 +114,7 @@ Item {
         if (route === "detail" && viewport && viewport.contentItem)
             browseScrollY = viewport.contentItem.contentY
         finishSelection()
+        selectionSection = ["channels", "playlists", "collections"].indexOf(route) >= 0 ? "groups" : "media"
         if (route !== "detail" && !returningFromDetail) resetViewport()
         if (returningFromDetail) Qt.callLater(function() {
             if (viewport && viewport.contentItem && route !== "detail")
@@ -364,12 +394,21 @@ Item {
                 }
                 Item { width: 1; height: 8 }
 
-                Row {
+                RowLayout {
                     visible: scene.route === "home"
                     width: parent.width
-                    height: visible ? 38 : 0
-                    Text { text: "Collections"; color: theme.text; font.pixelSize: 23; font.bold: true }
-                    Item { width: Math.max(0, parent.width - 200); height: 1 }
+                    height: visible ? 40 : 0
+                    Text { text: "Collections"; color: theme.text; font.pixelSize: 23; font.bold: true; Layout.fillWidth: true }
+                    StoneButton {
+                        objectName: "libraryCollectionsSelectButton"
+                        label: scene.groupSelectionMode ? "Done" : "Select"
+                        size: "inline"
+                        Layout.preferredWidth: 88
+                        onActivated: {
+                            if (scene.groupSelectionMode) scene.finishSelection()
+                            else scene.startSelection("groups")
+                        }
+                    }
                     StoneButton {
                         objectName: "libraryCollectionsSeeAll"
                         visible: scene.projection.recordCount > 0
@@ -384,6 +423,14 @@ Item {
                     text: "Your playlists and personal collections."
                     color: theme.muted
                     font.pixelSize: 14
+                }
+                LibrarySelectionBar {
+                    objectName: "libraryCollectionsSelectionBar"
+                    width: parent.width
+                    ownerScene: scene
+                    section: "groups"
+                    sectionVisible: scene.route === "home"
+                    actionsObjectName: "libraryCollectionsSelectionActionsButton"
                 }
                 Item {
                     id: homeGroupsSlot
@@ -434,7 +481,7 @@ Item {
                             label: ""
                             accessibilityLabel: modelData.title + ", " + modelData.count + " item(s)"
                             onActivated: {
-                                if (scene.selectionMode) {
+                                if (scene.groupSelectionMode) {
                                     scene.toggleGroup(modelData)
                                 } else scene.appBridge.navigateLibraryGroup(modelData.kind, modelData.key)
                             }
@@ -456,7 +503,7 @@ Item {
                             }
                             StoneButton {
                                 objectName: "libraryGroupSelectionCheckbox"
-                                visible: scene.selectionMode
+                                visible: scene.groupSelectionMode
                                 x: 7; y: 7
                                 width: 30; height: 30
                                 label: scene.groupSelected(groupCard.modelData) ? "✓" : ""
@@ -596,12 +643,12 @@ Item {
                     }
                     StoneButton {
                         objectName: "librarySelectButton"
-                        label: scene.selectionMode ? "Done" : "Select"
+                        label: scene.selectionMode && scene.selectionSection === (scene.groupRoute ? "groups" : "media") ? "Done" : "Select"
                         width: 88
                         height: 40
                         onActivated: {
-                            if (scene.selectionMode) scene.finishSelection()
-                            else scene.selectionMode = true
+                            if (scene.selectionMode && scene.selectionSection === (scene.groupRoute ? "groups" : "media")) scene.finishSelection()
+                            else scene.startSelection(scene.groupRoute ? "groups" : "media")
                         }
                     }
                     StoneButton {
@@ -612,27 +659,11 @@ Item {
                         onActivated: scene.importRequested()
                     }
                 }
-                Flow {
+                LibrarySelectionBar {
                     objectName: "librarySelectionBar"
-                    visible: scene.selectionMode
                     width: parent.width
-                    height: visible ? childrenRect.height : 0
-                    spacing: 12
-                    Text {
-                        text: scene.selectedEntityCount ? scene.selectedEntityCount + " selected" : "Select items"
-                        color: theme.muted
-                        font.pixelSize: 14
-                        height: 40
-                        verticalAlignment: Text.AlignVCenter
-                    }
-                    StoneButton {
-                        objectName: "librarySelectionActionsButton"
-                        visible: scene.selectedEntityCount > 0
-                        label: "Actions…"
-                        width: 175
-                        height: 40
-                        onActivated: { selectionActions.anchorItem = this; selectionActions.toggleFrom(this) }
-                    }
+                    ownerScene: scene
+                    section: scene.groupRoute ? "groups" : "media"
                 }
                 Item {
                     id: routeGroupsSlot
@@ -720,7 +751,7 @@ Item {
                             label: ""
                             accessibilityLabel: "Details for " + modelData.title
                             onActivated: {
-                                if (scene.selectionMode) scene.toggleSelection(modelData.owner)
+                                if (scene.mediaSelectionMode) scene.toggleSelection(modelData.owner)
                                 else scene.appBridge.openLibraryDetails(modelData.owner)
                             }
                             ArtworkImage {
@@ -738,7 +769,7 @@ Item {
                                     scene.appBridge.mediaArtworkState(modelData.owner) === "pending"
                             }
                             StoneButton {
-                                visible: scene.selectionMode
+                                visible: scene.mediaSelectionMode
                                 x: 7; y: 7
                                 width: 30; height: 30
                                 label: scene.selectedOwners.indexOf(modelData.owner) >= 0 ? "✓" : ""
@@ -803,9 +834,10 @@ Item {
                         StoneButton {
                             required property var modelData
                             width: parent.width; height: 44
+                            objectName: "librarySelectionAction_" + modelData.action
                             label: modelData.label
                             onActivated: {
-                                var owners = scene.appBridge.resolveLibrarySelection(scene.selectionTargets())
+                                var owners = scene.appBridge.resolveScopedLibrarySelection(scene.selectionSection, scene.selectionTargets())
                                 selectionActions.close()
                                 if (owners.length) scene.selectionActionRequested(modelData.action, owners)
                             }
@@ -940,7 +972,7 @@ Item {
                     const group = scene.currentMenuGroup()
                     groupMenu.close()
                     if (group) {
-                        scene.selectionMode = true
+                        scene.startSelection("groups")
                         scene.selectedGroups = [{kind: group.kind, key: group.key}]
                     }
                 }

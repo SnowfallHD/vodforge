@@ -367,16 +367,20 @@ def watch_scene(
         for video in videos
         if video.indices
     ]
-    featured = next(
-        (
-            video
-            for video in videos
-            if progress_for is not None
-            and (progress := progress_for(records[video.indices[0]])) is not None
-            and not progress.completed
-            and progress.position >= 1
-        ),
-        videos[0] if videos else None,
+    resumable = [
+        (video, progress)
+        for video in videos
+        if progress_for is not None
+        and (progress := progress_for(records[video.indices[0]])) is not None
+        and not progress.completed
+        and progress.position >= 1
+    ]
+    featured = (
+        max(resumable, key=lambda item: item[1].updated_at)[0]
+        if resumable
+        else videos[0]
+        if videos
+        else None
     )
     hero_record = records[featured.indices[0]] if featured is not None else None
     hero_progress = (
