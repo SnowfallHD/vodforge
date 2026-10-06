@@ -245,6 +245,16 @@ class QtLibraryFiles:
                     self.status = (
                         f"Move {ready} verified item(s) to {self.destination}?"
                     )
+                    structures = sum(
+                        item.missing_media
+                        for item in payload.items
+                        if item.state == "ready"
+                    )
+                    if structures:
+                        self.status += (
+                            f" Includes {structures} missing-media folder structure(s). "
+                            "Their media will remain missing."
+                        )
                     if unknown_roots:
                         self.status += (
                             f" {unknown_roots} item(s) cannot move because their original "

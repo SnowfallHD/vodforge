@@ -91,6 +91,9 @@ class FileOperationItem:
     # Root-to-parent identity proofs detect a redirected ancestor on recheck.
     ancestors: tuple[tuple[Path, int, int], ...] = ()
     reason: str = ""
+    # Move-only proof of a missing leaf and its bounded indexed hierarchy.
+    missing_media: bool = False
+    directories: tuple[tuple[Path, int, int], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,7 +164,12 @@ def _regular_evidence(path: Path) -> ArtifactEvidence:
     return ArtifactEvidence(path, file_stamp(value))
 
 
-def _observe(record: Mapping[str, Any], source: ArchivePath) -> FileOperationItem:
+def _observe(
+    record: Mapping[str, Any],
+    source: ArchivePath,
+    *,
+    companions_when_missing: bool = False,
+) -> FileOperationItem:
     owner, fingerprint = history_archive_owner(dict(record)), record_fingerprint(record)
     path = Path(str(source))
     if (source.style == "windows") != (os.name == "nt"):
@@ -177,10 +185,12 @@ def _observe(record: Mapping[str, Any], source: ArchivePath) -> FileOperationIte
         except FileNotFoundError:
             # Only ENOENT at the exact leaf, with an accessible parent and
             # available storage, supports Library-entry-only removal.
-            return FileOperationItem(
-                owner, fingerprint, path, "missing", ancestors=ancestors
-            )
-        artifacts = [media]
+            if not companions_when_missing:
+                return FileOperationItem(
+                    owner, fingerprint, path, "missing", ancestors=ancestors
+                )
+            media = None
+        artifacts = [media] if media is not None else []
         metadata = path.parent / "metadata.json"
         try:
             metadata_evidence = _regular_evidence(metadata)
@@ -218,7 +228,12 @@ def _observe(record: Mapping[str, Any], source: ArchivePath) -> FileOperationIte
         if any(_regular_evidence(item.path) != item for item in artifacts):
             raise ValueError("Source changed during inspection")
         return FileOperationItem(
-            owner, fingerprint, path, "ready", tuple(artifacts), ancestors
+            owner,
+            fingerprint,
+            path,
+            "ready" if media is not None else "missing",
+            tuple(artifacts),
+            ancestors,
         )
     except (PermissionError, OSError):
         return FileOperationItem(owner, fingerprint, path, "unavailable")
@@ -355,9 +370,193 @@ def _prune_move_source(record: Mapping[str, Any], item: FileOperationItem) -> No
             ):
                 return
             current.rmdir()  # Atomic empty-only removal; unrelated siblings stop it.
+        except FileNotFoundError:
+            if not item.missing_media:
+                return
         except OSError:
             return
         current = current.parent
+
+
+def _move_source_plan(records, owners, *, cancelled=None) -> FileOperationPlan:
+    """Missing files authorize their indexed hierarchy, never unrelated files."""
+    plan = plan_file_operation(records, owners, cancelled=cancelled)
+    by_owner = {history_archive_owner(dict(row)): row for row in records}
+    items = []
+    for item in plan.items:
+        if item.state not in {"missing", "unavailable"} or item.source is None:
+            items.append(item)
+            continue
+        record = by_owner[item.owner]
+        source = item.source
+        root = _move_root(record, source)
+        if root is None:
+            items.append(
+                replace(item, state="unavailable", reason="hierarchy_root_unknown")
+            )
+            continue
+        try:
+            parsed = ArchivePath.parse(str(source))
+            kind, storage = parsed.storage
+            if kind == "external" and not os.path.ismount(str(storage)):
+                raise ValueError("Storage is unavailable")
+            directory_evidence(root)
+            # ENOENT alone below a proven reachable root permits reconstructing
+            # the indexed hierarchy. Permission errors and redirects do not.
+            parent = source.parent
+            while True:
+                try:
+                    proof = directory_evidence(parent)
+                    break
+                except FileNotFoundError:
+                    if parent == root:
+                        raise
+                    parent = parent.parent
+            try:
+                source.lstat()
+            except FileNotFoundError:
+                pass
+            else:
+                raise ValueError("The missing media appeared")
+            directories = []
+            artifacts = ()
+            if parent == source.parent:
+                observed = _observe(record, parsed, companions_when_missing=True)
+                if observed.state != "missing":
+                    raise ValueError("Missing item ownership changed")
+                artifacts = observed.artifacts
+                pending = [source.parent]
+                inspected = 0
+                while pending:
+                    _cancel(cancelled)
+                    folder = pending.pop()
+                    evidence = directory_evidence(folder)[-1]
+                    directories.append(evidence)
+                    if len(directories) > MAX_HISTORY_ITEMS:
+                        raise ValueError("Folder structure exceeds inspection limit")
+                    with os.scandir(folder) as children:
+                        for child in children:
+                            inspected += 1
+                            if inspected > MAX_HISTORY_ITEMS:
+                                raise ValueError(
+                                    "Folder inspection exceeds the supported limit"
+                                )
+                            observed_stat = child.stat(follow_symlinks=False)
+                            if _redirect(observed_stat):
+                                raise ValueError("Folder structure was redirected")
+                            if stat.S_ISDIR(observed_stat.st_mode):
+                                pending.append(Path(child.path))
+                    # Ordinary sibling files are deliberately never copied.
+            items.append(
+                replace(
+                    item,
+                    state="ready",
+                    artifacts=artifacts,
+                    ancestors=proof,
+                    missing_media=True,
+                    directories=tuple(sorted(directories)),
+                    reason="missing_media_structure",
+                )
+            )
+        except (OSError, ValueError, TypeError):
+            items.append(item)
+    return replace(plan, items=tuple(items))
+
+
+def _verify_structure_copies(entry):
+    target = Path(entry["destination"])
+    expected = tuple(
+        (Path(p), int(d), int(i)) for p, d, i in entry.get("destination_proof", [])
+    )
+    if expected and directory_evidence(target) != expected:
+        raise ValueError("Destination folder identity changed")
+    if entry.get("missing_media"):
+        for copy in entry.get("copies", []):
+            if (
+                _hash_file(Path(copy["destination"]), tuple(copy["stamp"]), None)
+                != copy["sha256"]
+            ):
+                raise ValueError("Copied companion changed")
+        try:
+            (target / Path(entry["source"]).name).lstat()
+        except FileNotFoundError:
+            pass
+        else:
+            raise ValueError("Unexpected media appeared at the missing destination")
+    for raw_path, device, inode in entry.get("structure_copies", []):
+        path = Path(raw_path)
+        if not path.is_relative_to(target):
+            raise ValueError("Folder structure escaped its destination")
+        if directory_evidence(path)[-1] != (path, int(device), int(inode)):
+            raise ValueError("Destination folder structure changed")
+
+
+def _assert_missing_source(item):
+    if item.source is None:
+        raise ValueError("Missing source identity")
+    parent = item.source.parent
+    while True:
+        try:
+            proof = directory_evidence(parent)
+            break
+        except FileNotFoundError:
+            parent = parent.parent
+    known = {
+        path: (device, inode)
+        for path, device, inode in (*item.ancestors, *item.directories)
+    }
+    if not proof or any(
+        path not in known or known[path] != (device, inode)
+        for path, device, inode in proof
+    ):
+        raise ValueError("Missing source ancestors changed")
+    try:
+        item.source.lstat()
+    except FileNotFoundError:
+        return
+    raise ValueError("Media appeared before folder cleanup")
+
+
+def _finish_missing_structure(
+    journal, index, item, *, cancelled=None, boundary=lambda _: None
+):
+    """Empty-only cleanup, with recorded identities and idempotent recovery."""
+    entry = journal.document["items"][index]
+    _verify_structure_copies(entry)
+    _assert_missing_source(item)
+    source = item.source
+    known = {
+        path: (device, inode)
+        for path, device, inode in (*item.ancestors, *item.directories)
+    }
+    for path, device, inode in sorted(
+        item.directories, key=lambda row: len(row[0].parts), reverse=True
+    ):
+        if not path.is_relative_to(source.parent):
+            raise ValueError("Source folder structure escaped its item")
+        _cancel(cancelled)
+        _verify_structure_copies(entry)
+        boundary("before_structure_cleanup")
+        _assert_missing_source(item)
+        _verify_structure_copies(entry)
+        try:
+            proof = directory_evidence(path)
+        except FileNotFoundError:
+            continue  # A previously recorded empty-only removal is idempotent.
+        if proof[-1] != (path, device, inode) or any(
+            ancestor in known and known[ancestor] != (actual_device, actual_inode)
+            for ancestor, actual_device, actual_inode in proof
+        ):
+            raise ValueError("Source folder identity changed")
+        journal.update(index, "structure_cleanup", removing_directory=str(path))
+        try:
+            path.rmdir()
+        except OSError as error:
+            if error.errno in {errno.ENOTEMPTY, errno.EEXIST}:
+                continue  # Preserve every unrelated sibling or newly added file.
+            raise
+        _sync_directory(path.parent)
+        boundary("structure_removed")
 
 
 def plan_move_operation(
@@ -368,7 +567,7 @@ def plan_move_operation(
     cancelled: Event | None = None,
 ) -> FileOperationPlan:
     """Include visible destination conflicts before the user confirms Move."""
-    plan = plan_file_operation(records, owners, cancelled=cancelled)
+    plan = _move_source_plan(records, owners, cancelled=cancelled)
     directory_evidence(destination)
     record_by_owner = {history_archive_owner(dict(row)): row for row in records}
     folders = Counter(
@@ -630,6 +829,11 @@ class OperationJournal:
                         {"source": str(a.path), "stamp": list(a.stamp)}
                         for a in item.artifacts
                     ],
+                    "missing_media": item.missing_media,
+                    "directories": [
+                        [str(path), device, inode]
+                        for path, device, inode in item.directories
+                    ],
                 }
                 for item in plan.items
             ],
@@ -771,13 +975,19 @@ def _save_durable_history(path: Path, records: list[dict[str, Any]]) -> None:
 
 
 def _relocate_one(
-    records: Sequence[Mapping[str, Any]], owner: str, destination: Path
+    records: Sequence[Mapping[str, Any]],
+    owner: str,
+    destination: Path,
+    *,
+    missing: bool = False,
 ) -> list[dict[str, Any]]:
+    # The migration is pure. Missing-media callers verify both the new parent
+    # and the absent leaf instead of claiming that nonexistent bytes verified.
     index = next(
         i for i, row in enumerate(records) if history_archive_owner(dict(row)) == owner
     )
     source = recorded_artifact(records[index])
-    observed = destination.stat()
+    observed = (destination.parent if missing else destination).stat()
     entry = RelinkEntry(
         index,
         record_fingerprint(records[index]),
@@ -1034,7 +1244,7 @@ def move_files(
         prospective: list[dict[str, Any]] | None = None
         try:
             _cancel(cancelled)
-            fresh = plan_file_operation(current, [item.owner], cancelled=cancelled)
+            fresh = _move_source_plan(current, [item.owner], cancelled=cancelled)
             if fresh.items != (item,):
                 raise ValueError("Selected files changed")
             if directory_evidence(destination) != destination_proof:
@@ -1073,6 +1283,32 @@ def move_files(
                 ],
             )
             boundary("destination_claimed")
+            structure_copies = []
+            for folder, _device, _inode in item.directories:
+                target_directory = target_folder / folder.relative_to(
+                    item.source.parent
+                )
+                if target_directory != target_folder:
+                    parent_proof = directory_evidence(target_directory.parent)
+                    expected_parent = next(
+                        (
+                            row
+                            for row in structure_copies
+                            if row[0] == str(target_directory.parent)
+                        ),
+                        None,
+                    )
+                    if (
+                        expected_parent is None
+                        or tuple(expected_parent[1:]) != parent_proof[-1][1:]
+                    ):
+                        raise ValueError("Destination structure parent changed")
+                    target_directory.mkdir(mode=0o700)
+                proof = directory_evidence(target_directory)[-1]
+                structure_copies.append([str(proof[0]), proof[1], proof[2]])
+            if item.missing_media and not structure_copies:
+                structure_copies = [[str(target_folder), *target_proof[-1][1:]]]
+            journal.update(index, "copying", structure_copies=structure_copies)
             copied = []
             for artifact in item.artifacts:
                 if directory_evidence(target_folder) != target_proof:
@@ -1089,7 +1325,7 @@ def move_files(
             journal.update(index, "verified", copies=copied)
             boundary("copies_verified")
             _cancel(cancelled)
-            if plan_file_operation(current, [item.owner]).items != (item,):
+            if _move_source_plan(current, [item.owner]).items != (item,):
                 raise ValueError("Source changed before publication")
             if directory_evidence(target_folder) != target_proof:
                 raise ValueError("Destination changed before publication")
@@ -1097,8 +1333,12 @@ def move_files(
                 path = Path(copy["destination"])
                 if _hash_file(path, tuple(copy["stamp"]), cancelled) != copy["sha256"]:
                     raise ValueError("Destination changed before publication")
+            _verify_structure_copies(journal.document["items"][index])
             prospective = _relocate_one(
-                current, item.owner, target_folder / item.source.name
+                current,
+                item.owner,
+                target_folder / item.source.name,
+                missing=item.missing_media,
             )
             prospective_row = next(
                 row
@@ -1139,15 +1379,23 @@ def move_files(
             # Cancellation after publication leaves the durable destination and
             # source duplicates intact. Recovery must not pretend this was undone.
             _cancel(cancelled)
-            _finish_move_cleanup(
-                journal,
-                index,
-                item,
-                copied,
-                target_proof,
-                cancelled=cancelled,
-                boundary=boundary,
-            )
+            if item.missing_media:
+                _assert_missing_source(item)
+                _verify_structure_copies(journal.document["items"][index])
+            if item.artifacts:
+                _finish_move_cleanup(
+                    journal,
+                    index,
+                    item,
+                    copied,
+                    target_proof,
+                    cancelled=cancelled,
+                    boundary=boundary,
+                )
+            if item.missing_media:
+                _finish_missing_structure(
+                    journal, index, item, cancelled=cancelled, boundary=boundary
+                )
             journal.update(index, "completed")
             outcomes.append((item.owner, "completed"))
         except (OSError, ValueError, HistoryError, FileOperationCancelled) as exc:
@@ -1401,7 +1649,7 @@ def recover_move_cleanup(
         ]
         if (
             len(candidates) != 1
-            or not entry.get("copies")
+            or (not entry.get("copies") and not entry.get("missing_media"))
             or not entry.get("destination_proof")
         ):
             raise ValueError(
@@ -1449,7 +1697,22 @@ def recover_move_cleanup(
             artifacts,
             tuple((Path(p), int(d), int(i)) for p, d, i in entry["ancestors"]),
         )
-        _finish_move_cleanup(journal, index, item, copies, proof, cancelled=cancelled)
+        _verify_structure_copies(entry)
+        item = replace(
+            item,
+            missing_media=entry.get("missing_media") is True,
+            directories=tuple(
+                (Path(p), int(d), int(i)) for p, d, i in entry.get("directories", [])
+            ),
+        )
+        if item.missing_media:
+            _assert_missing_source(item)
+        if artifacts:
+            _finish_move_cleanup(
+                journal, index, item, copies, proof, cancelled=cancelled
+            )
+        if item.missing_media:
+            _finish_missing_structure(journal, index, item, cancelled=cancelled)
         journal.update(index, "completed")
         outcomes.append((entry["owner"], "completed"))
     journal.document["state"] = "completed"
@@ -1465,6 +1728,7 @@ def recover_move_cleanup(
                 ancestors=tuple(
                     (Path(p), int(d), int(i)) for p, d, i in entry["ancestors"]
                 ),
+                missing_media=entry.get("missing_media") is True,
             )
             _prune_move_source(
                 {"vodforge_archive_root": entry["source_archive_root"]}, item

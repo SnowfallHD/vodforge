@@ -295,6 +295,17 @@ class LibraryFileActionsMixin:
                 dialog.message.set(
                     f"Destination\n{destination}\n\nCollections and playback progress will follow your media."
                 )
+                structures = sum(
+                    item.missing_media for item in plan.items if item.state == "ready"
+                )
+                if structures:
+                    dialog.message.set(
+                        dialog.message.get()
+                        + (
+                            f"\n\nIncludes {structures} missing-media folder structure(s). "
+                            "Their media will remain missing."
+                        )
+                    )
                 primary, permanent = "Move", False
             else:
                 lines = []
