@@ -25,6 +25,7 @@ from .archive_file_operations import (
 from .archive_observations import bind_operation
 from .archive_relink import record_fingerprint
 from .history import HistoryError, history_archive_owner, load_history
+from .library_move_summary import move_summary
 from .platform_services import open_path, system_trash_available
 from .product_telemetry import BoundProductOperation
 from .ui_button_contract import ProductButton
@@ -284,6 +285,7 @@ class LibraryFileActionsMixin:
                 self._show_file_recovery(dialog, result.value, operation)
                 return
             plan = result.value
+            dialog.reviewed_plan = plan
             counts = plan.counts
             ready, missing = counts.get("ready", 0), counts.get("missing", 0)
             eligible = ready + (missing if action == "delete" else 0)
@@ -337,7 +339,7 @@ class LibraryFileActionsMixin:
                     else "Remove entries"
                 )
             conflicts = counts.get("conflict", 0)
-            dialog.note.set(
+            note = (
                 f"{conflicts} destination conflicts. Those items will be kept."
                 + (
                     f" {skipped - conflicts} other items could not be verified."
@@ -349,6 +351,9 @@ class LibraryFileActionsMixin:
                 if skipped
                 else ""
             )
+            if action == "move":
+                note = move_summary(plan)
+            dialog.note.set(note)
             dialog.offer(
                 primary,
                 lambda: self._commit_library_files(
@@ -543,6 +548,15 @@ class LibraryFileActionsMixin:
                 )
                 if pending:
                     self._show_file_recovery(dialog, pending, operation)
+                    if (
+                        action == "move"
+                        and result.value is not None
+                        and getattr(dialog, "reviewed_plan", None) is not None
+                    ):
+                        dialog.message.set(
+                            move_summary(dialog.reviewed_plan, result.value.outcomes)
+                            + " Review the saved source and destination before finishing interrupted cleanup."
+                        )
                 elif result.error == "FileOperationCapacityError":
                     dialog.message.set(
                         "This change needs more room to record safely. Select fewer items and try again. If it still cannot start, restart VODForge."
@@ -566,11 +580,11 @@ class LibraryFileActionsMixin:
                 "Your saved Library has been reloaded. No files were moved or deleted during this review."
                 if action == "recovery"
                 else (
-                    f"Moved {completed} items."
+                    move_summary(dialog.reviewed_plan, result.value.outcomes)
                     if action == "move"
                     else f"Removed {completed} files and {missing} missing entries."
                 )
-                + (f" {kept} items were kept." if kept else "")
+                + (f" {kept} items were kept." if kept and action != "move" else "")
             )
             for child in getattr(dialog, "_recovery_buttons", ()):
                 child.destroy()

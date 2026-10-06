@@ -44,7 +44,14 @@ from .safe_output import (
 )
 
 FileState = Literal[
-    "ready", "missing", "unavailable", "ambiguous", "changed", "cancelled", "conflict"
+    "ready",
+    "missing",
+    "unavailable",
+    "ambiguous",
+    "changed",
+    "cancelled",
+    "conflict",
+    "already_in_target",
 ]
 Stamp = tuple[int, int, int, int, int]
 
@@ -94,6 +101,9 @@ class FileOperationItem:
     # Move-only proof of a missing leaf and its bounded indexed hierarchy.
     missing_media: bool = False
     directories: tuple[tuple[Path, int, int], ...] = ()
+    shared_folder: Path | None = None
+    shared_leader: str = ""
+    destination_existing: tuple[tuple[Path, int, int], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -378,9 +388,129 @@ def _prune_move_source(record: Mapping[str, Any], item: FileOperationItem) -> No
         current = current.parent
 
 
+def _shared_move_sources(plan, records, owners):
+    """Exact distinct files may share companions when all directory peers move."""
+    selected = set(owners)
+    selected_items = {item.owner: item for item in plan.items}
+    groups = {}
+    for record in records:
+        try:
+            source = recorded_artifact(record)
+            if source is not None:
+                groups.setdefault(Path(str(source)).parent, []).append((record, source))
+        except (ValueError, TypeError):
+            continue
+    upgraded = {}
+    for folder, peers in groups.items():
+        if len(peers) < 2:
+            continue
+        peer_owners = [history_archive_owner(dict(row)) for row, _source in peers]
+        claims = []
+        folder_key = _ownership_key(ArchivePath.parse(str(folder)))
+        for row in records:
+            try:
+                claim = ArchivePath.parse(str(row.get("vodforge_output_dir") or ""))
+                if _ownership_key(claim) == folder_key:
+                    claims.append(row)
+            except (ValueError, TypeError):
+                continue
+        if (
+            len(claims) != len(peers)
+            or len(set(peer_owners)) != len(peers)
+            or not set(peer_owners) <= selected
+            or any(
+                selected_items[owner].state != "ambiguous"
+                for owner in peer_owners
+                if owner in selected_items
+            )
+        ):
+            continue
+        keys = [_ownership_key(source) for _row, source in peers]
+        roots = {_move_root(row, Path(str(source))) for row, source in peers}
+        if len(set(keys)) != len(peers) or len(roots) != 1 or None in roots:
+            continue
+        observed = {
+            history_archive_owner(dict(row)): _observe(row, source)
+            for row, source in peers
+        }
+        if any(item.state != "ready" for item in observed.values()):
+            continue
+        if len({item.ancestors for item in observed.values()}) != 1:
+            continue
+        leader = next(item.owner for item in plan.items if item.owner in peer_owners)
+        for owner, item in observed.items():
+            upgraded[owner] = replace(
+                item,
+                shared_folder=folder,
+                shared_leader=leader,
+                artifacts=item.artifacts
+                if owner == leader
+                else tuple(a for a in item.artifacts if a.path == item.source),
+            )
+    return replace(
+        plan, items=tuple(upgraded.get(item.owner, item) for item in plan.items)
+    )
+
+
+def _verify_move_source(records, item, *, cancelled=None):
+    if item.shared_folder is None:
+        fresh = _move_source_plan(records, [item.owner], cancelled=cancelled)
+        if fresh.items != (replace(item, destination_existing=()),):
+            raise ValueError("Selected files changed")
+        return
+    matches = [row for row in records if history_archive_owner(dict(row)) == item.owner]
+    if len(matches) != 1:
+        raise ValueError("Shared source changed")
+    source = recorded_artifact(matches[0])
+    if source is None or Path(str(source)).parent != item.shared_folder:
+        raise ValueError("Shared source changed")
+    fresh = _observe(matches[0], source)
+    if (
+        fresh.state != "ready"
+        or fresh.fingerprint != item.fingerprint
+        or fresh.ancestors != item.ancestors
+        or any(a not in fresh.artifacts for a in item.artifacts)
+    ):
+        raise ValueError("Shared source changed")
+
+
+def _shared_destination_proof(journal, item, records, target):
+    leader = next(
+        (
+            entry
+            for entry in journal.document["items"]
+            if entry["owner"] == item.shared_leader
+        ),
+        None,
+    )
+    if (
+        leader is None
+        or leader.get("state") not in {"completed", "cleanup_pending", "history_saved"}
+        or leader.get("destination") != str(target)
+    ):
+        raise ValueError("Shared destination has not been durably published")
+    if not any(
+        history_archive_owner(dict(row)) == leader.get("updated_owner")
+        and record_fingerprint(row) == leader.get("updated_fingerprint")
+        for row in records
+    ):
+        raise ValueError("Shared destination history changed")
+    proof = tuple((Path(p), int(d), int(i)) for p, d, i in leader["destination_proof"])
+    if directory_evidence(target) != proof:
+        raise ValueError("Shared destination changed")
+    for copy in leader.get("copies", []):
+        if (
+            _hash_file(Path(copy["destination"]), tuple(copy["stamp"]), None)
+            != copy["sha256"]
+        ):
+            raise ValueError("Shared copied artifact changed")
+    return proof
+
+
 def _move_source_plan(records, owners, *, cancelled=None) -> FileOperationPlan:
     """Missing files authorize their indexed hierarchy, never unrelated files."""
     plan = plan_file_operation(records, owners, cancelled=cancelled)
+    plan = _shared_move_sources(plan, records, owners)
     by_owner = {history_archive_owner(dict(row)): row for row in records}
     items = []
     for item in plan.items:
@@ -570,13 +700,13 @@ def plan_move_operation(
     plan = _move_source_plan(records, owners, cancelled=cancelled)
     directory_evidence(destination)
     record_by_owner = {history_archive_owner(dict(row)): row for row in records}
-    folders = Counter(
-        str(
-            _move_target(record_by_owner[item.owner], item.source, destination)
-        ).casefold()
-        for item in plan.items
-        if item.state == "ready" and item.source is not None
-    )
+    folders: dict[str, list[FileOperationItem]] = {}
+    for item in plan.items:
+        if item.state == "ready" and item.source is not None:
+            key = str(
+                _move_target(record_by_owner[item.owner], item.source, destination)
+            ).casefold()
+            folders.setdefault(key, []).append(item)
     claims = []
     for row in records:
         try:
@@ -594,6 +724,11 @@ def plan_move_operation(
             )
             continue
         target = _move_target(record_by_owner[item.owner], item.source, destination)
+        if target == item.source.parent:
+            items.append(
+                replace(item, state="already_in_target", reason="already_in_target")
+            )
+            continue
         proposed = ArchivePath.parse(str(target))
         reserved = any(
             _ownership_key(claim)[: len(proposed.key)] == _ownership_key(proposed)
@@ -601,16 +736,30 @@ def plan_move_operation(
         )
         try:
             target.lstat()
-            existing = True
+            proof = directory_evidence(target)
+            existing = bool(tuple(target.iterdir()))
+            if not existing:
+                item = replace(item, destination_existing=proof)
         except FileNotFoundError:
             existing = False
+        except ValueError:
+            items.append(
+                replace(item, state="conflict", reason="destination_redirected")
+            )
+            continue
         except OSError:
             items.append(replace(item, state="unavailable"))
             continue
+        peers = folders[str(target).casefold()]
+        shared_target = bool(item.shared_leader) and all(
+            peer.shared_leader == item.shared_leader
+            and peer.shared_folder == item.shared_folder
+            for peer in peers
+        )
         conflict = (
             reserved
             or existing
-            or folders[str(target).casefold()] > 1
+            or (len(peers) > 1 and not shared_target)
             or item.source.parent in target.parents
         )
         items.append(replace(item, state="conflict") if conflict else item)
@@ -1244,9 +1393,7 @@ def move_files(
         prospective: list[dict[str, Any]] | None = None
         try:
             _cancel(cancelled)
-            fresh = _move_source_plan(current, [item.owner], cancelled=cancelled)
-            if fresh.items != (item,):
-                raise ValueError("Selected files changed")
+            _verify_move_source(current, item, cancelled=cancelled)
             if directory_evidence(destination) != destination_proof:
                 raise ValueError("The destination changed")
             source_record = next(
@@ -1273,8 +1420,19 @@ def move_files(
                 destination=str(target_folder),
                 source_archive_root=str(_move_root(source_record, item.source)),
             )
-            target_folder.mkdir(mode=0o700)
-            target_proof = directory_evidence(target_folder)
+            if item.shared_leader and item.owner != item.shared_leader:
+                target_proof = _shared_destination_proof(
+                    journal, item, current, target_folder
+                )
+            elif item.destination_existing:
+                target_proof = directory_evidence(target_folder)
+                if target_proof != item.destination_existing or tuple(
+                    target_folder.iterdir()
+                ):
+                    raise ValueError("Reviewed empty destination changed")
+            else:
+                target_folder.mkdir(mode=0o700)
+                target_proof = directory_evidence(target_folder)
             journal.update(
                 index,
                 "copying",
@@ -1325,8 +1483,7 @@ def move_files(
             journal.update(index, "verified", copies=copied)
             boundary("copies_verified")
             _cancel(cancelled)
-            if _move_source_plan(current, [item.owner]).items != (item,):
-                raise ValueError("Source changed before publication")
+            _verify_move_source(current, item, cancelled=cancelled)
             if directory_evidence(target_folder) != target_proof:
                 raise ValueError("Destination changed before publication")
             for copy in copied:

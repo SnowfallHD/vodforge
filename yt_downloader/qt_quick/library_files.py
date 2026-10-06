@@ -22,6 +22,7 @@ from yt_downloader.archive_file_operations import (
 )
 from yt_downloader.archive_relink import record_fingerprint
 from yt_downloader.history import load_history
+from yt_downloader.library_move_summary import move_summary
 from yt_downloader.platform_services import system_trash_available
 
 
@@ -242,30 +243,15 @@ class QtLibraryFiles:
                     item.reason == "hierarchy_root_unknown" for item in payload.items
                 )
                 if self.action == "move":
-                    self.status = (
-                        f"Move {ready} verified item(s) to {self.destination}?"
+                    self.status = f"Destination: {self.destination}. " + move_summary(
+                        payload
                     )
-                    structures = sum(
-                        item.missing_media
-                        for item in payload.items
-                        if item.state == "ready"
-                    )
-                    if structures:
-                        self.status += (
-                            f" Includes {structures} missing-media folder structure(s). "
-                            "Their media will remain missing."
-                        )
-                    if unknown_roots:
-                        self.status += (
-                            f" {unknown_roots} item(s) cannot move because their original "
-                            "archive root is not recorded. Their files will be kept."
-                        )
                 else:
                     self.status = (
                         f"Move {ready} file(s) to Trash and remove {missing} "
                         "already-missing Library entry(s)?"
                     )
-                if not self.eligible:
+                if not self.eligible and self.action != "move":
                     reasons = []
                     if unknown_roots:
                         reasons.append(
@@ -291,6 +277,7 @@ class QtLibraryFiles:
                 self.status = "Review the interrupted file change first."
             elif kind == "finished":
                 result, actual, pending, error = payload
+                reviewed_plan = self.plan
                 self.latest_history = actual
                 self.pending = pending
                 self.uncertain = bool(pending)
@@ -313,6 +300,16 @@ class QtLibraryFiles:
                     if completed
                     else "No files changed. Review the selected item."
                 )
+                if (
+                    self.action == "move"
+                    and result is not None
+                    and reviewed_plan is not None
+                ):
+                    self.status = move_summary(reviewed_plan, result.outcomes) + (
+                        " An interrupted file change needs review." if pending else ""
+                    )
+                    if error:
+                        self.status += " The saved Library could not be confirmed; review it before continuing."
             elif kind == "recovered":
                 actual, pending, error = payload
                 self.latest_history = actual
