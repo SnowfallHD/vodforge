@@ -11,6 +11,7 @@ Item {
     property bool transientMaterial: true
     property bool hoverMaterial: true
     property bool interactive: true
+    property bool doubleActivationEnabled: false
     property bool quiet: false
     property string size: "default"
     readonly property bool overflowGlyph: !icon.length && !sceneIcon.length &&
@@ -125,7 +126,12 @@ Item {
         enabled: control.interactive && control.enabled
         cursorShape: Qt.PointingHandCursor
         onClicked: control.activated()
-        onDoubleClicked: control.doubleActivated()
+    }
+    Connections {
+        // Qt suppresses the second click whenever doubleClicked is connected,
+        // even if that handler rejects it. Connect only for a distinct action.
+        target: control.doubleActivationEnabled ? mouse : null
+        function onDoubleClicked(event) { control.doubleActivated() }
     }
     Keys.onReturnPressed: { if (control.interactive && control.enabled) control.activated() }
     Keys.onSpacePressed: { if (control.interactive && control.enabled) control.activated() }

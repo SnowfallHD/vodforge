@@ -248,6 +248,7 @@ Item {
                         StoneButton {
                             required property var modelData
                             objectName: "libraryFolderComponent_" + modelData.key
+                            doubleActivationEnabled: true
                             width: parent.width
                             height: 78
                             label: ""
