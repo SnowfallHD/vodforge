@@ -39,7 +39,10 @@ Popup {
         target: popup.triggerItem
         ignoreUnknownSignals: true
         function onHoveredChanged() {
-            if (!popup.triggerItem.hovered) popup.dismissedByTriggerPress = false
+            // Leaving and returning during the same held click must not turn
+            // its outside-press dismissal into a new open on release.
+            if (!popup.triggerItem.hovered && !bridge.isPointerPressed())
+                popup.dismissedByTriggerPress = false
         }
     }
     background: StoneField {

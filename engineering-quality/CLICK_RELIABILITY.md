@@ -76,3 +76,9 @@ while exercising physical clicks, touchpad scrolling, native focus changes,
 interrupted header drags, and rapid popup close/reopen. Do not inject a debugger,
 change OS security settings, or reset the user's production library to obtain
 that evidence.
+
+## Dropdown follow-up
+
+[Popup toggle reliability](POPUP_TOGGLE_RELIABILITY.md) records the focused
+category/held-pointer fixes, app-wide popup inventory, expanded regression
+matrix and remaining native acceptance limits.

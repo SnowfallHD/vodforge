@@ -2154,6 +2154,12 @@ Window {
                 TextField {
                     id: categoryInput
                     objectName: "annotationCategoryInput"
+                    // A mouse-focus open leaves editing focus in this field.
+                    // Escape dismisses its suggestions before the whole dialog.
+                    Keys.onEscapePressed: event => {
+                        if (annotationCategoryMenu.visible) annotationCategoryMenu.close()
+                        else event.accepted = false
+                    }
                     anchors.fill: parent; anchors.leftMargin: 14; anchors.rightMargin: 46
                     padding: 0; verticalAlignment: TextInput.AlignVCenter
                     text: bridge.annotationValues.category
@@ -2161,13 +2167,17 @@ Window {
                     color: theme.text; placeholderTextColor: theme.muted
                     font.pixelSize: 15; background: Item {}
                     onActiveFocusChanged: {
-                        if (activeFocus && bridge.libraryCategories.length > 1) {
+                        // Closing the list restores focus here. That return is
+                        // not a fresh request to open it again.
+                        if (activeFocus && focusReason !== Qt.PopupFocusReason &&
+                                bridge.libraryCategories.length > 1) {
                             annotationCategoryMenu.anchorItem = parent
                             annotationCategoryMenu.open()
                         }
                     }
                 }
                 StoneButton {
+                    id: annotationCategoryButton
                     objectName: "annotationCategoryButton"
                     x: parent.width - 40; y: 3; width: 36; height: 34
                     label: "▾"; size: "inline"
@@ -2217,6 +2227,8 @@ Window {
     AnchoredPopup {
         id: annotationCategoryMenu
         objectName: "annotationCategoryMenu"
+        // Focus can open the list before the arrow has ever been activated.
+        triggerItem: annotationCategoryButton
         parent: window.contentItem
         width: Math.min(360, annotationPopup.width - 36)
         height: Math.min(250, bridge.libraryCategories.slice(1).length * 41 + 8)

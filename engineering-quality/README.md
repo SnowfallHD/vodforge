@@ -1,5 +1,14 @@
 # VODForge engineering-quality harness
 
+## Popup gesture and focus restoration — 2026-10-06
+
+A popup close must survive the remainder of the same held trigger gesture and
+must not become a fresh open request when Qt restores editor focus. The
+[popup reliability audit](POPUP_TOGGLE_RELIABILITY.md) documents reproduced
+category/hover defects, the narrow fixes, prior-failure evidence, a cross-surface
+pointer/keyboard matrix, and untested native acceptance. These changes do not
+explain the separate persistent physical Done-click report.
+
 ## Inline Library notes report successful durable changes — 2026-09-30
 
 The signed `e5d49d1` preview journey saved a note through the visible inline
