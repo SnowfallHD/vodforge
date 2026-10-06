@@ -91,7 +91,11 @@ from .export_planning import (
     migrate_export_preferences,
     mp3_sample_rate_display,
 )
-from .failure_diagnostics import FailureDiagnostic, capture_failure
+from .failure_diagnostics import (
+    FailureDiagnostic,
+    SourceSelectionError,
+    capture_failure,
+)
 from .focus_settings import (
     FocusSettingsActions,
     FocusSettingsBindings,
@@ -283,6 +287,7 @@ from .settings_store import (
     SettingsPersistenceOwner,
     settings_file_path,
 )
+from .source_selection import selection_observation
 from .telemetry_features import (
     committed_export_dimensions,
     export_dimensions,
@@ -5170,15 +5175,25 @@ def _build_download_item_plan(
     *,
     max_height: int,
 ) -> ExportPlan | AudioExportPlan:
+    job.selection_dimensions = {}
     if job.output_type == OutputType.ORIGINAL:
         return build_original_audio_plan(preflight_info)
     if job.output_type == OutputType.MP3:
         return build_mp3_export_plan(preflight_info, job.mp3_settings)
-    plan = build_auto_export_plan(
-        preflight_info,
-        mode=job.export_mode,
-        max_height=max_height,
-        use_nvenc=job.use_nvenc,
+    try:
+        plan = build_auto_export_plan(
+            preflight_info,
+            mode=job.export_mode,
+            max_height=max_height,
+            use_nvenc=job.use_nvenc,
+        )
+    except SourceSelectionError as exc:
+        job.selection_dimensions = selection_observation(
+            exc.selection_dimensions, scope="item"
+        )
+        raise
+    job.selection_dimensions = selection_observation(
+        plan.selection_dimensions, scope="item"
     )
     if job.export_mode == ExportMode.MANUAL_OVERRIDE:
         return apply_manual_export_settings(plan, job.manual_settings)
@@ -6836,7 +6851,13 @@ class DownloadWorkerCore:
         telemetry = self.__dict__.get("product_telemetry")
         operation = getattr(job, "telemetry_operation_id", None)
         if telemetry is not None and operation:
-            facts = {"stage": job.failure_stage, **dict(dimensions or {})}
+            facts = {
+                "stage": job.failure_stage,
+                **selection_observation(
+                    getattr(job, "selection_dimensions", {}), scope="item"
+                ),
+                **dict(dimensions or {}),
+            }
             if output_path is not None:
                 facts.update(
                     DownloadWorkerCore._observed_output_dimensions(
@@ -6987,6 +7008,7 @@ class DownloadWorkerCore:
         )
         primary_intent_active = False
         job.telemetry_operation_id = str(uuid.uuid4())
+        job.selection_dimensions = {}
         DownloadWorkerCore._observe_download_operation(
             self,
             job,

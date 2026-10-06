@@ -86,6 +86,7 @@ class ExportPlan:
     constant_frame_rate: bool = False
     video_maxrate_kbps: int | None = None
     source_quality_tier: int = 0
+    selection_dimensions: dict[str, str] = field(default_factory=dict)
 
     @property
     def video_target_label(self) -> str:
@@ -190,6 +191,7 @@ class DownloadJob:
     # Ephemeral observations follow the existing serialized worker, never own files.
     telemetry_operation_id: str | None = None
     failure_stage: str = "preparation"
+    selection_dimensions: dict[str, str] = field(default_factory=dict)
     # Display provenance only; never selects an encoder or restores authentication.
     nvenc_applicable: bool | None = None
     translated_subtitle_language: str | None = None

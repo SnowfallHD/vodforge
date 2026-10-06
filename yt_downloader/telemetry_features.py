@@ -20,6 +20,7 @@ from urllib.parse import parse_qs, urlsplit
 import psutil
 
 from .failure_diagnostics import FAILURE_CODES, FAILURE_REASONS
+from .source_selection import SELECTION_CHOICES, SELECTION_RANGES, selection_observation
 
 FEATURE_ACTIONS: dict[str, frozenset[str]] = {
     "settings": frozenset({"snapshot"}),
@@ -942,6 +943,10 @@ def settings_dimensions(values: Mapping) -> dict[str, str]:
     return result
 
 
+DIMENSION_CHOICES.update(SELECTION_CHOICES)
+DIMENSION_RANGES.update(SELECTION_RANGES)
+
+
 def validate_dimensions(value: Mapping[str, str] | None) -> dict[str, str]:
     if value is None:
         return {}
@@ -1158,6 +1163,11 @@ def export_dimensions(job: object) -> dict[str, str]:
         if preset in DIMENSION_CHOICES["preset"]
         and getattr(getattr(job, "output_type", None), "value", "") == "MP4"
         else {}
+    )
+    result.update(
+        selection_observation(
+            getattr(job, "selection_dimensions", {}), scope="last_analyzed_item"
+        )
     )
     result["cookie_access"] = (
         "disabled"

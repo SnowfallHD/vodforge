@@ -309,8 +309,15 @@ def failure_code(error: BaseException) -> str | None:
 class SourceSelectionError(RuntimeError):
     """Local error text plus strictly numeric format-selection evidence."""
 
-    def __init__(self, message: str, formats: list[dict]):
+    def __init__(
+        self,
+        message: str,
+        formats: list[dict],
+        *,
+        selection_dimensions: dict[str, str] | None = None,
+    ):
         super().__init__(message)
+        self.selection_dimensions = dict(selection_dimensions or {})
         self.format_count = min(len(formats), 10000)
         self.video_format_count = min(
             sum(f.get("vcodec") not in (None, "none", "") for f in formats), 10000

@@ -649,6 +649,7 @@ class _AutoSourceSelection:
     video_id: str | None
     audio_id: str | None
     selector: str
+    dimensions: dict[str, str]
 
 
 @dataclass(frozen=True)
@@ -736,6 +737,63 @@ def _auto_format_selector(
     )
 
 
+def _selection_dimensions(formats, max_height, video, decision):
+    tier = video_quality_tier(video) if video is not None else 0
+    av = [
+        fmt
+        for fmt in formats
+        if not _is_none_codec(fmt.get("vcodec"))
+        and not _is_none_codec(fmt.get("acodec"))
+    ]
+    same_tier = (
+        [fmt for fmt in av if video_quality_tier(fmt) == tier]
+        if video is not None
+        else []
+    )
+    return {
+        "selection_video_only_count": str(
+            min(
+                sum(
+                    not _is_none_codec(f.get("vcodec"))
+                    and _is_none_codec(f.get("acodec"))
+                    for f in formats
+                ),
+                10000,
+            )
+        ),
+        "selection_audio_only_count": str(
+            min(
+                sum(
+                    _is_none_codec(f.get("vcodec"))
+                    and not _is_none_codec(f.get("acodec"))
+                    for f in formats
+                ),
+                10000,
+            )
+        ),
+        "selection_av_count": str(min(len(av), 10000)),
+        "selection_same_tier_av_count": str(min(len(same_tier), 10000)),
+        "selection_usable_av_count": str(
+            min(
+                sum(
+                    choose_best_progressive_format([f], max_height) is not None
+                    for f in same_tier
+                ),
+                10000,
+            )
+        ),
+        "selection_max_height": str(max(0, min(max_height, 100000))),
+        "selection_video_tier": str(max(0, min(tier, 100000))),
+        "selection_has_audio": "unselected"
+        if video is None
+        else "no"
+        if _is_none_codec(video.get("acodec"))
+        else "yes",
+        "selection_decision": decision,
+        "selection_scope": "item",
+    }
+
+
 def _select_auto_sources(
     formats: list[dict[str, Any]], max_height: int
 ) -> _AutoSourceSelection:
@@ -745,14 +803,31 @@ def _select_auto_sources(
             "No usable video source was found for this URL. "
             "The provider format list contains no selectable video stream.",
             formats,
+            selection_dimensions=_selection_dimensions(
+                formats, max_height, None, "no_video"
+            ),
         )
 
     audio = _choose_auto_audio_source(formats, video, using_progressive_av)
+    fallback = False
+    if audio is None and not using_progressive_av:
+        # Retain the resolved tier/ceiling. Never silently downgrade resolution
+        # or produce silent video when a safe same-tier combined stream exists.
+        same_tier = [
+            f for f in formats if video_quality_tier(f) == video_quality_tier(video)
+        ]
+        progressive = choose_best_progressive_format(same_tier, max_height)
+        if progressive is not None:
+            video = audio = progressive
+            using_progressive_av = fallback = True
     if audio is None and not using_progressive_av:
         raise SourceSelectionError(
             "No usable audio source was found for this URL. "
             "The provider format list contains no selectable audio stream.",
             formats,
+            selection_dimensions=_selection_dimensions(
+                formats, max_height, video, "no_audio"
+            ),
         )
 
     video_id = str(video.get("format_id") or "") or None
@@ -764,6 +839,16 @@ def _select_auto_sources(
         video_id=video_id,
         audio_id=audio_id,
         selector=selector,
+        dimensions=_selection_dimensions(
+            formats,
+            max_height,
+            video,
+            "progressive_fallback"
+            if fallback
+            else "progressive"
+            if using_progressive_av
+            else "split",
+        ),
     )
 
 
@@ -884,8 +969,13 @@ def build_auto_export_plan(
     video = selection.video
     audio = selection.audio
     if _is_hdr_format(video):
-        raise RuntimeError(
-            "Unsupported format: only an HDR video source is available. These H.264 presets require SDR; choose a video with an SDR version to avoid incorrect colors."
+        raise SourceSelectionError(
+            "Unsupported format: only an HDR video source is available. These H.264 presets require SDR; choose a video with an SDR version to avoid incorrect colors.",
+            formats,
+            selection_dimensions={
+                **selection.dimensions,
+                "selection_decision": "hdr_rejected",
+            },
         )
     source_video_kbps = _format_video_kbps(video)
     effective_video_kbps = source_video_kbps * video_codec_multiplier(
@@ -955,6 +1045,7 @@ def build_auto_export_plan(
         if mode == ExportMode.STREAMING
         else None,
         source_quality_tier=video_quality_tier(video),
+        selection_dimensions=selection.dimensions,
     )
 
 
@@ -981,6 +1072,7 @@ def apply_manual_export_settings(
         x264_preset=settings.x264_preset,
         video_crf=settings.video_crf,
         source_quality_tier=plan.source_quality_tier,
+        selection_dimensions=dict(plan.selection_dimensions),
         fps=plan.fps,
         video_codec=plan.video_codec,
         audio_codec=plan.audio_codec,
