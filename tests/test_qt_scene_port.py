@@ -6441,7 +6441,9 @@ def test_qt_one_click_update_verifies_waits_then_handoffs_once(
         bridge.close()
 
 
-def test_qt_player_subtitle_label_fits_native_fonts_and_is_centered(tmp_path, monkeypatch):
+def test_qt_player_subtitle_label_fits_native_fonts_and_is_centered(
+    tmp_path, monkeypatch
+):
     from PySide6.QtCore import QUrl
     from PySide6.QtQml import QQmlContext, QQmlEngine
 

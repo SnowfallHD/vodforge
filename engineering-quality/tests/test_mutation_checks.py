@@ -49,3 +49,15 @@ def test_missing_or_invalid_mutation_report_cannot_pass(tmp_path):
     assert not mutation_detected(result, report)
     report.write_text("<malformed")
     assert not mutation_detected(result, report)
+
+
+def test_bounded_history_mutants_reach_current_production_source():
+    from pathlib import Path
+    from quality_harness.mutation import MUTANTS
+
+    source = (
+        Path(__file__).resolve().parents[2] / "yt_downloader/history.py"
+    ).read_text()
+    for name, original, replacement in MUTANTS:
+        assert source.count(original) == 1, name
+        assert original != replacement, name

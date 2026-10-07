@@ -63,7 +63,7 @@ def probe(root: Path, change_owner: bool, resize: bool):
             source = params["source"][0]
             prefix = "image://vodforge-thumbnails/"
             while source.startswith(prefix):
-                nested = parse_qs(source[len(prefix):])
+                nested = parse_qs(source[len(prefix) :])
                 delayed_request |= nested.get("delay") == ["1"]
                 source = nested["source"][0]
             params["source"] = [source]
@@ -137,12 +137,18 @@ Rectangle {{ id:frame; width:120;height:72;color:"#202020"
     while True:
         settle(50)
         final = view.grabWindow()
-        if final.pixelColor(final.width() // 2, final.height() // 2).blue() == expected_blue:
+        if (
+            final.pixelColor(final.width() // 2, final.height() // 2).blue()
+            == expected_blue
+        ):
             break
         if time.monotonic() >= deadline:
             break
     final.save(str(root / "final.png"))
-    assert final.pixelColor(final.width() // 2, final.height() // 2).blue() == expected_blue
+    assert (
+        final.pixelColor(final.width() // 2, final.height() // 2).blue()
+        == expected_blue
+    )
     view.close()
     app.quit()
 

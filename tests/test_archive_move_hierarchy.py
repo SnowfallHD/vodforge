@@ -77,10 +77,16 @@ def test_existing_nested_destination_never_overwritten(tmp_path):
     destination = tmp_path / "new"
     target = destination / "channel/playlist/video"
     target.mkdir(parents=True)
+    # Verified empty folders are intentionally reusable; occupied destinations
+    # must retain their independent bytes and remain a conflict.
+    occupied = target / "video.mp4"
+    occupied.write_bytes(b"existing destination")
     plan = ops.plan_move_operation(
         [record], [history_archive_owner(record)], destination
     )
     assert plan.counts == {"conflict": 1}
+    assert occupied.read_bytes() == b"existing destination"
+    assert Path(record["vodforge_output_path"]).read_bytes() == b"a"
 
 
 def test_repeated_move_after_restart_preserves_retry_configuration(tmp_path):

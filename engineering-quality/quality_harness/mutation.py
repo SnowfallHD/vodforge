@@ -34,8 +34,8 @@ MUTANTS = (
     ),
     (
         "run_activity_line_limit_reversed",
-        "if len(result) >= MAX_RUN_ACTIVITY_LINES:",
-        "if len(result) < MAX_RUN_ACTIVITY_LINES:",
+        "if len(selected) >= MAX_RUN_ACTIVITY_LINES or remaining <= 0:",
+        "if len(selected) < MAX_RUN_ACTIVITY_LINES or remaining <= 0:",
     ),
     (
         "pending_history_staging_removed",

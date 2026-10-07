@@ -172,7 +172,8 @@ def test_long_notice_expands_below_stationary_composer(feedback_scene, width, he
     deadline = QElapsedTimer()
     deadline.start()
     while (
-        abs(hero.mapToItem(window.contentItem(), QPointF(0, 0)).y() - original_hero_y) > 1
+        abs(hero.mapToItem(window.contentItem(), QPointF(0, 0)).y() - original_hero_y)
+        > 1
         and deadline.elapsed() < 2000
     ):
         QTest.qWait(10)

@@ -7,7 +7,7 @@ import html
 import json
 import re
 import shutil
-import subprocess
+import subprocess  # nosec B404 - local decoder argv, no shell; call is bounded.
 import tempfile
 import threading
 import time

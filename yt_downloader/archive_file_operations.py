@@ -549,7 +549,7 @@ def _move_source_plan(records, owners, *, cancelled=None) -> FileOperationPlan:
             else:
                 raise ValueError("The missing media appeared")
             directories = []
-            artifacts = ()
+            artifacts: tuple[ArtifactEvidence, ...] = ()
             if parent == source.parent:
                 observed = _observe(record, parsed, companions_when_missing=True)
                 if observed.state != "missing":
@@ -760,7 +760,7 @@ def plan_move_operation(
             reserved
             or existing
             or (len(peers) > 1 and not shared_target)
-            or item.source.parent in target.parents
+            or (item.source is not None and item.source.parent in target.parents)
         )
         items.append(replace(item, state="conflict") if conflict else item)
     return replace(plan, items=tuple(items))
@@ -1441,7 +1441,7 @@ def move_files(
                 ],
             )
             boundary("destination_claimed")
-            structure_copies = []
+            structure_copies: list[list[Any]] = []
             for folder, _device, _inode in item.directories:
                 target_directory = target_folder / folder.relative_to(
                     item.source.parent

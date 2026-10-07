@@ -6714,7 +6714,9 @@ class Bridge(QObject):
 def create_engine(bridge: Bridge) -> QQmlApplicationEngine:
     # VODForge's custom actions participate in Tab navigation on every platform,
     # even when the platform defaults to text fields only. This is process-local.
-    QGuiApplication.styleHints().setTabFocusBehavior(Qt.TabFocusAllControls)
+    QGuiApplication.styleHints().setTabFocusBehavior(
+        Qt.TabFocusBehavior.TabFocusAllControls
+    )
     register_window_model()
     engine = QQmlApplicationEngine()
     materials = Materials()

@@ -10,7 +10,7 @@ def move_summary(plan: FileOperationPlan, outcomes=None) -> str:
     entries = (
         outcomes if outcomes is not None else [(i.owner, i.state) for i in plan.items]
     )
-    counts = Counter()
+    counts: Counter[str] = Counter()
     for owner, state in entries:
         item = items.get(owner)
         if state in {"ready", "completed"}:

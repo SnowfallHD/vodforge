@@ -39,7 +39,10 @@ def _pytest_commands(
                 "-q",
                 *(path.relative_to(repo_root).as_posix() for path in components),
             ),
-            300,
+            # This aggregate has hundreds of rendering/timer cases. The prior
+            # 300-second run reached 44% while other qualification work ran;
+            # retain a bounded suite deadline without weakening case assertions.
+            900,
         ),
         (
             "pytest_qt_scene",

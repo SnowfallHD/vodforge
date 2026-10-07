@@ -42,6 +42,8 @@ from .ui_widgets import ActionDialogSurface
 class FileActionDialog:
     """One short decision, with protected actions and scoped keyboard behavior."""
 
+    reviewed_plan: FileOperationPlan
+
     def __init__(self, master: Any, title: str, cancel: Callable[[], None]):
         self._recovery_buttons: tuple[ttk.Button, ...] = ()
         self.operation: BoundProductOperation | None = None

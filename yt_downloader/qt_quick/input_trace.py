@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 from PySide6.QtCore import QEvent, QObject, QPointF, QRectF, Qt, QTimer
 from PySide6.QtGui import QMouseEvent
@@ -35,14 +35,14 @@ _POPUPS = frozenset(
     {"library_filter", "forge_options", "watch_more", "settings", "fixture_popup"}
 )
 _EVENTS = {
-    QEvent.MouseButtonPress: "press",
-    QEvent.MouseButtonRelease: "release",
-    QEvent.MouseButtonDblClick: "double_press",
-    QEvent.MouseMove: "held_move",
-    QEvent.UngrabMouse: "ungrab",
-    QEvent.WindowActivate: "window_activate",
-    QEvent.WindowDeactivate: "window_deactivate",
-    QEvent.TouchCancel: "touch_cancel",
+    QEvent.Type.MouseButtonPress: "press",
+    QEvent.Type.MouseButtonRelease: "release",
+    QEvent.Type.MouseButtonDblClick: "double_press",
+    QEvent.Type.MouseMove: "held_move",
+    QEvent.Type.UngrabMouse: "ungrab",
+    QEvent.Type.WindowActivate: "window_activate",
+    QEvent.Type.WindowDeactivate: "window_deactivate",
+    QEvent.Type.TouchCancel: "touch_cancel",
 }
 
 
@@ -104,7 +104,7 @@ class InputTrace(QObject):
         while pending and visited < 128:
             child = pending.pop()
             visited += 1
-            if child.acceptedMouseButtons() != Qt.NoButton:
+            if child.acceptedMouseButtons() != Qt.MouseButton.NoButton:
                 child.installEventFilter(self)
                 self._delivery_items.append(child)
             pending.extend(child.childItems())
@@ -113,7 +113,9 @@ class InputTrace(QObject):
         if role not in _POPUPS or self._stopped or role in self._popups:
             raise ValueError("Unknown or inactive diagnostic popup")
         self._popups[role] = popup
-        self._connect(popup, popup.visibleChanged, lambda: self._record("popup_state"))
+        self._connect(
+            popup, cast(Any, popup).visibleChanged, lambda: self._record("popup_state")
+        )
 
     def _identity(self, item: QQuickItem | None) -> dict[str, Any] | None:
         if item is None or not isValid(item):
@@ -154,7 +156,7 @@ class InputTrace(QObject):
     def _hit_candidates(self) -> tuple[list[dict[str, Any]], bool]:
         if self._position is None:
             return [], False
-        hits = []
+        hits: list[dict[str, Any]] = []
         visited = 0
         truncated = False
 
@@ -178,7 +180,7 @@ class InputTrace(QObject):
             below = [child for _, child in children if child.z() < 0]
             for child in above:
                 visit(child, depth + 1)
-            accepts = item.acceptedMouseButtons() != Qt.NoButton
+            accepts = item.acceptedMouseButtons() != Qt.MouseButton.NoButton
             if item.inherits("QQuickMouseArea") and not item.property("enabled"):
                 accepts = False
             if inside and accepts:
@@ -259,12 +261,12 @@ class InputTrace(QObject):
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         kind = _EVENTS.get(event.type())
         if kind is not None and not self._stopped:
-            if event.type() == QEvent.MouseMove:
+            if event.type() == QEvent.Type.MouseMove:
                 now = time.monotonic()
                 if (
                     watched is not self._window
                     or not isinstance(event, QMouseEvent)
-                    or event.buttons() == Qt.NoButton
+                    or event.buttons() == Qt.MouseButton.NoButton
                     or now - self._last_move < 0.05
                 ):
                     return False
@@ -283,7 +285,7 @@ class InputTrace(QObject):
             fields = {"event_id": event_id, "event": kind}
             if isinstance(event, QMouseEvent):
                 self._position = QPointF(event.position())
-                if event.type() == QEvent.MouseButtonPress:
+                if event.type() == QEvent.Type.MouseButtonPress:
                     self._gesture += 1
                 fields.update(
                     position=[

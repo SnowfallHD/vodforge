@@ -62,6 +62,12 @@ fi
     --ignore=tests/test_qt_worker_control_context.py \
     --ignore=tests/test_qt_analytics_session.py \
     --ignore=tests/test_qt_artwork_continuity.py \
+    --ignore=tests/test_qt_card_material_bounds.py \
+    --ignore=tests/test_qt_click_reliability.py \
+    --ignore=tests/test_qt_input_trace.py \
+    --ignore=tests/test_qt_library_section_selection.py \
+    --ignore=tests/test_qt_popup_toggle_order.py \
+    --ignore=tests/test_qt_watch_close_hero_refresh.py \
     --ignore=tests/test_qt_artwork_image.py \
     --ignore=tests/test_qt_metadata_preview.py \
     --ignore=tests/test_qt_presentation_diagnostics.py \
@@ -136,6 +142,12 @@ fi
     tests/test_qt_worker_control_context.py \
     tests/test_qt_analytics_session.py \
     tests/test_qt_artwork_continuity.py \
+    tests/test_qt_card_material_bounds.py \
+    tests/test_qt_click_reliability.py \
+    tests/test_qt_input_trace.py \
+    tests/test_qt_library_section_selection.py \
+    tests/test_qt_popup_toggle_order.py \
+    tests/test_qt_watch_close_hero_refresh.py \
     tests/test_qt_artwork_image.py \
     tests/test_qt_metadata_preview.py \
     tests/test_qt_presentation_diagnostics.py \
