@@ -24,9 +24,13 @@ def test_missing_root_notice_does_not_claim_location_is_inaccessible(tmp_path):
     )
     assert controller.poll()
     assert not controller.eligible
-    assert "original archive root is not recorded" in controller.status
+    assert "1 selected:" in controller.status
+    assert "1 unsupported or ambiguous source layouts, kept" in controller.status
+    assert "missing or inaccessible sources" not in controller.status
     assert "could not be accessed" not in controller.status
-    assert "No files will change" in controller.status
+    assert controller.plan is not None
+    assert controller.plan.items[0].reason == "hierarchy_root_unknown"
+    assert not (tmp_path / "destination").exists()
     assert controller.worker is None
 
 
@@ -56,7 +60,11 @@ def test_mixed_move_notice_explains_skipped_legacy_owner(tmp_path):
     )
     assert controller.poll()
     assert controller.eligible
-    assert "Move 1 verified" in controller.status
-    assert "1 item(s) cannot move" in controller.status
-    assert "Their files will be kept" in controller.status
+    assert "2 selected:" in controller.status
+    assert "1 media ready to move" in controller.status
+    assert "1 unsupported or ambiguous source layouts, kept" in controller.status
+    assert "missing or inaccessible sources" not in controller.status
+    assert controller.plan is not None
+    assert controller.plan.items[1].reason == "hierarchy_root_unknown"
+    assert not controller.destination.exists()
     assert controller.worker is None
