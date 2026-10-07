@@ -1,0 +1,11 @@
+# Qt recovery draft retires on source edits
+
+When Library prepares a missing-item recovery in Forge, its reviewed destination and retired-preset migration are session-only draft state. Previously the Qt source field did not notify the bridge when its text changed. Clearing or replacing the prepared URL left the old draft mode/destination visible; restoring the old URL before submission could reuse that stale draft. The Tcl controller already retired this state through its variable trace, so its passing source protocol did not qualify this separate Qt path.
+
+The bridge now exposes `sourceInputChanged`; the actual QML URL field calls it on text changes. A source different from the prepared source clears only the recovery draft and emits current output/mode changes. Preparing that same source and adding surrounding whitespace preserve the draft. Deliberate draft edits remain local, and saved defaults stay unchanged. Existing submission logic still retains a refused draft for review and retires an accepted one.
+
+Six focused offscreen regression cases cover programmatic field text changes, actual Qt key delivery, same-source/whitespace preservation, restoring the old URL, stable defaults and accepted/refused admission. On the unchanged production baseline the four edit cases fail at the stale draft; the two send cases retain existing behavior. Patched six cases pass. The related QML scene-port/relink run with four edit cases passes all 181 tests. Maintained mypy command passes 169 source files; Ruff and diff checks pass.
+
+The key fixture waits for Forge to become visible and focuses the actual field; the application uses the maintained Basic style. Earlier development failures without active focus/style are retained and are not presented as product failures. No physical input claim or native packaged acceptance is inferred from offscreen Qt events.
+
+Runtime change: one QML handler and one bridge slot (10 added lines); no persistence, credentials, timers, telemetry or release routing changes. Work is isolated in `draft-repair-source`, based on engineering parent `29670abc507335b6f5a64abb507e7e2c80700580`, whose product tree equals frozen RC4. Frozen RC4, its qualified archives and installed applications are unchanged. Integrating this repair requires a new private package and the relevant package acceptance before public release.

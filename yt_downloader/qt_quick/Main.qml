@@ -1057,6 +1057,7 @@ Window {
                             background: Item {}
                             font.pixelSize: 16
                             onAccepted: bridge.submit(text, window.outputFormat)
+                            onTextChanged: { if (bridge) bridge.sourceInputChanged(text) }
                         }
                         Rectangle {
                             Layout.preferredWidth: 1

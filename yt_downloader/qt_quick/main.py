@@ -5132,6 +5132,15 @@ class Bridge(QObject):
         self.localChanged.emit()
 
     @Slot(str)
+    def sourceInputChanged(self, value: str) -> None:
+        """A reviewed recovery draft expires as soon as its source is edited."""
+        if self._recovery_source_url and value.strip() != self._recovery_source_url:
+            self._media_recovery.clear_destination()
+            self._recovery_source_url = ""
+            self.outputPathChanged.emit()
+            self.exportModeChanged.emit()
+
+    @Slot(str)
     def setOutputPath(self, value: str) -> None:
         path = Path(value).expanduser()
         if not path.is_dir():
