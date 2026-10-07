@@ -104,3 +104,21 @@ input instrumentation. The bounded opt-in observer described in `INPUT_TRACE.md`
 can distinguish window delivery, target delivery and action on an isolated native
 candidate. Native physical verification and Windows/package parity remain open;
 synthetic success, even spontaneous Qt events, does not close those gates.
+
+## Exit completion and trigger state
+
+A visible popup may already be running its exit transition when the trigger's
+release calls `toggleFrom`. A second `close()` then emits no new `aboutToHide`.
+Scope `closingFromTrigger` to the synchronous `close()` call, resetting it on
+return, so a no-op close cannot misclassify the next outside-press dismissal.
+A pointer regression closes with a140ms exit, removes that transition, reopens,
+and verifies that the next trigger click closes once without reopening.
+
+Intel CI exposed fixed-sleep assumptions in the diagnostic deadline and exit
+fixtures. Controlled event-loop stalls reproduce the exact assertions without
+changing the product: deferred deadline/closed notifications arrive at a later
+checkpoint. The tests now await their observable states with monotonic2s bounds,
+including deliberately delayed dispatch, and retain activation/disconnection and
+exact opened/closed sequence assertions. Neither extends the diagnostic deadline
+nor debounces input. The separately reproduced stale marker is a product fix;
+the two original CI assertions alone did not establish that defect.

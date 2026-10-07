@@ -1,9 +1,10 @@
 """Observer sensitivity tests and interrupted, separated-click journeys."""
 
 import json
+import time
 
 import pytest
-from PySide6.QtCore import QObject, QPoint, Qt, QUrl
+from PySide6.QtCore import QObject, QPoint, Qt, QTimer, QUrl
 from PySide6.QtQml import QQmlComponent
 from PySide6.QtTest import QTest
 
@@ -180,12 +181,19 @@ def test_observer_does_not_reintroduce_double_click_suppression(traced):
     )
 
 
-def test_deadline_disconnects_and_preserves_next_click(traced):
+@pytest.mark.parametrize("stall_event_loop", [False, True])
+def test_deadline_disconnects_and_preserves_next_click(traced, stall_event_loop):
     _app, _bridge, _engine, window, button, original = traced
     original.stop()
     trace = InputTrace(window, seconds=0.02)
     trace.watch_action(button, "library_select")
-    QTest.qWait(40)
+    if stall_event_loop:
+        # A callback can outlast qWait's wall-clock budget before the timer is
+        # delivered. The observer must still disconnect at the next checkpoint.
+        QTimer.singleShot(10, lambda: time.sleep(0.10))
+    deadline = time.monotonic() + 2
+    while trace.snapshot()["status"] == "running" and time.monotonic() < deadline:
+        QTest.qWait(10)
     assert trace.snapshot()["status"] == "deadline"
     before = trace.snapshot()
     click(window, button)

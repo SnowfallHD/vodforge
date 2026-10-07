@@ -1,7 +1,9 @@
 """Popup toggle order: use pointer and keyboard delivery, not direct activation."""
 
+import time
+
 import pytest
-from PySide6.QtCore import QObject, QPoint, Qt
+from PySide6.QtCore import QObject, QPoint, Qt, QTimer
 from PySide6.QtTest import QTest
 
 from tests.test_qt_click_reliability import center
@@ -144,7 +146,11 @@ def test_trigger_close_survives_leave_and_return_during_same_press(
         _close(bridge, engine, window)
 
 
-def test_trigger_toggle_during_exit_does_not_poison_next_close(tmp_path, monkeypatch):
+@pytest.mark.parametrize("stall_event_loop", [False, True])
+@pytest.mark.parametrize("remove_exit_after_close", [False, True])
+def test_trigger_toggle_during_exit_does_not_poison_next_close(
+    tmp_path, monkeypatch, stall_event_loop, remove_exit_after_close
+):
     from PySide6.QtCore import QUrl
     from PySide6.QtQml import QQmlComponent
 
@@ -165,19 +171,33 @@ def test_trigger_toggle_during_exit_does_not_poison_next_close(tmp_path, monkeyp
         animation = component.create()
         assert animation is not None, component.errors()
         popup.setProperty("exit", animation)
+        events = []
+        popup.opened.connect(lambda: events.append("opened"))
+        popup.closed.connect(lambda: events.append("closed"))
+
+        def wait_closed():
+            deadline = time.monotonic() + 2
+            while popup.property("visible") and time.monotonic() < deadline:
+                QTest.qWait(10)
+            assert not popup.property("visible"), events
+
         click(window, trigger)
         assert popup.property("visible")
         QTest.mousePress(window, Qt.LeftButton, pos=center(trigger))
         app.processEvents()
         assert popup.property("visible")  # exit is in flight
         QTest.mouseRelease(window, Qt.LeftButton, pos=center(trigger))
-        QTest.qWait(180)
-        assert not popup.property("visible")
+        if stall_event_loop:
+            QTimer.singleShot(10, lambda: time.sleep(0.25))
+        wait_closed()
+        assert events == ["opened", "closed"]
+        if remove_exit_after_close:
+            popup.setProperty("exit", None)
         click(window, trigger)
         assert popup.property("visible")
         click(window, trigger)
-        QTest.qWait(180)
-        assert not popup.property("visible")
+        wait_closed()
+        assert events == ["opened", "closed", "opened", "closed"]
     finally:
         _close(bridge, engine, window)
 

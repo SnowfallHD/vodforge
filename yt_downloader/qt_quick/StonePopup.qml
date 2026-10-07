@@ -15,6 +15,9 @@ Popup {
             closingFromTrigger = true
             dismissedByTriggerPress = false
             close()
+            // An exit already in flight makes close() a no-op: no new
+            // aboutToHide signal will clear this marker for the next gesture.
+            closingFromTrigger = false
             return false
         }
         // Qt dismisses on pointer press outside before the trigger's click.
