@@ -440,6 +440,7 @@ class Bridge(QObject):
     supportRequested = Signal()
     editorialChanged = Signal()
     editorialRequested = Signal()
+    socialInvitationRequested = Signal()
 
     def __init__(self, event_log: Path | None) -> None:
         super().__init__()
@@ -474,6 +475,8 @@ class Bridge(QObject):
         self._cloud_work = ArchiveWorkOwner()
         self._cloud_seen_attempted = False
         self._cloud_seen_install_id = ""
+        self._social_invitation_open = False
+        self._social_idle_since = time.monotonic()
         self._editorial_kind = ""
         self._editorial_slides: tuple[FeatureHighlight, ...] = ()
         self._activity_log_path = diagnostics_dir() / "activity.log"
@@ -2084,13 +2087,20 @@ class Bridge(QObject):
     def editorialHeading(self) -> str:
         return {
             "welcome": "Welcome to VODForge",
+            "welcome-tour": "Welcome to VODForge",
             "whats-new": "What’s new",
             "did-you-know": "Did you know?",
         }.get(self._editorial_kind, "")
 
+    @Property(bool, notify=editorialChanged)
+    def compactWelcome(self) -> bool:
+        return self._editorial_kind == "welcome"
+
     @Property(str, notify=editorialChanged)
     def editorialFinishLabel(self) -> str:
         if self._editorial_kind == "welcome":
+            return "Get started"
+        if self._editorial_kind == "welcome-tour":
             return "Start using VODForge"
         if self._editorial_kind == "did-you-know" or (
             len(self._editorial_slides) == 1
@@ -4332,6 +4342,14 @@ class Bridge(QObject):
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         if isinstance(watched, QWindow):
+            if event.type() in {
+                QEvent.Type.MouseButtonPress,
+                QEvent.Type.MouseButtonRelease,
+                QEvent.Type.MouseMove,
+                QEvent.Type.KeyPress,
+                QEvent.Type.Wheel,
+            }:
+                self._social_idle_since = time.monotonic()
             if event.type() == QEvent.Type.MouseButtonPress:
                 self._pointer_press = (watched, QPointF(cast(Any, event).position()))
             elif event.type() == QEvent.Type.MouseButtonRelease:
@@ -4401,15 +4419,35 @@ class Bridge(QObject):
 
     @Slot(result=bool)
     def openWelcomeTour(self) -> bool:
-        if self._editorial_kind or self._support.kind:
+        return self._open_welcome(compact=False)
+
+    @Slot(result=bool)
+    def openWelcome(self) -> bool:
+        return self._open_welcome(compact=True)
+
+    def _open_welcome(self, *, compact: bool) -> bool:
+        if self._editorial_kind or self._support.kind or self._social_invitation_open:
             return False
-        self._editorial_kind = "welcome"
-        self._editorial_slides = WELCOME_SLIDES
+        self._editorial_kind = "welcome" if compact else "welcome-tour"
+        self._editorial_slides = (
+            (
+                replace(
+                    WELCOME_SLIDES[0],
+                    title="Your videos. Ready when you are.",
+                    description="Download, organize and watch in one place.",
+                ),
+            )
+            if compact
+            else WELCOME_SLIDES
+        )
         try:
             self._engagement.presented_welcome()
         except (OSError, ValueError):
             pass
         self._settings["whats_new_seen"] = SHOWCASE_ID
+        if compact:
+            # This screen already includes the optional invitation.
+            self._settings["social_invitation_dismissed"] = True
         self._schedule_preferences_save()
         self.editorialChanged.emit()
         self.editorialRequested.emit()
@@ -4421,16 +4459,18 @@ class Bridge(QObject):
             not ui_ready
             or not self._analytics.settled
             or self._editorial_kind
+            or self._social_invitation_open
             or self._support.kind
             or self._runtime.active_job is not None
             or self._runtime.busy
             or self._runtime.queued
             or self._playback_binding is not None
         ):
+            self._social_idle_since = time.monotonic()
             return
         try:
             if self._engagement.welcome_pending:
-                self.openWelcomeTour()
+                self.openWelcome()
                 return
             if self._engagement.rating_pending:
                 if self.openSupport("review"):
@@ -4453,6 +4493,24 @@ class Bridge(QObject):
                 self.editorialChanged.emit()
                 self.editorialRequested.emit()
                 self._record_update_feature("announcement", "shown")
+                return
+        if (
+            self._settings.get("social_invitation_dismissed") is not True
+            and time.monotonic() - self._social_idle_since >= 8
+            and not self.isPointerPressed()
+        ):
+            self._social_invitation_open = True
+            self.socialInvitationRequested.emit()
+
+    @Slot(bool)
+    def dismissSocialInvitation(self, follow: bool) -> None:
+        if not self._social_invitation_open:
+            return
+        self._social_invitation_open = False
+        self._settings["social_invitation_dismissed"] = True
+        self._schedule_preferences_save()
+        if follow:
+            self.openSocialAccount()
 
     @Slot(bool)
     def dismissEditorial(self, try_it: bool) -> None:

@@ -181,6 +181,7 @@ Window {
             supportPopup.open()
         }
         function onEditorialRequested() { editorialPopup.open() }
+        function onSocialInvitationRequested() { socialInvitationPopup.open() }
         function onFileActionRequested() { fileActionPopup.open() }
         function onLibraryRemovalRequested() { libraryRemovalPopup.open() }
         function onSourceAccepted() { urlInput.text = "" }
@@ -224,6 +225,8 @@ Window {
         reducedMotion: bridge.reducedMotion
         heading: bridge.editorialHeading
         finishLabel: bridge.editorialFinishLabel
+        showSocialInvitation: bridge.compactWelcome
+        onSocialFollowRequested: bridge.openSocialAccount()
         onAcknowledged: function(tryIt) {
             bridge.dismissEditorial(tryIt)
             if (tryIt) settingsPopup.open()
@@ -267,7 +270,7 @@ Window {
         repeat: true
         onTriggered: bridge.checkEditorial(
             window.active && !window.editingText && !analyticsPopup.visible && !editorialPopup.visible &&
-            !helpMenu.visible && !supportPopup.visible && !supportReasonMenu.visible &&
+            !socialInvitationPopup.visible && !helpMenu.visible && !supportPopup.visible && !supportReasonMenu.visible &&
             !supportDiagnostics.visible && !libraryItemPopup.visible &&
             !fileActionPopup.visible && !libraryRemovalPopup.visible &&
             !collectionPopup.visible && !collectionTargetPopup.visible &&
@@ -310,6 +313,70 @@ Window {
                 width: parent.width; height: 46
                 label: "Welcome tour"
                 onActivated: { helpMenu.close(); settingsPopup.close(); bridge.openWelcomeTour() }
+            }
+        }
+    }
+    StonePopup {
+        id: socialInvitationPopup
+        objectName: "socialInvitationPopup"
+        parent: window.contentItem
+        width: Math.min(430, window.width - 36)
+        height: socialInvitationLayout.implicitHeight + 2 * padding
+        x: Math.max(0, (window.width - width) / 2)
+        y: Math.max(0, (window.height - height) / 2)
+        padding: 22
+        modal: true
+        closePolicy: Popup.CloseOnEscape
+        onClosed: bridge.dismissSocialInvitation(false)
+        ColumnLayout {
+            id: socialInvitationLayout
+            anchors.fill: parent
+            spacing: 14
+            StoneButton {
+                sceneIcon: "x"
+                accessibilityLabel: "VODForge on X"
+                quiet: true
+                interactive: false
+                Layout.alignment: Qt.AlignHCenter
+                Layout.preferredWidth: 40
+                Layout.preferredHeight: 40
+            }
+            Text {
+                text: "Stay connected with VODForge"
+                color: theme.text
+                font.pixelSize: 22
+                font.bold: true
+                wrapMode: Text.WordWrap
+                horizontalAlignment: Text.AlignHCenter
+                Layout.fillWidth: true
+            }
+            Text {
+                text: "Follow @VODForge on X for the fastest support and the latest platform updates."
+                color: theme.muted
+                font.pixelSize: 14
+                wrapMode: Text.WordWrap
+                horizontalAlignment: Text.AlignHCenter
+                Layout.fillWidth: true
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: 4
+                spacing: 10
+                StoneButton {
+                    objectName: "socialInvitationLater"
+                    label: "Not now"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 42
+                    onActivated: socialInvitationPopup.close()
+                }
+                StoneButton {
+                    objectName: "socialInvitationFollow"
+                    label: "Follow on X"
+                    emphasized: true
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 42
+                    onActivated: { bridge.dismissSocialInvitation(true); socialInvitationPopup.close() }
+                }
             }
         }
     }

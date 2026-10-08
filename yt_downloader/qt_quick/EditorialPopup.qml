@@ -11,6 +11,8 @@ StonePopup {
     property int index: 0
     property bool completed: false
     property bool reducedMotion: false
+    property bool showSocialInvitation: false
+    signal socialFollowRequested()
     readonly property bool hasRecording: !!current.recording
     readonly property var current: slides.length ? slides[Math.max(0, Math.min(index, slides.length - 1))] : ({})
     signal acknowledged(bool tryIt)
@@ -21,8 +23,8 @@ StonePopup {
     }
     onOpened: { index = 0; completed = false }
     onClosed: { if (!completed) editorial.acknowledged(false) }
-    width: Math.min(490, parent.width - 40)
-    height: Math.min(hasRecording ? 550 : 470, parent.height - 40)
+    width: Math.min(showSocialInvitation ? 620 : 490, parent.width - 40)
+    height: Math.min(showSocialInvitation ? 510 : hasRecording ? 550 : 470, parent.height - 40)
     x: Math.max(0, (parent.width - width) / 2)
     y: Math.max(0, (parent.height - height) / 2)
     padding: 20
@@ -30,6 +32,7 @@ StonePopup {
     closePolicy: Popup.CloseOnEscape
 
     ColumnLayout {
+        visible: !editorial.showSocialInvitation
         anchors.fill: parent
         spacing: 11
         RowLayout {
@@ -145,4 +148,105 @@ StonePopup {
             }
         }
     }
+    ColumnLayout {
+        objectName: "welcomeSingleScreen"
+        visible: editorial.showSocialInvitation
+        anchors.fill: parent
+        anchors.margins: 12
+        spacing: 16
+        RowLayout {
+            Layout.alignment: Qt.AlignHCenter
+            spacing: 8
+            Image {
+                source: assetUrl + "brand/vf-mark.png"
+                Layout.preferredWidth: 26
+                Layout.preferredHeight: 26
+                fillMode: Image.PreserveAspectFit
+            }
+            Row {
+                Text { text: "VOD"; color: theme.accent; font.pixelSize: 17; font.bold: true }
+                Text { text: "Forge"; color: theme.text; font.pixelSize: 17; font.bold: true }
+            }
+        }
+        Item { Layout.fillHeight: true; Layout.minimumHeight: 8 }
+        Row {
+            Layout.alignment: Qt.AlignHCenter
+            spacing: 12
+            Repeater {
+                model: ["library-actions.jpg", "watch-player.jpg", "captions-player.jpg"]
+                Rectangle {
+                    width: 124
+                    height: 80
+                    radius: 9
+                    color: theme.surface
+                    border.color: theme.border
+                    rotation: index === 0 ? -5 : index === 2 ? 5 : 0
+                    Image {
+                        anchors.fill: parent
+                        anchors.margins: 5
+                        source: assetUrl + "whats-new/" + modelData
+                        fillMode: Image.PreserveAspectFit
+                    }
+                }
+            }
+        }
+        Item { Layout.fillHeight: true; Layout.minimumHeight: 8 }
+        Text {
+            objectName: "welcomeHeadline"
+            text: "Your videos. Ready when you are."
+            color: theme.text
+            font.pixelSize: 29
+            font.bold: true
+            horizontalAlignment: Text.AlignHCenter
+            Layout.fillWidth: true
+            wrapMode: Text.WordWrap
+        }
+        Text {
+            text: "Download, organize and watch in one place."
+            color: theme.muted
+            font.pixelSize: 15
+            horizontalAlignment: Text.AlignHCenter
+            Layout.fillWidth: true
+            wrapMode: Text.WordWrap
+        }
+        Item { Layout.preferredHeight: 5 }
+        RowLayout {
+            Layout.alignment: Qt.AlignHCenter
+            spacing: 10
+            StoneButton {
+                objectName: "welcomeSocialFollow"
+                sceneIcon: "x"
+                label: "Follow @VODForge"
+                accessibilityLabel: "Follow VODForge on X"
+                quiet: true
+                size: "inline"
+                Layout.preferredHeight: 34
+                onActivated: editorial.socialFollowRequested()
+            }
+            Text {
+                text: "Fast support · platform updates"
+                color: theme.muted
+                font.pixelSize: 12
+            }
+        }
+        Item { Layout.fillHeight: true; Layout.minimumHeight: 6 }
+        StoneButton {
+            objectName: "welcomeGetStarted"
+            label: editorial.finishLabel
+            emphasized: true
+            Layout.alignment: Qt.AlignHCenter
+            Layout.preferredWidth: 200
+            Layout.preferredHeight: 44
+            onActivated: editorial.finish(false)
+        }
+        Text {
+            text: "Following is optional. You can find us on X anytime."
+            color: theme.muted
+            font.pixelSize: 12
+            horizontalAlignment: Text.AlignHCenter
+            Layout.fillWidth: true
+            wrapMode: Text.WordWrap
+        }
+    }
+
 }
