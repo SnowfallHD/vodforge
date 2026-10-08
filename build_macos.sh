@@ -74,6 +74,7 @@ fi
     --ignore=tests/test_qt_previews.py \
     --ignore=tests/test_qt_quality_e2e.py \
     --ignore=tests/test_qt_relink.py \
+    --ignore=tests/test_qt_recovery_draft_retirement.py \
     --ignore=tests/test_qt_terminal_item_events.py \
     --ignore=tests/test_qt_scene_port.py \
     --ignore=tests/test_qt_telemetry_coverage.py \
@@ -154,6 +155,7 @@ fi
     tests/test_qt_previews.py \
     tests/test_qt_quality_e2e.py \
     tests/test_qt_relink.py \
+    tests/test_qt_recovery_draft_retirement.py \
     tests/test_qt_terminal_item_events.py \
     tests/test_qt_telemetry_coverage.py \
     tests/test_qt_fullscreen_native.py \
