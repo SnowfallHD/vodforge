@@ -286,7 +286,7 @@ Item {
                 Row {
                     id: heroChips
                     x: 36; y: heroTitle.y + heroTitle.implicitHeight + 14; spacing: 12
-                    Text { text: scene.projection.hero.creator || ""; color: theme.text; font.pixelSize: 14 }
+                    Text { text: scene.projection.hero.creator || ""; color: theme.muted; font.pixelSize: 14 }
                     Text { text: scene.projection.hero.playlist || ""; color: theme.muted; font.pixelSize: 14 }
                     Text { text: scene.projection.hero.type || ""; color: theme.muted; font.pixelSize: 14 }
                     Text { text: scene.projection.hero.duration || ""; color: theme.muted; font.pixelSize: 14 }

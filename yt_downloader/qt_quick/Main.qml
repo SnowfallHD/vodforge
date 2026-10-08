@@ -1175,7 +1175,7 @@ Window {
                     spacing: 6
                     Text {
                         text: "Save to"
-                        color: theme.muted
+                        color: theme.text
                         font.pixelSize: 15
                         Layout.leftMargin: 7
                         Layout.preferredWidth: 52

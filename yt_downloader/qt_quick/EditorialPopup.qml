@@ -173,12 +173,12 @@ StonePopup {
             Layout.alignment: Qt.AlignHCenter
             spacing: 10
             Repeater {
-                model: ["library.png", "watch.png", "player.png"]
+                model: ["library.png", "watch.png", "forge.png"]
                 Image {
                     width: 176
                     height: 122
                     rotation: index === 0 ? -5 : index === 2 ? 5 : 0
-                    source: assetUrl + "readme/current-design/" + modelData
+                    source: assetUrl + "onboarding/" + modelData
                     sourceSize.width: 880
                     sourceSize.height: 592
                     fillMode: Image.PreserveAspectFit

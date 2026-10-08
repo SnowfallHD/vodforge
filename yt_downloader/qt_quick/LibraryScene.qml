@@ -367,7 +367,7 @@ Item {
                                 text: categoryTile.compact ? String(categoryTile.modelData.count) :
                                     categoryTile.modelData.count + " " + categoryTile.modelData.summary +
                                     (categoryTile.modelData.count === 1 ? "" : "s")
-                                color: theme.muted
+                                color: categoryTile.compact ? theme.text : theme.muted
                                 font.pixelSize: categoryTile.compact ? 22 : 13
                                 font.bold: categoryTile.compact
                                 elide: Text.ElideRight

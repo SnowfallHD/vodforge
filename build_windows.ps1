@@ -92,9 +92,9 @@ $addData += @("--add-data", "assets/whats-new/library-actions.jpg;assets/whats-n
 $addData += @("--add-data", "assets/whats-new/captions-player.mp4;assets/whats-new")
 $addData += @("--add-data", "assets/whats-new/captions-player.jpg;assets/whats-new")
 $addData += @("--add-data", "assets/whats-new/manifest.json;assets/whats-new")
-$addData += @("--add-data", "assets/readme/current-design/library.png;assets/readme/current-design")
-$addData += @("--add-data", "assets/readme/current-design/watch.png;assets/readme/current-design")
-$addData += @("--add-data", "assets/readme/current-design/player.png;assets/readme/current-design")
+$addData += @("--add-data", "assets/onboarding/library.png;assets/onboarding")
+$addData += @("--add-data", "assets/onboarding/watch.png;assets/onboarding")
+$addData += @("--add-data", "assets/onboarding/forge.png;assets/onboarding")
 $addData += @("--add-data", "THIRD_PARTY_NOTICES.md;.")
 
 $uiMode = if ($env:VODFORGE_UI) { $env:VODFORGE_UI } else { "tk" }
