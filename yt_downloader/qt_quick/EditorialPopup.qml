@@ -171,22 +171,18 @@ StonePopup {
         Item { Layout.fillHeight: true; Layout.minimumHeight: 8 }
         Row {
             Layout.alignment: Qt.AlignHCenter
-            spacing: 12
+            spacing: 10
             Repeater {
-                model: ["library-actions.jpg", "watch-player.jpg", "captions-player.jpg"]
-                Rectangle {
-                    width: 124
-                    height: 80
-                    radius: 9
-                    color: theme.surface
-                    border.color: theme.border
+                model: ["library.png", "watch.png", "player.png"]
+                Image {
+                    width: 176
+                    height: 122
                     rotation: index === 0 ? -5 : index === 2 ? 5 : 0
-                    Image {
-                        anchors.fill: parent
-                        anchors.margins: 5
-                        source: assetUrl + "whats-new/" + modelData
-                        fillMode: Image.PreserveAspectFit
-                    }
+                    source: assetUrl + "readme/current-design/" + modelData
+                    sourceSize.width: 880
+                    sourceSize.height: 592
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
                 }
             }
         }
@@ -239,14 +235,7 @@ StonePopup {
             Layout.preferredHeight: 44
             onActivated: editorial.finish(false)
         }
-        Text {
-            text: "Following is optional. You can find us on X anytime."
-            color: theme.muted
-            font.pixelSize: 12
-            horizontalAlignment: Text.AlignHCenter
-            Layout.fillWidth: true
-            wrapMode: Text.WordWrap
-        }
+
     }
 
 }

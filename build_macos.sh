@@ -322,6 +322,9 @@ fi
   --add-data "assets/whats-new/captions-player.mp4:assets/whats-new" \
   --add-data "assets/whats-new/captions-player.jpg:assets/whats-new" \
   --add-data "assets/whats-new/manifest.json:assets/whats-new" \
+  --add-data "assets/readme/current-design/library.png:assets/readme/current-design" \
+  --add-data "assets/readme/current-design/watch.png:assets/readme/current-design" \
+  --add-data "assets/readme/current-design/player.png:assets/readme/current-design" \
   --add-data "THIRD_PARTY_NOTICES.md:." \
   --add-binary "$ffmpeg:." \
   --add-binary "$ffprobe:." \
