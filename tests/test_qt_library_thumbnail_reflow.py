@@ -141,6 +141,7 @@ def probe(output: Path, count: int, scroll: int) -> None:
     phase("bridge_created")
     bridge._engagement.presented_welcome()
     bridge._settings["whats_new_seen"] = main.SHOWCASE_ID
+    bridge._settings["social_invitation_dismissed"] = True
     bridge._runtime.history = [
         {
             "id": str(i),
