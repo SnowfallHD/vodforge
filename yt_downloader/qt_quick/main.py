@@ -680,7 +680,11 @@ class Bridge(QObject):
         )
         saved_output = str(self._settings.get("output_dir") or "")
         try:
-            saved_output_available = bool(saved_output) and Path(saved_output).is_dir()
+            saved_output_available = (
+                bool(saved_output)
+                and Path(saved_output).is_absolute()
+                and Path(saved_output).is_dir()
+            )
         except OSError:
             # Keep the chosen path when a provider/permission probe fails. Opening
             # the app must not require access to every retained output folder;
@@ -1493,8 +1497,18 @@ class Bridge(QObject):
 
     @Property(QUrl, notify=outputPathChanged)
     def outputFolderUrl(self) -> QUrl:
-        """Initialize the chooser from the current destination, never app cwd."""
-        return QUrl.fromLocalFile(self.outputPath)
+        """Give the chooser an existing user folder without changing the destination."""
+        home = Path.home()
+        for value in (self.outputPath, str(home / "Downloads"), str(home)):
+            path = Path(value)
+            try:
+                if path.is_absolute() and path.is_dir():
+                    return QUrl.fromLocalFile(str(path))
+            except (OSError, ValueError):
+                continue
+        # Even if the home provider is temporarily unavailable, never supply a
+        # relative/empty URL that lets the native dialog choose the app cwd.
+        return QUrl.fromLocalFile(str(home))
 
     @Property(str, notify=selectionChanged)
     def selection(self) -> str:
@@ -5200,8 +5214,19 @@ class Bridge(QObject):
 
     @Slot(str)
     def setOutputPath(self, value: str) -> None:
-        path = Path(value).expanduser()
-        if not path.is_dir():
+        try:
+            path = Path(value).expanduser()
+            available = path.is_absolute() and path.is_dir()
+        except OSError:
+            self._status = (
+                "Output folder is unavailable. Check access or choose another folder."
+            )
+            self.statusChanged.emit()
+            self._record("output", "invalid")
+            return
+        except (ValueError, RuntimeError):
+            available = False
+        if not available:
             self._status = "Select an existing output folder."
             self.statusChanged.emit()
             self._record("output", "invalid")

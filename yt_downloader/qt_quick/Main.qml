@@ -16,6 +16,16 @@ Window {
     minimumHeight: 560
     title: "VODForge"
     color: theme.bg
+    // Qt's folder helper retains its directory after the first show. A new
+    // public dialog instance applies the current destination on every opening.
+    readonly property var outputFolderDialog: outputFolderDialogLoader.item
+    function openOutputFolderDialog() {
+        if (outputFolderDialog && outputFolderDialog.visible) return
+        outputFolderDialogLoader.active = false
+        outputFolderDialogLoader.active = true
+        outputFolderDialog.currentFolder = bridge.outputFolderUrl
+        outputFolderDialog.open()
+    }
     property real playerVolume: 0.8
     readonly property bool editingText: activeFocusItem instanceof TextInput ||
                                        activeFocusItem instanceof TextEdit
@@ -721,7 +731,7 @@ Window {
                 Layout.preferredHeight: 40
                 onActivated: {
                     outputFolderRecoveryPopup.close()
-                    outputFolderDialog.open()
+                    window.openOutputFolderDialog()
                 }
             }
             Item { Layout.fillWidth: true }
@@ -733,13 +743,16 @@ Window {
             }
         }
     }
-    FolderDialog {
-        id: outputFolderDialog
-        objectName: "outputFolderDialog"
-        title: "Choose output folder"
-        currentFolder: bridge.outputFolderUrl
-        onVisibleChanged: { if (visible) currentFolder = bridge.outputFolderUrl }
-        onAccepted: bridge.chooseOutputUrl(selectedFolder)
+    Loader {
+        id: outputFolderDialogLoader
+        sourceComponent: Component {
+            FolderDialog {
+                objectName: "outputFolderDialog"
+                title: "Choose output folder"
+                currentFolder: bridge.outputFolderUrl
+                onAccepted: bridge.chooseOutputUrl(selectedFolder)
+            }
+        }
     }
     ComposerNotice {
         id: operationNotice
@@ -1187,7 +1200,7 @@ Window {
                         path: bridge.outputPath
                         interactive: true
                         accessibilityLabel: "Choose output folder"
-                        onActivated: outputFolderDialog.open()
+                        onActivated: window.openOutputFolderDialog()
                     }
                 }
                 Item { Layout.fillWidth: true }
@@ -2454,7 +2467,7 @@ Window {
                             ToolTip.text: bridge.outputPath
                             Text { anchors.fill: parent; anchors.leftMargin: 14; anchors.rightMargin: 14; verticalAlignment: Text.AlignVCenter; text: bridge.outputPath; color: theme.text; elide: Text.ElideMiddle; font.pixelSize: 14 }
                         }
-                        StoneButton { label: "Browse"; Layout.preferredWidth: 95; Layout.preferredHeight: 40; ToolTip.visible: hovered; ToolTip.text: bridge.outputPath; onActivated: outputFolderDialog.open() }
+                        StoneButton { label: "Browse"; Layout.preferredWidth: 95; Layout.preferredHeight: 40; ToolTip.visible: hovered; ToolTip.text: bridge.outputPath; onActivated: window.openOutputFolderDialog() }
                     }
                     Text { text: "BATCH AND PLAYLISTS"; color: theme.accent; font.pixelSize: 13; font.bold: true }
                     RowLayout {

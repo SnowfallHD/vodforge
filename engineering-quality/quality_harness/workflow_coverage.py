@@ -743,6 +743,7 @@ FEATURE_CATALOG = (
     {
         "id": "choose_output_folder",
         "call": "outputFolderDialog.open",
+        "aliases": ["openOutputFolderDialog"],
         "screen": "Forge",
         "precondition": "configured output folder; path supplied by context",
     },

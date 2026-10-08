@@ -93,6 +93,7 @@ fi
     --ignore=tests/test_qt_titlebar_drag.py \
     --ignore=tests/test_qt_vertical_scroll_chain.py \
     --ignore=tests/test_qt_description_keyboard.py \
+    --ignore=tests/test_qt_output_picker.py \
     --ignore=tests/test_qt_material_visibility.py \
     --ignore=tests/test_qt_interaction_invariants.py \
     --ignore=tests/test_qt_composer_feedback.py \
@@ -174,6 +175,7 @@ fi
     tests/test_qt_titlebar_drag.py \
     tests/test_qt_vertical_scroll_chain.py \
     tests/test_qt_description_keyboard.py \
+    tests/test_qt_output_picker.py \
     tests/test_qt_material_visibility.py \
     tests/test_qt_interaction_invariants.py \
     tests/test_qt_composer_feedback.py \
