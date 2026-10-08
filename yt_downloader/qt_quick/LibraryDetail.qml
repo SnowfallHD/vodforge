@@ -147,6 +147,33 @@ Item {
                         }
                         ScrollView {
                             id: descriptionScroll
+                            // Read-only TextEdit consumes navigation before ScrollView
+                            // sees it. Keep modified text-selection shortcuts intact.
+                            function scrollKey(event) {
+                                const reverseSpace = event.key === Qt.Key_Space && event.modifiers === Qt.ShiftModifier
+                                if (event.modifiers !== Qt.NoModifier && !reverseSpace) return
+                                let direction = 0
+                                let page = false
+                                switch (event.key) {
+                                case Qt.Key_Up: direction = -1; break
+                                case Qt.Key_Down: direction = 1; break
+                                case Qt.Key_PageUp: direction = -1; page = true; break
+                                case Qt.Key_PageDown: direction = 1; page = true; break
+                                case Qt.Key_Space: direction = reverseSpace ? -1 : 1; page = true; break
+                                default: return
+                                }
+                                let view = contentItem
+                                while (view && !(typeof view.contentY === "number" &&
+                                        typeof view.contentHeight === "number" &&
+                                        view.contentHeight > view.height)) view = view.parent
+                                if (!view) return
+                                const minimum = view.originY || 0
+                                const maximum = minimum + Math.max(0, view.contentHeight - view.height)
+                                const step = page ? Math.max(1, view.height * 0.9) : 32
+                                view.contentY = Math.max(minimum, Math.min(maximum, view.contentY + direction * step))
+                                event.accepted = true
+                            }
+                            Keys.onPressed: function(event) { scrollKey(event) }
                             VerticalScrollChain { nestedScrollView: descriptionScroll }
                             objectName: "libraryDescriptionScroll"
                             visible: !descriptionPanel.editing
@@ -156,6 +183,7 @@ Item {
                             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
                             SelectableText {
                                 objectName: "libraryDescriptionText"
+                                Keys.onPressed: function(event) { descriptionScroll.scrollKey(event) }
                                 text: detail.item.description || ""
                                 width: descriptionScroll.availableWidth
                                 color: theme.muted
