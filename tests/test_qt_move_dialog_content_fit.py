@@ -1,5 +1,6 @@
 """Content fit and dismissal semantics of the existing shared file-action popup."""
 
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -68,7 +69,11 @@ def test_long_report_grows_then_scrolls_with_visible_footer(file_dialog, lines):
     short_height = popup.property("height")
     bridge._files.status = "Verified saved media details retained for review.\n" * lines
     bridge.fileActionChanged.emit()
-    QTest.qWait(100)
+    # Text wrapping and nested layouts can require another polish cycle on a
+    # busy hosted runner. Keep a bounded wait for the actual growth condition.
+    deadline = time.monotonic() + 2
+    while popup.property("height") <= short_height and time.monotonic() < deadline:
+        QTest.qWait(20)
     assert popup.property("height") > short_height
     assert popup.property("height") <= window.height() - 40
     body = window.findChild(QObject, "fileActionBodyScroll")
