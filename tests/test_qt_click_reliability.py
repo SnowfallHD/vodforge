@@ -239,10 +239,9 @@ def test_primary_action_and_selected_tab_are_visibly_distinct(tmp_path, monkeypa
             for item in _descendants(download)
             if item.objectName() == "stoneButtonCaption"
         )
-        # Dark text on the filled accent face, never accent text on a dark face.
+        # Accent caption and material lip share the primary action color.
         assert caption.property("color") == QColor(THEME["accent"])
-        outline = download.findChild(QObject, "primaryActionOutline")
-        assert outline is not None and outline.isVisible()
+        assert "/outlined/" in face(download).property("source").toString()
         for selected in ("Library", "Forge"):
             bridge.select(selected)
             QTest.qWait(30)

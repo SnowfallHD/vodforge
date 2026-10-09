@@ -307,7 +307,8 @@ class Materials(QQuickImageProvider):
 
                 source = watch_welcome_emblem()
             elif parts[0] == "button" and (
-                len(parts) == 5 or (len(parts) == 6 and parts[5] == "primary")
+                len(parts) == 5
+                or (len(parts) == 6 and parts[5] in {"primary", "outlined"})
             ):
                 width, height = int(parts[1]), int(parts[2])
                 # StoneButton also paints responsive artwork cards, not only controls.
@@ -318,7 +319,8 @@ class Materials(QQuickImageProvider):
                     height,
                     accent=parts[4] == "1",
                     state=parts[3],
-                    primary=len(parts) == 6,
+                    primary=len(parts) == 6 and parts[5] == "primary",
+                    outlined=len(parts) == 6 and parts[5] == "outlined",
                 )
             elif parts[0] == "field" and len(parts) == 4:
                 width, height = int(parts[1]), int(parts[2])

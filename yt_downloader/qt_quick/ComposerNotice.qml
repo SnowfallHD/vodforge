@@ -7,6 +7,7 @@ Item {
     property bool expanded: false
     property bool reducedMotion: false
     property bool modal: false
+    property bool attached: false
     property real reveal: expanded ? 1 : 0
     property real availableWidth: 440
     readonly property real targetWidth: Math.min(availableWidth, Math.max(120, metrics.advanceWidth + 36))
@@ -20,7 +21,7 @@ Item {
         NumberAnimation { duration: notice.reducedMotion ? 0 : 240; easing.type: Easing.InOutCubic }
     }
     TextMetrics { id: metrics; text: notice.message; font.pixelSize: 14 }
-    LiquidSurface { anchors.fill: parent; reveal: notice.reveal }
+    LiquidSurface { anchors.fill: parent; reveal: notice.reveal; visible: !notice.attached }
     Text {
         id: label
         x: 18; y: 9

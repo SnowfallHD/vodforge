@@ -785,6 +785,7 @@ Window {
     }
     ComposerNotice {
         id: operationNotice
+        attached: bridge.selection === "Forge"
         objectName: "operationNotice"
         parent: window.contentItem
         reducedMotion: bridge.reducedMotion
@@ -794,7 +795,7 @@ Window {
                 forgeNoticeLayer.x + forgeComposerShell.x + (forgeComposerShell.width - width) / 2))
             : Math.max(10, (window.width - width) / 2)
         y: bridge.selection === "Forge"
-            ? forgeNoticeLayer.y + forgeComposerShell.y + forgeComposerShell.height + 6
+            ? forgeNoticeLayer.y + forgeComposerShell.y + forgeComposerShell.height
             : window.height - height - 18
     }
     Timer { id: operationNoticeTimer; interval: 3500; onTriggered: operationNotice.close() }
@@ -922,7 +923,7 @@ Window {
         clip: true
         visible: bridge.selection === "Forge"
     }
-    Rectangle {
+    Item {
         id: forgeComposerShell
         objectName: "forgeComposerShell"
         parent: forgeNoticeLayer
@@ -931,10 +932,49 @@ Window {
         y: forgeCommandRow.y - forgeViewport.contentItem.contentY
         width: forgeCommandRow.width + 16
         height: forgeLocalRow.y + forgeLocalRow.height - forgeCommandRow.y + 16
-        radius: 16
-        color: Qt.rgba(window.glassSurfaceColor.r, window.glassSurfaceColor.g,
-                       window.glassSurfaceColor.b, window.glassControlOpacity)
-        border.color: theme.border
+        Canvas {
+            anchors.left: parent.left
+            anchors.top: parent.top
+            width: parent.width
+            height: parent.height + operationNotice.height
+            property real shellHeight: forgeComposerShell.height
+            property real reveal: operationNotice.reveal
+            property real noticeWidth: operationNotice.width
+            property color surfaceColor: Qt.rgba(window.glassSurfaceColor.r,
+                window.glassSurfaceColor.g, window.glassSurfaceColor.b, window.glassControlOpacity)
+            property color edgeColor: theme.border
+            onWidthChanged: requestPaint()
+            onHeightChanged: requestPaint()
+            onShellHeightChanged: requestPaint()
+            onRevealChanged: requestPaint()
+            onNoticeWidthChanged: requestPaint()
+            onSurfaceColorChanged: requestPaint()
+            onEdgeColorChanged: requestPaint()
+            onPaint: {
+                const c = getContext("2d")
+                c.clearRect(0, 0, width, height)
+                const w = width - 1, h = shellHeight - 0.5, r = 16
+                const drop = operationNotice.height * reveal
+                const half = noticeWidth * (0.30 + 0.70 * reveal) / 2
+                const left = width / 2 - half, right = width / 2 + half
+                const turn = Math.min(8, drop / 2)
+                c.beginPath(); c.moveTo(r, 0.5); c.lineTo(w-r, 0.5)
+                c.quadraticCurveTo(w, 0.5, w, r); c.lineTo(w, h-r)
+                c.quadraticCurveTo(w, h, w-r, h)
+                c.lineTo(right+turn, h)
+                c.quadraticCurveTo(right, h, right, h+turn)
+                c.lineTo(right, h+drop-turn)
+                c.quadraticCurveTo(right, h+drop, right-turn, h+drop)
+                c.lineTo(left+turn, h+drop)
+                c.quadraticCurveTo(left, h+drop, left, h+drop-turn)
+                c.lineTo(left, h+turn)
+                c.quadraticCurveTo(left, h, left-turn, h)
+                c.lineTo(r, h); c.quadraticCurveTo(0.5, h, 0.5, h-r)
+                c.lineTo(0.5, r); c.quadraticCurveTo(0.5, 0.5, r, 0.5)
+                c.closePath(); c.fillStyle = surfaceColor; c.fill()
+                c.strokeStyle = edgeColor; c.lineWidth = 1; c.stroke()
+            }
+        }
     }
 
     ColumnLayout {

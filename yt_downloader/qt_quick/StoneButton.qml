@@ -50,20 +50,11 @@ Item {
                 + "/" + Math.max(1, Math.round(control.height)) + "/"
                 + (!control.transientMaterial || !control.enabled ? "normal" : mouse.pressed ? "pressed" : (control.activeFace ? "hover" : "normal"))
                 + "/" + (!control.primary && control.emphasized ? "1" : "0")
+                + (control.primary ? "/outlined" : "")
                 + "/r" + bridge.themeRevision
         fillMode: Image.Stretch
         cache: true
         smooth: true
-    }
-    Rectangle {
-        objectName: "primaryActionOutline"
-        anchors.fill: parent
-        anchors.margins: 8
-        visible: control.primary
-        color: "transparent"
-        radius: 7
-        border.color: theme.accent
-        border.width: 1
     }
     Row {
         anchors.centerIn: control.quiet ? undefined : parent

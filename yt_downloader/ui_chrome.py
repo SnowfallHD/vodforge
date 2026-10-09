@@ -168,6 +168,7 @@ def _matte_rim(
     depth: float = 1.0,
     density: int = 1,
     lighting_colors: tuple[str, str] = ("#000000", "#ffffff"),
+    lip_color: str = "",
 ) -> Image.Image:
     """Diffuse inner light and occlusion, rather than concentric bevel lines."""
     width, height = image.size
@@ -176,6 +177,16 @@ def _matte_rim(
         image = Image.new("RGBA", image.size, fill)
         recessed, depth = True, 0.9
     mask = rounded_alpha(width, height, radius)
+    if lip_color:
+        inner = Image.new("L", image.size)
+        inner.paste(
+            rounded_alpha(
+                width - 2 * density, height - 2 * density, max(0, radius - density)
+            ),
+            (density, density),
+        )
+        lip = ImageChops.subtract(mask, inner)
+        image = Image.composite(Image.new("RGBA", image.size, lip_color), image, lip)
     for color, band in _matte_lighting(
         mask,
         recessed=recessed,
@@ -202,6 +213,7 @@ def ttk_surface_image(
     inset_face: bool = False,
     unit_scale: int = 1,
     lighting_colors: tuple[str, str] = ("#000000", "#ffffff"),
+    lip_color: str = "",
 ) -> Image.Image:
     """Crisp face, contour contact shadow and separate diffuse ambient light."""
     if edge == THEME["focus"]:
@@ -250,6 +262,7 @@ def ttk_surface_image(
             depth=depth if recessed else depth * 0.25,
             density=density,
             lighting_colors=lighting_colors,
+            lip_color=lip_color,
         )
         image.alpha_composite(face, (inset, inset))
         # Rounded finite support, not a rectangular attenuation envelope.
@@ -273,6 +286,7 @@ def ttk_surface_image(
             depth=depth,
             density=density,
             lighting_colors=lighting_colors,
+            lip_color=lip_color,
         )
     border = 9 * density
     if stretch and width > 2 * border and height > 2 * border:
@@ -461,6 +475,7 @@ def action_button_image(
     focused: bool = False,
     unit_scale: int = 1,
     primary: bool = False,
+    outlined: bool = False,
 ) -> Image.Image:
     """Shared raised and inset interaction faces for scene actions.
 
@@ -498,6 +513,7 @@ def action_button_image(
         inset_face=True,
         unit_scale=unit_scale,
         lighting_colors=lighting,
+        lip_color=THEME["accent"] if outlined else "",
     )
 
 
