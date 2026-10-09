@@ -698,3 +698,17 @@ canonical source refusal, independently selected attachments, exact review/trans
 parity, cookie ambiguity and Unicode Windows/POSIX path metrics. The first run
 caught a typed-refusal regression in the new classifier; its failed receipt is
 retained and the classifier now preserves the original typed refusal invariant.
+
+### Native error and provider wrapper context
+
+Failure diagnostics retain `windows_error` (native WinError, 0–65535) independently
+of POSIX `os_error`: errno 13 alone cannot distinguish access denial from Windows
+sharing/lock violations 32/33. Wrapped failures carry up to eight closed type labels
+in `error_chain`; unrecognized classes become `other`, never their arbitrary names.
+An actual ExtractorError's boolean `expected` flag becomes `extractor_expected`
+(`yes`/`no`). This is the provider library's classification, not proof of cause or
+retryability. Exception messages, URLs, filenames, locals and commands remain local.
+The existing diagnostic capture/validation owner supplies these facts; consent,
+transport, durable event identity and retry ownership are unchanged. Compatible
+backend admission must be deployed before a client emits the fields. Historical
+records cannot be enriched retroactively.

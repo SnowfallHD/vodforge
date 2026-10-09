@@ -339,6 +339,9 @@ class FailureDiagnostic:
     error_type: str | None = None
     http_status: int | None = None
     os_error: int | None = None
+    windows_error: int | None = None
+    error_chain: str | None = None
+    extractor_expected: str | None = None
     tool_exit_code: int | None = None
     source_module: str | None = None
     source_line: int | None = None
@@ -366,6 +369,9 @@ def validate_failure_detail(value: dict) -> FailureDiagnostic:
         "error_type",
         "http_status",
         "os_error",
+        "windows_error",
+        "error_chain",
+        "extractor_expected",
         "tool_exit_code",
         "source_module",
         "source_line",
@@ -408,6 +414,15 @@ def validate_failure_detail(value: dict) -> FailureDiagnostic:
     }
     if path_keys.intersection(value) and not path_keys.issubset(value):
         raise ValueError("incomplete path facts")
+    chain = value.get("error_chain")
+    if chain is not None and (
+        not isinstance(chain, str)
+        or not 1 <= len(chain.split(">")) <= 8
+        or any(label not in ERROR_TYPES | {"other"} for label in chain.split(">"))
+    ):
+        raise ValueError("unsupported error chain")
+    if value.get("extractor_expected") not in (None, "yes", "no"):
+        raise ValueError("unsupported extractor expectation")
     trace = value.get("source_trace")
     if trace is not None:
         if not isinstance(trace, str) or not 1 <= len(trace.split(">")) <= 8:
@@ -443,6 +458,7 @@ def validate_failure_detail(value: dict) -> FailureDiagnostic:
         ("tls_verify_code", 0, 65535),
         ("http_status", 100, 599),
         ("os_error", 0, 65535),
+        ("windows_error", 0, 65535),
         ("tool_exit_code", -(2**31), 2**32 - 1),
     ):
         numeric_value = value.get(key)
@@ -464,6 +480,7 @@ def capture_failure(
     pending = [error]
     seen: set[int] = set()
     text_reason = "unknown"
+    error_chain: list[str] = []
     while pending and len(seen) < 8:
         current = pending.pop(0)
         if id(current) in seen:
@@ -491,6 +508,17 @@ def capture_failure(
         if isinstance(current, (ssl.SSLError, socket.gaierror)):
             facts["reason"] = "network"
         name = type(current).__name__
+        error_chain.append(name if name in ERROR_TYPES else "other")
+        expected = getattr(current, "expected", None)
+        if name == "ExtractorError" and type(expected) is bool:
+            facts["extractor_expected"] = "yes" if expected else "no"
+        native_error = getattr(current, "winerror", None)
+        if (
+            isinstance(current, OSError)
+            and type(native_error) is int
+            and 0 <= native_error <= 65535
+        ):
+            facts["windows_error"] = native_error
         if isinstance(current, UnsafeOutputPathError):
             facts["reason"] = "output_conflict"
             facts.pop("failure_code", None)
@@ -572,6 +600,8 @@ def capture_failure(
     )
     if not inspect_text and facts.get("os_error") == errno.ENOSPC:
         facts["failure_code"] = "disk_full"
+    if len(error_chain) > 1 or "ExtractorError" in error_chain:
+        facts["error_chain"] = ">".join(error_chain)
     return FailureDiagnostic(**facts)
 
 

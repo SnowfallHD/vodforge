@@ -169,3 +169,57 @@ def test_typed_safe_output_diagnostic_does_not_read_local_message():
     assert detail["reason"] == "output_conflict"
     assert detail["error_type"] == "UnsafeOutputPathError"
     assert "failure_code" not in detail
+
+
+@pytest.mark.parametrize("native", [5, 32, 33])
+def test_windows_native_error_survives_errno_collision(native):
+    from yt_downloader.failure_diagnostics import (
+        capture_failure,
+        validate_failure_detail,
+    )
+
+    error = PermissionError(13, "PRIVATE", "C:/PRIVATE/movie.mp4")
+    error.winerror = native
+    detail = capture_failure(error, stage="commit").payload()
+    assert detail["windows_error"] == native
+    assert detail["os_error"] == 13
+    assert "PRIVATE" not in str(detail)
+    assert validate_failure_detail(detail).payload() == detail
+
+
+@pytest.mark.parametrize("expected", [True, False])
+def test_real_extractor_preserves_closed_chain_and_expectation(expected):
+    import urllib.error
+
+    from yt_dlp.utils import ExtractorError
+
+    from yt_downloader.failure_diagnostics import (
+        capture_failure,
+        validate_failure_detail,
+    )
+
+    cause = urllib.error.HTTPError("https://PRIVATE", 403, "PRIVATE", {}, None)
+    error = ExtractorError("PRIVATE title", expected=expected, cause=cause)
+    detail = capture_failure(error, stage="analysis").payload()
+    assert detail["error_chain"] == "ExtractorError>HTTPError"
+    assert detail["extractor_expected"] == ("yes" if expected else "no")
+    assert detail["http_status"] == 403
+    assert "PRIVATE" not in str(detail)
+    assert validate_failure_detail(detail).payload() == detail
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"windows_error": True},
+        {"windows_error": 65536},
+        {"error_chain": "PRIVATE"},
+        {"error_chain": ">".join(["OSError"] * 9)},
+        {"extractor_expected": "PRIVATE"},
+    ],
+)
+def test_rejects_unbounded_native_diagnostics(bad):
+    from yt_downloader.failure_diagnostics import validate_failure_detail
+
+    with pytest.raises(ValueError):
+        validate_failure_detail(bad)
