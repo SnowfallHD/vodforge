@@ -1,8 +1,18 @@
 """Composer Custom remains open and expands its manual controls on the left."""
 
+import time
+
 from PySide6.QtCore import QObject, QPoint, QPointF, Qt
 from PySide6.QtTest import QTest
+
 from tests.test_qt_all_runs_hover_seam import run_scene  # noqa: F401
+
+
+def wait_for_reveal(selector, target):
+    deadline = time.monotonic() + 2
+    while selector.property("reveal") != target and time.monotonic() < deadline:
+        QTest.qWait(20)
+    assert selector.property("reveal") == target
 
 
 def descendants(item):
@@ -12,7 +22,7 @@ def descendants(item):
 
 
 def test_custom_expands_left_column_and_keeps_dialog_centered(run_scene):  # noqa: F811
-    app, bridge, window, _button, _popup = run_scene
+    _app, bridge, window, _button, _popup = run_scene
     bridge.setExportMode("Everyday")
     popup = window.findChild(QObject, "optionsMenu")
     popup.open()
@@ -53,8 +63,7 @@ def test_custom_dropdown_morphs_and_summary_tracks_rate_control(run_scene):  # n
     selector.setProperty("expanded", True)
     QTest.qWait(80)
     assert 0 < selector.property("reveal") < 1
-    QTest.qWait(200)
-    assert selector.property("reveal") == 1
+    wait_for_reveal(selector, 1)
     bridge.setManualValue("manual_rate_control", "CBR")
     bridge.setManualValue("manual_video_bitrate", "8000")
     QTest.qWait(20)
@@ -79,6 +88,8 @@ def test_custom_single_column_scrolls_with_expanded_choices(run_scene):  # noqa:
         window.resize(width, height)
         rate.setProperty("expanded", True)
         QTest.qWait(350)
+        wait_for_reveal(rate, 1)
+        QTest.qWait(40)
         assert manual.property("gridColumns") == 1
         assert abs(rate.mapToScene(QPointF()).x() - audio.mapToScene(QPointF()).x()) < 1
         assert (
@@ -93,6 +104,11 @@ def test_custom_single_column_scrolls_with_expanded_choices(run_scene):  # noqa:
         bottom = preset.mapToScene(QPointF(0, preset.height())).y()
         assert bottom <= scroll.mapToScene(QPointF(0, scroll.height())).y() + 1
         assert viewport.property("contentWidth") <= viewport.width() + 1
+        for control in (rate, audio, preset):
+            assert (
+                control.mapToItem(manual, QPointF(control.width(), 0)).x()
+                <= manual.width() + 1
+            )
 
 
 def test_rate_control_hides_unused_field_and_preserves_values(run_scene):  # noqa: F811
@@ -113,7 +129,7 @@ def test_rate_control_hides_unused_field_and_preserves_values(run_scene):  # noq
         assert str(bridge.manualValues["manual_video_bitrate"]) == "8000"
 
 
-def test_options_stay_open_until_close_button_clicked(run_scene):
+def test_options_stay_open_until_close_button_clicked(run_scene):  # noqa: F811
     _app, bridge, window, _button, _popup = run_scene
     bridge.setExportMode("Everyday")
     popup = window.findChild(QObject, "optionsMenu")
@@ -145,7 +161,7 @@ def test_options_stay_open_until_close_button_clicked(run_scene):
     assert not popup.property("visible")
 
 
-def test_dropdown_expansion_reveals_bottom_without_scrolling_visible_choices(run_scene):
+def test_dropdown_expansion_reveals_bottom_without_scrolling_visible_choices(run_scene):  # noqa: F811
     _app, bridge, window, _button, _popup = run_scene
     window.resize(1000, 700)
     bridge.setExportMode("Manual Override")

@@ -3228,6 +3228,7 @@ Window {
             opacity: optionsMenu.customReveal
             ScrollView {
                 objectName: "composerManualScroll"
+                contentWidth: availableWidth
                 anchors.fill: parent
                 clip: true
                 ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
