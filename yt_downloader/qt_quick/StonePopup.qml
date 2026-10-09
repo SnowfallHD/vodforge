@@ -4,6 +4,7 @@ import QtQuick.Controls
 Popup {
     id: popup
     focus: true
+    property real surfaceOpacity: 0.84
     property Item triggerItem
     property bool dismissedByTriggerPress: false
     property bool closingFromTrigger: false
@@ -50,6 +51,7 @@ Popup {
     }
     background: StoneField {
         id: surface
+        surfaceOpacity: popup.surfaceOpacity
         Image {
             objectName: "popupElevationShadow"
             // Paint outside the face without expanding the popup's input area.

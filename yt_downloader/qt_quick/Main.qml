@@ -3192,19 +3192,59 @@ Window {
         objectName: "optionsMenu"
         x: Math.max(0, (window.width - width) / 2)
         y: Math.max(0, (window.height - height) / 2)
-        width: Math.min(550, window.width - 40)
-        height: 350
+        property real customReveal: bridge.exportMode === "Manual Override" ? 1 : 0
+        Behavior on customReveal {
+            NumberAnimation { duration: bridge.reducedMotion ? 0 : 280; easing.type: Easing.InOutCubic }
+        }
+        readonly property real baseWidth: Math.min(550, window.width - 40)
+        width: baseWidth + (Math.min(1060, window.width - 40) - baseWidth) * customReveal
+        readonly property real customColumnWidth: (Math.min(1060, window.width - 40) - 32) * 0.48
+        height: Math.min(window.height - 40, 355 + Math.max(0, composerManualControls.implicitHeight + 16 - 355) * customReveal)
         padding: 8
         modal: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         Overlay.modal: Rectangle { color: "#9915151c" }
-        Row {
-            anchors.fill: parent
-            spacing: 8
+        Item {
+            id: customOptionsColumn
+            objectName: "customOptionsColumn"
+            width: optionsMenu.customColumnWidth * optionsMenu.customReveal
+            height: optionsMenu.availableHeight
+            clip: true
+            visible: optionsMenu.customReveal > 0
+            opacity: optionsMenu.customReveal
+            ScrollView {
+                anchors.fill: parent
+                clip: true
+                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                ManualMp4Settings {
+                    id: composerManualControls
+                    objectName: "composerManualMp4"
+                    width: optionsMenu.customColumnWidth
+                    gridColumns: width >= 400 ? 2 : 1
+                    backend: bridge
+                    colors: theme
+                    headingColor: theme.accent
+                }
+            }
+        }
+        ScrollView {
+            id: composerOptionsScroll
+            x: customOptionsColumn.width + 16 * optionsMenu.customReveal
+            width: optionsMenu.availableWidth - x
+            height: optionsMenu.availableHeight
+            clip: true
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
             Column {
-                width: (parent.width - 8) / 2
+                width: composerOptionsScroll.availableWidth
+                spacing: 12
+        Row {
+            width: parent.width
+            height: 339
+            spacing: 16
+            Column {
+                width: (parent.width - 16) / 2
                 spacing: 3
-                Text { text: "Output mode"; color: theme.muted; font.pixelSize: 13; height: 25 }
+                Text { text: "OUTPUT MODE"; color: theme.accent; font.pixelSize: 12; font.bold: true; font.letterSpacing: 1; height: 32; leftPadding: 8; verticalAlignment: Text.AlignVCenter }
                 Repeater {
                     model: bridge.exportModeOptions
                     StoneButton {
@@ -3214,7 +3254,7 @@ Window {
                         selected: bridge.exportMode === modelData.value
                         onActivated: {
                             bridge.setExportMode(modelData.value)
-                            optionsMenu.close()
+                            if (modelData.value !== "Manual Override") optionsMenu.close()
                         }
                     }
                 }
@@ -3229,9 +3269,9 @@ Window {
                 }
             }
             Column {
-                width: (parent.width - 8) / 2
+                width: (parent.width - 16) / 2
                 spacing: 3
-                Text { text: "Quality"; color: theme.muted; font.pixelSize: 13; height: 25 }
+                Text { text: "QUALITY"; color: theme.accent; font.pixelSize: 12; font.bold: true; font.letterSpacing: 1; height: 32; leftPadding: 8; verticalAlignment: Text.AlignVCenter }
                 Repeater {
                     model: qualityOptions
                     StoneButton {
@@ -3242,6 +3282,9 @@ Window {
                         onActivated: { bridge.setQuality(modelData); optionsMenu.close() }
                     }
                 }
+            }
+        }
+
             }
         }
     }

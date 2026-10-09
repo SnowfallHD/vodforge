@@ -171,3 +171,14 @@ def test_window_edge_clamping_keeps_edge_contact(run_scene, side):
     popup.close()
     anchor.deleteLater()
     parent.deleteLater()
+
+
+def test_hovering_overflow_ellipsis_keeps_listing_open(run_scene):
+    _app, _bridge, window, button, popup = run_scene
+    move(window, button.mapToScene(QPointF(button.width() / 2, button.height() / 2)))
+    card = visual_item(popup.property("contentItem"), "allRunsCard_0")
+    action = card.findChild(QObject, "allRunsAction")
+    move(window, action.mapToScene(QPointF(action.width() / 2, action.height() / 2)))
+    QTest.qWait(250)
+    assert action.property("hovered")
+    assert popup.property("visible")

@@ -298,7 +298,7 @@ Item {
         HoverHandler {
             id: popupHover
             objectName: "allRunsPopupHover"
-            parent: allRunsPopup.background
+            parent: allRunsPopup.contentItem.parent
             onHoveredChanged: {
                 if (hovered) hoverClose.stop()
                 else if (allRunsPopup.visible) hoverClose.restart()
