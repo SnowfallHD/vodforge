@@ -14,6 +14,24 @@ Column {
     signal chosen(string value)
     spacing: 4
 
+    // Follow the growing choices only when they cross the nearest viewport edge.
+    // Deferring lets the surrounding layouts update their content height first.
+    function revealChoices() {
+        if (!expanded || !visible) return
+        let viewport = parent
+        while (viewport && !(viewport instanceof Flickable)) viewport = viewport.parent
+        if (!viewport) return
+        const bottom = mapToItem(viewport.contentItem, 0, height).y
+        const overflow = bottom - (viewport.contentY + viewport.height)
+        if (overflow > 0) {
+            const maximum = Math.max(viewport.originY,
+                viewport.originY + viewport.contentHeight - viewport.height)
+            viewport.contentY = Math.min(maximum, viewport.contentY + overflow)
+        }
+    }
+    onHeightChanged: { if (expanded) Qt.callLater(revealChoices) }
+    onExpandedChanged: { if (expanded) Qt.callLater(revealChoices) }
+
     onVisibleChanged: { if (!visible) expanded = false }
 
     StoneButton {

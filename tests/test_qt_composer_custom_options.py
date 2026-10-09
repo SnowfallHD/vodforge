@@ -143,3 +143,32 @@ def test_options_stay_open_until_close_button_clicked(run_scene):
     )
     QTest.qWait(300)
     assert not popup.property("visible")
+
+
+def test_dropdown_expansion_reveals_bottom_without_scrolling_visible_choices(run_scene):
+    _app, bridge, window, _button, _popup = run_scene
+    window.resize(1000, 700)
+    bridge.setExportMode("Manual Override")
+    popup = window.findChild(QObject, "optionsMenu")
+    popup.open()
+    QTest.qWait(350)
+    manual = window.findChild(QObject, "composerManualMp4")
+    scroll = window.findChild(QObject, "composerManualScroll")
+    viewport = scroll.property("contentItem")
+    rate = manual.findChild(QObject, "manualRateControlSelector")
+    rate.setProperty("expanded", True)
+    QTest.qWait(350)
+    assert viewport.property("contentY") == 0
+    rate.setProperty("expanded", False)
+    QTest.qWait(300)
+    preset = manual.findChild(QObject, "manualPresetSelector")
+    viewport.setProperty(
+        "contentY", max(0, viewport.property("contentHeight") - viewport.height())
+    )
+    before = viewport.property("contentY")
+    preset.setProperty("expanded", True)
+    QTest.qWait(400)
+    assert viewport.property("contentY") > before
+    bottom = preset.mapToScene(QPointF(0, preset.height())).y()
+    assert bottom <= viewport.mapToScene(QPointF(0, viewport.height())).y() + 1
+    assert popup.property("visible")
