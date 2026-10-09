@@ -504,7 +504,7 @@ def test_qt_appearance_refreshes_shared_material_and_saved_palette(
     engine = qt_main.create_engine(bridge)
     try:
         window = engine.rootObjects()[0]
-        original = window.property("color")
+        original = window.property("glassSurfaceColor")
         before = bridge._theme_materials.requestImage(
             "button/120/40/normal/0/r0", QSize(), QSize()
         )
@@ -516,7 +516,7 @@ def test_qt_appearance_refreshes_shared_material_and_saved_palette(
         for _ in range(5):
             app.processEvents()
         assert bridge.themeRevision == 1
-        assert window.property("color") != original
+        assert window.property("glassSurfaceColor") != original
         after = bridge._theme_materials.requestImage(
             "button/120/40/normal/0/r1", QSize(), QSize()
         )
@@ -1015,6 +1015,10 @@ def test_issue_inspector_retries_with_selected_settings_and_stays_until_success(
         mode_button.activated.emit()
         app.processEvents()
         assert mode_selector.property("expanded")
+        deadline = time.monotonic() + 2
+        while mode_selector.property("reveal") < 1 and time.monotonic() < deadline:
+            QTest.qWait(20)
+        assert mode_selector.property("reveal") == 1
         assert mode_selector.property("height") > closed_height
         assert bridge.libraryFolderInspector["settings"]["export_mode"] == saved_mode
         mode_option = visual_item(
@@ -1036,6 +1040,13 @@ def test_issue_inspector_retries_with_selected_settings_and_stays_until_success(
         quality_selector = window.findChild(QObject, "libraryIssueQualitySelector")
         assert manual_controls is not None and manual_controls.property("visible")
         assert quality_selector is not None
+        deadline = time.monotonic() + 2
+        while (
+            manual_controls.mapToItem(issue_panel, QPointF(0, 0)).y()
+            >= issue_panel.height() * 0.55
+            and time.monotonic() < deadline
+        ):
+            QTest.qWait(20)
         manual_top = manual_controls.mapToItem(issue_panel, QPointF(0, 0)).y()
         assert manual_top < issue_panel.height() * 0.55, (
             issue_panel.property("contentItem").property("contentY"),
@@ -3376,7 +3387,10 @@ def test_qt_popup_and_navigation_materials_use_shared_renderer():
             )
         with pytest.raises(AssertionError):
             assert_shared_surfaces(
-                filename, source.replace("width: Math.min(", "width: Math.max(")
+                filename,
+                source.replace(
+                    "LiquidToolTip {", "LiquidToolTip { background: Rectangle {}", 1
+                ),
             )
 
     assert all(
@@ -4276,6 +4290,10 @@ def test_qt_manual_mp4_fields_stay_in_adaptive_settings_columns(tmp_path, monkey
         preset_button.activated.emit()
         app.processEvents()
         assert preset.property("expanded")
+        deadline = time.monotonic() + 2
+        while preset.property("reveal") < 1 and time.monotonic() < deadline:
+            QTest.qWait(20)
+        assert preset.property("reveal") == 1
         assert preset.property("height") > initial_height
         assert bridge.manualValues["manual_preset"] == "medium"
         slow = visual_item(preset, "manualPresetSelector_option_slow")

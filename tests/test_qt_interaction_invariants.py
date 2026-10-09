@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from PySide6.QtCore import Property, QCoreApplication, QEvent, QObject, Slot
+from PySide6.QtCore import Property, QCoreApplication, QEvent, QObject, QPointF, Slot
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtTest import QTest
 
@@ -126,6 +126,29 @@ def test_library_filter_menu_keeps_type_and_collection_choices_separate(
         bridge.selectHome("Library")
         app.processEvents()
         button = window.findChild(QObject, "libraryFilterButton")
+        viewport = window.findChild(QObject, "libraryViewport")
+        flickable = viewport.property("contentItem")
+
+        # The responsive category tiles place Filter below the initial fold.
+        # A real user must reveal the anchor before opening its popup.
+        def reveal_filter():
+            flickable.setProperty(
+                "contentY",
+                max(
+                    0,
+                    button.mapToItem(
+                        flickable.property("contentItem"), QPointF(0, 0)
+                    ).y()
+                    - 30,
+                ),
+            )
+            QTest.qWait(100)
+            assert (
+                0 <= button.mapToItem(viewport, QPointF(0, 0)).y() < viewport.height()
+            )
+
+        reveal_filter()
+        reveal_filter()
         button.activated.emit()
         app.processEvents()
         menu = window.findChild(QObject, "libraryFilterPopup")
@@ -149,6 +172,7 @@ def test_library_filter_menu_keeps_type_and_collection_choices_separate(
         app.processEvents()
         assert bridge.libraryType == "Audio"
         assert [item["title"] for item in bridge.libraryScene["media"]] == ["Song"]
+        reveal_filter()
         button.activated.emit()
         app.processEvents()
         collections = window.findChild(QObject, "libraryCollectionsFilterButton")
@@ -165,6 +189,7 @@ def test_library_filter_menu_keeps_type_and_collection_choices_separate(
         submenu.close()
         menu.close()
         bridge.setLibraryType("All")
+        reveal_filter()
         button.activated.emit()
         app.processEvents()
         viewport = window.findChild(QObject, "libraryViewport")

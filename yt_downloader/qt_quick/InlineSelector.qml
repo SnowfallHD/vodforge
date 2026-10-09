@@ -67,7 +67,7 @@ Column {
                     height: 36
                     label: modelData.label
                     selected: selector.currentValue === modelData.value
-                    onActivated: { selector.chosen(modelData.value); selector.expanded = false }
+                    onActivated: selector.chosen(modelData.value)
                 }
             }
         }

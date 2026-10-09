@@ -74,3 +74,72 @@ def test_legacy_multiselect_repeated_moves_preserve_scope(tmp_path):
     assert (
         tmp_path / "personal/projects/nested/keep.txt"
     ).read_text() == "destination file"
+
+
+def test_loose_imports_move_only_selected_files_repeatedly(tmp_path):
+    from yt_downloader.history import save_history
+
+    source = tmp_path / "Channel/playlists/List/Video"
+    source.mkdir(parents=True)
+    rows = []
+    for i in range(3):
+        leaf = source / f"import-{i}.mp4"
+        leaf.write_bytes(f"import-{i}".encode())
+        rows.append(
+            {
+                "id": f"local-{i}",
+                "vodforge_run_id": f"import-{i}",
+                "vodforge_output_type": "MP4",
+                "vodforge_output_path": str(leaf),
+                "vodforge_output_dir": str(source),
+                "vodforge_recorded_at": "2026-10-09T00:00:00+00:00",
+            }
+        )
+    (source / "metadata.json").write_text('{"id":"unrelated"}')
+    (source / "thumbnail.jpg").write_bytes(b"unrelated artwork")
+    history = tmp_path / "history.json"
+    save_history(history, rows)
+    previous = source
+    for destination in [
+        source / "personal/nested",
+        tmp_path / "second",
+        tmp_path / "final",
+    ]:
+        destination.mkdir(parents=True)
+        (destination / "keep.txt").write_text("keep")
+        current = load_history(history)
+        selected = current[:2]
+        controller = QtLibraryFiles(history)
+        assert controller.begin(
+            "move",
+            [history_archive_owner(r) for r in selected],
+            current,
+            destination=destination,
+        )
+        controller.worker.join(30)
+        assert not controller.worker.is_alive()
+        controller.poll()
+        assert controller.plan.counts == {"ready": 2}
+        assert controller.confirm(current)
+        controller.worker.join(30)
+        assert not controller.worker.is_alive()
+        controller.poll()
+        assert controller.phase == "done", controller.status
+        updated = load_history(history)
+        for i, row in enumerate(updated[:2]):
+            assert Path(row["vodforge_output_path"]) == destination / f"import-{i}.mp4"
+            assert (
+                destination / f"import-{i}.mp4"
+            ).read_bytes() == f"import-{i}".encode()
+            assert not (previous / f"import-{i}.mp4").exists()
+            assert not row.get("vodforge_archive_root")
+        assert sorted(p.name for p in destination.iterdir()) == [
+            "import-0.mp4",
+            "import-1.mp4",
+            "keep.txt",
+        ]
+        assert (source / "import-2.mp4").read_bytes() == b"import-2"
+        assert (source / "metadata.json").read_text() == '{"id":"unrelated"}'
+        assert (source / "thumbnail.jpg").read_bytes() == b"unrelated artwork"
+        assert source.is_dir() and previous.is_dir()
+        previous = destination

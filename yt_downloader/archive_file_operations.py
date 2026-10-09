@@ -179,6 +179,7 @@ def _observe(
     source: ArchivePath,
     *,
     companions_when_missing: bool = False,
+    media_only: bool = False,
 ) -> FileOperationItem:
     owner, fingerprint = history_archive_owner(dict(record)), record_fingerprint(record)
     path = Path(str(source))
@@ -201,6 +202,19 @@ def _observe(
                 )
             media = None
         artifacts = [media] if media is not None else []
+        if media_only:
+            if directory_evidence(path.parent) != ancestors:
+                raise ValueError("Source folder changed")
+            if media is not None and _regular_evidence(path) != media:
+                raise ValueError("Source changed during inspection")
+            return FileOperationItem(
+                owner,
+                fingerprint,
+                path,
+                "ready" if media else "missing",
+                tuple(artifacts),
+                ancestors,
+            )
         metadata = path.parent / "metadata.json"
         try:
             metadata_evidence = _regular_evidence(metadata)
@@ -330,7 +344,16 @@ def plan_file_operation(
     return FileOperationPlan(snapshot, tuple(items))
 
 
+def _loose_import(record: Mapping[str, Any]) -> bool:
+    """Import provenance authorizes the exact media, never its parent tree."""
+    return str(record.get("id", "")).startswith("local-") and str(
+        record.get("vodforge_run_id", "")
+    ).startswith("import-")
+
+
 def _move_root(record: Mapping[str, Any], source: Path) -> Path | None:
+    if _loose_import(record):
+        return None
     job = record.get("vodforge_retry_job")
     value = record.get("vodforge_archive_root")
     if value is None:
@@ -344,6 +367,8 @@ def _move_root(record: Mapping[str, Any], source: Path) -> Path | None:
 
 
 def _move_target(record: Mapping[str, Any], source: Path, destination: Path) -> Path:
+    if _loose_import(record):
+        return destination
     root = _move_root(record, source)
     relative = source.parent.relative_to(root) if root else Path(source.parent.name)
     return destination / relative
@@ -512,8 +537,35 @@ def _move_source_plan(records, owners, *, cancelled=None) -> FileOperationPlan:
     plan = plan_file_operation(records, owners, cancelled=cancelled)
     plan = _shared_move_sources(plan, records, owners)
     by_owner = {history_archive_owner(dict(row)): row for row in records}
+    # Several imports may share a directory. Only duplicate exact-file claims
+    # are ambiguous; unrelated siblings do not grant or remove file ownership.
+    paths = []
+    for row in records:
+        try:
+            paths.append(recorded_artifact(row))
+        except (ValueError, TypeError):
+            paths.append(None)
+    claims = Counter(_ownership_key(path) for path in paths if path is not None)
+    owner_counts = Counter(history_archive_owner(dict(row)) for row in records)
     items = []
     for item in plan.items:
+        if cancelled is not None and cancelled.is_set():
+            items.append(replace(item, state="cancelled"))
+            continue
+        record = by_owner.get(item.owner, {})
+        if _loose_import(record):
+            try:
+                source = recorded_artifact(record)
+            except (ValueError, TypeError):
+                source = None
+            if (
+                owner_counts[item.owner] == 1
+                and source is not None
+                and claims[_ownership_key(source)] == 1
+            ):
+                item = _observe(record, source, media_only=True)
+            items.append(item)
+            continue
         if item.state not in {"missing", "unavailable"} or item.source is None:
             items.append(item)
             continue
@@ -708,7 +760,14 @@ def plan_move_operation(
             ).casefold()
             folders.setdefault(key, []).append(item)
     claims = []
+    file_claims = set()
     for row in records:
+        try:
+            artifact = recorded_artifact(row)
+            if artifact is not None:
+                file_claims.add(_ownership_key(artifact))
+        except (ValueError, TypeError):
+            pass
         try:
             claims.append(ArchivePath.parse(str(row.get("vodforge_output_dir") or "")))
         except ValueError:
@@ -717,6 +776,43 @@ def plan_move_operation(
     for item in plan.items:
         if item.state != "ready" or item.source is None:
             items.append(item)
+            continue
+        if _loose_import(record_by_owner[item.owner]):
+            leaf = destination / item.source.name
+            key = _ownership_key(ArchivePath.parse(str(leaf)))
+            peers = [
+                other
+                for other in plan.items
+                if other.state == "ready"
+                and other.source is not None
+                and _ownership_key(
+                    ArchivePath.parse(
+                        str(
+                            _move_target(
+                                record_by_owner[other.owner], other.source, destination
+                            )
+                            / other.source.name
+                        )
+                    )
+                )
+                == key
+            ]
+            claimed = key in file_claims
+            if destination == item.source.parent:
+                items.append(
+                    replace(item, state="already_in_target", reason="already_in_target")
+                )
+            elif (
+                claimed
+                or len(peers) != 1
+                or any(
+                    _ownership_key(ArchivePath.parse(str(path))) == key
+                    for path in destination.iterdir()
+                )
+            ):
+                items.append(replace(item, state="conflict"))
+            else:
+                items.append(item)
             continue
         if _move_root(record_by_owner[item.owner], item.source) is None:
             items.append(
@@ -1406,21 +1502,28 @@ def move_files(
                 for artifact in item.artifacts
             ):
                 raise ValueError("Output path is too long; choose another destination")
-            _ensure_move_parents(destination, target_folder)
+            file_only = _loose_import(source_record)
+            if not file_only:
+                _ensure_move_parents(destination, target_folder)
             # Refuse a destination inside the source folder, including the same
             # folder. The directory proofs above have already excluded aliases.
-            if (
-                target_folder == item.source.parent
-                or item.source.parent in target_folder.parents
+            if target_folder == item.source.parent or (
+                not file_only and item.source.parent in target_folder.parents
             ):
                 raise ValueError("Choose another destination")
             journal.update(
                 index,
                 "claim_requested",
                 destination=str(target_folder),
-                source_archive_root=str(_move_root(source_record, item.source)),
+                source_archive_root=""
+                if file_only
+                else str(_move_root(source_record, item.source)),
             )
-            if item.shared_leader and item.owner != item.shared_leader:
+            if file_only:
+                target_proof = directory_evidence(target_folder)
+                if target_proof != destination_proof:
+                    raise ValueError("Destination changed")
+            elif item.shared_leader and item.owner != item.shared_leader:
                 target_proof = _shared_destination_proof(
                     journal, item, current, target_folder
                 )
@@ -1502,7 +1605,10 @@ def move_files(
                 for row in prospective
                 if str(recorded_artifact(row)) == str(target_folder / item.source.name)
             )
-            prospective_row["vodforge_archive_root"] = str(destination)
+            if file_only:
+                prospective_row.pop("vodforge_archive_root", None)
+            else:
+                prospective_row["vodforge_archive_root"] = str(destination)
             retry_job = prospective_row.get("vodforge_retry_job")
             if isinstance(retry_job, dict):
                 # This item's future retry follows its reviewed new root. Copy

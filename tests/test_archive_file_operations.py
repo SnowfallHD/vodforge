@@ -1378,3 +1378,131 @@ def test_file_authority_rejects_same_size_and_restored_mtime(tmp_path, effect):
     assert ops._regular_evidence(path).stamp != evidence.stamp
     with pytest.raises(ValueError, match="changed"):
         ops._hash_file(path, evidence.stamp, None)
+
+
+def loose_import(item, context):
+    item.pop("vodforge_retry_job", None)
+    item.update(id="local-fixture", vodforge_run_id="import-fixture")
+    ops._save_durable_history(context[1], [item])
+    return ops.Path(item["vodforge_output_path"])
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "destination_claimed",
+        "artifact_copied",
+        "copies_verified",
+        "before_history",
+        "history_saved",
+        "source_retired",
+    ],
+)
+def test_loose_import_faults_preserve_files_and_recover_published_move(
+    item, move_context, fault
+):
+    source = loose_import(item, move_context)
+    destination, history, _ = move_context
+    (source.parent / "personal.txt").write_bytes(b"source sibling")
+    (destination / "personal.txt").write_bytes(b"target sibling")
+    before = history.read_bytes()
+
+    def fail(stage):
+        if stage == fault:
+            raise OSError("injected failure")
+
+    result = move(item, move_context, boundary=fail)
+    target = destination / source.name
+    assert result.outcomes[0][1] in {"needs_attention", "cleanup_pending"}
+    if fault in {"history_saved", "source_retired"}:
+        assert target.read_bytes() == b"fixture media"
+        recovered = ops.recover_move_cleanup(result.journal, result.records, history)
+        assert recovered.outcomes[0][1] == "completed"
+        assert not source.exists()
+        assert target.read_bytes() == b"fixture media"
+    else:
+        assert source.read_bytes() == b"fixture media"
+        assert history.read_bytes() == before
+    assert source.parent.is_dir()
+    assert (source.parent / "personal.txt").read_bytes() == b"source sibling"
+    assert (destination / "personal.txt").read_bytes() == b"target sibling"
+
+
+@pytest.mark.parametrize(
+    "kind", ["file", "directory", "case_alias", "symlink", "claimed_missing"]
+)
+def test_loose_import_destination_conflicts_are_preserved(item, move_context, kind):
+    source = loose_import(item, move_context)
+    destination, history, _ = move_context
+    target = destination / source.name
+    rows = [item]
+    if kind == "file":
+        target.write_bytes(b"existing")
+    elif kind == "directory":
+        target.mkdir()
+    elif kind == "case_alias":
+        target.with_name(target.name.upper()).write_bytes(b"existing")
+    elif kind == "symlink":
+        try:
+            target.symlink_to(source)
+        except OSError:
+            pytest.skip("symlink privilege unavailable")
+    else:
+        rows.append(
+            {
+                **item,
+                "id": "local-other",
+                "vodforge_run_id": "import-other",
+                "vodforge_output_path": str(target),
+                "vodforge_output_dir": str(destination),
+            }
+        )
+    before = history.read_bytes()
+    preview = ops.plan_move_operation(rows, [history_archive_owner(item)], destination)
+    assert preview.counts == {"conflict": 1}
+    assert source.read_bytes() == b"fixture media"
+    assert history.read_bytes() == before
+
+
+def test_loose_import_collision_after_preview_never_overwrites(item, move_context):
+    source = loose_import(item, move_context)
+    destination, history, _ = move_context
+    before = history.read_bytes()
+    target = destination / source.name
+
+    def race(stage):
+        if stage == "destination_claimed":
+            target.write_bytes(b"new owner")
+
+    result = move(item, move_context, boundary=race)
+    assert result.outcomes[0][1] == "needs_attention"
+    assert source.read_bytes() == b"fixture media"
+    assert target.read_bytes() == b"new owner"
+    assert history.read_bytes() == before
+
+
+def test_loose_import_duplicate_names_and_cancelled_plan(item, move_context, tmp_path):
+    source = loose_import(item, move_context)
+    other_dir = tmp_path / "other"
+    other_dir.mkdir()
+    other = other_dir / source.name
+    other.write_bytes(b"different file")
+    row = {
+        **item,
+        "id": "local-other",
+        "vodforge_run_id": "import-other",
+        "vodforge_output_path": str(other),
+        "vodforge_output_dir": str(other_dir),
+    }
+    rows = [item, row]
+    owners = [history_archive_owner(r) for r in rows]
+    assert ops.plan_move_operation(rows, owners, move_context[0]).counts == {
+        "conflict": 2
+    }
+    event = Event()
+    event.set()
+    assert ops.plan_move_operation(
+        rows, owners, move_context[0], cancelled=event
+    ).counts == {"cancelled": 2}
+    assert source.read_bytes() == b"fixture media"
+    assert other.read_bytes() == b"different file"
