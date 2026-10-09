@@ -4306,8 +4306,13 @@ def test_qt_manual_mp4_fields_stay_in_adaptive_settings_columns(tmp_path, monkey
         app.processEvents()
         assert not preset.property("expanded")
         window.setWidth(820)
-        app.processEvents()
+        deadline = time.monotonic() + 2
+        while columns.property("columns") != 1 and time.monotonic() < deadline:
+            QTest.qWait(20)
+        assert window.width() == 820
         assert columns.property("columns") == 1
+        assert columns.width() <= popup.property("availableWidth") + 1
+        assert manual.width() <= columns.width()
         assert manual.property("visible")
     finally:
         window.close()

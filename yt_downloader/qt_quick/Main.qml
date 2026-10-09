@@ -2548,10 +2548,12 @@ Window {
                     onActivated: bridge.openCloudEarlyAccess()
                 }
             }
-            Text { objectName: "settingsSubtitle"; text: "These choices apply to new downloads and are saved as you change them."; color: theme.muted; font.pixelSize: 14 }
+            Text { objectName: "settingsSubtitle"; Layout.minimumWidth: 0; Layout.fillWidth: true; wrapMode: Text.WordWrap; text: "These choices apply to new downloads and are saved as you change them."; color: theme.muted; font.pixelSize: 14 }
             ScrollView {
                 id: settingsBody
                 objectName: "settingsBodyViewport"
+                Layout.minimumWidth: 0
+                contentWidth: availableWidth
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 clip: true
