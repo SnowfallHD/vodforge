@@ -849,6 +849,10 @@ def _load_history_records(path: Path) -> list[dict[str, Any]]:
             output_dir,
             recorded_at=str(item.get("vodforge_recorded_at") or "").strip() or None,
         )
+        # Loading legacy entries is read-only: an unknown saved timestamp must
+        # stay unknown, otherwise every read changes transaction fingerprints.
+        if not str(item.get("vodforge_recorded_at") or "").strip():
+            record.pop("vodforge_recorded_at", None)
         identity = history_identity(record)
         if identity in seen:
             continue
