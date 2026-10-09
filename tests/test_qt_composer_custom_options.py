@@ -95,8 +95,7 @@ def test_custom_dropdown_morphs_and_summary_tracks_rate_control(motion_scene):
     summary = window.findChild(QObject, "composerCustomSummaryValues")
     assert "8000 kbps video" in summary.property("text")
     selector.setProperty("expanded", False)
-    QTest.qWait(300)
-    assert selector.property("reveal") == 0
+    wait_for_reveal(selector, 0)
 
 
 def test_custom_single_column_scrolls_with_expanded_choices(run_scene):  # noqa: F811
