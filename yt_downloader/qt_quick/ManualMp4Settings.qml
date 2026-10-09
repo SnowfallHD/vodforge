@@ -31,6 +31,8 @@ ColumnLayout {
             }
         }
         ColumnLayout {
+            objectName: "manualCrfGroup"
+            visible: manual.backend.manualValues.manual_rate_control === "Quality"
             Layout.fillWidth: true
             Text { text: "Video quality (CRF, 1–51)"; color: manual.colors.muted; font.pixelSize: 13 }
             StoneField {
@@ -46,6 +48,8 @@ ColumnLayout {
             }
         }
         ColumnLayout {
+            objectName: "manualCbrGroup"
+            visible: manual.backend.manualValues.manual_rate_control === "CBR"
             Layout.fillWidth: true
             Text { text: "CBR video bitrate (kbps)"; color: manual.colors.muted; font.pixelSize: 13 }
             StoneField {

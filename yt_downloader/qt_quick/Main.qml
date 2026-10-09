@@ -3199,7 +3199,7 @@ Window {
         readonly property real baseWidth: Math.min(550, window.width - 40)
         width: baseWidth + (Math.min(1060, window.width - 40) - baseWidth) * customReveal
         readonly property real customColumnWidth: (Math.min(1060, window.width - 40) - 32) * 0.48
-        height: Math.min(window.height - 40, 355 + Math.max(0, Math.max(composerManualControls.implicitHeight, composerOptionsContent.implicitHeight) + 16 - 355) * customReveal)
+        height: Math.min(window.height - 40, 540, 355 + Math.max(0, Math.max(composerManualControls.implicitHeight, composerOptionsContent.implicitHeight) + 16 - 355) * customReveal)
         padding: 8
         modal: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside

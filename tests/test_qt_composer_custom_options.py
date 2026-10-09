@@ -38,7 +38,7 @@ def test_custom_expands_left_column_and_keeps_dialog_centered(run_scene):  # noq
     assert manual.isVisible() and manual.width() > 200
     assert manual.mapToScene(QPointF()).x() < custom.mapToScene(QPointF()).x()
     assert 0.8 <= popup.property("surfaceOpacity") < 0.9
-    assert popup.property("height") <= window.height() - 39
+    assert popup.property("height") <= min(540, window.height() - 39)
 
 
 def test_custom_dropdown_morphs_and_summary_tracks_rate_control(run_scene):  # noqa: F811
@@ -84,7 +84,7 @@ def test_custom_single_column_scrolls_with_expanded_choices(run_scene):  # noqa:
             rate.mapToScene(QPointF(0, rate.height())).y()
             < audio.mapToScene(QPointF()).y()
         )
-        assert popup.property("height") <= window.height() - 39
+        assert popup.property("height") <= min(540, window.height() - 39)
         viewport = scroll.property("contentItem")
         maximum = max(0, viewport.property("contentHeight") - viewport.height())
         viewport.setProperty("contentY", maximum)
@@ -92,3 +92,21 @@ def test_custom_single_column_scrolls_with_expanded_choices(run_scene):  # noqa:
         bottom = preset.mapToScene(QPointF(0, preset.height())).y()
         assert bottom <= scroll.mapToScene(QPointF(0, scroll.height())).y() + 1
         assert viewport.property("contentWidth") <= viewport.width() + 1
+
+
+def test_rate_control_hides_unused_field_and_preserves_values(run_scene):  # noqa: F811
+    _app, bridge, window, _button, _popup = run_scene
+    bridge.setExportMode("Manual Override")
+    window.findChild(QObject, "optionsMenu").open()
+    manual = window.findChild(QObject, "composerManualMp4")
+    crf = manual.findChild(QObject, "manualCrfGroup")
+    cbr = manual.findChild(QObject, "manualCbrGroup")
+    bridge.setManualValue("manual_crf", "23")
+    bridge.setManualValue("manual_video_bitrate", "8000")
+    for mode in ("CBR", "Quality", "CBR"):
+        bridge.setManualValue("manual_rate_control", mode)
+        QTest.qWait(30)
+        assert crf.isVisible() == (mode == "Quality")
+        assert cbr.isVisible() == (mode == "CBR")
+        assert str(bridge.manualValues["manual_crf"]) == "23"
+        assert str(bridge.manualValues["manual_video_bitrate"]) == "8000"
