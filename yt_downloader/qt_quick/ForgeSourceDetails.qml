@@ -10,6 +10,9 @@ ColumnLayout {
     property bool preview: false
     property bool showHeading: true
     property var selectedFacts: ({ heading: "", rows: [] })
+    // Facts the file never recorded stay in Library details, not this summary.
+    readonly property var recordedRows: (selectedFacts.rows || []).filter(row => row.value !== "Not recorded")
+    readonly property int unrecordedCount: (selectedFacts.rows || []).length - recordedRows.length
     spacing: 8
 
     Text {
@@ -23,7 +26,7 @@ ColumnLayout {
         Layout.fillWidth: true
     }
     Repeater {
-        model: details.selectedFacts.rows.length ? details.selectedFacts.rows : [
+        model: details.selectedFacts.rows.length ? details.recordedRows : [
             { label: "Format", value: details.displayType },
             { label: "Video", value: details.preview ? "Not downloaded" : details.outputFormat === "MP4" ? "H.264" : "None" },
             { label: "Audio", value: details.preview ? "Not downloaded" : details.outputFormat === "MP3" ? "MP3" :
@@ -59,6 +62,17 @@ ColumnLayout {
                 Layout.preferredWidth: 0
             }
         }
+    }
+    Text {
+        objectName: "forgeUnrecordedNote"
+        visible: details.unrecordedCount > 0
+        text: details.unrecordedCount === 1 ? "1 detail was not recorded for this file." :
+              details.unrecordedCount + " details were not recorded for this file."
+        color: theme.muted
+        font.pixelSize: 13
+        wrapMode: Text.WordWrap
+        Layout.fillWidth: true
+        Layout.topMargin: 4
     }
     Item { Layout.fillHeight: true }
 }

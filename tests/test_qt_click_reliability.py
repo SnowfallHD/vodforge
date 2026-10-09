@@ -195,3 +195,138 @@ def test_navigation_hit_faces_and_disabled_action(tmp_path, monkeypatch):
         assert activations == []
     finally:
         _close(bridge, engine, window)
+
+
+def _descendants(item):
+    for child in item.childItems():
+        yield child
+        yield from _descendants(child)
+
+
+def test_primary_action_and_selected_tab_are_visibly_distinct(tmp_path, monkeypatch):
+    from PySide6.QtGui import QColor
+
+    from yt_downloader.ui_theme import THEME
+
+    _app, bridge, engine, window = _launch(tmp_path, monkeypatch, [])
+    try:
+        download = window.findChild(QObject, "forgeDownloadButton")
+        options = window.findChild(QObject, "forgeOptionsButton")
+        assert download.property("primary") and not options.property("primary")
+
+        def face(button):
+            return next(
+                item
+                for item in button.childItems()
+                if item.property("presentationRole") == "control"
+                and "/button/" in item.property("source").toString()
+            )
+
+        # The accent colour is drawn by the shared raised/inset material owner.
+        assert "/normal/1/primary/" in face(download).property("source").toString()
+        assert "/primary" not in face(options).property("source").toString()
+        point = center(download)
+        QTest.mousePress(window, Qt.LeftButton, Qt.NoModifier, point)
+        QTest.qWait(30)
+        assert "/pressed/1/primary/" in face(download).property("source").toString()
+        away = QPoint(5, window.height() - 5)
+        QTest.mouseMove(window, away)
+        QTest.mouseRelease(window, Qt.LeftButton, Qt.NoModifier, away)
+        QTest.qWait(30)
+        assert "/pressed/" not in face(download).property("source").toString()
+        caption = next(
+            item
+            for item in _descendants(download)
+            if item.objectName() == "stoneButtonCaption"
+        )
+        # Dark text on the filled accent face, never accent text on a dark face.
+        assert caption.property("color") == QColor(THEME["bg"])
+        for selected in ("Library", "Forge"):
+            bridge.select(selected)
+            QTest.qWait(30)
+            for section in ("Forge", "Library", "Watch", "Activity"):
+                bar = visual_item(
+                    window.contentItem(), "navigationSelectedBar_" + section
+                )
+                assert bar.property("visible") == (section == selected)
+    finally:
+        _close(bridge, engine, window)
+
+
+def test_completed_run_offers_next_actions_and_hides_unrecorded_facts(
+    tmp_path, monkeypatch
+):
+    _app, bridge, engine, window = _launch(
+        tmp_path, monkeypatch, [saved(tmp_path, "Fixture", "MP4")]
+    )
+    try:
+        window.resize(1400, 900)
+        QTest.qWait(100)
+        selection = bridge.forgeSelection
+        assert selection["kind"] == "completed" and selection["owner"]
+        actions = window.findChild(QObject, "forgeCompletedActions")
+        assert actions.property("visible")
+        assert actions.property("owner") == selection["owner"]
+        play = window.findChild(QObject, "forgeCompletedPlay")
+        assert play.property("primary") and play.property("label") == "Play"
+        assert window.findChild(QObject, "forgeCompletedShowInFolder").property(
+            "visible"
+        )
+        # The summary omits facts the file never recorded and says how many.
+        rows = bridge.forgeSelectedFacts["rows"]
+        missing = sum(row["value"] == "Not recorded" for row in rows)
+        assert missing > 0
+        details = visual_item(window.contentItem(), "forgeSourceDetails")
+        shown = [
+            item.property("text")
+            for item in _descendants(details)
+            if item.property("visible") and item.property("text")
+        ]
+        assert "Not recorded" not in shown
+        note = next(
+            item
+            for item in _descendants(details)
+            if item.objectName() == "forgeUnrecordedNote"
+        )
+        assert note.property("visible")
+        assert note.property("text").startswith(f"{missing} detail")
+        # Show in Library opens this exact item's Library page.
+        show = window.findChild(QObject, "forgeCompletedShowInLibrary")
+        QTest.mouseClick(window, Qt.LeftButton, pos=center(show))
+        QTest.qWait(50)
+        assert bridge.selection == "Library"
+        assert bridge.libraryDetail["owner"] == selection["owner"]
+    finally:
+        _close(bridge, engine, window)
+
+
+def test_run_without_saved_output_keeps_status_text_and_no_next_actions(
+    tmp_path, monkeypatch
+):
+    _app, _bridge, engine, window = _launch(tmp_path, monkeypatch, [])
+    try:
+        QTest.qWait(50)
+        assert not window.findChild(QObject, "forgeCompletedActions").property(
+            "visible"
+        )
+    finally:
+        _close(_bridge, engine, window)
+
+
+def test_primary_face_uses_original_material_in_every_state(monkeypatch):
+    from yt_downloader.ui_chrome import action_button_image
+    from yt_downloader.ui_theme import THEME
+
+    for state in ("normal", "hover", "pressed", "disabled", "focus"):
+        for density in (1, 2):
+            primary = action_button_image(
+                131, 44, accent=False, state=state, density=density, primary=True
+            )
+            # A palette substitution in the original button must produce the
+            # exact same pixels: no additional lips, curvature, or shadow tails.
+            with monkeypatch.context() as palette:
+                palette.setitem(THEME, "surface", THEME["accent"])
+                original = action_button_image(
+                    131, 44, accent=False, state=state, density=density
+                )
+            assert primary.tobytes() == original.tobytes(), (state, density)

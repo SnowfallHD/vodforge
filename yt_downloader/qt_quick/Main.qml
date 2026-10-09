@@ -1042,6 +1042,17 @@ Window {
                             modelData === "Watch" ? "play.png" : "activity.png") + "/r" + bridge.themeRevision
                         width: Math.max(86, implicitWidth)
                         height: implicitHeight
+                        Rectangle {
+                            objectName: "navigationSelectedBar_" + modelData
+                            visible: parent.selected
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            anchors.bottom: parent.bottom
+                            anchors.bottomMargin: 5
+                            width: parent.width - 28
+                            height: 2
+                            radius: 1
+                            color: theme.accent
+                        }
                         onActivated: {
                             const keepPlaying = window.miniPlayerActive ||
                                 (window.mediaPlayer && window.mediaPlayer.playbackState === MediaPlayer.PlayingState)
@@ -1189,6 +1200,7 @@ Window {
                     objectName: "forgeDownloadButton"
                     label: bridge.running ? "Queue" : "Download"
                     emphasized: true
+                    primary: true
                     Layout.preferredWidth: 131
                     Layout.preferredHeight: 44
                     onActivated: bridge.submit(urlInput.text, window.outputFormat)
@@ -1367,7 +1379,34 @@ Window {
                     color: theme.muted; font.pixelSize: 14
                     Layout.fillWidth: true; elide: Text.ElideRight
                 }
+                Row {
+                    id: forgeCompletedActions
+                    objectName: "forgeCompletedActions"
+                    readonly property string owner: window.selectedForgeRun.kind === "completed" ?
+                                                        (window.selectedForgeRun.owner || "") : ""
+                    visible: owner.length > 0
+                    spacing: 8
+                    StoneButton {
+                        objectName: "forgeCompletedPlay"
+                        label: "Play"; primary: true; size: "inline"
+                        width: 84
+                        onActivated: bridge.openLibraryOwner(forgeCompletedActions.owner)
+                    }
+                    StoneButton {
+                        objectName: "forgeCompletedShowInLibrary"
+                        label: "Show in Library"; size: "inline"
+                        width: 142
+                        onActivated: { if (bridge.openLibraryDetails(forgeCompletedActions.owner)) bridge.select("Library") }
+                    }
+                    StoneButton {
+                        objectName: "forgeCompletedShowInFolder"
+                        label: "Show in Folder"; size: "inline"
+                        width: 136
+                        onActivated: bridge.openLibraryFolder(forgeCompletedActions.owner)
+                    }
+                }
                 Text {
+                    visible: !forgeCompletedActions.visible
                     text: window.selectedForgeRun.kind === "completed" ? "Complete / Ready to open in Library" :
                           window.selectedForgeRun.kind === "terminal" ? window.selectedForgeRun.status + " / Retry is available" :
                           window.selectedForgeRun.kind === "queued" ? "Queued / Waiting for the current run" :
@@ -2442,7 +2481,7 @@ Window {
             spacing: 7
             RowLayout {
                 Layout.fillWidth: true
-                Text { text: "Forge settings"; color: theme.text; font.pixelSize: 21; font.bold: true; Layout.fillWidth: true }
+                Text { objectName: "settingsTitle"; text: "Settings"; color: theme.text; font.pixelSize: 21; font.bold: true; Layout.fillWidth: true }
                 StoneButton {
                     id: proButton
                     objectName: "settingsProButton"
@@ -2460,7 +2499,7 @@ Window {
                     onActivated: bridge.openCloudEarlyAccess()
                 }
             }
-            Text { text: "Every option is available here; the main workspace stays focused."; color: theme.muted; font.pixelSize: 14 }
+            Text { objectName: "settingsSubtitle"; text: "These choices apply to new downloads and are saved as you change them."; color: theme.muted; font.pixelSize: 14 }
             ScrollView {
                 id: settingsBody
                 objectName: "settingsBodyViewport"
@@ -2593,7 +2632,9 @@ Window {
                 ]
                 ColumnLayout {
                     required property var modelData
-                    visible: window.outputFormat === "MP4"
+                    // NVIDIA encoding never applies on macOS; elsewhere it stays visible as Unavailable.
+                    visible: window.outputFormat === "MP4" &&
+                             !(modelData.key === "use_nvenc" && Qt.platform.os === "osx")
                     Layout.fillWidth: true
                     spacing: 3
                     Text {
@@ -2750,7 +2791,8 @@ Window {
                 StoneButton { label: "Check for updates"; Layout.preferredWidth: 165; Layout.preferredHeight: 40; onActivated: { settingsPopup.close(); updatePopup.toggleFrom(this); bridge.checkForUpdates() } }
                 Item { Layout.fillWidth: true }
                 StoneButton {
-                    label: "Done"; Layout.preferredWidth: 86; Layout.preferredHeight: 40
+                    objectName: "settingsDoneButton"
+                    label: "Done"; primary: true; Layout.preferredWidth: 86; Layout.preferredHeight: 40
                     onActivated: { if (bridge.setExtraTags(extraTagsInput.text)) settingsPopup.close() }
                 }
             }

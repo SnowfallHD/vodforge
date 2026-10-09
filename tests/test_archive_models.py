@@ -348,3 +348,11 @@ def test_my_files_only_exposes_known_routes_until_a_media_folder():
         "metadata.json",
         "extras",
     }
+
+
+def test_export_counts_are_pluralized_only_when_plural():
+    from yt_downloader.archive_browser import _export_count
+
+    assert _export_count(1) == "1 export"
+    assert _export_count(0) == "0 exports"
+    assert _export_count(2) == "2 exports"

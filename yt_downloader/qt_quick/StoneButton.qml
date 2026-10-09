@@ -8,6 +8,8 @@ Item {
     property string sceneIcon: ""
     property bool selected: false
     property bool emphasized: false
+    // The one main action of a surface: the shared raised/inset face in the accent colour.
+    property bool primary: false
     property bool transientMaterial: true
     property bool hoverMaterial: true
     property bool interactive: true
@@ -44,10 +46,22 @@ Item {
         source: "image://vodforge/button/" + Math.max(1, Math.round(control.width))
                 + "/" + Math.max(1, Math.round(control.height)) + "/"
                 + (!control.transientMaterial || !control.enabled ? "normal" : mouse.pressed ? "pressed" : (control.activeFace ? "hover" : "normal"))
-                + "/" + (control.emphasized ? "1" : "0") + "/r" + bridge.themeRevision
+                + "/" + (control.emphasized ? "1" : "0") + (control.primary ? "/primary" : "")
+                + "/r" + bridge.themeRevision
         fillMode: Image.Stretch
         cache: true
         smooth: true
+    }
+    Rectangle {
+        // A translucent accent wash marks selection; the material contour shows through.
+        objectName: "stoneButtonSelectedWash"
+        visible: control.selected && !control.quiet && !control.primary
+        anchors.fill: parent
+        anchors.margins: 3
+        radius: 8
+        antialiasing: true
+        color: theme.accent
+        opacity: 0.22
     }
     Row {
         anchors.centerIn: control.quiet ? undefined : parent
@@ -71,7 +85,7 @@ Item {
             width: visible ? buttonMetrics[control.size].iconPixels : 0
             height: width
             name: control.sceneIcon
-            tone: control.emphasized ? theme.action : theme.icon
+            tone: control.primary ? theme.bg : control.emphasized ? theme.action : theme.icon
         }
         Text {
             id: caption
@@ -85,11 +99,11 @@ Item {
                     Math.max(8, (availableWidth - implicitWidth) / 2))
             width: Math.min(implicitWidth, Math.max(0, availableWidth - 2 * sidePadding))
             elide: Text.ElideRight
-            color: control.emphasized ? theme.action :
+            color: control.primary ? theme.bg : control.emphasized ? theme.action :
                    control.quiet && !control.selected && !control.hovered && !control.activeFocus ? theme.muted : theme.text
             font.family: buttonFontFamily
             font.pixelSize: buttonMetrics[control.size].fontPixels
-            font.weight: control.quiet && control.selected ? Font.DemiBold : Font.Normal
+            font.weight: control.primary || (control.quiet && control.selected) ? Font.DemiBold : Font.Normal
             anchors.verticalCenter: parent.verticalCenter
         }
     }

@@ -306,13 +306,19 @@ class Materials(QQuickImageProvider):
                 from yt_downloader.ui_chrome import watch_welcome_emblem
 
                 source = watch_welcome_emblem()
-            elif parts[0] == "button" and len(parts) == 5:
+            elif parts[0] == "button" and (
+                len(parts) == 5 or (len(parts) == 6 and parts[5] == "primary")
+            ):
                 width, height = int(parts[1]), int(parts[2])
                 # StoneButton also paints responsive artwork cards, not only controls.
                 if not (1 <= width <= 4096 and 1 <= height <= 2048):
                     raise ValueError("button image dimensions out of bounds")
                 source = action_button_image(
-                    width, height, accent=parts[4] == "1", state=parts[3]
+                    width,
+                    height,
+                    accent=parts[4] == "1",
+                    state=parts[3],
+                    primary=len(parts) == 6,
                 )
             elif parts[0] == "field" and len(parts) == 4:
                 width, height = int(parts[1]), int(parts[2])

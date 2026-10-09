@@ -207,6 +207,46 @@ def test_tag_bursts_retain_unrelated_chips_and_preserve_real_press_feedback(deta
     assert not window.grabWindow().isNull()
 
 
+def fact_item(window, name):
+    return next(
+        (
+            item
+            for item in visual_descendants(window.contentItem())
+            if item.objectName() == name
+        ),
+        None,
+    )
+
+
+def test_unrecorded_facts_collapse_until_requested_and_recorded_facts_stay(detail):
+    app, bridge, _owner, _engine, window = detail
+    output = bridge.libraryDetail["output"]
+    unrecorded = [row["label"] for row in output if row["value"] == "Not recorded"]
+    recorded = [row["label"] for row in output if row["value"] != "Not recorded"]
+    assert unrecorded and recorded  # The fixture exercises both kinds of fact.
+    for label in recorded:
+        assert fact_item(window, f"libraryFactRow_output_{label}") is not None
+    for label in unrecorded:
+        assert fact_item(window, f"libraryFactRow_output_{label}") is None
+    toggle = fact_item(window, "libraryUnrecordedToggle_output")
+    noun = "field" if len(unrecorded) == 1 else "fields"
+    assert toggle.property("visible")
+    assert toggle.property("label") == f"Show {len(unrecorded)} unrecorded {noun}"
+    toggle.activated.emit()
+    for _ in range(5):
+        app.processEvents()
+    # Nothing is removed from the record: every fact is one activation away.
+    for label in recorded + unrecorded:
+        row = fact_item(window, f"libraryFactRow_output_{label}")
+        assert row is not None and row.property("visible")
+    toggle = fact_item(window, "libraryUnrecordedToggle_output")
+    assert toggle.property("label") == "Hide unrecorded fields"
+    toggle.activated.emit()
+    for _ in range(5):
+        app.processEvents()
+    assert fact_item(window, f"libraryFactRow_output_{unrecorded[0]}") is None
+
+
 @pytest.mark.parametrize("width", [820, 1400])
 @pytest.mark.parametrize("wrapped", [False, True])
 def test_fact_copy_targets_do_not_add_row_gaps_or_clip_wrapped_values(
@@ -230,6 +270,10 @@ def test_fact_copy_targets_do_not_add_row_gaps_or_clip_wrapped_values(
     monkeypatch.setattr(bridge, "_library_detail_projection", lambda *_: projection)
     bridge.historyChanged.emit()
     window.resize(width, 1000)
+    for _ in range(5):
+        app.processEvents()
+    # Unrecorded facts are collapsed by default; this contract covers the full table.
+    fact_item(window, "libraryUnrecordedToggle_output").activated.emit()
     for _ in range(5):
         app.processEvents()
     for section, label, next_label in [

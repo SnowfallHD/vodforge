@@ -83,9 +83,13 @@ def test_settings_live_accent_and_neutral_copy(tmp_path, monkeypatch):
                 item
                 for item in settings.findChildren(QObject)
                 if item.property("text")
-                == "Every option is available here; the main workspace stays focused."
+                == "These choices apply to new downloads and are saved as you change them."
             )
             assert help_text.property("color") == QColor(THEME["muted"])
+            assert window.findChild(QObject, "settingsTitle").property("text") == (
+                "Settings"
+            )
+            assert window.findChild(QObject, "settingsDoneButton").property("primary")
             assert contrast(THEME["accent"], THEME["surface_2"]) >= 4.5
             frame = window.grabWindow()
             assert not frame.isNull()

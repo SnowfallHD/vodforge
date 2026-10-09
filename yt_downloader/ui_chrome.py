@@ -427,6 +427,7 @@ def action_button_image(
     density: int = 1,
     focused: bool = False,
     unit_scale: int = 1,
+    primary: bool = False,
 ) -> Image.Image:
     """Shared raised and inset interaction faces for scene actions.
 
@@ -434,7 +435,14 @@ def action_button_image(
     brighter accent border.  Keyboard focus remains the distinct, high-contrast
     state and pressed retains the deeper version of the same contour.
     """
-    fill = primary_action_color() if accent else THEME["surface"]
+    # Primary changes the pigment only; every interaction uses the original material.
+    fill = (
+        THEME["accent"]
+        if primary
+        else primary_action_color()
+        if accent
+        else THEME["surface"]
+    )
     if state == "pressed":
         fill = _blend_color(fill, THEME["bg"], 0.18)
     if state == "disabled":

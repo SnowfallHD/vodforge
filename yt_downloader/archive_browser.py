@@ -28,6 +28,10 @@ class ArchiveComponent:
     path: ArchivePath | None = None
 
 
+def _export_count(count: int) -> str:
+    return "1 export" if count == 1 else f"{count} exports"
+
+
 def archive_row_owner(record: Mapping[str, Any]) -> str:
     return str(record.get(PROJECTION_OWNER_KEY) or history_archive_owner(dict(record)))
 
@@ -232,7 +236,7 @@ class ArchiveBrowserModel:
                     str(shared),
                     "folder",
                     label,
-                    f"{detail} · {len(indices)} exports · availability not checked",
+                    f"{detail} · {_export_count(len(indices))} · availability not checked",
                     tuple(indices),
                     shared,
                 )
@@ -344,7 +348,7 @@ class ArchiveBrowserModel:
                     str(path),
                     "folder",
                     path.name,
-                    f"{len(indices)} exports",
+                    _export_count(len(indices)),
                     tuple(indices),
                     path,
                 )

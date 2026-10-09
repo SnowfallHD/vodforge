@@ -10,6 +10,10 @@ Item {
     signal annotationRequested(string owner)
     readonly property var item: appBridge.libraryDetail
     readonly property bool compact: width < 1020
+    // Unrecorded facts stay available but collapsed; a new item starts collapsed again.
+    property bool showUnrecordedFacts: false
+    readonly property string itemOwner: item.owner || ""
+    onItemOwnerChanged: showUnrecordedFacts = false
 
     ScrollView {
         id: viewport
@@ -91,7 +95,7 @@ Item {
                         width: parent.width
                         height: childrenRect.height
                         spacing: 12
-                        StoneButton { label: "Play"; emphasized: true; width: 100; height: 40; onActivated: detail.appBridge.openLibraryOwner(detail.item.owner) }
+                        StoneButton { label: "Play"; emphasized: true; primary: true; width: 100; height: 40; onActivated: detail.appBridge.openLibraryOwner(detail.item.owner) }
                         StoneButton { label: "Show in Folder"; width: 166; height: 40; onActivated: detail.appBridge.openLibraryFolder(detail.item.owner) }
                         StoneButton { label: "⋯"; accessibilityLabel: "More actions"; width: 44; height: 40; onActivated: detail.actionsRequested(detail.item.owner, this, viewport) }
                     }
@@ -354,6 +358,10 @@ Item {
                         readonly property real contentHeight: factsColumn.childrenRect.height
                         onContentHeightChanged: Qt.callLater(factsRow.syncHeight)
                         readonly property string section: modelData.title === "Source Details" ? "source" : "output"
+                        readonly property var shownFields: detail.showUnrecordedFacts ? modelData.fields :
+                            modelData.fields.filter(field => field.value !== "Not recorded")
+                        readonly property int unrecordedCount: modelData.fields.filter(
+                            field => field.value === "Not recorded").length
                         width: detail.compact ? factsRow.width : (factsRow.width - 16) / 2
                         height: detail.compact ? factsColumn.childrenRect.height + 34 : factsRow.commonHeight
                         Column {
@@ -368,7 +376,7 @@ Item {
                                 width: parent.width
                                 spacing: 0
                                 Repeater {
-                                    model: modelData.fields
+                                    model: factsPanel.shownFields
                                     Row {
                                         required property var modelData
                                         objectName: "libraryFactRow_" + factsPanel.section + "_" + modelData.label
@@ -406,6 +414,15 @@ Item {
                                         }
                                     }
                                 }
+                            }
+                            StoneButton {
+                                objectName: "libraryUnrecordedToggle_" + factsPanel.section
+                                visible: factsPanel.unrecordedCount > 0
+                                size: "inline"
+                                label: detail.showUnrecordedFacts ? "Hide unrecorded fields" :
+                                       factsPanel.unrecordedCount === 1 ? "Show 1 unrecorded field" :
+                                       "Show " + factsPanel.unrecordedCount + " unrecorded fields"
+                                onActivated: detail.showUnrecordedFacts = !detail.showUnrecordedFacts
                             }
                         }
                     }
