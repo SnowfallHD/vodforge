@@ -46,8 +46,17 @@ class FeatureHighlight:
 # Editorial opt-in: change this ID ONLY when intentionally shipping a new
 # showcase. A new app version, patch release, or release-note edit is not enough.
 # An empty highlights tuple disables the showcase. Keep copy factual and short.
-SHOWCASE_ID = "workspace-orientation-v1"
+SHOWCASE_ID = "release-0.2.5-design-v1"
 HIGHLIGHTS = (
+    FeatureHighlight(
+        "design",
+        "A refreshed VODForge workspace",
+        "Subtle glass, sculpted controls, theme accents and fluid transitions connect "
+        "the workspace. File, Edit, View, Window and Help are now in the menu bar.",
+        NativePreview.ACTIVITY,
+        recording="forge-feedback.mp4",
+        poster="forge-feedback.jpg",
+    ),
     FeatureHighlight(
         "workspace",
         "Feedback beside your download",
@@ -56,6 +65,13 @@ HIGHLIGHTS = (
         NativePreview.ACTIVITY,
         recording="forge-feedback.mp4",
         poster="forge-feedback.jpg",
+    ),
+    FeatureHighlight(
+        "custom-output",
+        "Custom settings, kept in view",
+        "Options expands smoothly for Custom controls. Choose Quality with CRF or CBR with "
+        "a video bitrate; only the relevant field appears. Selections stay open until you close Options.",
+        NativePreview.OUTPUT_SETTINGS,
     ),
     FeatureHighlight(
         "watch",
@@ -69,8 +85,17 @@ HIGHLIGHTS = (
     FeatureHighlight(
         "library",
         "Clearer file and recovery actions",
-        "Library brings file actions back into the selected item. In My Files, open "
-        "Issues & Recovery to find a missing file, retry a download or dismiss an issue.",
+        "Library’s responsive channel and playlist cards keep artwork in view. Select items "
+        "for file actions, or open My Files → Issues & Recovery for missing media.",
+        NativePreview.LIBRARY,
+        recording="library-actions.mp4",
+        poster="library-actions.jpg",
+    ),
+    FeatureHighlight(
+        "file-moves",
+        "Move your selection with care",
+        "Move selected media together in Library. Loose imports move as individual files; "
+        "VODForge-managed media keeps its recognized archive structure when relocated.",
         NativePreview.LIBRARY,
         recording="library-actions.mp4",
         poster="library-actions.jpg",
@@ -83,6 +108,13 @@ HIGHLIGHTS = (
         NativePreview.TRANSPORT,
         recording="captions-player.mp4",
         poster="captions-player.jpg",
+    ),
+    FeatureHighlight(
+        "release-fixes",
+        "Folder and download fixes",
+        "This update improves folder-picker shortcuts and file-move confirmation, "
+        "retries temporary file locks, and can retry an expired download link with a refreshed URL.",
+        NativePreview.ACTIVITY,
     ),
 )
 

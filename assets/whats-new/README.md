@@ -1,3 +1,28 @@
+# VODForge 0.2.5 release showcase
+
+The `release-0.2.5-design-v1` catalog intentionally introduces the full workspace
+redesign plus the current Custom settings, file movement and reliability changes.
+It retains all four approved silent MP4/JPG demonstrations in manifest.json.
+The clips were captured at b956d685; they illustrate existing workflows, not exact
+0.2.5 appearance or acceptance evidence. No private media or new recordings are used.
+Design and file-movement slides reuse the relevant existing workflow clip. Custom
+settings and release-fix slides use the existing native preview components.
+
+Upgraders with an older or missing whats_new_seen value see the showcase once
+consent is settled and the app is idle, after any pending welcome/review surface.
+Dismissal persists this new ID. Help → What’s New reopens it. New profiles keep
+the compact welcome and can open the showcase from Help. Do not silently reset
+user preferences or treat an application version change alone as editorial consent.
+
+All four clips and their posters must remain explicitly packaged on Mac and
+Windows, match the manifest hashes, and preserve opening-frame poster matching.
+The additional catalog copy is bundled Python code, so the release artifacts must
+be rebuilt; prior 15a40ad signatures/receipts do not qualify a changed catalog.
+No claims are made that all YouTube extraction failures or all native timing/race
+issues are fixed. Technical diagnostic fields are not product-facing highlights.
+
+---
+
 # Feature preview assets
 
 The user-requested release orientation will use short, actual VODForge UI recordings
@@ -8,8 +33,7 @@ Use only an isolated synthetic profile, with camera, microphone and system audio
 The optional recorded-preview renderer accepts paired packaged MP4/JPG basenames.
 It decodes only the visible slide, pauses outside the foreground, releases hidden
 media, and uses the poster for reduced motion. Existing welcome/tip exhibits remain
-available. No recorded feature clips are enabled until their reviewed files and
-explicit packaging inputs are present.
+available. The four reviewed clips are enabled with explicit packaging inputs.
 
 Capture/export identity, source revision, action timestamps, original/export hashes,
 codec/dimensions/duration and any crop/zoom/trim must be recorded outside the source

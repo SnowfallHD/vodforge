@@ -49,15 +49,22 @@ def test_upcoming_release_explicitly_enables_orientation(seen, pending):
 
 def test_orientation_catalog_names_real_destinations_and_supported_previews():
     assert [h.key for h in HIGHLIGHTS] == [
+        "design",
         "workspace",
+        "custom-output",
         "watch",
         "library",
+        "file-moves",
         "captions",
+        "release-fixes",
     ]
     copy = " ".join(h.description for h in HIGHLIGHTS)
     assert "Everyday" not in copy
     assert "Optimized for" not in copy
-    assert HIGHLIGHTS[1].title == "An updated Watch player"
+    assert (
+        next(h for h in HIGHLIGHTS if h.key == "watch").title
+        == "An updated Watch player"
+    )
     for destination in (
         "Forge",
         "Watch",
@@ -215,10 +222,11 @@ def test_recorded_showcase_manifest_integrity_and_explicit_packaging():
     assets = root / "assets/whats-new"
     manifest = json.loads((assets / "manifest.json").read_text())
     entries = manifest["clips"]
-    assert len(entries) == len(HIGHLIGHTS) == 4
+    assert len(entries) == 4
+    assert len(HIGHLIGHTS) == 8
     # Full-window previews must share a visual footprint across the carousel.
     assert {(entry["width"], entry["height"]) for entry in entries} == {(960, 646)}
-    assert {(h.recording, h.poster) for h in HIGHLIGHTS} == {
+    assert {(h.recording, h.poster) for h in HIGHLIGHTS if h.recording} == {
         (entry["recording"], entry["poster"]) for entry in entries
     }
     names = {"manifest.json"}
@@ -240,7 +248,9 @@ def test_recorded_showcase_manifest_integrity_and_explicit_packaging():
     assert "/Users/" not in public and "launch_id" not in public
 
 
-@pytest.mark.parametrize("highlight", HIGHLIGHTS, ids=lambda item: item.key)
+@pytest.mark.parametrize(
+    "highlight", [h for h in HIGHLIGHTS if h.recording], ids=lambda item: item.key
+)
 def test_recorded_showcase_poster_matches_opening_frame(highlight):
     import io
     import shutil

@@ -342,3 +342,25 @@ def test_actual_fresh_profile_uses_one_welcome_and_no_upgrade_invitation(
         assert social.count() == 0
     finally:
         owner.close()
+
+
+@pytest.mark.parametrize(
+    "previous", ["", "output-settings-presets-v2", "workspace-orientation-v1"]
+)
+def test_release_025_catalog_reaches_upgraders_and_keeps_all_demo_clips(
+    bridge, previous
+):
+    bridge._settings["whats_new_seen"] = previous
+    bridge.checkEditorial(True)
+    slides = bridge.editorialSlides
+    assert len(slides) == 8
+    assert {s["recording"] for s in slides if s.get("recording")} == {
+        "forge-feedback.mp4",
+        "watch-player.mp4",
+        "library-actions.mp4",
+        "captions-player.mp4",
+    }
+    bridge.dismissEditorial(False)
+    assert bridge._settings["whats_new_seen"] == "release-0.2.5-design-v1"
+    bridge.checkEditorial(True)
+    assert not bridge.editorialSlides
