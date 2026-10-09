@@ -143,3 +143,53 @@ def test_loose_imports_move_only_selected_files_repeatedly(tmp_path):
         assert (source / "thumbnail.jpg").read_bytes() == b"unrelated artwork"
         assert source.is_dir() and previous.is_dir()
         previous = destination
+
+
+def test_mixed_import_and_archive_multiselect_preserves_distinct_scopes(tmp_path):
+    from yt_downloader import archive_file_operations as ops
+    from yt_downloader.history import save_history
+
+    source = tmp_path / "source"
+    source.mkdir()
+    loose = source / "loose.mp4"
+    loose.write_bytes(b"import")
+    relative = Path("Channel/playlists/List/Video/video.mp4")
+    archived = source / relative
+    archived.parent.mkdir(parents=True)
+    archived.write_bytes(b"archive")
+    (archived.parent / "metadata.json").write_text('{"id":"archive"}')
+    rows = [
+        {
+            "id": "local-loose",
+            "vodforge_run_id": "import-loose",
+            "vodforge_output_path": str(loose),
+            "vodforge_output_dir": str(source),
+            "vodforge_output_type": "MP4",
+        },
+        {
+            "id": "archive",
+            "vodforge_output_path": str(archived),
+            "vodforge_output_dir": str(archived.parent),
+            "vodforge_archive_root": str(source),
+            "vodforge_output_type": "MP4",
+        },
+    ]
+    history = tmp_path / "history.json"
+    save_history(history, rows)
+    for destination in [tmp_path / "personal/nested", tmp_path / "last"]:
+        destination.mkdir(parents=True)
+        rows = load_history(history)
+        owners = [history_archive_owner(r) for r in rows]
+        plan = ops.plan_move_operation(rows, owners, destination)
+        assert plan.counts == {"ready": 2}
+        result = ops.move_files(
+            plan, rows, destination, history, tmp_path / "file-operations"
+        )
+        assert all(state == "completed" for _, state in result.outcomes)
+        assert (destination / "loose.mp4").read_bytes() == b"import"
+        assert (destination / relative).read_bytes() == b"archive"
+        assert (
+            destination / relative.parent / "metadata.json"
+        ).read_text() == '{"id":"archive"}'
+        assert sorted(p.name for p in destination.iterdir()) == ["Channel", "loose.mp4"]
+        assert source.is_dir()
