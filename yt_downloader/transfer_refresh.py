@@ -140,7 +140,10 @@ class SplitTransferRefresh:
                     "Selected formats changed or are unavailable; refresh stopped without lowering quality. Choose formats in a new run."
                 )
         audio = _format(fresh, self.audio_id)
-        assert audio is not None and self.audio is not None
+        if audio is None or self.audio is None:
+            raise TransferRefreshError(
+                "Selected audio is unavailable; transfer refresh stopped."
+            )
         if not audio.get("url") or audio.get("url") == self.audio.get("url"):
             raise TransferRefreshError(
                 "The source returned the same rejected audio URL; refresh stopped. Check source access and retry later."
