@@ -13,6 +13,7 @@ Item {
     property bool primary: false
     property bool transientMaterial: true
     property bool hoverMaterial: true
+    property bool deepHover: false
     property bool interactive: true
     property bool doubleActivationEnabled: false
     property bool quiet: false
@@ -48,7 +49,7 @@ Item {
         visible: !control.quiet || mouse.pressed || mouse.containsMouse || control.activeFocus
         source: "image://vodforge/button/" + Math.max(1, Math.round(control.width))
                 + "/" + Math.max(1, Math.round(control.height)) + "/"
-                + (!control.transientMaterial || !control.enabled ? "normal" : mouse.pressed ? "pressed" : (control.activeFace ? "hover" : "normal"))
+                + (!control.transientMaterial || !control.enabled ? "normal" : mouse.pressed ? "pressed" : (control.activeFace ? (control.deepHover ? "pressed" : "hover") : "normal"))
                 + "/" + (!control.primary && control.emphasized ? "1" : "0")
                 + (control.primary ? "/outlined" : "")
                 + "/r" + bridge.themeRevision

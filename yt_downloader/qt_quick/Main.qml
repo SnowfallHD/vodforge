@@ -1437,18 +1437,21 @@ Window {
                     spacing: 8
                     StoneButton {
                         objectName: "forgeCompletedPlay"
+                        deepHover: true
                         label: "Play"; primary: true; size: "inline"
                         width: 84
                         onActivated: bridge.openLibraryOwner(forgeCompletedActions.owner)
                     }
                     StoneButton {
                         objectName: "forgeCompletedShowInLibrary"
+                        deepHover: true
                         label: "Show in Library"; size: "inline"
                         width: 142
                         onActivated: { if (bridge.openLibraryDetails(forgeCompletedActions.owner)) bridge.select("Library") }
                     }
                     StoneButton {
                         objectName: "forgeCompletedShowInFolder"
+                        deepHover: true
                         label: "Show in Folder"; size: "inline"
                         width: 136
                         onActivated: bridge.openLibraryFolder(forgeCompletedActions.owner)
