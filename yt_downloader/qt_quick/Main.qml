@@ -3197,10 +3197,21 @@ Window {
             NumberAnimation { duration: bridge.reducedMotion ? 0 : 280; easing.type: Easing.InOutCubic }
         }
         readonly property real baseWidth: Math.min(550, window.width - 40)
-        width: baseWidth + (Math.min(1060, window.width - 40) - baseWidth) * customReveal
-        readonly property real customColumnWidth: (Math.min(1060, window.width - 40) - 32) * 0.48
-        height: Math.min(window.height - 40, 540, 355 + Math.max(0, Math.max(composerManualControls.implicitHeight, composerOptionsContent.implicitHeight) + 16 - 355) * customReveal)
+        readonly property real expandedWidth: Math.min(baseWidth + (baseWidth - 32) / 2 + 16, window.width - 40)
+        width: baseWidth + (expandedWidth - baseWidth) * customReveal
+        readonly property real customColumnWidth: (expandedWidth - 48) / 3
+        height: Math.min(window.height - 40, 540, 387 + Math.max(0, Math.max(composerManualControls.implicitHeight, composerOptionsContent.implicitHeight) + 48 - 387) * customReveal)
         padding: 8
+        topPadding: 40
+        StoneButton {
+            objectName: "composerOptionsCloseButton"
+            x: optionsMenu.availableWidth - width
+            y: -32
+            width: 28; height: 28
+            label: "×"
+            accessibilityLabel: "Close options"
+            onActivated: optionsMenu.close()
+        }
         modal: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         Overlay.modal: Rectangle { color: "#9915151c" }
@@ -3256,7 +3267,6 @@ Window {
                         selected: bridge.exportMode === modelData.value
                         onActivated: {
                             bridge.setExportMode(modelData.value)
-                            if (modelData.value !== "Manual Override") optionsMenu.close()
                         }
                     }
                 }
@@ -3281,7 +3291,7 @@ Window {
                         width: parent.width; height: 40
                         label: modelData
                         selected: bridge.quality === modelData
-                        onActivated: { bridge.setQuality(modelData); optionsMenu.close() }
+                        onActivated: bridge.setQuality(modelData)
                     }
                 }
             }

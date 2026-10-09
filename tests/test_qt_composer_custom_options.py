@@ -36,6 +36,7 @@ def test_custom_expands_left_column_and_keeps_dialog_centered(run_scene):  # noq
     )
     manual = window.findChild(QObject, "composerManualMp4")
     assert manual.isVisible() and manual.width() > 200
+    assert abs(manual.width() - custom.width()) < 1
     assert manual.mapToScene(QPointF()).x() < custom.mapToScene(QPointF()).x()
     assert 0.8 <= popup.property("surfaceOpacity") < 0.9
     assert popup.property("height") <= min(540, window.height() - 39)
@@ -110,3 +111,35 @@ def test_rate_control_hides_unused_field_and_preserves_values(run_scene):  # noq
         assert cbr.isVisible() == (mode == "CBR")
         assert str(bridge.manualValues["manual_crf"]) == "23"
         assert str(bridge.manualValues["manual_video_bitrate"]) == "8000"
+
+
+def test_options_stay_open_until_close_button_clicked(run_scene):
+    _app, bridge, window, _button, _popup = run_scene
+    bridge.setExportMode("Everyday")
+    popup = window.findChild(QObject, "optionsMenu")
+    popup.open()
+    QTest.qWait(300)
+    for label in ("Streaming", "720p HD", "Custom", "1080p Full HD", "Everyday"):
+        button = next(
+            item
+            for item in descendants(popup.property("contentItem"))
+            if item.property("label") == label
+        )
+        point = button.mapToScene(QPointF(button.width() / 2, button.height() / 2))
+        QTest.mouseClick(
+            window,
+            Qt.LeftButton,
+            Qt.NoModifier,
+            QPoint(round(point.x()), round(point.y())),
+        )
+        QTest.qWait(320)
+        assert popup.property("visible"), label
+    assert bridge.exportMode == "Everyday"
+    assert bridge.quality == "1080p Full HD"
+    close = window.findChild(QObject, "composerOptionsCloseButton")
+    point = close.mapToScene(QPointF(close.width() / 2, close.height() / 2))
+    QTest.mouseClick(
+        window, Qt.LeftButton, Qt.NoModifier, QPoint(round(point.x()), round(point.y()))
+    )
+    QTest.qWait(300)
+    assert not popup.property("visible")
