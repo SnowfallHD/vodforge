@@ -62,3 +62,33 @@ def test_custom_dropdown_morphs_and_summary_tracks_rate_control(run_scene):  # n
     selector.setProperty("expanded", False)
     QTest.qWait(300)
     assert selector.property("reveal") == 0
+
+
+def test_custom_single_column_scrolls_with_expanded_choices(run_scene):  # noqa: F811
+    _app, bridge, window, _button, _popup = run_scene
+    bridge.setExportMode("Manual Override")
+    popup = window.findChild(QObject, "optionsMenu")
+    popup.open()
+    manual = window.findChild(QObject, "composerManualMp4")
+    scroll = window.findChild(QObject, "composerManualScroll")
+    rate = manual.findChild(QObject, "manualRateControlSelector")
+    audio = manual.findChild(QObject, "manualAudioCodecSelector")
+    preset = manual.findChild(QObject, "manualPresetSelector")
+    for width, height in ((1400, 900), (820, 560)):
+        window.resize(width, height)
+        rate.setProperty("expanded", True)
+        QTest.qWait(350)
+        assert manual.property("gridColumns") == 1
+        assert abs(rate.mapToScene(QPointF()).x() - audio.mapToScene(QPointF()).x()) < 1
+        assert (
+            rate.mapToScene(QPointF(0, rate.height())).y()
+            < audio.mapToScene(QPointF()).y()
+        )
+        assert popup.property("height") <= window.height() - 39
+        viewport = scroll.property("contentItem")
+        maximum = max(0, viewport.property("contentHeight") - viewport.height())
+        viewport.setProperty("contentY", maximum)
+        QTest.qWait(40)
+        bottom = preset.mapToScene(QPointF(0, preset.height())).y()
+        assert bottom <= scroll.mapToScene(QPointF(0, scroll.height())).y() + 1
+        assert viewport.property("contentWidth") <= viewport.width() + 1

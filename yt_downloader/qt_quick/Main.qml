@@ -3213,6 +3213,7 @@ Window {
             visible: optionsMenu.customReveal > 0
             opacity: optionsMenu.customReveal
             ScrollView {
+                objectName: "composerManualScroll"
                 anchors.fill: parent
                 clip: true
                 ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
@@ -3220,7 +3221,7 @@ Window {
                     id: composerManualControls
                     objectName: "composerManualMp4"
                     width: optionsMenu.customColumnWidth
-                    gridColumns: width >= 400 ? 2 : 1
+                    gridColumns: 1
                     backend: bridge
                     colors: theme
                     headingColor: theme.accent
