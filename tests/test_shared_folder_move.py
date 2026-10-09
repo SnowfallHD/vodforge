@@ -220,14 +220,16 @@ def test_full_27_selection_preview_and_result_account_for_every_entry(
             rows,
             destination=move_context[0],
         )
-        owner.worker.join(5)
+        owner.worker.join(30)
+        assert not owner.worker.is_alive(), "Library worker did not finish"
         owner.poll()
         assert "27 selected:" in owner.status
         assert "3 media ready to move" in owner.status
         assert "22 missing-media folder structures ready to move" in owner.status
         assert "2 already in destination" in owner.status
         assert owner.confirm(rows)
-        owner.worker.join(5)
+        owner.worker.join(30)
+        assert not owner.worker.is_alive(), "Library worker did not finish"
         owner.poll()
         assert owner.phase == "done"
         assert "27 selected:" in owner.status
