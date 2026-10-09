@@ -3,7 +3,6 @@
 import time
 
 import pytest
-
 from PySide6.QtCore import QObject, QPoint, QPointF, Qt
 from PySide6.QtTest import QTest
 
