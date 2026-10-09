@@ -14,6 +14,7 @@ from yt_downloader.settings_store import save_settings
 @pytest.fixture
 def picker_bridge(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
@@ -29,7 +30,7 @@ def test_missing_downloads_picker_starts_at_home_not_nonexistent_destination(
     bridge = picker_bridge
     assert not (Path.home() / "Downloads").exists()
     assert bridge.outputPath == str(Path.home() / "Downloads")
-    assert bridge.outputFolderUrl.toLocalFile() == str(Path.home())
+    assert Path(bridge.outputFolderUrl.toLocalFile()) == Path.home()
 
 
 @pytest.mark.parametrize("name", ["Export folder", "日本語 café", "Literal %20 # name"])
@@ -42,7 +43,7 @@ def test_selected_local_folder_survives_immediate_close_and_restart(
     url = QUrl.fromLocalFile(str(folder))
     bridge.chooseOutputUrl(url)
     assert bridge.outputPath == str(folder)
-    assert bridge.outputFolderUrl.toLocalFile() == str(folder)
+    assert Path(bridge.outputFolderUrl.toLocalFile()) == folder
     bridge.close()  # Flush pending debounce without waiting or changing cwd.
     restored = main.Bridge(None)
     try:
@@ -62,7 +63,7 @@ def test_removed_destination_picker_uses_existing_downloads_without_changing_sav
     folder.mkdir()
     bridge.chooseOutputUrl(QUrl.fromLocalFile(str(folder)))
     folder.rmdir()
-    assert bridge.outputFolderUrl.toLocalFile() == str(downloads)
+    assert Path(bridge.outputFolderUrl.toLocalFile()) == downloads
     assert bridge.outputPath == str(folder)
 
 
@@ -96,7 +97,7 @@ def test_saved_folder_survives_cwd_inside_bundle(picker_bridge, tmp_path, monkey
     bridge.close()
     restored = main.Bridge(None)
     try:
-        assert restored.outputFolderUrl.toLocalFile() == str(folder)
+        assert Path(restored.outputFolderUrl.toLocalFile()) == folder
     finally:
         restored.close()
 
@@ -116,7 +117,7 @@ def test_unavailable_provider_falls_back_without_replacing_destination(
         return original(path)
 
     monkeypatch.setattr(Path, "is_dir", failing)
-    assert bridge.outputFolderUrl.toLocalFile() == str(tmp_path)
+    assert Path(bridge.outputFolderUrl.toLocalFile()) == tmp_path
     assert bridge.outputPath == str(folder)
 
 
@@ -130,7 +131,7 @@ def test_relative_saved_destination_does_not_initialize_app_internal_cwd(
     save_settings(bridge._settings_path, {"output_dir": "relative-output"})
     restored = main.Bridge(None)
     try:
-        assert restored.outputFolderUrl.toLocalFile() == str(tmp_path)
+        assert Path(restored.outputFolderUrl.toLocalFile()) == tmp_path
     finally:
         restored.close()
 
@@ -192,7 +193,7 @@ def test_actual_qml_picker_reopens_at_changed_saved_destination(
             assert QMetaObject.invokeMethod(button, "activated")
             QTest.qWait(40)
             dialog = window.findChild(QObject, "outputFolderDialog")
-            assert dialog.property("currentFolder").toLocalFile() == str(folder)
+            assert Path(dialog.property("currentFolder").toLocalFile()) == folder
             assert QMetaObject.invokeMethod(dialog, "close")
             QTest.qWait(40)
             assert bridge.outputPath == str(folder)

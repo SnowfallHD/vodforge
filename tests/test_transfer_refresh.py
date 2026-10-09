@@ -339,7 +339,7 @@ def test_worker_refresh_keeps_same_session_and_bounded_analysis(tmp_path, monkey
     worker = _worker_test_app()
     job = _worker_test_job(tmp_path, url="https://www.youtube.com/watch?v=abcdefghijk")
     job.use_cookies = True
-    job.cookie_browser = "chrome"
+    job.cookie_browser = "firefox"
     worker._find_ffmpeg = lambda: "synthetic-ffmpeg"
     worker._find_deno = lambda: None
     worker._build_ydl_options = lambda *args, **kwargs: {
