@@ -97,6 +97,7 @@ fi
     --ignore=tests/test_qt_material_visibility.py \
     --ignore=tests/test_qt_interaction_invariants.py \
     --ignore=tests/test_qt_composer_feedback.py \
+    --ignore=tests/test_qt_composer_custom_options.py \
     --ignore=tests/test_qt_dual_captions.py \
     --ignore=tests/test_qt_hidden_scene_focus.py \
     --ignore=tests/test_qt_library_selection_bar_placement.py \
@@ -179,6 +180,7 @@ fi
     tests/test_qt_material_visibility.py \
     tests/test_qt_interaction_invariants.py \
     tests/test_qt_composer_feedback.py \
+    tests/test_qt_composer_custom_options.py \
     tests/test_qt_dual_captions.py \
     tests/test_qt_hidden_scene_focus.py \
     tests/test_qt_library_selection_bar_placement.py \
