@@ -1190,13 +1190,6 @@ Window {
                     }
                 }
                 StoneButton {
-                    objectName: "forgeOptionsButton"
-                    label: "Options"
-                    Layout.preferredWidth: 106
-                    Layout.preferredHeight: 46
-                    onActivated: window.outputFormat === "MP3" ? mp3OptionsPopup.toggleFrom(this) : optionsMenu.toggleFrom(this)
-                }
-                StoneButton {
                     objectName: "forgeDownloadButton"
                     label: bridge.running ? "Queue" : "Download"
                     emphasized: true
@@ -1204,6 +1197,13 @@ Window {
                     Layout.preferredWidth: 131
                     Layout.preferredHeight: 44
                     onActivated: bridge.submit(urlInput.text, window.outputFormat)
+                }
+                StoneButton {
+                    objectName: "forgeOptionsButton"
+                    label: "Options"
+                    Layout.preferredWidth: 106
+                    Layout.preferredHeight: 46
+                    onActivated: window.outputFormat === "MP3" ? mp3OptionsPopup.toggleFrom(this) : optionsMenu.toggleFrom(this)
                 }
             }
 
