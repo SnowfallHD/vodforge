@@ -154,8 +154,7 @@ Item {
                             Layout.minimumWidth: 0
                             Layout.maximumWidth: modelData.current ? 10000 : 140
                             onActivated: browser.appBridge.openLibraryBreadcrumb(modelData.key)
-                            ToolTip.visible: hovered
-                            ToolTip.text: modelData.key
+                            LiquidToolTip { visible: parent.hovered; text: modelData.key }
                         }
                     }
                 }
@@ -175,8 +174,7 @@ Item {
                     onActivated: {
                         if (enabled) browser.appBridge.upLibraryFolder()
                     }
-                    ToolTip.visible: hovered
-                    ToolTip.text: "Parent folder"
+                    LiquidToolTip { visible: parent.hovered; text: "Parent folder" }
                 }
                 Text {
                     objectName: "libraryFolderLocationHeading"

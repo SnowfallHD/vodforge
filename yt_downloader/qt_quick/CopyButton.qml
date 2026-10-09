@@ -19,8 +19,7 @@ StoneButton {
     height: 28
     emphasized: copied
     Accessible.description: copied ? "Copied to clipboard" : tooltipText
-    ToolTip.visible: hovered
-    ToolTip.text: copied ? "Copied" : tooltipText
+    LiquidToolTip { visible: parent.hovered; text: parent.copied ? "Copied" : parent.tooltipText }
     onActivated: {
         if (!appBridge || !owner) return
         copied = factLabel.length ? appBridge.copyLibraryFact(owner, section, factLabel) :

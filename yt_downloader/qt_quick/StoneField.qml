@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 
 Item {
     id: field
@@ -14,6 +15,8 @@ Item {
     Accessible.focused: activeFocus
     Accessible.onPressAction: { if (interactive && enabled) activated() }
     Image {
+        opacity: Window.window && Window.window.glassControlOpacity !== undefined
+                 ? Window.window.glassControlOpacity : 1.0
         property string presentationRole: "control"
         anchors.fill: parent
         // Hidden scenes retain their fields; admit material work only when visible.

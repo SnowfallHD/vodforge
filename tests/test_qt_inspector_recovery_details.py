@@ -40,7 +40,7 @@ def test_retry_chooser_and_tooltips_use_exact_inspector_path():
         'issueFolderDialog.currentFolder = inspector.issueSettings.output_url || ""'
         in source
     )
-    assert 'ToolTip.text: inspector.issueSettings.output_dir || ""' in source
+    assert 'text: inspector.issueSettings.output_dir || ""' in source
     assert "visible: !inspector.recoveryActions.location && !!path" in source
     assert "selectedLocationHover" not in source
     assert (

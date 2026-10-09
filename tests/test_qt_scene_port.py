@@ -5269,7 +5269,9 @@ def test_qt_my_files_selects_video_thumbnail_and_metadata(tmp_path, monkeypatch)
         bridge.close()
 
 
-def test_qt_forge_composer_keeps_bounds_with_download_before_options(tmp_path, monkeypatch):
+def test_qt_forge_composer_keeps_bounds_with_download_before_options(
+    tmp_path, monkeypatch
+):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
@@ -5349,7 +5351,7 @@ def test_qt_forge_composer_keeps_bounds_with_download_before_options(tmp_path, m
         bridge.close()
 
 
-def test_qt_library_category_tiles_follow_tk_column_and_content_branches(
+def test_qt_library_category_tiles_shrink_in_one_row_with_emblems(
     tmp_path, monkeypatch
 ):
     monkeypatch.setenv("HOME", str(tmp_path))
@@ -5362,11 +5364,7 @@ def test_qt_library_category_tiles_follow_tk_column_and_content_branches(
     window = engine.rootObjects()[0]
     try:
         bridge.select("Library")
-        for width, height, columns, compact in (
-            (820, 560, 2, False),
-            (1100, 740, 4, True),
-            (1180, 790, 4, True),
-        ):
+        for width, height in ((820, 560), (1100, 740), (1180, 790), (1500, 900)):
             window.resize(width, height)
             for _ in range(3):
                 app.processEvents()
@@ -5376,15 +5374,22 @@ def test_qt_library_category_tiles_follow_tk_column_and_content_branches(
                 for item in flow.childItems()
                 if item.objectName().startswith("libraryCategoryTile_")
             ]
-            assert flow.property("columns") == columns
+            assert flow.property("columns") == 4
             assert len(cards) == 4
-            assert all(item.property("compact") is compact for item in cards)
-            assert all(round(item.height()) == 106 for item in cards)
+            assert all(
+                item.height() == pytest.approx(106 * min(1, item.width() / 240))
+                for item in cards
+            )
+            for item in cards:
+                emblem = item.findChild(
+                    QObject, item.objectName().replace("Tile", "Emblem")
+                )
+                assert emblem is not None and emblem.isVisible()
             assert all(
                 abs(item.width() - flow.property("cardWidth")) < 1 for item in cards
             )
             assert round(cards[1].x() - cards[0].x() - cards[0].width()) == 14
-            assert round(cards[2].y()) == (120 if columns == 2 else 0)
+            assert all(round(item.y()) == 0 for item in cards)
         assert not window.grabWindow().isNull()
     finally:
         window.close()

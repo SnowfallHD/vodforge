@@ -85,7 +85,7 @@ def _install_frosted_backdrop(window: Any, native: Any, view: Any) -> bool:
         native.setOpaque_(False)
         native.setBackgroundColor_(NSColor.clearColor())
         window._native_frosted_backdrop = frost
-        window.setProperty("backgroundOpacity", 0.42)
+        window.setProperty("backgroundOpacity", 0.72)
         return True
     except Exception:  # noqa: BLE001 - retain an opaque readable window on native failure
         window.setProperty("backgroundOpacity", 1.0)

@@ -63,7 +63,7 @@ def test_admitted_run_preparing_is_not_notice(feedback_scene, tmp_path, monkeypa
     assert window.property("selectedForgeRun")["status"] == selected["status"]
 
 
-def test_notice_morph_retains_composer_geometry_and_retracts(feedback_scene):
+def test_notice_retains_page_geometry_and_retracts(feedback_scene):
     from PySide6.QtCore import QElapsedTimer
     from PySide6.QtTest import QTest
 
@@ -78,6 +78,8 @@ def test_notice_morph_retains_composer_geometry_and_retracts(feedback_scene):
     QTest.qWait(100)
     composer = window.findChild(QObject, "forgeCommandRow")
     original = (composer.x(), composer.y(), composer.width(), composer.height())
+    hero = window.findChild(QObject, "forgeHeroArtwork")
+    hero_origin = hero.mapToItem(window.contentItem(), QPointF(0, 0))
     notice = window.findChild(QObject, "operationNotice")
     # Exercise animation independently of the runner's accessibility preference.
     # Observe actual frames: a fixed sleep can miss the intermediate state when
@@ -91,12 +93,14 @@ def test_notice_morph_retains_composer_geometry_and_retracts(feedback_scene):
     assert notice.property("reveal") == pytest.approx(1)
     assert notice.width() < composer.width()
     assert original == (composer.x(), composer.y(), composer.width(), composer.height())
+    assert hero.mapToItem(window.contentItem(), QPointF(0, 0)) == hero_origin
     frames.clear()
     notice.setProperty("expanded", False)
     wait_for_animation(lambda: not notice.isVisible())
     assert any(0 < value < 1 for value in frames)
     assert not notice.isVisible()
     assert original == (composer.x(), composer.y(), composer.width(), composer.height())
+    assert hero.mapToItem(window.contentItem(), QPointF(0, 0)) == hero_origin
 
 
 def test_notice_reduced_motion_and_long_text_clamp(feedback_scene):
@@ -144,7 +148,7 @@ def test_system_reduced_motion_unavailable_falls_back(monkeypatch):
 
 
 @pytest.mark.parametrize("width,height", [(720, 560), (820, 560), (1100, 800)])
-def test_long_notice_expands_below_stationary_composer(feedback_scene, width, height):
+def test_long_notice_floats_without_moving_page(feedback_scene, width, height):
     from PySide6.QtCore import QElapsedTimer
     from PySide6.QtTest import QTest
 
@@ -161,9 +165,8 @@ def test_long_notice_expands_below_stationary_composer(feedback_scene, width, he
     bridge.operationFeedback.emit("Settings need review before continuing. " * 20)
     QTest.qWait(100)
     hero_y = hero.mapToItem(window.contentItem(), QPointF(0, 0)).y()
-    assert hero_y > original_hero_y
+    assert hero_y == pytest.approx(original_hero_y)
     notice_y = notice.mapToItem(window.contentItem(), QPointF(0, 0)).y()
-    assert hero_y >= notice_y + notice.height()
     assert before == (composer.x(), composer.y(), composer.width(), composer.height())
     assert notice_y + notice.height() <= height - 18
     notice.setProperty("expanded", False)

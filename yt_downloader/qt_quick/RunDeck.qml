@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -89,6 +90,8 @@ Item {
                 Accessible.onPressAction: activated()
                 Image {
                     objectName: "allRunsTriggerFace"
+                    opacity: Window.window && Window.window.glassControlOpacity !== undefined
+                             ? Window.window.glassControlOpacity : 1.0
                     anchors.fill: parent
                     source: "image://vodforge/button/" + Math.max(1, Math.round(parent.width))
                             + "/" + Math.max(1, Math.round(parent.height)) + "/"
@@ -173,8 +176,7 @@ Item {
                 Layout.minimumWidth: 0
                 Layout.fillWidth: true
                 Accessible.name: text
-                ToolTip.visible: truncated && summaryHover.hovered
-                ToolTip.text: text
+                LiquidToolTip { visible: parent.truncated && summaryHover.hovered; text: parent.text }
                 HoverHandler { id: summaryHover }
             }
             Text { text: "Runs process one at a time"; color: theme.muted; font.pixelSize: 12 }
@@ -205,8 +207,7 @@ Item {
                 visible: !!action.label
                 label: action.label || ""
                 Accessible.description: action.description || ""
-                ToolTip.visible: hovered
-                ToolTip.text: action.description || ""
+                LiquidToolTip { visible: parent.hovered; text: parent.action.description || "" }
                 Layout.fillWidth: true
                 onActivated: {
                     deck.appBridge.controlRun(deck.selectedRecord.runId, action.operation)
@@ -219,8 +220,7 @@ Item {
                 visible: !!action.label
                 label: action.label || ""
                 Accessible.description: action.description || ""
-                ToolTip.visible: hovered
-                ToolTip.text: action.description || ""
+                LiquidToolTip { visible: parent.hovered; text: parent.action.description || "" }
                 Layout.fillWidth: true
                 onActivated: {
                     deck.appBridge.controlRun(deck.selectedRecord.runId, action.operation)
@@ -233,8 +233,7 @@ Item {
                 visible: !!action.label
                 label: action.label || ""
                 Accessible.description: action.description || ""
-                ToolTip.visible: hovered
-                ToolTip.text: action.description || ""
+                LiquidToolTip { visible: parent.hovered; text: parent.action.description || "" }
                 Layout.fillWidth: true
                 onActivated: {
                     deck.appBridge.controlRun(deck.selectedRecord.runId, action.operation)

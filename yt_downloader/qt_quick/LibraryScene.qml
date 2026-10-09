@@ -315,7 +315,7 @@ Item {
                     objectName: "libraryCategoryFlow"
                     width: parent.width
                     spacing: 14
-                    readonly property int columns: Math.max(1, Math.min(4, Math.floor((width + spacing) / 200)))
+                    readonly property int columns: 4
                     readonly property real cardWidth: (width - spacing * (columns - 1)) / columns
                     Repeater {
                         model: [
@@ -329,65 +329,60 @@ Item {
                             required property var modelData
                             objectName: "libraryCategoryTile_" + modelData.route
                             width: categoryFlow.cardWidth
-                            height: 106
+                            height: 106 * contentScale
                             label: ""
                             accessibilityLabel: modelData.label + ", " + modelData.count
                             onActivated: scene.appBridge.navigateLibrary(modelData.route)
-                            readonly property bool compact: width < 220
-                            readonly property bool wide: width >= 420
-                            readonly property int iconSize: width >= 255 ? 64 : 48
-                            Rectangle {
-                                visible: !categoryTile.compact
-                                x: 16; y: 21
-                                width: categoryTile.iconSize; height: 64
-                                radius: 9
-                                color: theme.accent_dark
-                                SceneIcon {
-                                    name: categoryTile.modelData.route === "playlists" ? "list" : categoryTile.modelData.route
-                                    tone: theme.icon
-                                    width: 34; height: 34
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    y: 16
+                            readonly property real contentScale: Math.min(1, width / 240)
+                            Item {
+                                width: Math.max(240, categoryTile.width)
+                                height: 106
+                                scale: categoryTile.contentScale
+                                transformOrigin: Item.TopLeft
+                                readonly property int emblemWidth: width >= 255 ? 64 : 48
+                                Rectangle {
+                                    objectName: "libraryCategoryEmblem_" + categoryTile.modelData.route
+                                    x: 16; y: 21
+                                    width: parent.emblemWidth; height: 64
+                                    radius: 9
+                                    color: theme.accent_dark
+                                    SceneIcon {
+                                        name: categoryTile.modelData.route === "playlists" ? "list" : categoryTile.modelData.route
+                                        tone: theme.icon
+                                        width: 34; height: 34
+                                        anchors.centerIn: parent
+                                    }
                                 }
-                            }
-                            Text {
-                                x: categoryTile.compact ? 16 : categoryTile.iconSize + 36
-                                y: categoryTile.compact ? 18 : 24
-                                width: categoryTile.compact ? parent.width - 32 : parent.width - categoryTile.iconSize - 51
-                                text: categoryTile.modelData.label
-                                color: theme.text
-                                font.pixelSize: categoryTile.compact ? 15 : 16
-                                font.bold: true
-                                elide: Text.ElideRight
-                            }
-                            Text {
-                                x: categoryTile.compact ? 16 : categoryTile.iconSize + 36
-                                y: categoryTile.compact ? 48 : 51
-                                width: categoryTile.compact ? parent.width - 32 : parent.width - categoryTile.iconSize - 51
-                                text: categoryTile.compact ? String(categoryTile.modelData.count) :
-                                    categoryTile.modelData.count + " " + categoryTile.modelData.summary +
-                                    (categoryTile.modelData.count === 1 ? "" : "s")
-                                color: categoryTile.compact ? theme.text : theme.muted
-                                font.pixelSize: categoryTile.compact ? 22 : 13
-                                font.bold: categoryTile.compact
-                                elide: Text.ElideRight
-                            }
-                            Text {
-                                visible: !categoryTile.compact
-                                x: categoryTile.wide ? parent.width * 0.55 : categoryTile.iconSize + 36
-                                y: categoryTile.wide ? 45 : 73
-                                width: categoryTile.wide ? parent.width * 0.4 - 20 : parent.width - categoryTile.iconSize - 51
-                                text: categoryTile.modelData.count ? categoryTile.modelData.subtitle : categoryTile.modelData.empty
-                                color: theme.muted
-                                font.pixelSize: 10
-                                elide: Text.ElideRight
-                            }
-                            SceneIcon {
-                                visible: !categoryTile.compact
-                                name: "chevron"
-                                tone: theme.muted
-                                x: parent.width - 29; y: 43
-                                width: 17; height: 17
+                                Text {
+                                    x: parent.emblemWidth + 36; y: 24
+                                    width: parent.width - parent.emblemWidth - 67
+                                    text: categoryTile.modelData.label
+                                    color: theme.text
+                                    font.pixelSize: 16; font.bold: true
+                                    elide: Text.ElideRight
+                                }
+                                Text {
+                                    x: parent.emblemWidth + 36; y: 51
+                                    width: parent.width - parent.emblemWidth - 67
+                                    text: categoryTile.modelData.count + " " + categoryTile.modelData.summary +
+                                          (categoryTile.modelData.count === 1 ? "" : "s")
+                                    color: theme.muted
+                                    font.pixelSize: 13
+                                    elide: Text.ElideRight
+                                }
+                                Text {
+                                    x: parent.emblemWidth + 36; y: 73
+                                    width: parent.width - parent.emblemWidth - 67
+                                    text: categoryTile.modelData.count ? categoryTile.modelData.subtitle : categoryTile.modelData.empty
+                                    color: theme.muted
+                                    font.pixelSize: 10
+                                    elide: Text.ElideRight
+                                }
+                                SceneIcon {
+                                    name: "chevron"; tone: theme.muted
+                                    x: parent.width - 29; y: 43
+                                    width: 17; height: 17
+                                }
                             }
                         }
                     }

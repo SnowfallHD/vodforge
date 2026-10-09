@@ -369,8 +369,7 @@ Column {
                 width: parent.width; height: 40
                 label: inspector.issueSettings.output_dir || "Choose output folder…"
                 accessibilityLabel: "Choose output folder for this retry"
-                ToolTip.visible: hovered && !!inspector.issueSettings.output_dir
-                ToolTip.text: inspector.issueSettings.output_dir || ""
+                LiquidToolTip { visible: parent.hovered && !!inspector.issueSettings.output_dir; text: inspector.issueSettings.output_dir || "" }
                 onActivated: {
                     issueFolderDialog.currentFolder = inspector.issueSettings.output_url || ""
                     issueFolderDialog.open()
@@ -572,8 +571,7 @@ Column {
                         font.pixelSize: 12
                         elide: Text.ElideRight
                         HoverHandler { id: factHover }
-                        ToolTip.visible: factHover.hovered
-                        ToolTip.text: text
+                        LiquidToolTip { visible: factHover.hovered; text: parent.text }
                     }
                 }
                 Text { text: "Saved version"; color: theme.muted; font.pixelSize: 12; font.bold: true }

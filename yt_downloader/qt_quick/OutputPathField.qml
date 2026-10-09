@@ -7,24 +7,21 @@ StoneField {
     property string path: ""
     implicitHeight: 34
     HoverHandler { id: pathHover }
-    ToolTip {
+    LiquidToolTip {
+        id: pathTooltip
         objectName: "outputPathTooltip"
         parent: field
         x: (field.width - width) / 2
         y: field.height + 6
         margins: 16
         padding: 10
-        background: Rectangle {
-            color: theme.surface_2
-            radius: 8
-            border.color: theme.border
-        }
         visible: pathHover.hovered && !!field.path
         text: field.path
         width: Math.min(420, Math.max(80, field.Window.window ? field.Window.window.width - 32 : 420))
         height: Math.min(implicitHeight, field.Window.window ? field.Window.window.height - 32 : 480)
         contentItem: Flickable {
             objectName: "outputPathTooltipViewport"
+            opacity: Math.max(0, (pathTooltip.reveal - 0.65) / 0.35)
             implicitHeight: fullPathText.implicitHeight
             contentHeight: fullPathText.implicitHeight
             contentWidth: width

@@ -83,12 +83,11 @@ Item {
         font.pixelSize: 11
         elide: Text.ElideRight
         HoverHandler { id: chapterTitleHover }
-        ToolTip {
+        LiquidToolTip {
             objectName: "playerChapterTitleTooltip"
             visible: chapterTitleHover.hovered && !!chapterTrack.currentChapter
             text: chapterTrack.currentChapter
             width: Math.min(360, controls.width - 24)
-            background: Rectangle { color: theme.surface_2; radius: 8; border.color: theme.border }
             contentItem: Text {
                 text: chapterTrack.currentChapter
                 color: theme.text
@@ -277,8 +276,7 @@ Item {
             transientMaterial: false
             enabled: controls.originalCaptionsAvailable
             selected: controls.originalCaptionsEnabled
-            ToolTip.visible: hovered
-            ToolTip.text: controls.originalCaptionsAvailable ? "Original-language captions: " + (controls.originalCaptionsEnabled ? "On" : "Off") : (controls.captionStatus || "No identified original captions saved")
+            LiquidToolTip { visible: parent.hovered; text: controls.originalCaptionsAvailable ? "Original-language captions: " + (controls.originalCaptionsEnabled ? "On" : "Off") : (controls.captionStatus || "No identified original captions saved") }
             onActivated: controls.captionsRequested()
         }
         StoneButton {
@@ -290,8 +288,7 @@ Item {
             transientMaterial: false
             enabled: controls.translatedSubtitlesAvailable
             selected: controls.translatedSubtitlesEnabled
-            ToolTip.visible: hovered
-            ToolTip.text: controls.translatedSubtitlesAvailable ? "Translated subtitles" : "No translated subtitles saved in this video"
+            LiquidToolTip { visible: parent.hovered; text: controls.translatedSubtitlesAvailable ? "Translated subtitles" : "No translated subtitles saved in this video" }
             onActivated: controls.subtitlesRequested(this)
         }
         StoneButton {

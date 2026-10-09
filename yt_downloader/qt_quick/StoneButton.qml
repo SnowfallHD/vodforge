@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 
 Item {
     id: control
@@ -8,7 +9,7 @@ Item {
     property string sceneIcon: ""
     property bool selected: false
     property bool emphasized: false
-    // The one main action of a surface: the shared raised/inset face in the accent colour.
+    // Main actions retain the shared contour with an opaque accent outline.
     property bool primary: false
     property bool transientMaterial: true
     property bool hoverMaterial: true
@@ -40,17 +41,29 @@ Item {
     }
 
     Image {
+        opacity: Window.window && Window.window.glassControlOpacity !== undefined
+                 ? Window.window.glassControlOpacity : 1.0
         property string presentationRole: "control"
         anchors.fill: parent
         visible: !control.quiet || mouse.pressed || mouse.containsMouse || control.activeFocus
         source: "image://vodforge/button/" + Math.max(1, Math.round(control.width))
                 + "/" + Math.max(1, Math.round(control.height)) + "/"
                 + (!control.transientMaterial || !control.enabled ? "normal" : mouse.pressed ? "pressed" : (control.activeFace ? "hover" : "normal"))
-                + "/" + (control.emphasized ? "1" : "0") + (control.primary ? "/primary" : "")
+                + "/" + (!control.primary && control.emphasized ? "1" : "0")
                 + "/r" + bridge.themeRevision
         fillMode: Image.Stretch
         cache: true
         smooth: true
+    }
+    Rectangle {
+        objectName: "primaryActionOutline"
+        anchors.fill: parent
+        anchors.margins: 8
+        visible: control.primary
+        color: "transparent"
+        radius: 7
+        border.color: theme.accent
+        border.width: 1
     }
     Row {
         anchors.centerIn: control.quiet ? undefined : parent
@@ -74,7 +87,7 @@ Item {
             width: visible ? buttonMetrics[control.size].iconPixels : 0
             height: width
             name: control.sceneIcon
-            tone: control.primary ? theme.bg : control.emphasized ? theme.action : theme.icon
+            tone: control.primary ? theme.accent : control.emphasized ? theme.action : theme.icon
         }
         Text {
             id: caption
@@ -88,7 +101,7 @@ Item {
                     Math.max(8, (availableWidth - implicitWidth) / 2))
             width: Math.min(implicitWidth, Math.max(0, availableWidth - 2 * sidePadding))
             elide: Text.ElideRight
-            color: control.primary ? theme.bg : control.selected ? theme.accent : control.emphasized ? theme.action :
+            color: control.primary ? theme.accent : control.selected ? theme.accent : control.emphasized ? theme.action :
                    control.quiet && !control.selected && !control.hovered && !control.activeFocus ? theme.muted : theme.text
             font.family: buttonFontFamily
             font.pixelSize: buttonMetrics[control.size].fontPixels

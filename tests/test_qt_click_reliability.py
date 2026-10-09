@@ -223,12 +223,12 @@ def test_primary_action_and_selected_tab_are_visibly_distinct(tmp_path, monkeypa
             )
 
         # The accent colour is drawn by the shared raised/inset material owner.
-        assert "/normal/1/primary/" in face(download).property("source").toString()
+        assert "/normal/0/" in face(download).property("source").toString()
         assert "/primary" not in face(options).property("source").toString()
         point = center(download)
         QTest.mousePress(window, Qt.LeftButton, Qt.NoModifier, point)
         QTest.qWait(30)
-        assert "/pressed/1/primary/" in face(download).property("source").toString()
+        assert "/pressed/0/" in face(download).property("source").toString()
         away = QPoint(5, window.height() - 5)
         QTest.mouseMove(window, away)
         QTest.mouseRelease(window, Qt.LeftButton, Qt.NoModifier, away)
@@ -240,7 +240,9 @@ def test_primary_action_and_selected_tab_are_visibly_distinct(tmp_path, monkeypa
             if item.objectName() == "stoneButtonCaption"
         )
         # Dark text on the filled accent face, never accent text on a dark face.
-        assert caption.property("color") == QColor(THEME["bg"])
+        assert caption.property("color") == QColor(THEME["accent"])
+        outline = download.findChild(QObject, "primaryActionOutline")
+        assert outline is not None and outline.isVisible()
         for selected in ("Library", "Forge"):
             bridge.select(selected)
             QTest.qWait(30)

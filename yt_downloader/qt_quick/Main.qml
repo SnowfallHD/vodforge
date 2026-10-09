@@ -43,6 +43,8 @@ Window {
     title: "VODForge"
     color: Qt.platform.os === "osx" ? "transparent" : theme.bg
     property real backgroundOpacity: 1.0
+    readonly property color glassSurfaceColor: theme.bg
+    readonly property real glassControlOpacity: backgroundOpacity < 1.0 ? 0.64 : 1.0
     // Qt's folder helper retains its directory after the first show. A new
     // public dialog instance applies the current destination on every opening.
     readonly property var outputFolderDialog: outputFolderDialogLoader.item
@@ -784,15 +786,15 @@ Window {
     ComposerNotice {
         id: operationNotice
         objectName: "operationNotice"
-        parent: bridge.selection === "Forge" ? forgeNoticeLayer : window.contentItem
+        parent: window.contentItem
         reducedMotion: bridge.reducedMotion
         availableWidth: Math.max(120, Math.min(440, window.width - 30))
         x: bridge.selection === "Forge"
             ? Math.max(10, Math.min(window.width - width - 10,
-                forgeComposerShell.x + (forgeComposerShell.width - width) / 2))
+                forgeNoticeLayer.x + forgeComposerShell.x + (forgeComposerShell.width - width) / 2))
             : Math.max(10, (window.width - width) / 2)
         y: bridge.selection === "Forge"
-            ? forgeComposerShell.y + forgeComposerShell.height - 1
+            ? forgeNoticeLayer.y + forgeComposerShell.y + forgeComposerShell.height + 6
             : window.height - height - 18
     }
     Timer { id: operationNoticeTimer; interval: 3500; onTriggered: operationNotice.close() }
@@ -896,7 +898,7 @@ Window {
     Rectangle {
         anchors.fill: parent
         visible: window.backgroundOpacity < 1.0
-        color: Qt.rgba(0.12, 0.26, 0.40, 0.22)
+        color: Qt.rgba(0.12, 0.26, 0.40, 0.07)
     }
 
     property int gutter: width < 960 ? 12 : 20
@@ -930,7 +932,8 @@ Window {
         width: forgeCommandRow.width + 16
         height: forgeLocalRow.y + forgeLocalRow.height - forgeCommandRow.y + 16
         radius: 16
-        color: theme.bg
+        color: Qt.rgba(window.glassSurfaceColor.r, window.glassSurfaceColor.g,
+                       window.glassSurfaceColor.b, window.glassControlOpacity)
         border.color: theme.border
     }
 
@@ -1105,8 +1108,7 @@ Window {
                     accessibilityLabel: "VODForge on X"
                     width: 28; height: 40
                     onActivated: bridge.openSocialAccount()
-                    ToolTip.visible: hovered
-                    ToolTip.text: "VODForge on X"
+                    LiquidToolTip { visible: parent.hovered; text: "VODForge on X" }
                 }
                 StoneButton {
                     objectName: "headerSettingsButton"
@@ -1263,8 +1265,7 @@ Window {
             RowLayout {
                 Layout.fillWidth: true
                 Layout.preferredHeight: window.compactHeight ? 70 : 128
-                Layout.topMargin: (window.compactHeight ? 4 : 16)
-                    + operationNotice.reveal * operationNotice.height
+                Layout.topMargin: window.compactHeight ? 4 : 16
                 spacing: window.compactHeight ? 16 : 28
                 Item {
                     objectName: "forgeHeroArtwork"
@@ -1498,8 +1499,7 @@ Window {
                             visible: !!action.label
                             label: action.label || ""
                             Accessible.description: action.description || ""
-                            ToolTip.visible: hovered
-                            ToolTip.text: action.description || ""
+                            LiquidToolTip { visible: parent.hovered; text: parent.action.description || "" }
                             Layout.preferredHeight: 36
                             onActivated: {
                                 if (action.operation === "cancel") bridge.cancel()
@@ -1513,8 +1513,7 @@ Window {
                             visible: !!action.label
                             label: action.label || ""
                             Accessible.description: action.description || ""
-                            ToolTip.visible: hovered
-                            ToolTip.text: action.description || ""
+                            LiquidToolTip { visible: parent.hovered; text: parent.action.description || "" }
                             Layout.preferredHeight: 36
                             onActivated: {
                                 if (action.operation === "cancel") bridge.cancel()
@@ -1528,8 +1527,7 @@ Window {
                             visible: !!action.label
                             label: action.label || ""
                             Accessible.description: action.description || ""
-                            ToolTip.visible: hovered
-                            ToolTip.text: action.description || ""
+                            LiquidToolTip { visible: parent.hovered; text: parent.action.description || "" }
                             Layout.preferredHeight: 36
                             onActivated: {
                                 if (action.operation === "cancel") bridge.cancel()
@@ -2536,11 +2534,10 @@ Window {
                         StoneField {
                             Layout.fillWidth: true; Layout.preferredHeight: 42
                             HoverHandler { id: settingsDestinationHover }
-                            ToolTip.visible: settingsDestinationHover.hovered
-                            ToolTip.text: bridge.outputPath
+                            LiquidToolTip { visible: settingsDestinationHover.hovered; text: bridge.outputPath }
                             Text { anchors.fill: parent; anchors.leftMargin: 14; anchors.rightMargin: 14; verticalAlignment: Text.AlignVCenter; text: bridge.outputPath; color: theme.text; elide: Text.ElideMiddle; font.pixelSize: 14 }
                         }
-                        StoneButton { label: "Browse"; Layout.preferredWidth: 95; Layout.preferredHeight: 40; ToolTip.visible: hovered; ToolTip.text: bridge.outputPath; onActivated: window.openOutputFolderDialog() }
+                        StoneButton { label: "Browse"; Layout.preferredWidth: 95; Layout.preferredHeight: 40; LiquidToolTip { visible: parent.hovered; text: bridge.outputPath } onActivated: window.openOutputFolderDialog() }
                     }
                     Text { text: "BATCH AND PLAYLISTS"; color: theme.accent; font.pixelSize: 13; font.bold: true }
                     RowLayout {
