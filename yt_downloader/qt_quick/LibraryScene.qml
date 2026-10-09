@@ -315,7 +315,8 @@ Item {
                     objectName: "libraryCategoryFlow"
                     width: parent.width
                     spacing: 14
-                    readonly property int columns: 4
+                    readonly property real minimumCardWidth: 240
+                    readonly property int columns: width >= minimumCardWidth * 4 + spacing * 3 ? 4 : 2
                     readonly property real cardWidth: (width - spacing * (columns - 1)) / columns
                     Repeater {
                         model: [

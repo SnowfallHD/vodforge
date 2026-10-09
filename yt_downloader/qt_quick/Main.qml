@@ -898,7 +898,7 @@ Window {
     Rectangle {
         anchors.fill: parent
         visible: window.backgroundOpacity < 1.0
-        color: Qt.rgba(0.12, 0.26, 0.40, 0.07)
+        color: Qt.rgba(0.12, 0.26, 0.40, 0.02)
     }
 
     property int gutter: width < 960 ? 12 : 20

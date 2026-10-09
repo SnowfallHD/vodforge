@@ -5351,7 +5351,7 @@ def test_qt_forge_composer_keeps_bounds_with_download_before_options(
         bridge.close()
 
 
-def test_qt_library_category_tiles_shrink_in_one_row_with_emblems(
+def test_qt_library_category_tiles_keep_readable_size_and_reflow_with_emblems(
     tmp_path, monkeypatch
 ):
     monkeypatch.setenv("HOME", str(tmp_path))
@@ -5374,7 +5374,9 @@ def test_qt_library_category_tiles_shrink_in_one_row_with_emblems(
                 for item in flow.childItems()
                 if item.objectName().startswith("libraryCategoryTile_")
             ]
-            assert flow.property("columns") == 4
+            columns = 4 if flow.width() >= 1002 else 2
+            assert flow.property("columns") == columns
+            assert all(item.width() >= 240 for item in cards)
             assert len(cards) == 4
             assert all(
                 item.height() == pytest.approx(106 * min(1, item.width() / 240))
@@ -5389,7 +5391,9 @@ def test_qt_library_category_tiles_shrink_in_one_row_with_emblems(
                 abs(item.width() - flow.property("cardWidth")) < 1 for item in cards
             )
             assert round(cards[1].x() - cards[0].x() - cards[0].width()) == 14
-            assert all(round(item.y()) == 0 for item in cards)
+            assert all(round(item.y()) == 0 for item in cards[:columns])
+            if columns == 2:
+                assert all(round(item.y()) == 120 for item in cards[2:])
         assert not window.grabWindow().isNull()
     finally:
         window.close()
