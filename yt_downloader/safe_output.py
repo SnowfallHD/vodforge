@@ -4,6 +4,7 @@ import errno
 import os
 import shutil
 import stat
+import time
 import uuid
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -503,7 +504,7 @@ def _commit_windows(
         source.unlink()
 
 
-def commit_file_beneath(
+def _commit_file_beneath_once(
     source: Path,
     root: Path,
     destination: Path,
@@ -570,6 +571,43 @@ def commit_file_beneath(
             replace_existing,
         )
     return destination_absolute
+
+
+def is_windows_sharing_violation(error: BaseException) -> bool:
+    """Only native sharing/lock violations qualify; access denial does not."""
+    return isinstance(error, OSError) and getattr(error, "winerror", None) in {32, 33}
+
+
+def commit_file_beneath(
+    source: Path,
+    root: Path,
+    destination: Path,
+    *,
+    control_check: Callable[[], None] | None = None,
+    replace_existing: bool = True,
+) -> Path:
+    """Retry brief Windows locks with full containment checks on every attempt."""
+    delays = (0.1, 0.2, 0.4, 0.8)
+    for attempt in range(len(delays) + 1):
+        try:
+            return _commit_file_beneath_once(
+                source,
+                root,
+                destination,
+                control_check=control_check,
+                replace_existing=replace_existing,
+            )
+        except OSError as error:
+            if not is_windows_sharing_violation(error) or attempt == len(delays):
+                raise
+            remaining = delays[attempt]
+            while remaining > 0:
+                if control_check is not None:
+                    control_check()
+                pause = min(0.05, remaining)
+                time.sleep(pause)
+                remaining -= pause
+    raise AssertionError("bounded output commit exhausted without returning")
 
 
 def is_regular_file_beneath(root: Path, path: Path) -> bool:

@@ -606,6 +606,32 @@ class ActiveRunStore:
                 paths.append(value)
             self._write_unlocked(payload)
 
+    def retain_completed_staging_dir(self, run_id: str, path: Path) -> None:
+        """Detach validated retained media from abandoned-transaction cleanup."""
+        with self._lock:
+            payload = self._read_unlocked()
+            if payload is None or payload.get("state") != "active":
+                raise RunStateError(
+                    "No active run owns the retained staging directory."
+                )
+            job = payload.get("job")
+            paths = payload.get("staging_dirs")
+            if (
+                not isinstance(job, dict)
+                or job.get("run_id") != run_id
+                or not isinstance(paths, list)
+                or str(path) not in paths
+            ):
+                raise RunStateError(
+                    "The retained staging directory is not owned by this run."
+                )
+            if payload.get("children"):
+                raise RunStateError(
+                    "Live child ownership must settle before retaining media."
+                )
+            paths.remove(str(path))
+            self._write_unlocked(payload)
+
     def child_started(self, pid: int, args: Any) -> None:
         with self._lock:
             payload = self._read_unlocked()
@@ -1118,6 +1144,9 @@ class RunRecoveryOwner:
 
     def staging_started(self, job: DownloadJob, path: Path) -> None:
         self.store.add_staging_dir(job.run_id, path)
+
+    def completed_staging_retained(self, job: DownloadJob, path: Path) -> None:
+        self.store.retain_completed_staging_dir(job.run_id, path)
 
     def metadata_observed(self, job: DownloadJob, info: Mapping[str, Any]) -> None:
         self.store.update_preview(job.run_id, info)

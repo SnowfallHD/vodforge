@@ -281,6 +281,7 @@ from .safe_output import (
     commit_file_beneath,
     create_private_staging_directory,
     is_regular_file_beneath,
+    is_windows_sharing_violation,
     write_file_beneath,
 )
 from .settings_store import (
@@ -6656,6 +6657,8 @@ class DownloadWorkerCore:
         staging_dir: Path | None = None
         primary_intent_active = True
         failure: Exception | None = None
+        validated_media_pending_commit = False
+        preserve_completed_media = False
         try:
             staging_dir = create_staging_dir(job.output_dir)
             recovery_owner = self.__dict__.get("run_recovery")
@@ -6714,6 +6717,7 @@ class DownloadWorkerCore:
                 ),
                 control_check=self._raise_for_download_control_requests,
             )
+            validated_media_pending_commit = bool(validated_staged)
             DownloadWorkerCore._observe_download_operation(
                 self, job, "stage", stage="commit"
             )
@@ -6734,6 +6738,7 @@ class DownloadWorkerCore:
                 ),
                 control_check=self._raise_for_download_control_requests,
             )
+            validated_media_pending_commit = False
             before_sidecars = result.outcome.sidecar_failure_count
             DownloadWorkerCore._observe_download_operation(
                 self, job, "stage", stage="sidecars"
@@ -6783,9 +6788,27 @@ class DownloadWorkerCore:
             self._emit_job_log(job, f"{item.label} complete — {result_label}")
         except Exception as exc:  # noqa: BLE001 - item failure policy classifies provider and control errors
             failure = exc
+            preserve_completed_media = (
+                validated_media_pending_commit and is_windows_sharing_violation(exc)
+            )
+            if preserve_completed_media:
+                recovery_owner = self.__dict__.get("run_recovery")
+                if recovery_owner is not None and staging_dir is not None:
+                    try:
+                        recovery_owner.completed_staging_retained(job, staging_dir)
+                    except RunStateError as state_error:
+                        write_diagnostic(
+                            f"Retained media recovery ownership could not be saved: {state_error}"
+                        )
+                self._emit_job_log(
+                    job,
+                    f"{item.label}: completed media retained at {staging_dir}. "
+                    "Another process still holds the file. Close that program "
+                    "and recover the completed media from this folder.",
+                )
         finally:
             self._active_progress_context = None
-            if staging_dir is not None:
+            if staging_dir is not None and not preserve_completed_media:
                 cleanup_private_staging_directory(staging_dir)
             if primary_intent_active:
                 source.provider_network.end_primary()
