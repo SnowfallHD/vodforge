@@ -41,7 +41,8 @@ Window {
     minimumWidth: 820
     minimumHeight: 560
     title: "VODForge"
-    color: theme.bg
+    color: Qt.platform.os === "osx" ? "transparent" : theme.bg
+    property real backgroundOpacity: 1.0
     // Qt's folder helper retains its directory after the first show. A new
     // public dialog instance applies the current destination on every opening.
     readonly property var outputFolderDialog: outputFolderDialogLoader.item
@@ -883,12 +884,19 @@ Window {
     Image {
         id: artwork
         objectName: "fullCoverArtwork"
+        opacity: window.backgroundOpacity
         property string presentationRole: "surface"
         anchors.fill: parent
         source: "image://vodforge/backdrop/r" + bridge.themeRevision
         fillMode: Image.PreserveAspectCrop
         smooth: true
         cache: true
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        visible: window.backgroundOpacity < 1.0
+        color: Qt.rgba(0.12, 0.26, 0.40, 0.22)
     }
 
     property int gutter: width < 960 ? 12 : 20

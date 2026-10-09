@@ -52,17 +52,6 @@ Item {
         cache: true
         smooth: true
     }
-    Rectangle {
-        // A translucent accent wash marks selection; the material contour shows through.
-        objectName: "stoneButtonSelectedWash"
-        visible: control.selected && !control.quiet && !control.primary
-        anchors.fill: parent
-        anchors.margins: 3
-        radius: 8
-        antialiasing: true
-        color: theme.accent
-        opacity: 0.22
-    }
     Row {
         anchors.centerIn: control.quiet ? undefined : parent
         anchors.left: control.quiet ? parent.left : undefined
@@ -99,11 +88,11 @@ Item {
                     Math.max(8, (availableWidth - implicitWidth) / 2))
             width: Math.min(implicitWidth, Math.max(0, availableWidth - 2 * sidePadding))
             elide: Text.ElideRight
-            color: control.primary ? theme.bg : control.emphasized ? theme.action :
+            color: control.primary ? theme.bg : control.selected ? theme.accent : control.emphasized ? theme.action :
                    control.quiet && !control.selected && !control.hovered && !control.activeFocus ? theme.muted : theme.text
             font.family: buttonFontFamily
             font.pixelSize: buttonMetrics[control.size].fontPixels
-            font.weight: control.primary || (control.quiet && control.selected) ? Font.DemiBold : Font.Normal
+            font.weight: control.primary || control.selected ? Font.DemiBold : Font.Normal
             anchors.verticalCenter: parent.verticalCenter
         }
     }

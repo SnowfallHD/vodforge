@@ -313,20 +313,18 @@ def test_run_without_saved_output_keeps_status_text_and_no_next_actions(
         _close(_bridge, engine, window)
 
 
-def test_primary_face_uses_original_material_in_every_state(monkeypatch):
+def test_primary_face_preserves_original_contour_in_every_state():
     from yt_downloader.ui_chrome import action_button_image
-    from yt_downloader.ui_theme import THEME
 
     for state in ("normal", "hover", "pressed", "disabled", "focus"):
         for density in (1, 2):
             primary = action_button_image(
                 131, 44, accent=False, state=state, density=density, primary=True
             )
-            # A palette substitution in the original button must produce the
-            # exact same pixels: no additional lips, curvature, or shadow tails.
-            with monkeypatch.context() as palette:
-                palette.setitem(THEME, "surface", THEME["accent"])
-                original = action_button_image(
-                    131, 44, accent=False, state=state, density=density
-                )
-            assert primary.tobytes() == original.tobytes(), (state, density)
+            original = action_button_image(
+                131, 44, accent=False, state=state, density=density
+            )
+            # Lighting changes color only, never silhouette or shadow support.
+            assert (
+                primary.getchannel("A").tobytes() == original.getchannel("A").tobytes()
+            )

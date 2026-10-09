@@ -6,6 +6,7 @@ in place; state changes are handled by ttk rather than widget reconstruction.
 
 from __future__ import annotations
 
+import colorsys
 import tkinter as tk
 from collections import OrderedDict
 from contextlib import contextmanager
@@ -135,11 +136,19 @@ def _shift_mask(mask: Image.Image, x: int, y: int) -> Image.Image:
     return shifted
 
 
-def _matte_lighting(mask: Image.Image, *, recessed: bool, depth: float, density: int):
+def _matte_lighting(
+    mask: Image.Image,
+    *,
+    recessed: bool,
+    depth: float,
+    density: int,
+    lighting_colors: tuple[str, str] = ("#000000", "#ffffff"),
+):
     """Shared diffuse material bands; no semantic-color state perimeter."""
+    dark, light = lighting_colors
     for dx, dy, color, strength in (
-        (3, 3, "#000000" if recessed else "#ffffff", 0.70 if recessed else 0.10),
-        (-3, -3, "#ffffff" if recessed else "#000000", 0.13 if recessed else 0.24),
+        (3, 3, dark if recessed else light, 0.70 if recessed else 0.10),
+        (-3, -3, light if recessed else dark, 0.13 if recessed else 0.24),
     ):
         band = ImageChops.subtract(mask, _shift_mask(mask, dx * density, dy * density))
         band = ImageChops.multiply(
@@ -158,6 +167,7 @@ def _matte_rim(
     recessed: bool = False,
     depth: float = 1.0,
     density: int = 1,
+    lighting_colors: tuple[str, str] = ("#000000", "#ffffff"),
 ) -> Image.Image:
     """Diffuse inner light and occlusion, rather than concentric bevel lines."""
     width, height = image.size
@@ -167,7 +177,11 @@ def _matte_rim(
         recessed, depth = True, 0.9
     mask = rounded_alpha(width, height, radius)
     for color, band in _matte_lighting(
-        mask, recessed=recessed, depth=depth, density=density
+        mask,
+        recessed=recessed,
+        depth=depth,
+        density=density,
+        lighting_colors=lighting_colors,
     ):
         image = Image.composite(Image.new("RGBA", image.size, color), image, band)
     image.putalpha(mask)
@@ -187,10 +201,12 @@ def ttk_surface_image(
     stretch: bool = True,
     inset_face: bool = False,
     unit_scale: int = 1,
+    lighting_colors: tuple[str, str] = ("#000000", "#ffffff"),
 ) -> Image.Image:
     """Crisp face, contour contact shadow and separate diffuse ambient light."""
     if edge == THEME["focus"]:
         fill, recessed, depth = THEME["focus_surface"], True, 0.9
+    dark, light = lighting_colors
     density = max(1, int(density))
     width = max(1, width) * density
     height = max(1, height if height is not None else width // density) * density
@@ -212,9 +228,9 @@ def ttk_surface_image(
             ()
             if recessed
             else (
-                (2, 3, 3.2, "#000000", 0.24),
-                (-2, -2, 3.0, "#ffffff", 0.075),
-                (1, 2, 0.65, "#000000", 0.38),
+                (2, 3, 3.2, dark, 0.24),
+                (-2, -2, 3.0, light, 0.075),
+                (1, 2, 0.65, dark, 0.38),
             )
         )
         for dx, dy, blur, color, opacity in shadow_layers:
@@ -233,6 +249,7 @@ def ttk_surface_image(
             recessed=recessed,
             depth=depth if recessed else depth * 0.25,
             density=density,
+            lighting_colors=lighting_colors,
         )
         image.alpha_composite(face, (inset, inset))
         # Rounded finite support, not a rectangular attenuation envelope.
@@ -255,6 +272,7 @@ def ttk_surface_image(
             recessed=recessed,
             depth=depth,
             density=density,
+            lighting_colors=lighting_colors,
         )
     border = 9 * density
     if stretch and width > 2 * border and height > 2 * border:
@@ -418,6 +436,21 @@ def control_material_roles() -> dict[str, tuple[str, str]]:
     }
 
 
+def _theme_button_lighting() -> tuple[str, str]:
+    """Keep both sides of the original bevel in the accent's hue family."""
+    red, green, blue = ImageColor.getrgb(THEME["accent"])
+    hue, lightness, saturation = colorsys.rgb_to_hls(red / 255, green / 255, blue / 255)
+    saturation = min(1.0, max(0.35, saturation * 1.4))
+
+    def shade(level: float) -> str:
+        return "#" + "".join(
+            f"{round(channel * 255):02x}"
+            for channel in colorsys.hls_to_rgb(hue, level, saturation)
+        )
+
+    return shade(max(0.05, lightness * 0.32)), shade(0.88)
+
+
 def action_button_image(
     width: int,
     height: int,
@@ -435,7 +468,8 @@ def action_button_image(
     brighter accent border.  Keyboard focus remains the distinct, high-contrast
     state and pressed retains the deeper version of the same contour.
     """
-    # Primary changes the pigment only; every interaction uses the original material.
+    # Preserve the original contour, with colored lighting for the accent material.
+    lighting = _theme_button_lighting() if primary else ("#000000", "#ffffff")
     fill = (
         THEME["accent"]
         if primary
@@ -444,7 +478,7 @@ def action_button_image(
         else THEME["surface"]
     )
     if state == "pressed":
-        fill = _blend_color(fill, THEME["bg"], 0.18)
+        fill = _blend_color(fill, lighting[0] if primary else THEME["bg"], 0.18)
     if state == "disabled":
         fill = _blend_color(fill, THEME["bg"], 0.65)
     edge = (
@@ -463,6 +497,7 @@ def action_button_image(
         stretch=False,
         inset_face=True,
         unit_scale=unit_scale,
+        lighting_colors=lighting,
     )
 
 
