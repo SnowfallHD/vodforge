@@ -3067,3 +3067,7 @@ identity/staging checks before the first signal remain intact. The original
 cleanup remains supplemental. Focused tests cover transient refusal, persistent
 refusal without escalation, and readable live-process escalation followed by exit.
 Prior failed receipts and the phase trace remain outside the worktree.
+
+### Headless lifecycle baseline — 2026-10-09
+
+The 945d025 100-job soak completed all jobs with no worker/child retention but failed the release contract with a persistent descriptor delta of one. A separate lsof diagnostic identified the process-owned diagnostics/latest.log opened during the first job. Normal startup initializes this sink before work; the headless sandbox reset it without initializing it. Sandbox setup now writes its startup diagnostic before resource baselines. No workload warm-up is discarded and no descriptor is subtracted from metrics. Existing post-job lifecycle tests missed the lazy process-owned resource. A new regression fails before the setup correction and verifies stable sink ownership across writes; a separate gate test keeps a genuine +1 descriptor delta failing. Original receipts remain valid failures; successor 100-job qualification is required. This does not establish native interaction acceptance or full DEEP success.

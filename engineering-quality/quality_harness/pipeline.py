@@ -65,6 +65,9 @@ def configure_production_sandbox(run_root: Path) -> dict[str, str]:
     app_module.BATCH_FAILURE_REPORT_PATH = diagnostics / "batch-url-failures.txt"
     app_module.reset_diagnostics_log()
     app_module.prepare_activity_log(app_module.ACTIVITY_LOG_PATH)
+    # Match normal startup: the process-owned diagnostic sink must exist before
+    # resource baselines, rather than appearing as a leaked first-job handle.
+    app_module.write_diagnostic("quality harness production sandbox initialized")
     return {
         "diagnostics": str(app_module.DIAGNOSTICS_LOG_PATH),
         "activity": str(app_module.ACTIVITY_LOG_PATH),
