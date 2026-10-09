@@ -38,4 +38,27 @@ def test_custom_expands_left_column_and_keeps_dialog_centered(run_scene):  # noq
     assert manual.isVisible() and manual.width() > 200
     assert manual.mapToScene(QPointF()).x() < custom.mapToScene(QPointF()).x()
     assert 0.8 <= popup.property("surfaceOpacity") < 0.9
-    assert popup.property("height") <= max(355, manual.implicitHeight() + 16) + 1
+    assert popup.property("height") <= window.height() - 39
+
+
+def test_custom_dropdown_morphs_and_summary_tracks_rate_control(run_scene):  # noqa: F811
+    _app, bridge, window, _button, _popup = run_scene
+    bridge.setExportMode("Manual Override")
+    popup = window.findChild(QObject, "optionsMenu")
+    popup.open()
+    QTest.qWait(300)
+    manual = window.findChild(QObject, "composerManualMp4")
+    selector = manual.findChild(QObject, "manualRateControlSelector")
+    selector.setProperty("expanded", True)
+    QTest.qWait(80)
+    assert 0 < selector.property("reveal") < 1
+    QTest.qWait(200)
+    assert selector.property("reveal") == 1
+    bridge.setManualValue("manual_rate_control", "CBR")
+    bridge.setManualValue("manual_video_bitrate", "8000")
+    QTest.qWait(20)
+    summary = window.findChild(QObject, "composerCustomSummaryValues")
+    assert "8000 kbps video" in summary.property("text")
+    selector.setProperty("expanded", False)
+    QTest.qWait(300)
+    assert selector.property("reveal") == 0

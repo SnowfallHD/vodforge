@@ -3199,7 +3199,7 @@ Window {
         readonly property real baseWidth: Math.min(550, window.width - 40)
         width: baseWidth + (Math.min(1060, window.width - 40) - baseWidth) * customReveal
         readonly property real customColumnWidth: (Math.min(1060, window.width - 40) - 32) * 0.48
-        height: Math.min(window.height - 40, 355 + Math.max(0, composerManualControls.implicitHeight + 16 - 355) * customReveal)
+        height: Math.min(window.height - 40, 355 + Math.max(0, Math.max(composerManualControls.implicitHeight, composerOptionsContent.implicitHeight) + 16 - 355) * customReveal)
         padding: 8
         modal: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
@@ -3235,6 +3235,7 @@ Window {
             clip: true
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
             Column {
+                id: composerOptionsContent
                 width: composerOptionsScroll.availableWidth
                 spacing: 12
         Row {
@@ -3284,7 +3285,44 @@ Window {
                 }
             }
         }
-
+                Column {
+                    objectName: "composerCustomSummary"
+                    visible: optionsMenu.customReveal > 0
+                    opacity: optionsMenu.customReveal
+                    width: parent.width
+                    spacing: 10
+                    Rectangle { width: parent.width; height: 1; color: theme.border }
+                    Text { text: "YOUR CUSTOM OUTPUT"; color: theme.accent; font.pixelSize: 12; font.bold: true; font.letterSpacing: 1 }
+                    Text {
+                        objectName: "composerCustomSummaryValues"
+                        width: parent.width
+                        wrapMode: Text.WordWrap
+                        color: theme.text
+                        font.pixelSize: 14
+                        text: bridge.quality + "  •  " + (bridge.manualValues.manual_rate_control === "Quality"
+                            ? "CRF " + bridge.manualValues.manual_crf
+                            : bridge.manualValues.manual_video_bitrate + " kbps video") + "\n"
+                            + bridge.manualValues.manual_audio_codec + "  •  " + bridge.manualValues.manual_audio_bitrate
+                            + " kbps  •  " + bridge.manualValues.manual_channels + "\n"
+                            + "Encoding speed: " + bridge.manualValues.manual_preset
+                    }
+                    Text {
+                        width: parent.width
+                        wrapMode: Text.WordWrap
+                        color: theme.muted
+                        font.pixelSize: 13
+                        text: bridge.manualValues.manual_rate_control === "Quality"
+                            ? "Quality adjusts the bitrate to the picture. A lower CRF keeps more detail and usually makes a larger file."
+                            : "CBR targets your chosen video bitrate. Raise it to preserve more detail, or lower it for smaller files."
+                    }
+                    Text {
+                        width: parent.width
+                        wrapMode: Text.WordWrap
+                        color: theme.muted
+                        font.pixelSize: 12
+                        text: "Resolution is limited by the source. Slower encoding can improve compression but takes longer."
+                    }
+                }
             }
         }
     }
