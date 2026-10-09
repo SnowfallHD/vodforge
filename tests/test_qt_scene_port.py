@@ -5269,7 +5269,7 @@ def test_qt_my_files_selects_video_thumbnail_and_metadata(tmp_path, monkeypatch)
         bridge.close()
 
 
-def test_qt_forge_composer_matches_tk_control_bounds(tmp_path, monkeypatch):
+def test_qt_forge_composer_keeps_bounds_with_download_before_options(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
@@ -5312,13 +5312,13 @@ def test_qt_forge_composer_matches_tk_control_bounds(tmp_path, monkeypatch):
             )
             assert bounds("forgeUrlField") == (command_x, command_y, field_width, 48)
             assert bounds("forgeOptionsButton") == (
-                command_x + field_width + 12,
+                command_x + field_width + 151,
                 command_y + 1,
                 106,
                 46,
             )
             assert bounds("forgeDownloadButton") == (
-                command_x + field_width + 126,
+                command_x + field_width + 12,
                 command_y + 2,
                 131,
                 44,
