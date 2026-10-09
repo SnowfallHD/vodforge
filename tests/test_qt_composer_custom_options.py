@@ -60,10 +60,20 @@ def test_custom_dropdown_morphs_and_summary_tracks_rate_control(run_scene):  # n
     QTest.qWait(300)
     manual = window.findChild(QObject, "composerManualMp4")
     selector = manual.findChild(QObject, "manualRateControlSelector")
-    selector.setProperty("expanded", True)
-    QTest.qWait(80)
-    assert 0 < selector.property("reveal") < 1
-    wait_for_reveal(selector, 1)
+    # Record each transition value instead of sampling after a wall-clock wait:
+    # a loaded CI event loop can return from qWait after the animation ends.
+    reveal_values = []
+
+    def record_reveal():
+        reveal_values.append(selector.property("reveal"))
+
+    selector.revealChanged.connect(record_reveal)
+    try:
+        selector.setProperty("expanded", True)
+        wait_for_reveal(selector, 1)
+    finally:
+        selector.revealChanged.disconnect(record_reveal)
+    assert any(0 < value < 1 for value in reveal_values), reveal_values
     bridge.setManualValue("manual_rate_control", "CBR")
     bridge.setManualValue("manual_video_bitrate", "8000")
     QTest.qWait(20)

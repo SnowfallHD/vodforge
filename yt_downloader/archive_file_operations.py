@@ -779,7 +779,7 @@ def plan_move_operation(
             continue
         if _loose_import(record_by_owner[item.owner]):
             leaf = destination / item.source.name
-            key = _ownership_key(ArchivePath.parse(str(leaf)))
+            file_key = _ownership_key(ArchivePath.parse(str(leaf)))
             peers = [
                 other
                 for other in plan.items
@@ -795,9 +795,9 @@ def plan_move_operation(
                         )
                     )
                 )
-                == key
+                == file_key
             ]
-            claimed = key in file_claims
+            claimed = file_key in file_claims
             if destination == item.source.parent:
                 items.append(
                     replace(item, state="already_in_target", reason="already_in_target")
@@ -806,7 +806,7 @@ def plan_move_operation(
                 claimed
                 or len(peers) != 1
                 or any(
-                    _ownership_key(ArchivePath.parse(str(path))) == key
+                    _ownership_key(ArchivePath.parse(str(path))) == file_key
                     for path in destination.iterdir()
                 )
             ):
