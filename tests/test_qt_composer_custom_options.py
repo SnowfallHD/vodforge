@@ -2,6 +2,8 @@
 
 import time
 
+import pytest
+
 from PySide6.QtCore import QObject, QPoint, QPointF, Qt
 from PySide6.QtTest import QTest
 
@@ -52,8 +54,19 @@ def test_custom_expands_left_column_and_keeps_dialog_centered(run_scene):  # noq
     assert popup.property("height") <= min(540, window.height() - 39)
 
 
-def test_custom_dropdown_morphs_and_summary_tracks_rate_control(run_scene):  # noqa: F811
-    _app, bridge, window, _button, _popup = run_scene
+@pytest.fixture
+def motion_scene(monkeypatch, request):
+    from yt_downloader.qt_quick import main
+
+    reduced_motion = request.param
+    monkeypatch.setattr(main, "_system_reduced_motion", lambda: reduced_motion)
+    return request.getfixturevalue("run_scene"), reduced_motion
+
+
+@pytest.mark.parametrize("motion_scene", [False, True], indirect=True)
+def test_custom_dropdown_morphs_and_summary_tracks_rate_control(motion_scene):
+    scene, reduced_motion = motion_scene
+    _app, bridge, window, _button, _popup = scene
     bridge.setExportMode("Manual Override")
     popup = window.findChild(QObject, "optionsMenu")
     popup.open()
@@ -73,7 +86,10 @@ def test_custom_dropdown_morphs_and_summary_tracks_rate_control(run_scene):  # n
         wait_for_reveal(selector, 1)
     finally:
         selector.revealChanged.disconnect(record_reveal)
-    assert any(0 < value < 1 for value in reveal_values), reveal_values
+    if reduced_motion:
+        assert reveal_values == [1.0]
+    else:
+        assert any(0 < value < 1 for value in reveal_values), reveal_values
     bridge.setManualValue("manual_rate_control", "CBR")
     bridge.setManualValue("manual_video_bitrate", "8000")
     QTest.qWait(20)
