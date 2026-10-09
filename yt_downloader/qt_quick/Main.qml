@@ -7,6 +7,32 @@ import QtMultimedia
 Window {
     id: window
     RunStatusTone { id: runStatusTone }
+    readonly property bool menuNavigationAllowed: !analyticsPopup.visible && !editorialPopup.visible &&
+            !socialInvitationPopup.visible && !helpMenu.visible && !supportPopup.visible && !supportReasonMenu.visible &&
+            !supportDiagnostics.visible && !libraryItemPopup.visible &&
+            !fileActionPopup.visible && !libraryRemovalPopup.visible &&
+            !collectionPopup.visible && !collectionTargetPopup.visible &&
+            !annotationPopup.visible && !mp3OptionsPopup.visible && !settingsPopup.visible &&
+            !updatePopup.visible && !accessPopup.visible &&
+            !localConversionPopup.visible && !localProfilePopup.visible &&
+            !formatMenu.visible && !optionsMenu.visible &&
+            !settingsQualityMenu.visible && !settingsOutputModeMenu.visible && !translatedSubtitleMenu.visible &&
+            !(outputFolderDialog && outputFolderDialog.visible) && !urlListDialog.visible
+    // Native panels use the application's standard editing menu selectors.
+    Loader {
+        active: Qt.platform.os === "osx"
+        sourceComponent: Component {
+            ApplicationMenuBar {
+                appWindow: window
+                controller: bridge
+                navigationAllowed: window.menuNavigationAllowed
+                onOutputFolderRequested: window.openOutputFolderDialog()
+                onUrlListRequested: urlListDialog.open()
+                onSettingsRequested: settingsPopup.open()
+            }
+        }
+    }
+
     visible: true
     width: 1100
     height: 740
