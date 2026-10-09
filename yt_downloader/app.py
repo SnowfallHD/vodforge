@@ -297,6 +297,7 @@ from .telemetry_features import (
 )
 from .thumbnail_network import ThumbnailUrlPolicy, download_bounded_url_bytes
 from .thumbnail_state import advance_thumbnail_item
+from .transfer_refresh import SplitTransferRefresh, TransferRefreshError
 from .ui_button_contract import ProductButton, button_metrics
 from .ui_chrome import brand_mark, brand_name
 from .ui_context_menu import ContextMenu
@@ -3724,6 +3725,65 @@ def _download_preflight_result_step(
         return downloaded_info, snapshot_ytdlp_session_cookies(ydl)
 
 
+def _download_with_audio_url_refresh(
+    ytdlp_module: Any,
+    options: dict[str, Any],
+    info: dict[str, Any],
+    session_cookies: tuple[Any, ...],
+    guard: SplitTransferRefresh | None,
+    *,
+    refresh: Callable[[], tuple[dict[str, Any] | None, tuple[Any, ...]]],
+    control_check: Callable[[], None],
+    emit_log: Callable[[str], None],
+) -> tuple[Any, tuple[Any, ...]]:
+    transfer_options = dict(options)
+    if guard is not None:
+        transfer_options["progress_hooks"] = [
+            guard.observe,
+            *(options.get("progress_hooks") or []),
+        ]
+    try:
+        return _download_preflight_result_step(
+            ytdlp_module,
+            transfer_options,
+            info,
+            session_cookies,
+            control_check=control_check,
+        )
+    except Exception as exc:
+        if guard is None or not guard.eligible(
+            transient_network_error_status(exc), _network_exception_chain(exc)
+        ):
+            raise
+        control_check()
+        emit_log(
+            "Audio transfer was rejected after video completed; refreshing source metadata once with the same access settings."
+        )
+        fresh, refreshed_cookies = refresh()
+        control_check()
+        fresh = guard.checked_refresh(fresh)
+        # Re-select exactly the original streams. /best is not a transfer-failure
+        # fallback and must not silently reduce quality during recovery.
+        transfer_options["format"] = f"{guard.video_id}+{guard.audio_id}"
+        emit_log(
+            "Fresh audio URL available for the same selected formats; resuming the staged transfer once without redownloading completed video."
+        )
+        try:
+            return _download_preflight_result_step(
+                ytdlp_module,
+                transfer_options,
+                fresh,
+                refreshed_cookies,
+                control_check=control_check,
+            )
+        except Exception as retry_error:
+            if transient_network_error_status(retry_error) == 403:
+                raise TransferRefreshError(
+                    "Audio access was rejected again after one metadata refresh; stopped without changing access settings or lowering quality."
+                ) from retry_error
+            raise
+
+
 def run_cancellable_process_capture(
     command: list[str],
     *,
@@ -6388,13 +6448,58 @@ class DownloadWorkerCore:
         self.events.put(("status", f"{item.label} — downloading"))
         self._emit_job_log(job, f"{item.label}: downloading")
         download_started = time.monotonic()
+        guard = None
+        if (
+            job.output_type == OutputType.MP4
+            and isinstance(plan, ExportPlan)
+            and plan.video_format_id
+            and plan.audio_format_id
+            and "subtitleslangs" not in options
+        ):
+            guard = SplitTransferRefresh(
+                transfer_info, plan.video_format_id, plan.audio_format_id, staging_dir
+            )
+
+        def refresh_transfer_metadata():
+            refresh_options = _build_item_preflight_options(
+                job,
+                cookie_source_loaded=True,
+                ffmpeg=ffmpeg,
+                deno_path=self._find_deno(),
+            )
+            step = partial(
+                _analyze_source_formats_step,
+                ytdlp_module,
+                refresh_options,
+                tuple(analyzed_item.session_cookies),
+                item.video_url,
+                item.label,
+                control_check=control_check,
+                emit_log=partial(self._emit_job_log, job),
+            )
+
+            def cancelled():
+                control_check()
+                return False
+
+            return run_cancellable_blocking_step(
+                step,
+                cancelled,
+                timeout_seconds=ANALYSIS_TIMEOUT_SECONDS,
+                poll_seconds=ANALYSIS_POLL_SECONDS,
+                label=f"{item.label} transfer metadata refresh",
+            )
+
         download_step = partial(
-            _download_preflight_result_step,
+            _download_with_audio_url_refresh,
             ytdlp_module,
             options,
             transfer_info,
             tuple(analyzed_item.session_cookies),
+            guard,
+            refresh=refresh_transfer_metadata,
             control_check=control_check,
+            emit_log=partial(self._emit_job_log, job),
         )
         info, session_cookies = provider_network.run_primary(download_step)
         write_diagnostic(
