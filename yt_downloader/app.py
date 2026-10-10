@@ -5776,6 +5776,8 @@ class DownloadWorkerCore:
                     f"{label} transcode elapsed_seconds={time.monotonic() - transcode_started:.3f}"
                 )
                 self._emit_job_log(job, f"{label}: transcoded staged VODForge output")
+        elif job.output_type == OutputType.ORIGINAL:
+            self.events.put(("status", f"{label} — original audio extracted"))
         else:
             self.events.put(("status", f"{label} — MP3 encoded"))
 
@@ -5880,10 +5882,16 @@ class DownloadWorkerCore:
             self._emit_job_log(job, f"{label}: packaged media file {packaged_path}")
         ffprobe_data = validated_staged[0][2]
         if isinstance(plan, AudioExportPlan):
-            self._emit_job_log(
-                job,
-                f"{label}: created {plan.audio_bitrate_kbps} kbps MP3 output {primary_output.name}",
-            )
+            if job.output_type == OutputType.ORIGINAL:
+                self._emit_job_log(
+                    job,
+                    f"{label}: saved original audio without re-encoding {primary_output.name}",
+                )
+            else:
+                self._emit_job_log(
+                    job,
+                    f"{label}: created {plan.audio_bitrate_kbps} kbps MP3 output {primary_output.name}",
+                )
         progress_callback(1.0)
         self._emit_job_log(
             job,

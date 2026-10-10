@@ -246,3 +246,102 @@ def test_reuse_validation_rejection_is_bounded_and_observer_cannot_change_result
         )
         is None
     )
+
+
+@pytest.mark.parametrize("phase", ["validation", "commit"])
+@pytest.mark.parametrize(
+    "output_type,source_codec,extension",
+    [
+        (OutputType.ORIGINAL, "mp4a.40.2", ".m4a"),
+        (OutputType.ORIGINAL, "opus", ".opus"),
+        (OutputType.MP3, "opus", ".mp3"),
+    ],
+)
+def test_audio_activity_follows_selected_output_type(
+    tmp_path, monkeypatch, phase, output_type, source_codec, extension
+):
+    import queue
+
+    from tests.test_state_authority import make_job
+    from yt_downloader import app
+    from yt_downloader.export_planning import build_mp3_export_plan
+    from yt_downloader.models import Mp3ExportSettings
+
+    info = {
+        "id": "audio-fixture",
+        "title": "Audio fixture",
+        "duration": 6,
+        "formats": [audio_format(source_codec, "audio", 200)],
+    }
+    plan = (
+        build_original_audio_plan(info)
+        if output_type is OutputType.ORIGINAL
+        else build_mp3_export_plan(info, Mp3ExportSettings(bitrate_kbps=320))
+    )
+    job = make_job(tmp_path / "outputs")
+    job.output_type = output_type
+    worker = app.DownloadWorkerCore()
+    worker.events = queue.Queue()
+    worker._find_ffprobe = lambda: "trusted-probe"
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    staged = staging / ("audio-fixture" + extension)
+    staged.write_bytes(b"already-produced audio fixture")
+    probe = original_probe(
+        "mp3"
+        if output_type is OutputType.MP3
+        else "aac"
+        if source_codec == "mp4a.40.2"
+        else "opus"
+    )
+    monkeypatch.setattr(
+        app, "validate_output_artifact", lambda *_args, **_kwargs: probe
+    )
+
+    if phase == "validation":
+        worker._transcode_and_validate_staged_media(
+            job,
+            info,
+            plan,
+            [(info, staged)],
+            "trusted-ffmpeg",
+            label="Audio fixture",
+            progress_callback=lambda _: None,
+            control_check=lambda: None,
+        )
+        status = [payload for kind, payload in worker.events.queue if kind == "status"]
+        assert status[0] == (
+            "Audio fixture — original audio extracted"
+            if output_type is OutputType.ORIGINAL
+            else "Audio fixture — MP3 encoded"
+        )
+    else:
+        committed = worker._commit_validated_staged_media(
+            job,
+            info,
+            plan,
+            staging,
+            extension,
+            [(info, staged, probe)],
+            label="Audio fixture",
+            all_output_dirs=[],
+            progress_callback=lambda _: None,
+            control_check=lambda: None,
+        )
+        assert (
+            committed.primary_output.read_bytes() == b"already-produced audio fixture"
+        )
+        lines = [
+            payload["line"]
+            for kind, payload in worker.events.queue
+            if kind == "job_log"
+        ]
+        name = committed.primary_output.name
+        if output_type is OutputType.ORIGINAL:
+            assert (
+                f"Audio fixture: saved original audio without re-encoding {name}"
+                in lines
+            )
+            assert not any("MP3 output" in line or "kbps" in line for line in lines)
+        else:
+            assert f"Audio fixture: created 320 kbps MP3 output {name}" in lines
