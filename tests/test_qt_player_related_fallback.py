@@ -3,7 +3,7 @@
 from dataclasses import replace
 
 import pytest
-from PySide6.QtCore import QCoreApplication, QEvent, QObject
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, QPointF
 from PySide6.QtQml import QQmlExpression
 from PySide6.QtTest import QTest
 
@@ -70,9 +70,30 @@ def test_player_local_fallback_is_owner_safe_and_balanced(
             else "playerRelatedCompactAddMedia",
         )
         assert add.property("visible") is (others == 0)
-        assert window.findChild(QObject, "playerRecentRail").property("visible") is (
-            others == 0
-        )
+        recent = window.findChild(QObject, "playerRecentRail")
+        assert recent.property("visible") is True
+        # Recommendation fallback must not rename or suppress the independent
+        # chronological rail. Check rendered text and geometry, including the
+        # empty state and each supported window size.
+        side_headings = [
+            child.property("text")
+            for child in side.childItems()
+            if child.property("text") is not None
+        ]
+        recent_headings = [
+            child.property("text")
+            for child in recent.childItems()
+            if child.property("text") is not None
+        ]
+        assert side_headings == ["MORE TO WATCH"]
+        assert recent_headings == ["RECENTLY ADDED"]
+        side_origin = side.mapToScene(QPointF(0, 0))
+        recent_origin = recent.mapToScene(QPointF(0, 0))
+        stage_origin = stage.mapToScene(QPointF(0, 0))
+        assert side_origin.x() > stage_origin.x() + stage.width()
+        assert recent_origin.y() > stage_origin.y() + stage.height()
+        populated = recent.findChild(QObject, "playerRecentRepeater")
+        assert populated.property("count") == others
         empty = window.findChild(QObject, "playerRelatedEmptyState")
         assert empty.property("visible") is (others == 0)
         if others == 0:

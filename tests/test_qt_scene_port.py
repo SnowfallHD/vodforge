@@ -1780,6 +1780,17 @@ def test_qt_player_related_side_and_recent_artwork_rail_follow_later_design(
         side = window.findChild(QObject, "playerRelatedSide")
         compact = window.findChild(QObject, "playerRelatedCompact")
         recent = window.findChild(QObject, "playerRecentRail")
+        assert [
+            child.property("text")
+            for child in side.childItems()
+            if child.property("text") is not None
+        ] == ["MORE TO WATCH"]
+        assert [
+            child.property("text")
+            for child in recent.childItems()
+            if child.property("text") is not None
+        ] == ["RECENTLY ADDED"]
+        assert recent.findChild(QObject, "playerRecentRepeater").property("count") == 2
         stage = window.findChild(QObject, "playerMediaStage")
         stage_column = window.findChild(QObject, "playerStageColumn")
         assert window.findChild(QObject, "watchMoments") is None

@@ -3372,3 +3372,31 @@ Three local telemetry domains qualify: exact 263 backend case-name multiplicitie
 
 
 Final eligible DEEP public generic-source boundary independently qualifies: actual W3C response was HTTP403 at source analysis, with no transfer, media, output bytes or staging directory; the same run owns ordered preflight/dispatch/analysis/return and child/observer cleanup. All 46 altered actual receipts reject; 47 focused oracle cases pass. This is clean explicit refusal, not successful public-media decoding or a provider-support promise. Forty-nine of the fifty continuation domains qualify; mapping gaps are 4 (NORMAL 2, DEEP 2), all from the native surface domain. Six native Mac acceptance rows remain held for unanswered alternate-input approval. Source/offscreen evidence is not substituted. Separate full signed Mac/Windows/preview-D1, consent-launch, Update/Repair and exact source/artifact integration gates remain open. No publication or product changes.
+
+
+### Player rail identity survives recommendation fallback — 2026-10-10
+
+The signed Windows player showed Recently added both beside and below the media.
+When local recommendations were unavailable, its fallback also suppressed the
+bottom chronological rail as soon as another saved item existed. Recommendation
+source selection had taken responsibility for the identities of two independent
+rendered sections. PlayerScene now retains More to watch beside the stage and
+Recently added below, with recent cards and placeholders based on that bottom
+rail's own inventory. Its existing owner filtering and duplicate refusal remain.
+
+The existing fallback test verified deduplicated owners, aspect ratio and side
+width, but explicitly expected the chronological rail to disappear. The standard
+player layout test used populated recommendations and did not check headings.
+The expanded fallback matrix now independently checks rendered headings, relative
+geometry and actual recent-card counts with zero, one and three other saved items
+at four supported sizes. The standard recommendation case checks the same section
+identities and card count; the adjacent Watch home/group artwork matrix checks
+complete cards across three widths and three artwork aspects. The new heading
+assertion failed against the prior QML before the runtime change. These source
+checks do not replace native final-candidate interaction or playback evidence.
+
+The broader invariant is that a section's identity and visibility derive from its
+own purpose and inventory, even when another section borrows the same data as a
+fallback. This change stays in PlayerScene's render boundary; coupling is unchanged,
+DownloaderApp/app.py gains no responsibility, and no new architectural debt is
+deferred. Existing native interaction and release qualification gaps remain open.

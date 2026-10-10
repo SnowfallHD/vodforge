@@ -540,7 +540,7 @@ Item {
                     Layout.alignment: Qt.AlignTop
                     spacing: 9
                     Text {
-                        text: scene.relatedFallback ? "RECENTLY ADDED" : scene.projection.queued ? "UP NEXT" : "MORE TO WATCH"
+                        text: "MORE TO WATCH"
                         color: theme.muted
                         font.pixelSize: 12
                         font.bold: true
@@ -649,7 +649,7 @@ Item {
 
             Column {
                 objectName: "playerRecentRail"
-                visible: (!scene.relatedFallback && scene.recentCards.length > 0) || scene.relatedCards.length === 0
+                visible: scene.recentCards.length > 0 || scene.relatedCards.length === 0
                 width: parent.width
                 spacing: 8
                 Text { text: "RECENTLY ADDED"; color: theme.muted; font.pixelSize: 12; font.bold: true }
@@ -667,12 +667,13 @@ Item {
                     Row {
                         spacing: 12
                         Repeater {
-                            model: scene.relatedFallback ? [] : scene.recentCards.slice(0, 8)
+                            objectName: "playerRecentRepeater"
+                            model: scene.recentCards.slice(0, 8)
                             PlayerThumbnailCard { appBridge: scene.appBridge }
                         }
                         Repeater {
                             objectName: "playerBottomPlaceholderRepeater"
-                            model: scene.relatedCards.length === 0 ? Math.max(1, Math.ceil(recentRail.width / 220)) : 0
+                            model: scene.recentCards.length === 0 ? Math.max(1, Math.ceil(recentRail.width / 220)) : 0
                             WatchPlaceholderCard {
                                 width: 207
                                 height: 150
