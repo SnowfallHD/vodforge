@@ -3156,3 +3156,5 @@ the window closes after the worker settles. Frozen Mac acceptance includes
 Cmd-Q, SIGKILL during the second item, restoration of the latest paused run,
 resume without the source list, retained completed-file hashes and independent
 media decode.
+
+Batch resume also checkpoints the existing DownloadOutcome beside its processed-URL cursor. The adversarial regression retains earlier failed, skipped and optional-sidecar outcomes through durable reload and Resume, and covers interruption after all URLs were processed but before the terminal event. Fresh retry resets the aggregate. Counts are bounded and malformed saved values are rejected; older records without counts remain readable.

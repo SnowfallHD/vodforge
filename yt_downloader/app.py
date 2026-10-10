@@ -5361,7 +5361,7 @@ class DownloadWorkerCore:
         urls: list[str],
     ) -> _DownloadBatchResult:
         """Run child sources without acquiring the batch terminal event."""
-        outcome = DownloadOutcome()
+        outcome = job.batch_outcome
         failures: list[tuple[str, str]] = []
         for index, url in enumerate(urls, start=1):
             if index <= job.completed_batch_items:
@@ -5457,6 +5457,7 @@ class DownloadWorkerCore:
                         "index": index,
                         "total": len(urls),
                         "finished": True,
+                        "outcome": outcome,
                     },
                 )
             )
@@ -5464,14 +5465,6 @@ class DownloadWorkerCore:
 
     def _download_worker(self, job: DownloadJob) -> None:
         urls = [url.strip() for url in (job.urls or [job.url]) if url.strip()]
-        if len(urls) > 1 and job.completed_batch_items == len(urls):
-            self.events.put(
-                (
-                    "done",
-                    "All batch URLs were already processed before VODForge closed.",
-                )
-            )
-            return
         if len(urls) <= 1:
             single_url = urls[0] if urls else job.url
             single_video_only = job.single_video_only
@@ -5487,7 +5480,8 @@ class DownloadWorkerCore:
             self._download_worker_single(job)
             return
         try:
-            reset_batch_failure_report()
+            if job.completed_batch_items == 0:
+                reset_batch_failure_report()
             batch_result = self._coordinate_download_batch(job, urls)
             if batch_result.control_kind is not None:
                 self._active_progress_context = None

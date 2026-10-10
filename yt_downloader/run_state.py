@@ -6,6 +6,7 @@ import threading
 import urllib.parse
 import uuid
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,7 @@ from .history import (
 )
 from .models import (
     DownloadJob,
+    DownloadOutcome,
     ExportMode,
     ManualAudioCodec,
     ManualExportSettings,
@@ -226,6 +228,7 @@ def serialize_download_job(job: DownloadJob) -> dict[str, Any]:
         "tags": [sanitize_durable_text(value)[:500] for value in job.tags[:500]],
         "batch_mode": job.batch_mode,
         "completed_batch_items": job.completed_batch_items,
+        "batch_outcome": asdict(job.batch_outcome),
         "batch_list_path": job.batch_list_path,
         "preview_info": _safe_preview(job.preview_info),
         "run_id": job.run_id,
@@ -236,6 +239,23 @@ def serialize_download_job(job: DownloadJob) -> dict[str, Any]:
         "annotation_source_owner": (job.annotation_source_owner or "").strip()[:512]
         or None,
     }
+
+
+def _saved_batch_outcome(value: Any) -> DownloadOutcome:
+    if not isinstance(value, dict):
+        raise RunStateError("The saved batch outcome is invalid.")
+    counts = {}
+    for name in (
+        "success_count",
+        "failure_count",
+        "skipped_count",
+        "sidecar_failure_count",
+    ):
+        count = value.get(name, 0)
+        if type(count) is not int or not 0 <= count <= 1_000_000:
+            raise RunStateError("The saved batch outcome count is invalid.")
+        counts[name] = count
+    return DownloadOutcome(**counts)
 
 
 def deserialize_download_job(
@@ -310,6 +330,7 @@ def deserialize_download_job(
             tags=[str(value)[:500] for value in payload.get("tags", [])[:500]],
             batch_mode=_required_bool(payload, "batch_mode"),
             completed_batch_items=payload.get("completed_batch_items", 0),
+            batch_outcome=_saved_batch_outcome(payload.get("batch_outcome", {})),
             batch_list_path=str(payload.get("batch_list_path") or "")[:4096],
             preview_info=_safe_preview(payload.get("preview_info")),
             run_id=str(payload.get("run_id") or "")[:128],
@@ -620,6 +641,7 @@ class ActiveRunStore:
             if saved.get("run_id") != job.run_id:
                 raise RunStateError("The batch checkpoint owner changed.")
             saved["completed_batch_items"] = job.completed_batch_items
+            saved["batch_outcome"] = asdict(job.batch_outcome)
             self._write_unlocked(payload)
 
     def pause_queue(self) -> None:

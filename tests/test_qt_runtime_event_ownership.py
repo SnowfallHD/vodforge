@@ -351,3 +351,41 @@ def test_batch_checkpoint_does_not_skip_output_when_history_save_fails(
     runtime._finish("stopped", "Closing")
     assert runtime.recovered[0].completed_batch_items == 0
     assert runtime.recovered[0].terminal_status == "Paused"
+
+
+def test_batch_outcome_checkpoint_reopens_and_resumes_prior_issues(runtime, tmp_path):
+    from yt_downloader.models import DownloadOutcome
+
+    job = make_job(tmp_path)
+    job.urls = [job.url, "https://example.com/remaining"]
+    sink = launch(runtime, job)
+    sink.put(
+        (
+            "batch_item",
+            {
+                "job": job,
+                "child": replace(job, urls=[job.url]),
+                "index": 1,
+                "total": 2,
+                "finished": True,
+                "outcome": DownloadOutcome(failure_count=1),
+            },
+        )
+    )
+    runtime.poll()
+    persisted = runtime.recovery.store.load()
+    assert persisted["job"]["completed_batch_items"] == 1
+    assert persisted["job"]["batch_outcome"]["failure_count"] == 1
+    runtime.begin_shutdown()
+    sink.put(("stopped", "Synthetic interruption"))
+    runtime.poll()
+    reopened = runtime_module.DownloadRuntime()
+    try:
+        paused = reopened.recovered[0]
+        assert paused.terminal_status == "Paused"
+        assert paused.batch_outcome == DownloadOutcome(failure_count=1)
+        resumed = reopened.retry_terminal(paused.run_id)
+        assert resumed.completed_batch_items == 1
+        assert resumed.batch_outcome == paused.batch_outcome
+    finally:
+        reopened.close()

@@ -44,6 +44,7 @@ from yt_downloader.local_audio_video import LocalAudioVideoResult
 from yt_downloader.models import (
     CookieSource,
     DownloadJob,
+    DownloadOutcome,
     ExportMode,
     ManualExportSettings,
     Mp3ExportSettings,
@@ -427,6 +428,9 @@ class DownloadRuntime:
             completed_batch_items=previous.completed_batch_items
             if status == "Paused"
             else 0,
+            batch_outcome=previous.batch_outcome
+            if status == "Paused"
+            else DownloadOutcome(),
             run_id=uuid.uuid4().hex,
             origin_run_id=None if status in {"Paused", "Partial"} else previous.run_id,
             retry_of_run_id=previous.execution_run_id or previous.run_id,
@@ -438,10 +442,12 @@ class DownloadRuntime:
             metadata_keys=set(),
             history_identities=set(),
             history_archive_owners=set(),
-            activity_lines=[],
+            activity_lines=list(previous.activity_lines) if status == "Paused" else [],
             terminal_status=None,
             terminal_message="",
-            failure_diagnostic=None,
+            failure_diagnostic=previous.failure_diagnostic
+            if status == "Paused"
+            else None,
             item_terminal_emitted=False,
         )
         if matching_attempt(
@@ -658,6 +664,9 @@ class DownloadRuntime:
                 if payload.get("finished") and not self._history_error:
                     # Prior history_record events have now committed durably.
                     active_job.completed_batch_items = index
+                    outcome = payload.get("outcome")
+                    if isinstance(outcome, DownloadOutcome):
+                        active_job.batch_outcome = outcome
                     self.recovery.store.checkpoint_batch(active_job)
                 self._batch_index, self._batch_total = index, total
                 self._active_batch_child = child

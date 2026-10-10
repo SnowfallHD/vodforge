@@ -169,6 +169,7 @@ class DownloadJob:
     cookie_browser: str | None = None
     batch_mode: bool = False
     completed_batch_items: int = 0
+    batch_outcome: DownloadOutcome = field(default_factory=lambda: DownloadOutcome())
     batch_list_path: str = ""
     preview_info: dict[str, Any] | None = None
     # Ephemeral canonical preview provenance; consumed only after run admission.

@@ -34,7 +34,7 @@ def render_release_notes(version: str, *, draft: bool = False) -> str:
         """
 ## What’s new in 0.2.6
 
-- Interrupted single downloads and URL batches return as Paused, with Resume in Forge and Run Deck. Resume keeps the run’s saved settings and destination; batches continue with the remaining URLs.
+- Interrupted single downloads and URL batches return as Paused, with Resume in Forge and Run Deck. Resume keeps the run’s saved settings and destination; batches continue with the remaining URLs and retain earlier results and issues.
 - URL batches show the current video’s title and thumbnail and progress across the whole list. Paused batches retain their last thumbnail, with a VODForge placeholder when none was fetched.
 - Watch’s Recently Added rail and See All now share newest-first ordering. See All sits beside the rail heading as a text link.
 - Retry opens a choice of the same settings or the selected item’s expanded recovery settings. Recovery uses the shared folder control and keeps the inspector within its column.
