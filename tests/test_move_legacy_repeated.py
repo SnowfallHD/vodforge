@@ -46,11 +46,17 @@ def test_legacy_multiselect_repeated_moves_preserve_scope(tmp_path):
             records,
             destination=destination,
         )
-        controller.worker.join(5)
+        controller.worker.join(30)
+        assert not controller.worker.is_alive(), (
+            "Library move worker exceeded its deadline"
+        )
         controller.poll()
         assert controller.eligible
         assert controller.confirm(records)
-        controller.worker.join(5)
+        controller.worker.join(30)
+        assert not controller.worker.is_alive(), (
+            "Library move worker exceeded its deadline"
+        )
         controller.poll()
         assert controller.phase == "done", controller.status
         updated = load_history(history)

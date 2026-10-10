@@ -3400,3 +3400,16 @@ own purpose and inventory, even when another section borrows the same data as a
 fallback. This change stays in PlayerScene's render boundary; coupling is unchanged,
 DownloaderApp/app.py gains no responsibility, and no new architectural debt is
 deferred. Existing native interaction and release qualification gaps remain open.
+
+### Asynchronous move regression completion — 2026-10-10
+
+Windows Python 3.13 CI 38085291158 caught the legacy multiselect test polling
+while its commit worker was still active after an unchecked five-second join.
+The repeated legacy, loose-import and mixed-scope assertions keep their original
+independent file, metadata, history and foreign-file outcomes. The legacy case
+now uses the same bounded 30-second worker deadline as the loose-import case and
+asserts termination before polling; a hung worker remains a failure. The original
+Windows failure is retained outside the checkout. Existing scope tests missed
+this because a timed join was treated as completion rather than checked. This
+is test synchronization only, without a runtime timeout or move-owner change;
+it does not substitute for native move confirmation or process stress.
