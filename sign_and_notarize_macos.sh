@@ -35,6 +35,14 @@ if ! xcrun notarytool history --keychain-profile "$notary_profile" --output-form
 fi
 
 codesign --force --deep --strict --options runtime --timestamp --sign "$identity" "$app_path"
+# Intel PyObjC uses system libffi's executable closure allocator. Under hardened
+# runtime it cannot start without this compatibility entitlement (allow-jit alone
+# is insufficient). Apply it only to the app executable, never bundled tools.
+app_architectures="$(lipo -archs "$app_path/Contents/MacOS/VODForge")"
+if [[ " $app_architectures " == *" x86_64 "* ]]; then
+  codesign --force --strict --options runtime --timestamp \
+    --entitlements "macos-intel-entitlements.plist" --sign "$identity" "$app_path"
+fi
 codesign --verify --deep --strict --verbose=2 "$app_path"
 
 notary_dir="$(mktemp -d "${TMPDIR:-/tmp}/vodforge-notary.XXXXXX")"
