@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import queue
@@ -18,6 +19,8 @@ from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 from .diagnostic_fixtures import diagnostic_context
+from .security import _bind_component
+from .transaction_observation import file_observation
 from .util import machine_snapshot, run_command
 
 _BLOCKED_ATTEMPTS: list[str] = []
@@ -151,8 +154,8 @@ def receipt(identifier, passed, evidence, artifacts=()):
     )
 
 
-def isolation_receipt():
-    return receipt(
+def isolation_receipt(case_dir=None):
+    scenario, findings = receipt(
         "unit_static.telemetry_isolation",
         not _BLOCKED_ATTEMPTS,
         [
@@ -160,6 +163,65 @@ def isolation_receipt():
             "Harness process guard covers urllib requests and hostname resolution; Worker outbound fetch is disabled.",
         ],
     )
+    if case_dir is None:
+        return scenario, findings
+    case_dir.mkdir(parents=True, exist_ok=True)
+    started = time.monotonic()
+    trace = [
+        {
+            "phase": "before_control",
+            "elapsed_seconds": time.monotonic() - started,
+            "guard_installed": _GUARD_INSTALLED,
+            "disabled": os.environ.get("VODFORGE_DISABLE_TELEMETRY"),
+            "parent_attempts": list(_BLOCKED_ATTEMPTS),
+        }
+    ]
+    # Dispatch synthetic Python audit events in a private child. There is no
+    # urlopen(), socket connection, DNS lookup or external network attempt.
+    script = """import json,sys,time
+from quality_harness import telemetry_checks as t
+t.install_telemetry_guard()
+rows=[]
+for event,host in [('urllib.Request','https://getvodforge.com/api/telemetry/v2/events'),('urllib.Request','https://events.heycatch.ai/ingest'),('socket.getaddrinfo','GETVODFORGE.COM'),('socket.getaddrinfo','sub.heycatch.ai'),('urllib.Request','http://127.0.0.1:1/fixture'),('socket.getaddrinfo','example.invalid')]:
+ before=list(t._BLOCKED_ATTEMPTS);entered=time.monotonic();error=None;message=''
+ try: sys.audit(event,host,None,None,None)
+ except RuntimeError as exc: error=type(exc).__name__;message=str(exc)
+ rows.append({'event':event,'host':host,'before':before,'after':list(t._BLOCKED_ATTEMPTS),'entered':entered,'returned':time.monotonic(),'exception_type':error,'message':message})
+print(json.dumps({'guard_installed':t._GUARD_INSTALLED,'rows':rows}))
+"""
+    result = run_command([sys.executable, "-c", script], cwd=case_dir, timeout=30)
+    control = case_dir / "audit-control.json"
+    control.write_text(json.dumps(result.as_dict(), indent=2) + "\n")
+    trace.append(
+        {
+            "phase": "control_returned",
+            "elapsed_seconds": time.monotonic() - started,
+            "command_result": result.as_dict(),
+        }
+    )
+    trace.append(
+        {
+            "phase": "parent_reobserved",
+            "elapsed_seconds": time.monotonic() - started,
+            "guard_installed": _GUARD_INSTALLED,
+            "disabled": os.environ.get("VODFORGE_DISABLE_TELEMETRY"),
+            "parent_attempts": list(_BLOCKED_ATTEMPTS),
+        }
+    )
+    if result.returncode != 0 or result.timed_out or result.unavailable:
+        scenario["status"] = "failed"
+    _bind_component(
+        scenario,
+        case_dir,
+        {
+            "scenario_id": scenario["id"],
+            "contract": "isolated-telemetry-audit-control-v1",
+            "scope": "synthetic audit dispatch only; no DNS, sockets or HTTP network I/O",
+            "trace": trace,
+            "control": file_observation(control),
+        },
+    )
+    return scenario, findings
 
 
 def assert_feature_vocabulary(site: Path) -> None:
@@ -249,7 +311,29 @@ def backend_suite(repo_root: Path, case_dir: Path):
     case_dir.mkdir(parents=True, exist_ok=True)
     assert_feature_vocabulary(site)
     _, before = machine_snapshot(site)
-    result = run_command(["npm", "test"], cwd=site, timeout=180)
+    started = time.monotonic()
+    test_report = case_dir / "backend-cases.json"
+    trace = [
+        {
+            "phase": "before_backend",
+            "elapsed_seconds": time.monotonic() - started,
+            "site": before,
+            "report": file_observation(test_report),
+        }
+    ]
+    result = run_command(
+        ["npm", "test", "--", "--reporter=json", "--outputFile=" + str(test_report)],
+        cwd=site,
+        timeout=180,
+    )
+    trace.append(
+        {
+            "phase": "backend_returned",
+            "elapsed_seconds": time.monotonic() - started,
+            "result": result.as_dict(),
+            "report": file_observation(test_report),
+        }
+    )
     _, after = machine_snapshot(site)
     passed = (
         result.returncode == 0 and before == after and not before["status_porcelain"]
@@ -267,7 +351,7 @@ def backend_suite(repo_root: Path, case_dir: Path):
             indent=2,
         )
     )
-    return receipt(
+    scenario, findings = receipt(
         "unit_static.telemetry_backend_suite",
         passed,
         [
@@ -276,6 +360,27 @@ def backend_suite(repo_root: Path, case_dir: Path):
         ],
         [artifact],
     )
+    trace.append(
+        {
+            "phase": "site_reobserved",
+            "elapsed_seconds": time.monotonic() - started,
+            "site": after,
+            "report": file_observation(test_report),
+        }
+    )
+    _bind_component(
+        scenario,
+        case_dir,
+        {
+            "scenario_id": scenario["id"],
+            "contract": "clean-backend-per-case-suite-v1",
+            "scope": "clean site source and local Vitest cases; no deployed Worker or production D1",
+            "trace": trace,
+            "test_report": file_observation(test_report),
+            "legacy_receipt": file_observation(artifact),
+        },
+    )
+    return scenario, findings
 
 
 def _read_line(process):
@@ -307,7 +412,25 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
     ).resolve()
     case_dir.mkdir(parents=True, exist_ok=True)
     failures = []
+    failure_refs = []
+    started = time.monotonic()
+    trace = []
+
+    def observe(phase, **values):
+        trace.append(
+            {
+                "phase": phase,
+                "elapsed_seconds": time.monotonic() - started,
+                **copy.deepcopy(values),
+            }
+        )
+
     _, source_before = machine_snapshot(site)
+    observe(
+        "before_local_contract",
+        site=source_before,
+        client_exists=(case_dir / "client").exists(),
+    )
     if source_before["status_porcelain"]:
         raise AssertionError("Telemetry integration requires a clean site commit")
     for suffix in ("404", "500"):
@@ -322,6 +445,14 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                 "Real worker failure did not provide machine diagnostics"
             )
         failures.append(FailureDiagnostic(**detail))
+        raw_path = Path(result["job"]["output_dir"]).parent / "pipeline-result.json"
+        failure_refs.append(
+            {
+                "suffix": suffix,
+                "worker": file_observation(raw_path),
+                "diagnostic": detail,
+            }
+        )
     script = Path(__file__).with_name("telemetry_worker.mjs")
     with (case_dir / "worker.stderr.txt").open("w") as errors:
         process = subprocess.Popen(
@@ -336,6 +467,15 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
             url = _read_line(process)["url"]
             if urlsplit(url).hostname != "127.0.0.1":
                 raise AssertionError("Worker is not loopback-only")
+            process.stdin.write('{"op":"snapshot"}\n')
+            process.stdin.flush()
+            initial_snapshot = _read_line(process)
+            observe(
+                "worker_ready",
+                endpoint=url,
+                snapshot=initial_snapshot,
+                failure_workers=failure_refs,
+            )
             # Test-scoped permission override ONLY after endpoint is pinned to
             # loopback. The production transport and HTTP serialization are real.
             with (
@@ -353,11 +493,19 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
             ):
                 consent = analytics_consent.AnalyticsConsentOwner(case_dir / "client")
                 owner = transport.TelemetryCredentialOwner(case_dir / "client")
-                assert not owner.first_launch("0.1.7", "macos"), (
-                    "Unknown permission leaked"
-                )
+                unknown_launch = owner.first_launch("0.1.7", "macos")
+                assert not unknown_launch, "Unknown permission leaked"
                 consent.choose(False)
-                assert not owner.first_launch("0.1.7", "macos"), "Refusal leaked"
+                refused_launch = owner.first_launch("0.1.7", "macos")
+                assert not refused_launch, "Refusal leaked"
+                process.stdin.write('{"op":"snapshot"}\n')
+                process.stdin.flush()
+                observe(
+                    "consent_denied",
+                    unknown_launch=unknown_launch,
+                    refused_launch=refused_launch,
+                    snapshot=_read_line(process),
+                )
                 consent.choose(True)
                 assert owner.first_launch("0.1.7", "macos"), "Initial launch rejected"
                 assert owner.first_launch("0.1.8", "macos"), "Update launch rejected"
@@ -367,12 +515,14 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                 process.stdin.write('{"op":"snapshot"}\n')
                 process.stdin.flush()
                 before_reopen = _read_line(process)
+                observe("launches_completed", snapshot=before_reopen)
                 time.sleep(1.1)  # D1 CURRENT_TIMESTAMP has second precision.
                 reopened = transport.TelemetryCredentialOwner(case_dir / "client")
                 assert reopened.observe_session("0.1.8", "macos")
                 process.stdin.write('{"op":"snapshot"}\n')
                 process.stdin.flush()
                 after_reopen = _read_line(process)
+                observe("session_reopened", snapshot=after_reopen)
                 assert (
                     after_reopen["installations"][0]["last_seen_at"]
                     > before_reopen["installations"][0]["last_seen_at"]
@@ -716,6 +866,12 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                 snapshot = _read_line(process)
                 _, source_after = machine_snapshot(site)
                 assert source_before == source_after
+                observe(
+                    "events_delivered",
+                    snapshot=snapshot,
+                    delivered=delivered,
+                    site=source_after,
+                )
                 snapshot["site_commit"] = source_before["commit"]
                 artifact = case_dir / "local-d1-receipt.json"
                 artifact.write_text(json.dumps(snapshot, indent=2))
@@ -767,11 +923,20 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                     assert abs((actual_time - emitted_time).total_seconds()) < 0.001
                 consent.choose(False)
                 denied_owner = transport.TelemetryCredentialOwner(case_dir / "client")
-                assert not denied_owner.observe_session("0.1.8", "macos")
-                assert not denied_owner.event(delivered[0])
+                withdrawn_launch = denied_owner.observe_session("0.1.8", "macos")
+                withdrawn_event = denied_owner.event(delivered[0])
+                assert not withdrawn_launch
+                assert not withdrawn_event
                 process.stdin.write('{"op":"snapshot"}\n')
                 process.stdin.flush()
-                assert _read_line(process) == {
+                withdrawn_snapshot = _read_line(process)
+                observe(
+                    "permission_withdrawn",
+                    snapshot=withdrawn_snapshot,
+                    launch=withdrawn_launch,
+                    event=withdrawn_event,
+                )
+                assert withdrawn_snapshot == {
                     key: value
                     for key, value in snapshot.items()
                     if key != "site_commit"
@@ -813,6 +978,7 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                     and "127.0.0.1" not in encoded
                 )
                 snapshot["ownership_matrix"] = _ownership_probe(url, process)
+                observe("ownership_verified", cases=snapshot["ownership_matrix"])
                 artifact.write_text(json.dumps(snapshot, indent=2))
         except Exception:
             import traceback
@@ -834,7 +1000,8 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                         process.wait()
             process.stdin.close()
             process.stdout.close()
-    return receipt(
+    observe("worker_closed", returncode=process.poll(), site=machine_snapshot(site)[1])
+    scenario, findings = receipt(
         "unit_static.telemetry_local_contract",
         True,
         [
@@ -849,3 +1016,15 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
         ],
         [artifact],
     )
+    _bind_component(
+        scenario,
+        case_dir,
+        {
+            "scenario_id": scenario["id"],
+            "contract": "loopback-worker-d1-lifetime-v1",
+            "scope": "real desktop HTTP and local Worker/D1 with controlled providers; no production D1, native or audible output",
+            "trace": trace,
+            "receipt": file_observation(artifact),
+        },
+    )
+    return scenario, findings

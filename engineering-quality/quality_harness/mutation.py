@@ -9,7 +9,9 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
-from .util import run_command
+from .security import _bind_component
+from .transaction_observation import file_observation
+from .util import run_command, sha256_file
 
 MUTANTS = (
     (
@@ -136,11 +138,37 @@ def run_bounded_mutation_campaign(
     ]
     started = time.monotonic()
 
+    def source_inventory(path):
+        return {
+            p.relative_to(path).as_posix(): sha256_file(p)
+            for p in sorted((path / "yt_downloader").rglob("*.py"))
+        }
+
+    production_before = source_inventory(repo_root)
     baseline_root = _workspace(repo_root, case_dir / "baseline")
+    trace = [
+        {
+            "phase": "before_baseline",
+            "elapsed_seconds": time.monotonic() - started,
+            "source": production_before,
+            "copied_source": source_inventory(baseline_root),
+            "report": file_observation(baseline_root / "mutation.xml"),
+        }
+    ]
+    observations = []
     baseline = run_command(command, cwd=baseline_root, timeout=180, env=environment)
     (case_dir / "baseline.stdout.txt").write_text(baseline.stdout, encoding="utf-8")
     (case_dir / "baseline.stderr.txt").write_text(baseline.stderr, encoding="utf-8")
 
+    trace.append(
+        {
+            "phase": "baseline_returned",
+            "elapsed_seconds": time.monotonic() - started,
+            "result": baseline.as_dict(),
+            "report": file_observation(baseline_root / "mutation.xml"),
+            "copied_source": source_inventory(baseline_root),
+        }
+    )
     mutant_results: list[dict[str, Any]] = []
     targets = [(item, "history.py") for item in MUTANTS] + [
         (item, "archive_artwork.py") for item in ARTWORK_MUTANTS
@@ -150,6 +178,8 @@ def run_bounded_mutation_campaign(
         source_path = mutant_root / "yt_downloader" / source_file
         source = source_path.read_text(encoding="utf-8")
         replacement_count = source.count(original)
+        entered = time.monotonic() - started
+        source_before = source_inventory(mutant_root)
         if replacement_count == 1:
             source_path.write_text(
                 source.replace(original, replacement, 1), encoding="utf-8"
@@ -167,6 +197,22 @@ def run_bounded_mutation_campaign(
         )
         (case_dir / f"{mutant_id}.stdout.txt").write_text(stdout, encoding="utf-8")
         (case_dir / f"{mutant_id}.stderr.txt").write_text(stderr, encoding="utf-8")
+        observations.append(
+            {
+                "id": mutant_id,
+                "file": source_file,
+                "old": original,
+                "new": replacement,
+                "entered_seconds": entered,
+                "returned_seconds": time.monotonic() - started,
+                "replacement_count": replacement_count,
+                "source_before": source_before,
+                "source_after": source_inventory(mutant_root),
+                "source_file": file_observation(source_path),
+                "report": file_observation(mutant_root / "mutation.xml"),
+                "result": command_result.as_dict() if command_result else None,
+            }
+        )
         killed = bool(
             command_result
             and mutation_detected(command_result, mutant_root / "mutation.xml")
@@ -234,4 +280,27 @@ def run_bounded_mutation_campaign(
                 "scenario_id": scenario["id"],
             }
         )
+    trace.append(
+        {
+            "phase": "campaign_reobserved",
+            "elapsed_seconds": time.monotonic() - started,
+            "production_source": source_inventory(repo_root),
+            "baseline_source": source_inventory(baseline_root),
+        }
+    )
+    _bind_component(
+        scenario,
+        case_dir,
+        {
+            "scenario_id": scenario["id"],
+            "contract": "bounded-private-source-mutants-v1",
+            "scope": "nine explicit private-copy history/artwork mutations; not repository-wide quality",
+            "trace": trace,
+            "mutants": observations,
+            "baseline_sources": {
+                name: file_observation(baseline_root / "yt_downloader" / name)
+                for name in ("history.py", "archive_artwork.py")
+            },
+        },
+    )
     return scenario, findings

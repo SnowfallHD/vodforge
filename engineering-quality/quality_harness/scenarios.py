@@ -35,6 +35,8 @@ from .security import (
 )
 from .static_analysis import run_static_suite
 from .telemetry_checks import backend_suite, integration_probe, isolation_receipt
+from .transaction_observation import file_observation
+from .util import sha256_file
 
 _LIFECYCLE_WORKER_OBJECT_TYPES = (
     "yt_dlp.YoutubeDL.YoutubeDL",
@@ -118,6 +120,13 @@ def _scenario_from_pipeline(
     evidence: list[str],
     metrics: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    raw_path = Path(result["job"]["output_dir"]).parent / "pipeline-result.json"
+    try:
+        raw_sha256 = sha256_file(raw_path)
+    except OSError:
+        # An unavailable observation cannot qualify temporal coverage. Keep the
+        # functional failure receipt instead of hiding it behind a hash error.
+        raw_sha256 = None
     resources = result.get("resource_metrics") or {}
     observer_failed = (
         bool(result.get("control_observer_errors"))
@@ -179,10 +188,27 @@ def _scenario_from_pipeline(
         "artifacts": [str(Path(entry["path"])) for entry in result.get("outputs", [])]
         + [result.get("diagnostics_path", "")],
         "error": result.get("error"),
-        "raw_result": str(
-            Path(result["job"]["output_dir"]).parent / "pipeline-result.json"
-        ),
+        "raw_result": str(raw_path),
+        "raw_result_sha256": raw_sha256,
     }
+
+
+def _bind_composite_observation(scenario, path, observation):
+    """Preserve observed constituents; never replace their source identities."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(observation, indent=2) + "\n", encoding="utf-8")
+    scenario["raw_result"] = str(path)
+    scenario["raw_result_sha256"] = sha256_file(path)
+    scenario["artifacts"].append(str(path))
+
+
+def _bound_worker_result(result, run_root=None):
+    path = (
+        (run_root / "cases" / result["case_id"])
+        if run_root is not None
+        else Path(result["job"]["output_dir"]).parent
+    ) / "pipeline-result.json"
+    return {"path": str(path), "sha256": sha256_file(path)}
 
 
 def _worker_cleanup_is_clean(result: dict[str, Any]) -> bool:
@@ -364,8 +390,48 @@ def correctness_mp4(
     return scenario, findings
 
 
+def _duplicate_snapshot(observations, phase, **values):
+    if observations is not None:
+        observations["rows"].append(
+            {
+                "phase": phase,
+                "elapsed_seconds": time.monotonic()
+                - observations["clock_origin_monotonic"],
+                **values,
+            }
+        )
+
+
+def _observed_duplicate_job(runner, observations, **kwargs):
+    from .transaction_observation import file_observation
+
+    output = kwargs["output_dir"]
+
+    def inventory():
+        return [file_observation(p) for p in sorted(output.rglob("*")) if p.is_file()]
+
+    _duplicate_snapshot(
+        observations,
+        "worker_entered",
+        case_id=kwargs["case_id"],
+        output_dir=str(output),
+        files=inventory(),
+        history=kwargs.get("history_records", []),
+    )
+    result = runner.run_job(**kwargs)
+    _duplicate_snapshot(
+        observations,
+        "worker_returned",
+        case_id=kwargs["case_id"],
+        output_dir=str(output),
+        files=inventory(),
+        worker=_bound_worker_result(result, runner.run_root),
+    )
+    return result
+
+
 def _same_source_variant_checks(
-    runner: HeadlessPipelineRunner, server: FixtureHTTPServer
+    runner: HeadlessPipelineRunner, server: FixtureHTTPServer, observations=None
 ) -> tuple[dict[str, bool], list[dict[str, Any]], list[str]]:
     """Exercise settings identity through real encoding, history, reuse and retry."""
     from yt_downloader.history import history_output_path, upsert_history
@@ -388,7 +454,9 @@ def _same_source_variant_checks(
     ]
     snapshots: list[dict[str, str]] = []
     for case, kind, options in requests:
-        result = runner.run_job(
+        result = _observed_duplicate_job(
+            runner,
+            observations,
             case_id=f"variant-{case}",
             url=url,
             output_type=kind,
@@ -408,6 +476,9 @@ def _same_source_variant_checks(
             return {"variant_history_emitted": False}, results, artifacts
         record = records[0]
         history = upsert_history(history, record["info"], record["output_dir"])
+        _duplicate_snapshot(
+            observations, "history_updated", case_id=result["case_id"], history=history
+        )
         path = history_output_path(history[0])
         if path is None:
             return {"variant_exact_path_retained": False}, results, artifacts
@@ -443,7 +514,7 @@ def _same_source_variant_checks(
 
 
 def _original_audio_reuse_checks(
-    runner: HeadlessPipelineRunner, server: FixtureHTTPServer
+    runner: HeadlessPipelineRunner, server: FixtureHTTPServer, observations=None
 ) -> tuple[dict[str, bool], list[dict[str, Any]], list[str]]:
     """Real AAC HLS / Opus DASH through fresh, durable history, and reuse."""
     from yt_downloader.history import (
@@ -470,8 +541,16 @@ def _original_audio_reuse_checks(
         for phase in ("first", "repeat", "sidecar-repair"):
             if phase == "sidecar-repair" and original_path is not None:
                 (original_path.parent / "metadata.json").unlink(missing_ok=True)
+                _duplicate_snapshot(
+                    observations,
+                    "original_metadata_removed",
+                    codec=codec,
+                    media_path=str(original_path),
+                )
             case = f"original-{codec}-{phase}"
-            result = runner.run_job(
+            result = _observed_duplicate_job(
+                runner,
+                observations,
                 case_id=case,
                 url=server.url(route),
                 output_type="Original audio",
@@ -497,6 +576,15 @@ def _original_audio_reuse_checks(
             history = upsert_history(history, record["info"], record["output_dir"])
             save_history(history_path, history)
             history = load_history(history_path)
+            from .transaction_observation import file_observation
+
+            _duplicate_snapshot(
+                observations,
+                "history_reloaded",
+                case_id=result["case_id"],
+                history=history,
+                durable_file=file_observation(history_path),
+            )
             path = history_output_path(history[0])
             media, streams = _media_streams(result)
             media_hashes = {entry["path"]: entry["sha256"] for entry in media}
@@ -552,9 +640,12 @@ def reliability_duplicate_artifact_transitions(
         upsert_history,
     )
 
+    observations = {"clock_origin_monotonic": time.monotonic(), "rows": []}
     shared_output = runner.run_root / "cases" / "duplicate-artifact" / "output"
     source_url = server.url("/page/unicode?duplicate-artifact=stable")
-    first = runner.run_job(
+    first = _observed_duplicate_job(
+        runner,
+        observations,
         case_id="duplicate-artifact-first",
         url=source_url,
         output_type="MP4",
@@ -580,7 +671,17 @@ def reliability_duplicate_artifact_transitions(
     if thumbnail_path is not None:
         thumbnail_path.unlink(missing_ok=True)
 
-    second = runner.run_job(
+    _duplicate_snapshot(
+        observations,
+        "mp4_sidecars_removed",
+        media_path=str(first_media_path),
+        metadata_path=str(metadata_path),
+        thumbnail_path=str(thumbnail_path),
+    )
+
+    second = _observed_duplicate_job(
+        runner,
+        observations,
         case_id="duplicate-artifact-reuse",
         url=source_url,
         output_type="MP4",
@@ -624,12 +725,14 @@ def reliability_duplicate_artifact_transitions(
         record(sibling_path, "Different profile"),
         item_dir,
     )
+    _duplicate_snapshot(observations, "distinct_history_paths", history=history)
     distinct_physical_rows = len(history) == 2
     history = upsert_history(
         history,
         record(primary_identity_path, "Primary refreshed"),
         item_dir,
     )
+    _duplicate_snapshot(observations, "same_history_path_refreshed", history=history)
     same_physical_row_merged = len(history) == 2 and history[0]["title"] == (
         "Primary refreshed"
     )
@@ -640,6 +743,15 @@ def reliability_duplicate_artifact_transitions(
     exact_missing_not_masked_by_sibling = (
         history_media_file_state(primary_record) == HISTORY_MEDIA_MISSING
     )
+    _duplicate_snapshot(
+        observations,
+        "exact_history_path_missing",
+        primary_path=str(primary_identity_path),
+        sibling_path=str(sibling_path),
+        exact_state=history_media_file_state(primary_record),
+        primary_exists=primary_identity_path.exists(),
+        sibling_exists=sibling_path.exists(),
+    )
     sibling_path.unlink(missing_ok=True)
     try:
         item_dir.rmdir()
@@ -647,10 +759,10 @@ def reliability_duplicate_artifact_transitions(
         pass
 
     variant_checks, variant_results, variant_artifacts = _same_source_variant_checks(
-        runner, server
+        runner, server, observations
     )
     original_checks, original_results, original_artifacts = (
-        _original_audio_reuse_checks(runner, server)
+        _original_audio_reuse_checks(runner, server, observations)
     )
     variant_checks.update(original_checks)
     variant_results.extend(original_results)
@@ -751,6 +863,15 @@ def reliability_duplicate_artifact_transitions(
         ],
         "error": first.get("error") or second.get("error"),
     }
+    _bind_composite_observation(
+        scenario,
+        shared_output.parent / "interaction-observation.json",
+        {
+            "scenario_id": scenario["id"],
+            "contract": "owned-duplicate-reuse-v1",
+            **observations,
+        },
+    )
     findings = (
         []
         if passed
@@ -840,6 +961,7 @@ def _recover_with_orphan_child(
     from yt_downloader.process_lifecycle import process_command, terminate_pid
     from yt_downloader.run_state import recover_interrupted_run
 
+    clock = time.monotonic()
     launcher = subprocess.run(
         [
             sys.executable,
@@ -858,7 +980,13 @@ def _recover_with_orphan_child(
     )
     pid = int(launcher.stdout.strip())
     trace: list[dict[str, Any]] = [
-        {"phase": "orphan_launched", "child_pid": pid, "child_argv": child_command}
+        {
+            "phase": "orphan_launched",
+            "clock_origin_monotonic": clock,
+            "elapsed_seconds": time.monotonic() - clock,
+            "child_pid": pid,
+            "child_argv": child_command,
+        }
     ]
     recovered: list[Any] = []
     error = None
@@ -869,6 +997,7 @@ def _recover_with_orphan_child(
         trace.append(
             {
                 "phase": "active_before_restart_recovery",
+                "elapsed_seconds": time.monotonic() - clock,
                 "stage_exists": stage.is_dir(),
                 "partial_size": partial.stat().st_size,
                 "child_pid": pid,
@@ -877,7 +1006,18 @@ def _recover_with_orphan_child(
             }
         )
         recovered = recover_interrupted_run(store)
-        recovery_reaped_child = process_command(pid) is None
+        recovered_command = process_command(pid)
+        recovery_reaped_child = recovered_command is None
+        trace.append(
+            {
+                "phase": "production_recovery_returned",
+                "elapsed_seconds": time.monotonic() - clock,
+                "child_command": recovered_command,
+                "stage_exists": stage.exists(),
+                "staging_root_exists": stage.parent.exists(),
+                "run_state": store.load(),
+            }
+        )
     except Exception as exc:  # noqa: BLE001 - retain actual blocked recovery
         error = f"{type(exc).__name__}: {exc}"
     finally:
@@ -898,6 +1038,7 @@ def _recover_with_orphan_child(
     trace.append(
         {
             "phase": "after_restart_recovery",
+            "elapsed_seconds": time.monotonic() - clock,
             "stage_exists": stage.exists(),
             "staging_root_exists": stage.parent.exists(),
             "run_state": store.load(),
@@ -945,6 +1086,10 @@ def lifecycle_quit_restart_recovery(
             "quality": "720p HD",
         },
     )
+    settings_before_restart = {
+        "file": file_observation(settings_path),
+        "values": load_settings(settings_path),
+    }
     settings_after_restart = load_settings(settings_path)
 
     job = build_job(
@@ -1025,7 +1170,8 @@ def lifecycle_quit_restart_recovery(
             library_status_or_location(item) == "Queued" for item in queued_library_rows
         )
     )
-    durable_failed_jobs = store.load_failed_jobs()
+    durable_paused_jobs = store.load_terminal_jobs()
+    paused_store_snapshot = store.load()
     store.clear(job.run_id)
     # Reproduce the UI-side restart race: the recovered Failed row is removed,
     # then both preserved queued jobs are promoted and stopped before provider
@@ -1057,6 +1203,7 @@ def lifecycle_quit_restart_recovery(
         ui_owner._archive_active_terminal_job(
             "Stopped", "Cancelled before provider analysis"
         )
+    fast_stop_store_snapshot = store.load()
     durable_fast_stops = ActiveRunStore(run_state_path).load_terminal_jobs()
     durable_fast_stop_ids = [item.run_id for item in durable_fast_stops]
     durable_fast_stops_retained = durable_fast_stop_ids == [
@@ -1173,10 +1320,10 @@ def lifecycle_quit_restart_recovery(
         "output_type": "MP3",
         "quality": "720p HD",
     }
-    failed_preserved = (
+    paused_preserved = (
         len(recovered) == 1
-        and recovered[0].terminal_status == "Failed"
-        and [item.run_id for item in durable_failed_jobs] == [job.run_id]
+        and recovered[0].terminal_status == "Paused"
+        and [item.run_id for item in durable_paused_jobs] == [job.run_id]
     )
     queue_preserved = [queued_job.run_id for queued_job in queued_after_restart] == [
         "queued-first",
@@ -1188,7 +1335,7 @@ def lifecycle_quit_restart_recovery(
         recovery_error is None
         and settings_preserved
         and settings_private
-        and failed_preserved
+        and paused_preserved
         and queue_preserved
         and child_reaped
         and stage_cleaned
@@ -1210,14 +1357,15 @@ def lifecycle_quit_restart_recovery(
         "metrics": {
             "jobs_attempted": 1,
             "jobs_completed": 0,
-            "jobs_failed": int(failed_preserved),
+            "jobs_failed": 0,
+            "jobs_paused": int(paused_preserved),
             "jobs_cancelled": 0,
             "settings_persisted": settings_preserved,
             "settings_private": settings_private,
             "orphan_child_reaped": child_reaped,
             "child_ownership": "orphan_launcher",
             "recorded_stage_cleaned": stage_cleaned,
-            "failed_state_durable_until_removal": failed_preserved,
+            "paused_state_durable_until_removal": paused_preserved,
             "queued_runs_preserved_in_order": queue_preserved,
             "journal_removed_by_library_removal": journal_removed,
             "sequential_fast_stops_retained_in_library": (sequential_stops_retained),
@@ -1234,9 +1382,9 @@ def lifecycle_quit_restart_recovery(
             f"Restart loaded the selected output root and export preferences unchanged: {settings_preserved}",
             f"The persisted settings file was private 0600: {settings_private}",
             f"Recovery reaped the exact recorded child and removed its staging transaction: {child_reaped and stage_cleaned}",
-            f"The interrupted run used Failed and survived a later run until removal: {failed_preserved}",
+            f"The interrupted run used Paused and survived a later run until removal: {paused_preserved}",
             f"Two queued runs survived restart in their original order and promoted exactly once: {queue_preserved}",
-            f"Library removal cleared the durable failure journal: {journal_removed}",
+            f"Library removal cleared the durable terminal journal: {journal_removed}",
             (
                 "Both restored queued runs remained distinct Stopped Library rows "
                 f"after immediate cancellation: {sequential_stops_retained}"
@@ -1253,6 +1401,33 @@ def lifecycle_quit_restart_recovery(
         "artifacts": [str(trace_path), str(settings_path)],
         "error": recovery_error,
     }
+    _bind_composite_observation(
+        scenario,
+        case_root / "interaction-observation.json",
+        {
+            "scenario_id": scenario["id"],
+            "contract": "durable-orphan-recovery-v1",
+            "settings_before": settings_before_restart,
+            "settings_after": {
+                "file": file_observation(settings_path),
+                "values": load_settings(settings_path),
+            },
+            "snapshots": trace,
+            "paused_store": paused_store_snapshot,
+            "fast_stop_store": fast_stop_store_snapshot,
+            "projection_rows": {
+                "queued": list(queued_projection.rows),
+                "stopped": list(ui_owner.metadata_items),
+                "preparing": list(preparing_projection.rows),
+                "downloading": list(downloading_projection.rows),
+                "transcoding": list(transcoding_projection.rows),
+            },
+            "after": {
+                "journal": file_observation(run_state_path),
+                "stage": file_observation(stage),
+            },
+        },
+    )
     findings = (
         []
         if passed
@@ -1522,7 +1697,10 @@ def reliability_http_failure(
     runner: HeadlessPipelineRunner, server: FixtureHTTPServer
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     result = runner.run_job(
-        case_id="reliability-http-404", url=server.url("/status/404"), output_type="MP4"
+        case_id="reliability-http-404",
+        url=server.url("/status/404"),
+        output_type="MP4",
+        fixture_state=server.state,
     )
     resources = result.get("resource_metrics") or {}
     passed = (
@@ -1570,6 +1748,7 @@ def reliability_retry(
         case_id="reliability-retry-503",
         url=server.url("/fault/retry/page"),
         output_type="MP3",
+        fixture_state=server.state,
     )
     after = server.state.snapshot()
     failures = int(after["statuses"].get("503", 0)) - int(
@@ -1789,6 +1968,7 @@ def reliability_interrupted_transfer(
         case_id="reliability-interrupted-transfer",
         url=server.url("/fault/interrupt/page"),
         output_type="MP4",
+        fixture_state=server.state,
         quality_label="720p",
     )
     after = server.state.snapshot()
@@ -1894,14 +2074,37 @@ def reliability_ffmpeg_failure(
     runner: HeadlessPipelineRunner,
     server: FixtureHTTPServer,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    fault_dir = runner.run_root / "cases" / "reliability-ffmpeg-child-failure" / "tools"
+    fault_dir.mkdir(parents=True, exist_ok=True)
+    failing_ffmpeg = fault_dir / "ffmpeg"
+    failing_ffmpeg.write_text(
+        f"#!{sys.executable}\n"
+        "import sys\n"
+        "if '-version' in sys.argv or '-bsfs' in sys.argv:\n"
+        "    print('ffmpeg version 7.1 controlled-quality-fixture')\n"
+        "    raise SystemExit(0)\n"
+        "print('VODForge controlled FFmpeg child exit 17', file=sys.stderr)\n"
+        "raise SystemExit(17)\n",
+        encoding="utf-8",
+    )
+    failing_ffmpeg.chmod(0o700)
     result = runner.run_job(
         case_id="reliability-ffmpeg-child-failure",
         url=server.url("/page/unicode"),
         output_type="MP4",
-        ffmpeg_override=sys.executable,
+        ffmpeg_override=str(failing_ffmpeg),
+        fixture_state=server.state,
+    )
+    actual_child_failure = any(
+        "-y" in row.get("args", [])
+        and "-i" in row.get("args", [])
+        and row.get("returncode_after_worker") == 17
+        for row in result.get("child_registration_trace", [])
     )
     passed = (
-        bool(result.get("error"))
+        actual_child_failure
+        and result.get("error")
+        == "_DownloadItemExecutionError: ERROR: Postprocessing: VODForge controlled FFmpeg child exit 17"
         and result.get("media_output_count") == 0
         and not result.get("staging_entries_after")
         and _worker_cleanup_is_clean(result)
@@ -1912,12 +2115,15 @@ def reliability_ffmpeg_failure(
         result=result,
         passed=passed,
         evidence=[
-            f"Injected non-FFmpeg executable: {sys.executable}",
+            f"Controlled FFmpeg executable with child exit 17: {failing_ffmpeg}",
             f"Understandable child/dependency error: {result.get('error')}",
             f"Committed outputs: {result.get('media_output_count')}; staging residue: {result.get('staging_entries_after')}",
             f"Production child survivors: {result.get('active_children_before_harness_cleanup')}",
         ],
-        metrics={"dependency_failure_injected": True},
+        metrics={
+            "dependency_failure_injected": True,
+            "actual_media_child_exit_17": actual_child_failure,
+        },
     )
     return scenario, [] if passed else [
         _finding_for_failed_scenario(
@@ -1984,6 +2190,15 @@ def lifecycle_staging_transitions(
     staging_root.mkdir(parents=True, mode=0o700)
     (staging_root / ".DS_Store").write_bytes(b"synthetic Finder metadata")
 
+    transaction_clock = time.monotonic()
+    transaction_trace = [
+        {
+            "phase": "before_skip",
+            "elapsed_seconds": time.monotonic() - transaction_clock,
+            "root": file_observation(staging_root),
+            "metadata": file_observation(staging_root / ".DS_Store"),
+        }
+    ]
     download_seen_at: list[float | None] = [None]
 
     def skip_when(events: Any, _app: Any) -> bool:
@@ -2027,6 +2242,13 @@ def lifecycle_staging_transitions(
     skipped_terminal = len(skipped_terminal_receipts) == 1
     idle_after_skip = not staging_root.exists()
 
+    transaction_trace.append(
+        {
+            "phase": "after_skip",
+            "elapsed_seconds": time.monotonic() - transaction_clock,
+            "root": file_observation(staging_root),
+        }
+    )
     completed = runner.run_job(
         case_id="lifecycle-staging-successor",
         url=server.url("/page/unicode?staging-lifecycle=successor"),
@@ -2041,6 +2263,13 @@ def lifecycle_staging_transitions(
     )
     idle_after_completion = not staging_root.exists()
 
+    transaction_trace.append(
+        {
+            "phase": "after_commit",
+            "elapsed_seconds": time.monotonic() - transaction_clock,
+            "root": file_observation(staging_root),
+        }
+    )
     library_stage = create_staging_dir(output_dir)
     (library_stage / "active-owner-sentinel").write_bytes(b"active transaction")
     terminal_info = {
@@ -2073,11 +2302,35 @@ def lifecycle_staging_transitions(
             bridge._runtime.history_path = case_root / "library-history.json"
             bridge._runtime.history = [saved_info]
             owner = history_archive_owner(saved_info)
+            transaction_trace.append(
+                {
+                    "phase": "before_library_removal",
+                    "elapsed_seconds": time.monotonic() - transaction_clock,
+                    "stage": file_observation(library_stage),
+                    "sentinel": file_observation(
+                        library_stage / "active-owner-sentinel"
+                    ),
+                    "media": file_observation(media),
+                    "history": list(bridge._runtime.history),
+                }
+            )
             removal_completed = (
                 bridge.prepareLibraryRemoval(owner)
                 and bridge.confirmLibraryRemoval()
                 and not bridge._runtime.history
                 and media.read_bytes() == b"saved media remains"
+            )
+            transaction_trace.append(
+                {
+                    "phase": "after_library_removal",
+                    "elapsed_seconds": time.monotonic() - transaction_clock,
+                    "stage": file_observation(library_stage),
+                    "sentinel": file_observation(
+                        library_stage / "active-owner-sentinel"
+                    ),
+                    "media": file_observation(media),
+                    "history": list(bridge._runtime.history),
+                }
             )
         finally:
             bridge.close()
@@ -2105,6 +2358,14 @@ def lifecycle_staging_transitions(
     ).is_file()
     cleanup_private_staging_directory(library_stage)
     idle_after_owned_cleanup = not staging_root.exists()
+    transaction_trace.append(
+        {
+            "phase": "after_owner_cleanup",
+            "elapsed_seconds": time.monotonic() - transaction_clock,
+            "stage": file_observation(library_stage),
+            "root": file_observation(staging_root),
+        }
+    )
 
     passed = bool(
         skipped_active
@@ -2172,6 +2433,21 @@ def lifecycle_staging_transitions(
     (case_root / "successor-staging-trace.json").write_text(
         json.dumps(completed_trace, indent=2) + "\n", encoding="utf-8"
     )
+    _bind_composite_observation(
+        scenario,
+        case_root / "interaction-observation.json",
+        {
+            "scenario_id": scenario["id"],
+            "contract": "owned-staging-transactions-v1",
+            "renderer": ui,
+            "clock_origin_monotonic": transaction_clock,
+            "transaction_trace": transaction_trace,
+            "workers": {
+                "skipped": _bound_worker_result(skipped, runner.run_root),
+                "completed": _bound_worker_result(completed, runner.run_root),
+            },
+        },
+    )
     findings = (
         []
         if passed
@@ -2199,6 +2475,10 @@ def lifecycle_soak(
     recorder = LifecycleCheckpointRecorder(
         runner.run_root, jobs=jobs, detailed=detailed
     )
+    from yt_downloader import app as app_module
+
+    initial_children = active_child_snapshot(app_module)
+    fixture_before = server.state.snapshot()
     stable_source_route = "/page/unicode?soak=controlled"
     stable_source_url = server.url(stable_source_route)
     baseline = recorder.start()
@@ -2248,6 +2528,9 @@ def lifecycle_soak(
                     if event.get("kind") == "history_record"
                 ),
                 "artifact": str(Path(output_dir).parent / "pipeline-result.json"),
+                "raw_result_sha256": sha256_file(
+                    Path(output_dir).parent / "pipeline-result.json"
+                ),
             }
             compact_results.append(compact)
             # The full result contains large duplicated event/metadata/probe trees.
@@ -2446,6 +2729,25 @@ def lifecycle_soak(
         + recorder.artifacts,
         "error": None,
     }
+    _bind_composite_observation(
+        scenario,
+        recorder.observation_dir / "interaction-observation.json",
+        {
+            "scenario_id": scenario["id"],
+            "contract": "owned-repeated-workers-v1",
+            "workload": workload,
+            "before": {"children": initial_children, "fixture": fixture_before},
+            "samples": {
+                "path": str(recorder.samples_path),
+                "sha256": sha256_file(recorder.samples_path),
+            },
+            "workers": [
+                {"path": row["artifact"], "sha256": row["raw_result_sha256"]}
+                for row in compact_results
+            ],
+            "after": {"children_before_emergency": survivors_before_cleanup},
+        },
+    )
     findings = (
         []
         if passed
@@ -2466,11 +2768,28 @@ def lifecycle_soak(
 def concurrency_mixed(
     runner: HeadlessPipelineRunner, server: FixtureHTTPServer
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    from yt_downloader import app as app_module
+
+    started = time.monotonic()
+    before = {
+        "children": active_child_snapshot(app_module),
+        "fixture": server.state.snapshot(),
+        "elapsed_seconds": time.monotonic() - started,
+    }
+    thread_trace = []
     results: dict[str, dict[str, Any]] = {}
     errors: list[str] = []
     lock = threading.Lock()
 
     def execute(name: str, output_type: str) -> None:
+        with lock:
+            thread_trace.append(
+                {
+                    "name": name,
+                    "phase": "entered",
+                    "elapsed_seconds": time.monotonic() - started,
+                }
+            )
         try:
             result = runner.run_job(
                 case_id=f"concurrency-{name}",
@@ -2486,8 +2805,16 @@ def concurrency_mixed(
         except Exception as exc:  # noqa: BLE001 - preserve each attacked worker's terminal evidence
             with lock:
                 errors.append(f"{name}: {type(exc).__name__}: {exc}")
+        finally:
+            with lock:
+                thread_trace.append(
+                    {
+                        "name": name,
+                        "phase": "returned",
+                        "elapsed_seconds": time.monotonic() - started,
+                    }
+                )
 
-    started = time.monotonic()
     threads = [
         threading.Thread(
             target=execute, args=("mp4", "MP4"), name="quality-concurrency-mp4"
@@ -2502,6 +2829,7 @@ def concurrency_mixed(
         thread.join(timeout=120)
     from yt_downloader import app as app_module
 
+    final_observed_at = time.monotonic() - started
     survivors_before_cleanup = active_child_snapshot(app_module)
     if any(item["alive"] for item in survivors_before_cleanup):
         app_module.terminate_all_active_child_processes(
@@ -2566,6 +2894,28 @@ def concurrency_mixed(
         ],
         "error": "; ".join(errors) if errors else None,
     }
+    _bind_composite_observation(
+        scenario,
+        runner.run_root / "cases" / "concurrency-observation.json",
+        {
+            "scenario_id": scenario["id"],
+            "contract": "owned-concurrent-workers-v1",
+            "clock_origin_monotonic": started,
+            "before": before,
+            "thread_trace": sorted(
+                thread_trace, key=lambda row: row["elapsed_seconds"]
+            ),
+            "workers": {
+                name: _bound_worker_result(result) for name, result in results.items()
+            },
+            "after": {
+                "elapsed_seconds": final_observed_at,
+                "children_before_emergency": survivors_before_cleanup,
+                "threads_alive": alive,
+                "errors": errors,
+            },
+        },
+    )
     findings = (
         []
         if passed
@@ -2921,7 +3271,10 @@ def run_scenarios(
                 repo_root, run_root / "cases" / "telemetry-presentation", ui=ui
             ),
         ),
-        ("unit_static.telemetry_isolation", isolation_receipt),
+        (
+            "unit_static.telemetry_isolation",
+            lambda: isolation_receipt(run_root / "cases" / "telemetry-isolation"),
+        ),
         (
             "unit_static.native_surface_contract",
             lambda: native_surface_contract(

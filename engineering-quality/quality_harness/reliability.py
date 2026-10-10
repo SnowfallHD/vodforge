@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import json
 import queue
+import time
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
+
+from .transaction_observation import file_observation
+from .util import sha256_file
 
 
 def batch_failure_report_reset_probe(
@@ -52,10 +57,31 @@ def batch_failure_report_reset_probe(
         write_info_json=False,
         tags=[],
     )
+    clock = time.monotonic()
+    observations = [
+        {
+            "phase": "before_reset",
+            "elapsed_seconds": time.monotonic() - clock,
+            "run_id": job.run_id,
+            "report": file_observation(report),
+            "processed": list(processed),
+            "events": list(app.events.queue),
+        }
+    ]
     original_unlink = Path.unlink
 
     def deny_report_unlink(path: Path, *args: Any, **kwargs: Any) -> None:
         if path == report:
+            observations.append(
+                {
+                    "phase": "reset_refused",
+                    "elapsed_seconds": time.monotonic() - clock,
+                    "run_id": job.run_id,
+                    "report": file_observation(report),
+                    "processed": list(processed),
+                    "events": list(app.events.queue),
+                }
+            )
             raise PermissionError("injected report lock")
         original_unlink(path, *args, **kwargs)
 
@@ -67,6 +93,16 @@ def batch_failure_report_reset_probe(
     finally:
         app_module.BATCH_FAILURE_REPORT_PATH = prior_report_path
 
+    observations.append(
+        {
+            "phase": "worker_returned",
+            "elapsed_seconds": time.monotonic() - clock,
+            "run_id": job.run_id,
+            "report": file_observation(report),
+            "processed": list(processed),
+            "events": list(app.events.queue),
+        }
+    )
     errors = [payload for kind, payload in app.events.queue if kind == "error"]
     old_report_preserved = report.read_text(encoding="utf-8") == old_contents
     aborted_before_media = not processed
@@ -97,6 +133,27 @@ def batch_failure_report_reset_probe(
         "artifacts": [str(report)],
         "error": None,
     }
+    raw_path = case_dir / "interaction-observation.json"
+    raw_path.write_text(
+        json.dumps(
+            {
+                "scenario_id": scenario_id,
+                "contract": "owned-batch-report-refusal-v1",
+                "clock_origin_monotonic": clock,
+                "job": {
+                    "run_id": job.run_id,
+                    "urls": job.urls,
+                    "output_dir": str(job.output_dir),
+                },
+                "observations": observations,
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    scenario.update(raw_result=str(raw_path), raw_result_sha256=sha256_file(raw_path))
+    scenario["artifacts"].append(str(raw_path))
     if passed:
         return scenario, []
     return scenario, [

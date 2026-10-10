@@ -436,7 +436,7 @@ def evaluate_engineering_result(
                 label=f"Interaction assertion coverage: {scenario_id}",
                 status="passed"
                 if coverage["status"] == "not_applicable"
-                else "unproven",
+                else coverage["status"],
                 required=True,
                 evidence=[coverage["reason"]],
             )
@@ -448,7 +448,7 @@ def evaluate_engineering_result(
                 label=f"Usability evidence: {scenario_id}",
                 status="passed"
                 if usability["status"] == "not_applicable"
-                else "unproven",
+                else usability["status"],
                 required=True,
                 evidence=[usability["reason"]],
             )

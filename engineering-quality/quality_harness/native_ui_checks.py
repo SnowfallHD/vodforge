@@ -41,6 +41,28 @@ def native_surface_contract(repo_root, output_dir, *, profile="normal", ui="tk")
         "tests/test_qt_settings_theme.py",
         "tests/test_qt_presentation_diagnostics.py",
     ]
+    # Keep recent user-reported Qt regressions in a separate process. They
+    # exercise component/event ownership; offscreen execution is not native
+    # pointer timing, displayed pixels or packaged application acceptance.
+    qt_reported_regressions = [
+        "tests/test_qt_inspector_description_geometry.py",
+        "tests/test_qt_folder_columns_responsive.py",
+        "tests/test_qt_composer_custom_options.py",
+        "tests/test_qt_composer_feedback.py",
+        "tests/test_qt_all_runs_hover_seam.py",
+        "tests/test_qt_output_path_layout.py",
+        "tests/test_qt_run_deck_responsive_labels.py",
+        "tests/test_qt_recovery_draft_retirement.py",
+        "tests/test_qt_retry_recovery_membership.py",
+        "tests/test_qt_move_dialog_content_fit.py",
+        "tests/test_qt_move_root_notice.py",
+        "tests/test_qt_inspector_recovery_details.py",
+        "tests/test_qt_worker_control_context.py",
+        "tests/test_qt_scroll_lifecycle.py",
+        "tests/test_qt_vertical_scroll_chain.py",
+        "tests/test_qt_artwork_continuity.py",
+        "tests/test_qt_player_resize_continuity.py",
+    ]
     tk_tests = [
         "tests/test_choice_popover_lifecycle.py",
         "tests/test_native_interaction_readiness.py",
@@ -139,6 +161,7 @@ def native_surface_contract(repo_root, output_dir, *, profile="normal", ui="tk")
         groups = (
             ("scene", ["tests/test_qt_scene_port.py"]),
             ("components", qt_component_tests),
+            ("reported-regressions", qt_reported_regressions),
         )
         group_results = []
         for name, tests in groups:
@@ -184,6 +207,8 @@ def native_surface_contract(repo_root, output_dir, *, profile="normal", ui="tk")
                 ),
                 "metrics": {
                     "ui": ui,
+                    "render_surface": "offscreen_qml_components",
+                    "native_window_observed": False,
                     "timed_out": any(
                         result.timed_out
                         for _name, _group_dir, _group_report, result in group_results
@@ -202,7 +227,12 @@ def native_surface_contract(repo_root, output_dir, *, profile="normal", ui="tk")
                         result.stderr,
                     )
                 ]
-                + ["source-native; not packaged or cross-platform proof"],
+                + [
+                    (
+                        "Offscreen Qt component/event contracts; not native input, "
+                        "displayed-window pixels, packaged or cross-platform proof"
+                    )
+                ],
                 "artifacts": [
                     str(group_dir / artifact)
                     for _name, group_dir, _group_report, _result in group_results

@@ -1,0 +1,2531 @@
+[
+  {
+    "scenario": {
+      "id": "correctness.fresh_output_plan_validation",
+      "evidence_tier": "unit_static",
+      "category": "correctness",
+      "status": "passed",
+      "duration_seconds": 0.004,
+      "metrics": {
+        "validator_contract_weaknesses": 0,
+        "corrupted_final_outputs": 0
+      },
+      "evidence": [
+        "Every injected plan/metadata/artwork/tag mismatch was rejected.",
+        "Matching MP3, embedded MP3, source-limited MP4, quiet AAC, and embedded MP4 artifacts were accepted."
+      ],
+      "artifacts": [
+        "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-64k.mp3",
+        "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+        "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/interaction-observation.json"
+      ],
+      "error": null,
+      "raw_result": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/interaction-observation.json",
+      "raw_result_sha256": "135470a84deed39df88048cd338d6724f291a4a3bd311adf7e15952aa3f8379e",
+      "interaction_coverage": {
+        "status": "unproven",
+        "scenario_id": "correctness.fresh_output_plan_validation",
+        "reason": "Before/during/after requirement-to-assertion review is pending. Existing scenario status and raw traces do not establish complete temporal coverage. Preserve their narrower evidence.",
+        "required_phases": [
+          "before",
+          "during",
+          "after"
+        ],
+        "assertion_mapping": [],
+        "phase_review": {
+          "before": "unproven",
+          "during": "unproven",
+          "after": "unproven"
+        },
+        "usability_review": {
+          "status": "unproven",
+          "applicability": "unreviewed",
+          "reason": "Usability evidence and reviewer mapping have not been enrolled. Unknown applicability is not an exemption; functional success does not establish clarity, restraint or accessible interaction.",
+          "dimensions": {
+            "orientation_navigation": "unproven",
+            "action_hierarchy": "unproven",
+            "progressive_disclosure": "unproven",
+            "visual_hierarchy": "unproven",
+            "sparse_busy_content": "unproven",
+            "feedback": "unproven",
+            "accessibility": "unproven"
+          }
+        }
+      }
+    },
+    "raw": {
+      "scenario_id": "correctness.fresh_output_plan_validation",
+      "contract": "resolved-plan-validator-calls-v1",
+      "scope": "injected ffprobe data; no real media decoding or worker commit",
+      "clock_origin_monotonic": 129772.688966791,
+      "calls": [
+        {
+          "label": "MP3 bitrate",
+          "entered_seconds": 3.483399632386863e-05,
+          "source_before": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-64k.mp3",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          },
+          "output_type": "MP3",
+          "binary": "unused",
+          "plan": {
+            "output_type": "MP3",
+            "audio_format_id": "fixture-audio",
+            "format_selector": "fixture-audio",
+            "source_audio_kbps": 192,
+            "effective_audio_kbps": 192,
+            "audio_bitrate_kbps": 320,
+            "source_sample_rate": "48000",
+            "output_sample_rate": "48000",
+            "source_channels": "2",
+            "output_channels": "2",
+            "audio_codec": "opus",
+            "embed_metadata": false,
+            "embed_cover_art": false,
+            "cover_art_source": "No Art",
+            "output_extension": ".mp3",
+            "warnings": [],
+            "summary": ""
+          },
+          "probe": {
+            "format": {
+              "format_name": "mp3",
+              "duration": "6.0",
+              "size": "51"
+            },
+            "streams": [
+              {
+                "codec_type": "audio",
+                "codec_name": "mp3",
+                "bit_rate": "64000",
+                "sample_rate": "48000",
+                "channels": 2
+              }
+            ]
+          },
+          "expectations": {
+            "expected_duration_seconds": 6
+          },
+          "returned_seconds": 0.00021204199583735317,
+          "exception_type": "RuntimeError",
+          "source_after": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-64k.mp3",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          }
+        },
+        {
+          "label": "MP3 sample rate",
+          "entered_seconds": 0.0002572499943198636,
+          "source_before": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-64k.mp3",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          },
+          "output_type": "MP3",
+          "binary": "unused",
+          "plan": {
+            "output_type": "MP3",
+            "audio_format_id": "fixture-audio",
+            "format_selector": "fixture-audio",
+            "source_audio_kbps": 192,
+            "effective_audio_kbps": 192,
+            "audio_bitrate_kbps": 320,
+            "source_sample_rate": "48000",
+            "output_sample_rate": "48000",
+            "source_channels": "2",
+            "output_channels": "2",
+            "audio_codec": "opus",
+            "embed_metadata": false,
+            "embed_cover_art": false,
+            "cover_art_source": "No Art",
+            "output_extension": ".mp3",
+            "warnings": [],
+            "summary": ""
+          },
+          "probe": {
+            "format": {
+              "format_name": "mp3",
+              "duration": "6.0",
+              "size": "51"
+            },
+            "streams": [
+              {
+                "codec_type": "audio",
+                "codec_name": "mp3",
+                "bit_rate": "320000",
+                "sample_rate": "22050",
+                "channels": 2
+              }
+            ]
+          },
+          "expectations": {
+            "expected_duration_seconds": 6
+          },
+          "returned_seconds": 0.00032395900052506477,
+          "exception_type": "RuntimeError",
+          "source_after": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-64k.mp3",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          }
+        },
+        {
+          "label": "MP3 channels",
+          "entered_seconds": 0.00035920900700148195,
+          "source_before": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-64k.mp3",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          },
+          "output_type": "MP3",
+          "binary": "unused",
+          "plan": {
+            "output_type": "MP3",
+            "audio_format_id": "fixture-audio",
+            "format_selector": "fixture-audio",
+            "source_audio_kbps": 192,
+            "effective_audio_kbps": 192,
+            "audio_bitrate_kbps": 320,
+            "source_sample_rate": "48000",
+            "output_sample_rate": "48000",
+            "source_channels": "2",
+            "output_channels": "2",
+            "audio_codec": "opus",
+            "embed_metadata": false,
+            "embed_cover_art": false,
+            "cover_art_source": "No Art",
+            "output_extension": ".mp3",
+            "warnings": [],
+            "summary": ""
+          },
+          "probe": {
+            "format": {
+              "format_name": "mp3",
+              "duration": "6.0",
+              "size": "51"
+            },
+            "streams": [
+              {
+                "codec_type": "audio",
+                "codec_name": "mp3",
+                "bit_rate": "320000",
+                "sample_rate": "48000",
+                "channels": 1
+              }
+            ]
+          },
+          "expectations": {
+            "expected_duration_seconds": 6
+          },
+          "returned_seconds": 0.00041295899427495897,
+          "exception_type": "RuntimeError",
+          "source_after": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-64k.mp3",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          }
+        },
+        {
+          "label": "MP3 codec",
+          "entered_seconds": 0.0004448749969014898,
+          "source_before": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-64k.mp3",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          },
+          "output_type": "MP3",
+          "binary": "unused",
+          "plan": {
+            "output_type": "MP3",
+            "audio_format_id": "fixture-audio",
+            "format_selector": "fixture-audio",
+            "source_audio_kbps": 192,
+            "effective_audio_kbps": 192,
+            "audio_bitrate_kbps": 320,
+            "source_sample_rate": "48000",
+            "output_sample_rate": "48000",
+            "source_channels": "2",
+            "output_channels": "2",
+            "audio_codec": "opus",
+            "embed_metadata": false,
+            "embed_cover_art": false,
+            "cover_art_source": "No Art",
+            "output_extension": ".mp3",
+            "warnings": [],
+            "summary": ""
+          },
+          "probe": {
+            "format": {
+              "format_name": "mp3",
+              "duration": "6.0",
+              "size": "51"
+            },
+            "streams": [
+              {
+                "codec_type": "audio",
+                "codec_name": "aac",
+                "bit_rate": "320000",
+                "sample_rate": "48000",
+                "channels": 2
+              }
+            ]
+          },
+          "expectations": {
+            "expected_duration_seconds": 6
+          },
+          "returned_seconds": 0.000490249993163161,
+          "exception_type": "RuntimeError",
+          "source_after": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-64k.mp3",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          }
+        },
+        {
+          "label": "MP4 width",
+          "entered_seconds": 0.0005222920008236542,
+          "source_before": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          },
+          "output_type": "MP4",
+          "binary": "unused",
+          "plan": {
+            "mode": "Auto CBR",
+            "video_format_id": "fixture-video",
+            "audio_format_id": "fixture-audio",
+            "format_selector": "fixture-video+fixture-audio",
+            "output_width": 640,
+            "output_height": 360,
+            "source_video_kbps": 1500,
+            "effective_video_kbps": 1500,
+            "video_bitrate_kbps": 1500,
+            "source_audio_kbps": 192,
+            "effective_audio_kbps": 192,
+            "audio_bitrate_kbps": 320,
+            "audio_sample_rate": "48000",
+            "audio_channels": "2",
+            "output_audio_codec": "AAC",
+            "x264_preset": "medium",
+            "fps": null,
+            "video_codec": "unknown",
+            "audio_codec": "unknown",
+            "warnings": [],
+            "summary": "",
+            "video_crf": null,
+            "nvenc_cq": null,
+            "keyframe_seconds": null,
+            "constant_frame_rate": false,
+            "video_maxrate_kbps": null,
+            "source_quality_tier": 0,
+            "selection_dimensions": {}
+          },
+          "probe": {
+            "format": {
+              "format_name": "mov,mp4",
+              "duration": "6.0",
+              "size": "51"
+            },
+            "streams": [
+              {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "width": 320,
+                "height": 360,
+                "profile": "High",
+                "pix_fmt": "yuv420p",
+                "bit_rate": "1580000"
+              },
+              {
+                "codec_type": "audio",
+                "codec_name": "aac",
+                "sample_rate": "48000",
+                "channels": 2,
+                "bit_rate": "160000"
+              }
+            ]
+          },
+          "expectations": {
+            "expected_duration_seconds": 6
+          },
+          "returned_seconds": 0.0005976670072413981,
+          "exception_type": "RuntimeError",
+          "source_after": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          }
+        },
+        {
+          "label": "MP4 height",
+          "entered_seconds": 0.0006299170054262504,
+          "source_before": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          },
+          "output_type": "MP4",
+          "binary": "unused",
+          "plan": {
+            "mode": "Auto CBR",
+            "video_format_id": "fixture-video",
+            "audio_format_id": "fixture-audio",
+            "format_selector": "fixture-video+fixture-audio",
+            "output_width": 640,
+            "output_height": 360,
+            "source_video_kbps": 1500,
+            "effective_video_kbps": 1500,
+            "video_bitrate_kbps": 1500,
+            "source_audio_kbps": 192,
+            "effective_audio_kbps": 192,
+            "audio_bitrate_kbps": 320,
+            "audio_sample_rate": "48000",
+            "audio_channels": "2",
+            "output_audio_codec": "AAC",
+            "x264_preset": "medium",
+            "fps": null,
+            "video_codec": "unknown",
+            "audio_codec": "unknown",
+            "warnings": [],
+            "summary": "",
+            "video_crf": null,
+            "nvenc_cq": null,
+            "keyframe_seconds": null,
+            "constant_frame_rate": false,
+            "video_maxrate_kbps": null,
+            "source_quality_tier": 0,
+            "selection_dimensions": {}
+          },
+          "probe": {
+            "format": {
+              "format_name": "mov,mp4",
+              "duration": "6.0",
+              "size": "51"
+            },
+            "streams": [
+              {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "width": 640,
+                "height": 240,
+                "profile": "High",
+                "pix_fmt": "yuv420p",
+                "bit_rate": "1580000"
+              },
+              {
+                "codec_type": "audio",
+                "codec_name": "aac",
+                "sample_rate": "48000",
+                "channels": 2,
+                "bit_rate": "160000"
+              }
+            ]
+          },
+          "expectations": {
+            "expected_duration_seconds": 6
+          },
+          "returned_seconds": 0.0006886670016683638,
+          "exception_type": "RuntimeError",
+          "source_after": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          }
+        },
+        {
+          "label": "MP4 video codec",
+          "entered_seconds": 0.0007224169967230409,
+          "source_before": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          },
+          "output_type": "MP4",
+          "binary": "unused",
+          "plan": {
+            "mode": "Auto CBR",
+            "video_format_id": "fixture-video",
+            "audio_format_id": "fixture-audio",
+            "format_selector": "fixture-video+fixture-audio",
+            "output_width": 640,
+            "output_height": 360,
+            "source_video_kbps": 1500,
+            "effective_video_kbps": 1500,
+            "video_bitrate_kbps": 1500,
+            "source_audio_kbps": 192,
+            "effective_audio_kbps": 192,
+            "audio_bitrate_kbps": 320,
+            "audio_sample_rate": "48000",
+            "audio_channels": "2",
+            "output_audio_codec": "AAC",
+            "x264_preset": "medium",
+            "fps": null,
+            "video_codec": "unknown",
+            "audio_codec": "unknown",
+            "warnings": [],
+            "summary": "",
+            "video_crf": null,
+            "nvenc_cq": null,
+            "keyframe_seconds": null,
+            "constant_frame_rate": false,
+            "video_maxrate_kbps": null,
+            "source_quality_tier": 0,
+            "selection_dimensions": {}
+          },
+          "probe": {
+            "format": {
+              "format_name": "mov,mp4",
+              "duration": "6.0",
+              "size": "51"
+            },
+            "streams": [
+              {
+                "codec_type": "video",
+                "codec_name": "vp9",
+                "width": 640,
+                "height": 360,
+                "profile": "High",
+                "pix_fmt": "yuv420p",
+                "bit_rate": "1580000"
+              },
+              {
+                "codec_type": "audio",
+                "codec_name": "aac",
+                "sample_rate": "48000",
+                "channels": 2,
+                "bit_rate": "160000"
+              }
+            ]
+          },
+          "expectations": {
+            "expected_duration_seconds": 6
+          },
+          "returned_seconds": 0.0007692920044064522,
+          "exception_type": "RuntimeError",
+          "source_after": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          }
+        },
+        {
+          "label": "MP4 pixel format",
+          "entered_seconds": 0.0007999999943422154,
+          "source_before": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          },
+          "output_type": "MP4",
+          "binary": "unused",
+          "plan": {
+            "mode": "Auto CBR",
+            "video_format_id": "fixture-video",
+            "audio_format_id": "fixture-audio",
+            "format_selector": "fixture-video+fixture-audio",
+            "output_width": 640,
+            "output_height": 360,
+            "source_video_kbps": 1500,
+            "effective_video_kbps": 1500,
+            "video_bitrate_kbps": 1500,
+            "source_audio_kbps": 192,
+            "effective_audio_kbps": 192,
+            "audio_bitrate_kbps": 320,
+            "audio_sample_rate": "48000",
+            "audio_channels": "2",
+            "output_audio_codec": "AAC",
+            "x264_preset": "medium",
+            "fps": null,
+            "video_codec": "unknown",
+            "audio_codec": "unknown",
+            "warnings": [],
+            "summary": "",
+            "video_crf": null,
+            "nvenc_cq": null,
+            "keyframe_seconds": null,
+            "constant_frame_rate": false,
+            "video_maxrate_kbps": null,
+            "source_quality_tier": 0,
+            "selection_dimensions": {}
+          },
+          "probe": {
+            "format": {
+              "format_name": "mov,mp4",
+              "duration": "6.0",
+              "size": "51"
+            },
+            "streams": [
+              {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "width": 640,
+                "height": 360,
+                "profile": "High",
+                "pix_fmt": "yuv444p",
+                "bit_rate": "1580000"
+              },
+              {
+                "codec_type": "audio",
+                "codec_name": "aac",
+                "sample_rate": "48000",
+                "channels": 2,
+                "bit_rate": "160000"
+              }
+            ]
+          },
+          "expectations": {
+            "expected_duration_seconds": 6
+          },
+          "returned_seconds": 0.0008533749933121726,
+          "exception_type": "RuntimeError",
+          "source_after": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          }
+        },
+        {
+          "label": "MP4 H.264 profile",
+          "entered_seconds": 0.0008853750041453168,
+          "source_before": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          },
+          "output_type": "MP4",
+          "binary": "unused",
+          "plan": {
+            "mode": "Auto CBR",
+            "video_format_id": "fixture-video",
+            "audio_format_id": "fixture-audio",
+            "format_selector": "fixture-video+fixture-audio",
+            "output_width": 640,
+            "output_height": 360,
+            "source_video_kbps": 1500,
+            "effective_video_kbps": 1500,
+            "video_bitrate_kbps": 1500,
+            "source_audio_kbps": 192,
+            "effective_audio_kbps": 192,
+            "audio_bitrate_kbps": 320,
+            "audio_sample_rate": "48000",
+            "audio_channels": "2",
+            "output_audio_codec": "AAC",
+            "x264_preset": "medium",
+            "fps": null,
+            "video_codec": "unknown",
+            "audio_codec": "unknown",
+            "warnings": [],
+            "summary": "",
+            "video_crf": null,
+            "nvenc_cq": null,
+            "keyframe_seconds": null,
+            "constant_frame_rate": false,
+            "video_maxrate_kbps": null,
+            "source_quality_tier": 0,
+            "selection_dimensions": {}
+          },
+          "probe": {
+            "format": {
+              "format_name": "mov,mp4",
+              "duration": "6.0",
+              "size": "51"
+            },
+            "streams": [
+              {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "width": 640,
+                "height": 360,
+                "profile": "Baseline",
+                "pix_fmt": "yuv420p",
+                "bit_rate": "1580000"
+              },
+              {
+                "codec_type": "audio",
+                "codec_name": "aac",
+                "sample_rate": "48000",
+                "channels": 2,
+                "bit_rate": "160000"
+              }
+            ]
+          },
+          "expectations": {
+            "expected_duration_seconds": 6
+          },
+          "returned_seconds": 0.0009367919992655516,
+          "exception_type": "RuntimeError",
+          "source_after": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          }
+        },
+        {
+          "label": "MP4 video bitrate",
+          "entered_seconds": 0.0009674169996287674,
+          "source_before": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          },
+          "output_type": "MP4",
+          "binary": "unused",
+          "plan": {
+            "mode": "Auto CBR",
+            "video_format_id": "fixture-video",
+            "audio_format_id": "fixture-audio",
+            "format_selector": "fixture-video+fixture-audio",
+            "output_width": 640,
+            "output_height": 360,
+            "source_video_kbps": 1500,
+            "effective_video_kbps": 1500,
+            "video_bitrate_kbps": 1500,
+            "source_audio_kbps": 192,
+            "effective_audio_kbps": 192,
+            "audio_bitrate_kbps": 320,
+            "audio_sample_rate": "48000",
+            "audio_channels": "2",
+            "output_audio_codec": "AAC",
+            "x264_preset": "medium",
+            "fps": null,
+            "video_codec": "unknown",
+            "audio_codec": "unknown",
+            "warnings": [],
+            "summary": "",
+            "video_crf": null,
+            "nvenc_cq": null,
+            "keyframe_seconds": null,
+            "constant_frame_rate": false,
+            "video_maxrate_kbps": null,
+            "source_quality_tier": 0,
+            "selection_dimensions": {}
+          },
+          "probe": {
+            "format": {
+              "format_name": "mov,mp4",
+              "duration": "6.0",
+              "size": "51"
+            },
+            "streams": [
+              {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "width": 640,
+                "height": 360,
+                "profile": "High",
+                "pix_fmt": "yuv420p",
+                "bit_rate": "100000"
+              },
+              {
+                "codec_type": "audio",
+                "codec_name": "aac",
+                "sample_rate": "48000",
+                "channels": 2,
+                "bit_rate": "160000"
+              }
+            ]
+          },
+          "expectations": {
+            "expected_duration_seconds": 6
+          },
+          "returned_seconds": 0.001020666997646913,
+          "exception_type": "RuntimeError",
+          "source_after": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          }
+        },
+        {
+          "label": "MP4 audio codec",
+          "entered_seconds": 0.0010529590072110295,
+          "source_before": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          },
+          "output_type": "MP4",
+          "binary": "unused",
+          "plan": {
+            "mode": "Auto CBR",
+            "video_format_id": "fixture-video",
+            "audio_format_id": "fixture-audio",
+            "format_selector": "fixture-video+fixture-audio",
+            "output_width": 640,
+            "output_height": 360,
+            "source_video_kbps": 1500,
+            "effective_video_kbps": 1500,
+            "video_bitrate_kbps": 1500,
+            "source_audio_kbps": 192,
+            "effective_audio_kbps": 192,
+            "audio_bitrate_kbps": 320,
+            "audio_sample_rate": "48000",
+            "audio_channels": "2",
+            "output_audio_codec": "AAC",
+            "x264_preset": "medium",
+            "fps": null,
+            "video_codec": "unknown",
+            "audio_codec": "unknown",
+            "warnings": [],
+            "summary": "",
+            "video_crf": null,
+            "nvenc_cq": null,
+            "keyframe_seconds": null,
+            "constant_frame_rate": false,
+            "video_maxrate_kbps": null,
+            "source_quality_tier": 0,
+            "selection_dimensions": {}
+          },
+          "probe": {
+            "format": {
+              "format_name": "mov,mp4",
+              "duration": "6.0",
+              "size": "51"
+            },
+            "streams": [
+              {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "width": 640,
+                "height": 360,
+                "profile": "High",
+                "pix_fmt": "yuv420p",
+                "bit_rate": "1580000"
+              },
+              {
+                "codec_type": "audio",
+                "codec_name": "opus",
+                "sample_rate": "48000",
+                "channels": 2,
+                "bit_rate": "160000"
+              }
+            ]
+          },
+          "expectations": {
+            "expected_duration_seconds": 6
+          },
+          "returned_seconds": 0.001097833999665454,
+          "exception_type": "RuntimeError",
+          "source_after": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          }
+        },
+        {
+          "label": "MP4 excessive audio bitrate",
+          "entered_seconds": 0.0011296250013401732,
+          "source_before": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          },
+          "output_type": "MP4",
+          "binary": "unused",
+          "plan": {
+            "mode": "Auto CBR",
+            "video_format_id": "fixture-video",
+            "audio_format_id": "fixture-audio",
+            "format_selector": "fixture-video+fixture-audio",
+            "output_width": 640,
+            "output_height": 360,
+            "source_video_kbps": 1500,
+            "effective_video_kbps": 1500,
+            "video_bitrate_kbps": 1500,
+            "source_audio_kbps": 192,
+            "effective_audio_kbps": 192,
+            "audio_bitrate_kbps": 320,
+            "audio_sample_rate": "48000",
+            "audio_channels": "2",
+            "output_audio_codec": "AAC",
+            "x264_preset": "medium",
+            "fps": null,
+            "video_codec": "unknown",
+            "audio_codec": "unknown",
+            "warnings": [],
+            "summary": "",
+            "video_crf": null,
+            "nvenc_cq": null,
+            "keyframe_seconds": null,
+            "constant_frame_rate": false,
+            "video_maxrate_kbps": null,
+            "source_quality_tier": 0,
+            "selection_dimensions": {}
+          },
+          "probe": {
+            "format": {
+              "format_name": "mov,mp4",
+              "duration": "6.0",
+              "size": "51"
+            },
+            "streams": [
+              {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "width": 640,
+                "height": 360,
+                "profile": "High",
+                "pix_fmt": "yuv420p",
+                "bit_rate": "1580000"
+              },
+              {
+                "codec_type": "audio",
+                "codec_name": "aac",
+                "sample_rate": "48000",
+                "channels": 2,
+                "bit_rate": "500000"
+              }
+            ]
+          },
+          "expectations": {
+            "expected_duration_seconds": 6
+          },
+          "returned_seconds": 0.0011807090049842373,
+          "exception_type": "RuntimeError",
+          "source_after": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          }
+        },
+        {
+          "label": "MP4 zero audio bitrate",
+          "entered_seconds": 0.0012136250006733462,
+          "source_before": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          },
+          "output_type": "MP4",
+          "binary": "unused",
+          "plan": {
+            "mode": "Auto CBR",
+            "video_format_id": "fixture-video",
+            "audio_format_id": "fixture-audio",
+            "format_selector": "fixture-video+fixture-audio",
+            "output_width": 640,
+            "output_height": 360,
+            "source_video_kbps": 1500,
+            "effective_video_kbps": 1500,
+            "video_bitrate_kbps": 1500,
+            "source_audio_kbps": 192,
+            "effective_audio_kbps": 192,
+            "audio_bitrate_kbps": 320,
+            "audio_sample_rate": "48000",
+            "audio_channels": "2",
+            "output_audio_codec": "AAC",
+            "x264_preset": "medium",
+            "fps": null,
+            "video_codec": "unknown",
+            "audio_codec": "unknown",
+            "warnings": [],
+            "summary": "",
+            "video_crf": null,
+            "nvenc_cq": null,
+            "keyframe_seconds": null,
+            "constant_frame_rate": false,
+            "video_maxrate_kbps": null,
+            "source_quality_tier": 0,
+            "selection_dimensions": {}
+          },
+          "probe": {
+            "format": {
+              "format_name": "mov,mp4",
+              "duration": "6.0",
+              "size": "51"
+            },
+            "streams": [
+              {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "width": 640,
+                "height": 360,
+                "profile": "High",
+                "pix_fmt": "yuv420p",
+                "bit_rate": "1580000"
+              },
+              {
+                "codec_type": "audio",
+                "codec_name": "aac",
+                "sample_rate": "48000",
+                "channels": 2,
+                "bit_rate": "0"
+              }
+            ]
+          },
+          "expectations": {
+            "expected_duration_seconds": 6
+          },
+          "returned_seconds": 0.0012648749980144203,
+          "exception_type": "RuntimeError",
+          "source_after": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          }
+        },
+        {
+          "label": "MP4 unavailable audio bitrate",
+          "entered_seconds": 0.0012977089936612174,
+          "source_before": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          },
+          "output_type": "MP4",
+          "binary": "unused",
+          "plan": {
+            "mode": "Auto CBR",
+            "video_format_id": "fixture-video",
+            "audio_format_id": "fixture-audio",
+            "format_selector": "fixture-video+fixture-audio",
+            "output_width": 640,
+            "output_height": 360,
+            "source_video_kbps": 1500,
+            "effective_video_kbps": 1500,
+            "video_bitrate_kbps": 1500,
+            "source_audio_kbps": 192,
+            "effective_audio_kbps": 192,
+            "audio_bitrate_kbps": 320,
+            "audio_sample_rate": "48000",
+            "audio_channels": "2",
+            "output_audio_codec": "AAC",
+            "x264_preset": "medium",
+            "fps": null,
+            "video_codec": "unknown",
+            "audio_codec": "unknown",
+            "warnings": [],
+            "summary": "",
+            "video_crf": null,
+            "nvenc_cq": null,
+            "keyframe_seconds": null,
+            "constant_frame_rate": false,
+            "video_maxrate_kbps": null,
+            "source_quality_tier": 0,
+            "selection_dimensions": {}
+          },
+          "probe": {
+            "format": {
+              "format_name": "mov,mp4",
+              "duration": "6.0",
+              "size": "51"
+            },
+            "streams": [
+              {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "width": 640,
+                "height": 360,
+                "profile": "High",
+                "pix_fmt": "yuv420p",
+                "bit_rate": "1580000"
+              },
+              {
+                "codec_type": "audio",
+                "codec_name": "aac",
+                "sample_rate": "48000",
+                "channels": 2,
+                "bit_rate": "N/A"
+              }
+            ]
+          },
+          "expectations": {
+            "expected_duration_seconds": 6
+          },
+          "returned_seconds": 0.001351708997390233,
+          "exception_type": "RuntimeError",
+          "source_after": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          }
+        },
+        {
+          "label": "MP4 audio sample rate",
+          "entered_seconds": 0.001385374998790212,
+          "source_before": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          },
+          "output_type": "MP4",
+          "binary": "unused",
+          "plan": {
+            "mode": "Auto CBR",
+            "video_format_id": "fixture-video",
+            "audio_format_id": "fixture-audio",
+            "format_selector": "fixture-video+fixture-audio",
+            "output_width": 640,
+            "output_height": 360,
+            "source_video_kbps": 1500,
+            "effective_video_kbps": 1500,
+            "video_bitrate_kbps": 1500,
+            "source_audio_kbps": 192,
+            "effective_audio_kbps": 192,
+            "audio_bitrate_kbps": 320,
+            "audio_sample_rate": "48000",
+            "audio_channels": "2",
+            "output_audio_codec": "AAC",
+            "x264_preset": "medium",
+            "fps": null,
+            "video_codec": "unknown",
+            "audio_codec": "unknown",
+            "warnings": [],
+            "summary": "",
+            "video_crf": null,
+            "nvenc_cq": null,
+            "keyframe_seconds": null,
+            "constant_frame_rate": false,
+            "video_maxrate_kbps": null,
+            "source_quality_tier": 0,
+            "selection_dimensions": {}
+          },
+          "probe": {
+            "format": {
+              "format_name": "mov,mp4",
+              "duration": "6.0",
+              "size": "51"
+            },
+            "streams": [
+              {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "width": 640,
+                "height": 360,
+                "profile": "High",
+                "pix_fmt": "yuv420p",
+                "bit_rate": "1580000"
+              },
+              {
+                "codec_type": "audio",
+                "codec_name": "aac",
+                "sample_rate": "22050",
+                "channels": 2,
+                "bit_rate": "160000"
+              }
+            ]
+          },
+          "expectations": {
+            "expected_duration_seconds": 6
+          },
+          "returned_seconds": 0.0014369169948622584,
+          "exception_type": "RuntimeError",
+          "source_after": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          }
+        },
+        {
+          "label": "MP4 audio channels",
+          "entered_seconds": 0.0014677500003017485,
+          "source_before": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          },
+          "output_type": "MP4",
+          "binary": "unused",
+          "plan": {
+            "mode": "Auto CBR",
+            "video_format_id": "fixture-video",
+            "audio_format_id": "fixture-audio",
+            "format_selector": "fixture-video+fixture-audio",
+            "output_width": 640,
+            "output_height": 360,
+            "source_video_kbps": 1500,
+            "effective_video_kbps": 1500,
+            "video_bitrate_kbps": 1500,
+            "source_audio_kbps": 192,
+            "effective_audio_kbps": 192,
+            "audio_bitrate_kbps": 320,
+            "audio_sample_rate": "48000",
+            "audio_channels": "2",
+            "output_audio_codec": "AAC",
+            "x264_preset": "medium",
+            "fps": null,
+            "video_codec": "unknown",
+            "audio_codec": "unknown",
+            "warnings": [],
+            "summary": "",
+            "video_crf": null,
+            "nvenc_cq": null,
+            "keyframe_seconds": null,
+            "constant_frame_rate": false,
+            "video_maxrate_kbps": null,
+            "source_quality_tier": 0,
+            "selection_dimensions": {}
+          },
+          "probe": {
+            "format": {
+              "format_name": "mov,mp4",
+              "duration": "6.0",
+              "size": "51"
+            },
+            "streams": [
+              {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "width": 640,
+                "height": 360,
+                "profile": "High",
+                "pix_fmt": "yuv420p",
+                "bit_rate": "1580000"
+              },
+              {
+                "codec_type": "audio",
+                "codec_name": "aac",
+                "sample_rate": "48000",
+                "channels": 1,
+                "bit_rate": "160000"
+              }
+            ]
+          },
+          "expectations": {
+            "expected_duration_seconds": 6
+          },
+          "returned_seconds": 0.0015234589955070987,
+          "exception_type": "RuntimeError",
+          "source_after": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          }
+        },
+        {
+          "label": "MP3 requested metadata",
+          "entered_seconds": 0.0015580000035697594,
+          "source_before": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-64k.mp3",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          },
+          "output_type": "MP3",
+          "binary": "unused",
+          "plan": {
+            "output_type": "MP3",
+            "audio_format_id": "fixture-audio",
+            "format_selector": "fixture-audio",
+            "source_audio_kbps": 192,
+            "effective_audio_kbps": 192,
+            "audio_bitrate_kbps": 320,
+            "source_sample_rate": "48000",
+            "output_sample_rate": "48000",
+            "source_channels": "2",
+            "output_channels": "2",
+            "audio_codec": "opus",
+            "embed_metadata": true,
+            "embed_cover_art": true,
+            "cover_art_source": "Synthetic fixture artwork",
+            "output_extension": ".mp3",
+            "warnings": [],
+            "summary": ""
+          },
+          "probe": {
+            "format": {
+              "format_name": "mp3",
+              "duration": "6.0",
+              "size": "51",
+              "tags": {}
+            },
+            "streams": [
+              {
+                "codec_type": "audio",
+                "codec_name": "mp3",
+                "bit_rate": "320000",
+                "sample_rate": "48000",
+                "channels": 2
+              },
+              {
+                "codec_type": "video",
+                "codec_name": "mjpeg",
+                "width": 640,
+                "height": 360,
+                "disposition": {
+                  "attached_pic": 1
+                }
+              }
+            ]
+          },
+          "expectations": {
+            "expected_duration_seconds": 6,
+            "expected_tags": [
+              "alpha",
+              "unicode-\u0394"
+            ]
+          },
+          "returned_seconds": 0.0016127499984577298,
+          "exception_type": "RuntimeError",
+          "source_after": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-64k.mp3",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          }
+        },
+        {
+          "label": "MP3 requested artwork",
+          "entered_seconds": 0.001644792006118223,
+          "source_before": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-64k.mp3",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          },
+          "output_type": "MP3",
+          "binary": "unused",
+          "plan": {
+            "output_type": "MP3",
+            "audio_format_id": "fixture-audio",
+            "format_selector": "fixture-audio",
+            "source_audio_kbps": 192,
+            "effective_audio_kbps": 192,
+            "audio_bitrate_kbps": 320,
+            "source_sample_rate": "48000",
+            "output_sample_rate": "48000",
+            "source_channels": "2",
+            "output_channels": "2",
+            "audio_codec": "opus",
+            "embed_metadata": true,
+            "embed_cover_art": true,
+            "cover_art_source": "Synthetic fixture artwork",
+            "output_extension": ".mp3",
+            "warnings": [],
+            "summary": ""
+          },
+          "probe": {
+            "format": {
+              "format_name": "mp3",
+              "duration": "6.0",
+              "size": "51",
+              "tags": {
+                "title": "Synthetic fixture",
+                "keywords": "alpha,unicode-\u0394"
+              }
+            },
+            "streams": [
+              {
+                "codec_type": "audio",
+                "codec_name": "mp3",
+                "bit_rate": "320000",
+                "sample_rate": "48000",
+                "channels": 2
+              }
+            ]
+          },
+          "expectations": {
+            "expected_duration_seconds": 6,
+            "expected_tags": [
+              "alpha",
+              "unicode-\u0394"
+            ]
+          },
+          "returned_seconds": 0.001695250000921078,
+          "exception_type": "RuntimeError",
+          "source_after": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-64k.mp3",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          }
+        },
+        {
+          "label": "MP3 requested keyword tag",
+          "entered_seconds": 0.001726333997794427,
+          "source_before": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-64k.mp3",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          },
+          "output_type": "MP3",
+          "binary": "unused",
+          "plan": {
+            "output_type": "MP3",
+            "audio_format_id": "fixture-audio",
+            "format_selector": "fixture-audio",
+            "source_audio_kbps": 192,
+            "effective_audio_kbps": 192,
+            "audio_bitrate_kbps": 320,
+            "source_sample_rate": "48000",
+            "output_sample_rate": "48000",
+            "source_channels": "2",
+            "output_channels": "2",
+            "audio_codec": "opus",
+            "embed_metadata": true,
+            "embed_cover_art": true,
+            "cover_art_source": "Synthetic fixture artwork",
+            "output_extension": ".mp3",
+            "warnings": [],
+            "summary": ""
+          },
+          "probe": {
+            "format": {
+              "format_name": "mp3",
+              "duration": "6.0",
+              "size": "51",
+              "tags": {
+                "title": "Synthetic fixture",
+                "keywords": "alpha"
+              }
+            },
+            "streams": [
+              {
+                "codec_type": "audio",
+                "codec_name": "mp3",
+                "bit_rate": "320000",
+                "sample_rate": "48000",
+                "channels": 2
+              },
+              {
+                "codec_type": "video",
+                "codec_name": "mjpeg",
+                "width": 640,
+                "height": 360,
+                "disposition": {
+                  "attached_pic": 1
+                }
+              }
+            ]
+          },
+          "expectations": {
+            "expected_duration_seconds": 6,
+            "expected_tags": [
+              "alpha",
+              "unicode-\u0394"
+            ]
+          },
+          "returned_seconds": 0.001774333999492228,
+          "exception_type": "RuntimeError",
+          "source_after": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-64k.mp3",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          }
+        },
+        {
+          "label": "MP4 requested metadata",
+          "entered_seconds": 0.001806291998946108,
+          "source_before": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          },
+          "output_type": "MP4",
+          "binary": "unused",
+          "plan": {
+            "mode": "Auto CBR",
+            "video_format_id": "fixture-video",
+            "audio_format_id": "fixture-audio",
+            "format_selector": "fixture-video+fixture-audio",
+            "output_width": 640,
+            "output_height": 360,
+            "source_video_kbps": 1500,
+            "effective_video_kbps": 1500,
+            "video_bitrate_kbps": 1500,
+            "source_audio_kbps": 192,
+            "effective_audio_kbps": 192,
+            "audio_bitrate_kbps": 320,
+            "audio_sample_rate": "48000",
+            "audio_channels": "2",
+            "output_audio_codec": "AAC",
+            "x264_preset": "medium",
+            "fps": null,
+            "video_codec": "unknown",
+            "audio_codec": "unknown",
+            "warnings": [],
+            "summary": "",
+            "video_crf": null,
+            "nvenc_cq": null,
+            "keyframe_seconds": null,
+            "constant_frame_rate": false,
+            "video_maxrate_kbps": null,
+            "source_quality_tier": 0,
+            "selection_dimensions": {}
+          },
+          "probe": {
+            "format": {
+              "format_name": "mov,mp4",
+              "duration": "6.0",
+              "size": "51",
+              "tags": {}
+            },
+            "streams": [
+              {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "width": 640,
+                "height": 360,
+                "profile": "High",
+                "pix_fmt": "yuv420p",
+                "bit_rate": "1580000"
+              },
+              {
+                "codec_type": "audio",
+                "codec_name": "aac",
+                "sample_rate": "48000",
+                "channels": 2,
+                "bit_rate": "160000"
+              },
+              {
+                "codec_type": "video",
+                "codec_name": "mjpeg",
+                "width": 640,
+                "height": 360,
+                "disposition": {
+                  "attached_pic": 1
+                }
+              }
+            ]
+          },
+          "expectations": {
+            "expected_duration_seconds": 6,
+            "embed_metadata": true,
+            "embed_cover_art": true,
+            "expected_tags": [
+              "alpha",
+              "unicode-\u0394"
+            ]
+          },
+          "returned_seconds": 0.0018602500058477744,
+          "exception_type": "RuntimeError",
+          "source_after": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          }
+        },
+        {
+          "label": "MP4 requested artwork",
+          "entered_seconds": 0.0018917499983217567,
+          "source_before": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          },
+          "output_type": "MP4",
+          "binary": "unused",
+          "plan": {
+            "mode": "Auto CBR",
+            "video_format_id": "fixture-video",
+            "audio_format_id": "fixture-audio",
+            "format_selector": "fixture-video+fixture-audio",
+            "output_width": 640,
+            "output_height": 360,
+            "source_video_kbps": 1500,
+            "effective_video_kbps": 1500,
+            "video_bitrate_kbps": 1500,
+            "source_audio_kbps": 192,
+            "effective_audio_kbps": 192,
+            "audio_bitrate_kbps": 320,
+            "audio_sample_rate": "48000",
+            "audio_channels": "2",
+            "output_audio_codec": "AAC",
+            "x264_preset": "medium",
+            "fps": null,
+            "video_codec": "unknown",
+            "audio_codec": "unknown",
+            "warnings": [],
+            "summary": "",
+            "video_crf": null,
+            "nvenc_cq": null,
+            "keyframe_seconds": null,
+            "constant_frame_rate": false,
+            "video_maxrate_kbps": null,
+            "source_quality_tier": 0,
+            "selection_dimensions": {}
+          },
+          "probe": {
+            "format": {
+              "format_name": "mov,mp4",
+              "duration": "6.0",
+              "size": "51"
+            },
+            "streams": [
+              {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "width": 640,
+                "height": 360,
+                "profile": "High",
+                "pix_fmt": "yuv420p",
+                "bit_rate": "1580000"
+              },
+              {
+                "codec_type": "audio",
+                "codec_name": "aac",
+                "sample_rate": "48000",
+                "channels": 2,
+                "bit_rate": "160000"
+              }
+            ]
+          },
+          "expectations": {
+            "expected_duration_seconds": 6,
+            "embed_metadata": false,
+            "embed_cover_art": true,
+            "expected_tags": []
+          },
+          "returned_seconds": 0.0019429170060902834,
+          "exception_type": "RuntimeError",
+          "source_after": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          }
+        },
+        {
+          "label": "MP4 requested keyword tag",
+          "entered_seconds": 0.001973499995074235,
+          "source_before": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          },
+          "output_type": "MP4",
+          "binary": "unused",
+          "plan": {
+            "mode": "Auto CBR",
+            "video_format_id": "fixture-video",
+            "audio_format_id": "fixture-audio",
+            "format_selector": "fixture-video+fixture-audio",
+            "output_width": 640,
+            "output_height": 360,
+            "source_video_kbps": 1500,
+            "effective_video_kbps": 1500,
+            "video_bitrate_kbps": 1500,
+            "source_audio_kbps": 192,
+            "effective_audio_kbps": 192,
+            "audio_bitrate_kbps": 320,
+            "audio_sample_rate": "48000",
+            "audio_channels": "2",
+            "output_audio_codec": "AAC",
+            "x264_preset": "medium",
+            "fps": null,
+            "video_codec": "unknown",
+            "audio_codec": "unknown",
+            "warnings": [],
+            "summary": "",
+            "video_crf": null,
+            "nvenc_cq": null,
+            "keyframe_seconds": null,
+            "constant_frame_rate": false,
+            "video_maxrate_kbps": null,
+            "source_quality_tier": 0,
+            "selection_dimensions": {}
+          },
+          "probe": {
+            "format": {
+              "format_name": "mov,mp4",
+              "duration": "6.0",
+              "size": "51",
+              "tags": {
+                "title": "Synthetic fixture",
+                "keywords": "alpha"
+              }
+            },
+            "streams": [
+              {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "width": 640,
+                "height": 360,
+                "profile": "High",
+                "pix_fmt": "yuv420p",
+                "bit_rate": "1580000"
+              },
+              {
+                "codec_type": "audio",
+                "codec_name": "aac",
+                "sample_rate": "48000",
+                "channels": 2,
+                "bit_rate": "160000"
+              },
+              {
+                "codec_type": "video",
+                "codec_name": "mjpeg",
+                "width": 640,
+                "height": 360,
+                "disposition": {
+                  "attached_pic": 1
+                }
+              }
+            ]
+          },
+          "expectations": {
+            "expected_duration_seconds": 6,
+            "embed_metadata": true,
+            "embed_cover_art": true,
+            "expected_tags": [
+              "alpha",
+              "unicode-\u0394"
+            ]
+          },
+          "returned_seconds": 0.002024917004746385,
+          "exception_type": "RuntimeError",
+          "source_after": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          }
+        },
+        {
+          "label": "matching MP3 plan",
+          "entered_seconds": 0.0020580419950420037,
+          "source_before": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-64k.mp3",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          },
+          "output_type": "MP3",
+          "binary": "unused",
+          "plan": {
+            "output_type": "MP3",
+            "audio_format_id": "fixture-audio",
+            "format_selector": "fixture-audio",
+            "source_audio_kbps": 192,
+            "effective_audio_kbps": 192,
+            "audio_bitrate_kbps": 320,
+            "source_sample_rate": "48000",
+            "output_sample_rate": "48000",
+            "source_channels": "2",
+            "output_channels": "2",
+            "audio_codec": "opus",
+            "embed_metadata": false,
+            "embed_cover_art": false,
+            "cover_art_source": "No Art",
+            "output_extension": ".mp3",
+            "warnings": [],
+            "summary": ""
+          },
+          "probe": {
+            "format": {
+              "format_name": "mp3",
+              "duration": "6.0",
+              "size": "51"
+            },
+            "streams": [
+              {
+                "codec_type": "audio",
+                "codec_name": "mp3",
+                "bit_rate": "320000",
+                "sample_rate": "48000",
+                "channels": 2
+              }
+            ]
+          },
+          "expectations": {
+            "expected_duration_seconds": 6,
+            "expected_tags": [
+              "ignored-when-metadata-disabled"
+            ]
+          },
+          "returned_seconds": 0.0021050840005045757,
+          "exception_type": null,
+          "source_after": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-64k.mp3",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          }
+        },
+        {
+          "label": "matching source-limited MP4 plan",
+          "entered_seconds": 0.002140958997188136,
+          "source_before": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          },
+          "output_type": "MP4",
+          "binary": "unused",
+          "plan": {
+            "mode": "Auto CBR",
+            "video_format_id": "fixture-video",
+            "audio_format_id": "fixture-audio",
+            "format_selector": "fixture-video+fixture-audio",
+            "output_width": 640,
+            "output_height": 360,
+            "source_video_kbps": 1500,
+            "effective_video_kbps": 1500,
+            "video_bitrate_kbps": 1500,
+            "source_audio_kbps": 192,
+            "effective_audio_kbps": 192,
+            "audio_bitrate_kbps": 320,
+            "audio_sample_rate": "48000",
+            "audio_channels": "2",
+            "output_audio_codec": "AAC",
+            "x264_preset": "medium",
+            "fps": null,
+            "video_codec": "unknown",
+            "audio_codec": "unknown",
+            "warnings": [],
+            "summary": "",
+            "video_crf": null,
+            "nvenc_cq": null,
+            "keyframe_seconds": null,
+            "constant_frame_rate": false,
+            "video_maxrate_kbps": null,
+            "source_quality_tier": 0,
+            "selection_dimensions": {}
+          },
+          "probe": {
+            "format": {
+              "format_name": "mov,mp4",
+              "duration": "6.0",
+              "size": "51"
+            },
+            "streams": [
+              {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "width": 640,
+                "height": 360,
+                "profile": "High",
+                "pix_fmt": "yuv420p",
+                "bit_rate": "1580000"
+              },
+              {
+                "codec_type": "audio",
+                "codec_name": "aac",
+                "sample_rate": "48000",
+                "channels": 2,
+                "bit_rate": "160000"
+              }
+            ]
+          },
+          "expectations": {
+            "expected_duration_seconds": 6,
+            "embed_metadata": false,
+            "embed_cover_art": false,
+            "expected_tags": [
+              "ignored-when-metadata-disabled"
+            ]
+          },
+          "returned_seconds": 0.0022246669977903366,
+          "exception_type": null,
+          "source_after": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          }
+        },
+        {
+          "label": "matching quiet AAC plan",
+          "entered_seconds": 0.002277292005601339,
+          "source_before": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          },
+          "output_type": "MP4",
+          "binary": "unused",
+          "plan": {
+            "mode": "Auto CBR",
+            "video_format_id": "fixture-video",
+            "audio_format_id": "fixture-audio",
+            "format_selector": "fixture-video+fixture-audio",
+            "output_width": 640,
+            "output_height": 360,
+            "source_video_kbps": 1500,
+            "effective_video_kbps": 1500,
+            "video_bitrate_kbps": 1500,
+            "source_audio_kbps": 192,
+            "effective_audio_kbps": 192,
+            "audio_bitrate_kbps": 320,
+            "audio_sample_rate": "48000",
+            "audio_channels": "2",
+            "output_audio_codec": "AAC",
+            "x264_preset": "medium",
+            "fps": null,
+            "video_codec": "unknown",
+            "audio_codec": "unknown",
+            "warnings": [],
+            "summary": "",
+            "video_crf": null,
+            "nvenc_cq": null,
+            "keyframe_seconds": null,
+            "constant_frame_rate": false,
+            "video_maxrate_kbps": null,
+            "source_quality_tier": 0,
+            "selection_dimensions": {}
+          },
+          "probe": {
+            "format": {
+              "format_name": "mov,mp4",
+              "duration": "6.0",
+              "size": "51"
+            },
+            "streams": [
+              {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "width": 640,
+                "height": 360,
+                "profile": "High",
+                "pix_fmt": "yuv420p",
+                "bit_rate": "1580000"
+              },
+              {
+                "codec_type": "audio",
+                "codec_name": "aac",
+                "sample_rate": "48000",
+                "channels": 2,
+                "bit_rate": "2000"
+              }
+            ]
+          },
+          "expectations": {
+            "expected_duration_seconds": 6,
+            "embed_metadata": false,
+            "embed_cover_art": false
+          },
+          "returned_seconds": 0.0023522090050391853,
+          "exception_type": null,
+          "source_after": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          }
+        },
+        {
+          "label": "matching embedded MP3 plan",
+          "entered_seconds": 0.0023922919936012477,
+          "source_before": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-64k.mp3",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          },
+          "output_type": "MP3",
+          "binary": "unused",
+          "plan": {
+            "output_type": "MP3",
+            "audio_format_id": "fixture-audio",
+            "format_selector": "fixture-audio",
+            "source_audio_kbps": 192,
+            "effective_audio_kbps": 192,
+            "audio_bitrate_kbps": 320,
+            "source_sample_rate": "48000",
+            "output_sample_rate": "48000",
+            "source_channels": "2",
+            "output_channels": "2",
+            "audio_codec": "opus",
+            "embed_metadata": true,
+            "embed_cover_art": true,
+            "cover_art_source": "Synthetic fixture artwork",
+            "output_extension": ".mp3",
+            "warnings": [],
+            "summary": ""
+          },
+          "probe": {
+            "format": {
+              "format_name": "mp3",
+              "duration": "6.0",
+              "size": "51",
+              "tags": {
+                "title": "Synthetic fixture",
+                "keywords": "alpha,unicode-\u0394"
+              }
+            },
+            "streams": [
+              {
+                "codec_type": "audio",
+                "codec_name": "mp3",
+                "bit_rate": "320000",
+                "sample_rate": "48000",
+                "channels": 2
+              },
+              {
+                "codec_type": "video",
+                "codec_name": "mjpeg",
+                "width": 640,
+                "height": 360,
+                "disposition": {
+                  "attached_pic": 1
+                }
+              }
+            ]
+          },
+          "expectations": {
+            "expected_duration_seconds": 6,
+            "expected_tags": [
+              "alpha",
+              "unicode-\u0394"
+            ]
+          },
+          "returned_seconds": 0.002458458999171853,
+          "exception_type": null,
+          "source_after": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-64k.mp3",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          }
+        },
+        {
+          "label": "matching embedded MP4 plan",
+          "entered_seconds": 0.0024957090063253418,
+          "source_before": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          },
+          "output_type": "MP4",
+          "binary": "unused",
+          "plan": {
+            "mode": "Auto CBR",
+            "video_format_id": "fixture-video",
+            "audio_format_id": "fixture-audio",
+            "format_selector": "fixture-video+fixture-audio",
+            "output_width": 640,
+            "output_height": 360,
+            "source_video_kbps": 1500,
+            "effective_video_kbps": 1500,
+            "video_bitrate_kbps": 1500,
+            "source_audio_kbps": 192,
+            "effective_audio_kbps": 192,
+            "audio_bitrate_kbps": 320,
+            "audio_sample_rate": "48000",
+            "audio_channels": "2",
+            "output_audio_codec": "AAC",
+            "x264_preset": "medium",
+            "fps": null,
+            "video_codec": "unknown",
+            "audio_codec": "unknown",
+            "warnings": [],
+            "summary": "",
+            "video_crf": null,
+            "nvenc_cq": null,
+            "keyframe_seconds": null,
+            "constant_frame_rate": false,
+            "video_maxrate_kbps": null,
+            "source_quality_tier": 0,
+            "selection_dimensions": {}
+          },
+          "probe": {
+            "format": {
+              "format_name": "mov,mp4",
+              "duration": "6.0",
+              "size": "51",
+              "tags": {
+                "title": "Synthetic fixture",
+                "keywords": "alpha,unicode-\u0394"
+              }
+            },
+            "streams": [
+              {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "width": 640,
+                "height": 360,
+                "profile": "High",
+                "pix_fmt": "yuv420p",
+                "bit_rate": "1580000"
+              },
+              {
+                "codec_type": "audio",
+                "codec_name": "aac",
+                "sample_rate": "48000",
+                "channels": 2,
+                "bit_rate": "160000"
+              },
+              {
+                "codec_type": "video",
+                "codec_name": "mjpeg",
+                "width": 640,
+                "height": 360,
+                "disposition": {
+                  "attached_pic": 1
+                }
+              }
+            ]
+          },
+          "expectations": {
+            "expected_duration_seconds": 6,
+            "embed_metadata": true,
+            "embed_cover_art": true,
+            "expected_tags": [
+              "alpha",
+              "unicode-\u0394"
+            ]
+          },
+          "returned_seconds": 0.0025668750022305176,
+          "exception_type": null,
+          "source_after": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 51,
+            "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+          }
+        }
+      ],
+      "files_after": [
+        {
+          "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-64k.mp3",
+          "exists": true,
+          "symlink": false,
+          "mode": 420,
+          "size_bytes": 51,
+          "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+        },
+        {
+          "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract/wrong-profile.mp4",
+          "exists": true,
+          "symlink": false,
+          "mode": 420,
+          "size_bytes": 51,
+          "sha256": "4826353d418a16e6788573f9a46febdd27efd33b5b92d8269c4c79f733527ffe"
+        }
+      ]
+    },
+    "old_root": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/fresh-output-contract",
+    "folder": "fresh-output-contract"
+  },
+  {
+    "scenario": {
+      "id": "security.path_and_subprocess_arguments",
+      "evidence_tier": "unit_static",
+      "category": "security",
+      "status": "passed",
+      "duration_seconds": 0.1543,
+      "metrics": {
+        "shell_true_call_count": 0,
+        "string_command_call_count": 0
+      },
+      "evidence": [
+        "Malicious metadata target: /private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/security-path-command/chosen-output/_.._.._creator/playlists/_.._playlist/_.._outside;$(touch SHOULD_NO\u2026 [_.._id_.._escape]/_.._outside;$(touch SHOULD_NOT_EX\u2026.mp4",
+        "Lexical containment under chosen root: True",
+        "Injection-bearing source path remained one argv element: True",
+        "AST subprocess shell=True calls: []",
+        "AST subprocess calls with literal/string command argument (review signal): []"
+      ],
+      "artifacts": [
+        "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/security-path-command/interaction-observation.json"
+      ],
+      "error": null,
+      "raw_result": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/security-path-command/interaction-observation.json",
+      "raw_result_sha256": "64be62f1c5807aed2e6229ea03039c4fe955022a7d7afa8b4c76493bd3eae439",
+      "interaction_coverage": {
+        "status": "unproven",
+        "scenario_id": "security.path_and_subprocess_arguments",
+        "reason": "Before/during/after requirement-to-assertion review is pending. Existing scenario status and raw traces do not establish complete temporal coverage. Preserve their narrower evidence.",
+        "required_phases": [
+          "before",
+          "during",
+          "after"
+        ],
+        "assertion_mapping": [],
+        "phase_review": {
+          "before": "unproven",
+          "during": "unproven",
+          "after": "unproven"
+        },
+        "usability_review": {
+          "status": "unproven",
+          "applicability": "unreviewed",
+          "reason": "Usability evidence and reviewer mapping have not been enrolled. Unknown applicability is not an exemption; functional success does not establish clarity, restraint or accessible interaction.",
+          "dimensions": {
+            "orientation_navigation": "unproven",
+            "action_hierarchy": "unproven",
+            "progressive_disclosure": "unproven",
+            "visual_hierarchy": "unproven",
+            "sparse_busy_content": "unproven",
+            "feedback": "unproven",
+            "accessibility": "unproven"
+          }
+        }
+      }
+    },
+    "raw": {
+      "scenario_id": "security.path_and_subprocess_arguments",
+      "contract": "static-path-argv-construction-v1",
+      "trace": [
+        {
+          "phase": "before_construction",
+          "elapsed_seconds": 1.2500095181167126e-07,
+          "output_root": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/security-path-command/chosen-output",
+          "root_exists": false,
+          "marker_exists": false
+        },
+        {
+          "phase": "construction_returned",
+          "elapsed_seconds": 0.0021244999952614307,
+          "metadata": {
+            "id": "../../id/../escape",
+            "title": "../../outside;$(touch SHOULD_NOT_EXIST)|CON:<script>\u0000",
+            "uploader": "../../../creator",
+            "playlist_title": "../../playlist",
+            "playlist_id": "../playlist-id"
+          },
+          "target_dir": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/security-path-command/chosen-output/_.._.._creator/playlists/_.._playlist/_.._outside;$(touch SHOULD_NO\u2026 [_.._id_.._escape]",
+          "target_name": "_.._outside;$(touch SHOULD_NOT_EX\u2026.mp4",
+          "source_path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/security-path-command/source;$(touch SHOULD_NOT_EXIST).mp4",
+          "command": [
+            "ffmpeg",
+            "-y",
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "warning",
+            "-threads:v:0",
+            "4",
+            "-filter_threads",
+            "4",
+            "-filter_complex_threads",
+            "4",
+            "-i",
+            "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/security-path-command/source;$(touch SHOULD_NOT_EXIST).mp4",
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:a:0?",
+            "-map",
+            "0:s?",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "medium",
+            "-b:v",
+            "10000k",
+            "-minrate",
+            "10000k",
+            "-maxrate",
+            "10000k",
+            "-bufsize",
+            "20000k",
+            "-pix_fmt",
+            "yuv420p",
+            "-profile:v",
+            "high",
+            "-x264-params",
+            "nal-hrd=cbr:force-cfr=1:8x8dct=1",
+            "-threads:v:0",
+            "4",
+            "-movflags",
+            "+faststart",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "320k",
+            "-ar",
+            "48000",
+            "-ac",
+            "2",
+            "-c:s",
+            "mov_text",
+            "-nostats",
+            "-progress",
+            "pipe:1",
+            "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/security-path-command/output.mp4"
+          ]
+        },
+        {
+          "phase": "source_review_returned",
+          "elapsed_seconds": 0.1465263749996666,
+          "marker_exists": false,
+          "source": {
+            "path": "/Users/coop/Dev/vodforge/yt_downloader/app.py",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 718347,
+            "sha256": "9ad3e6c0cea5b08d420452bc7d73af15669bacb9713bd526a3abdbdd2e89bf9f"
+          },
+          "shell_true": [],
+          "string_subprocess": []
+        }
+      ]
+    },
+    "old_root": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/security-path-command",
+    "folder": "security-path-command"
+  },
+  {
+    "scenario": {
+      "id": "security.symlink_containment_and_staging_permissions",
+      "evidence_tier": "unit_static",
+      "category": "security",
+      "status": "passed",
+      "duration_seconds": 0.0019,
+      "metrics": {
+        "escaped_output_root": false,
+        "unsafe_symlink_rejected": true,
+        "staged_file_preserved": true,
+        "outside_entry_count": 0,
+        "staging_root_mode_octal": "0o700",
+        "staging_mode_octal": "0o700",
+        "posix_mode_contract_applicable": true
+      },
+      "evidence": [
+        "Selected output root: /private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/security-symlink/chosen-output",
+        "Resolved committed target(s): []",
+        "Symlink escape reproduced: False",
+        "Unsafe descendant symlink rejection: UnsafeOutputPathError: The final output directory component 'Creator' is not a safe directory.",
+        "Staged file preserved after rejection: True",
+        "Entries written outside selected root: []",
+        "Staging root permissions: 0o700",
+        "Per-run staging permissions: 0o700"
+      ],
+      "artifacts": [
+        "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/security-symlink/interaction-observation.json"
+      ],
+      "error": null,
+      "raw_result": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/security-symlink/interaction-observation.json",
+      "raw_result_sha256": "3a875801442348ff8ed393a9ef9460cc69aa24a23f6c214d20c66995623097c7",
+      "interaction_coverage": {
+        "status": "unproven",
+        "scenario_id": "security.symlink_containment_and_staging_permissions",
+        "reason": "Before/during/after requirement-to-assertion review is pending. Existing scenario status and raw traces do not establish complete temporal coverage. Preserve their narrower evidence.",
+        "required_phases": [
+          "before",
+          "during",
+          "after"
+        ],
+        "assertion_mapping": [],
+        "phase_review": {
+          "before": "unproven",
+          "during": "unproven",
+          "after": "unproven"
+        },
+        "usability_review": {
+          "status": "unproven",
+          "applicability": "unreviewed",
+          "reason": "Usability evidence and reviewer mapping have not been enrolled. Unknown applicability is not an exemption; functional success does not establish clarity, restraint or accessible interaction.",
+          "dimensions": {
+            "orientation_navigation": "unproven",
+            "action_hierarchy": "unproven",
+            "progressive_disclosure": "unproven",
+            "visual_hierarchy": "unproven",
+            "sparse_busy_content": "unproven",
+            "feedback": "unproven",
+            "accessibility": "unproven"
+          }
+        }
+      }
+    },
+    "raw": {
+      "scenario_id": "security.symlink_containment_and_staging_permissions",
+      "contract": "symlink-refusal-private-stage-v1",
+      "trace": [
+        {
+          "phase": "before_packaging",
+          "elapsed_seconds": 1.2500095181167126e-07,
+          "source": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/security-symlink/staged/id123.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 22,
+            "sha256": "0851bd729135317ef98d895ebb04af8cd6e50722423dd0e289fed0fb41908811"
+          },
+          "output_root": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/security-symlink/chosen-output",
+          "outside": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/security-symlink/outside",
+          "link": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/security-symlink/chosen-output/Creator",
+          "link_is_symlink": true,
+          "link_target": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/security-symlink/outside",
+          "outside_entries": []
+        },
+        {
+          "phase": "packaging_returned",
+          "elapsed_seconds": 0.0004170829924987629,
+          "exception_type": "UnsafeOutputPathError",
+          "packaged": [],
+          "source": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/security-symlink/staged/id123.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 22,
+            "sha256": "0851bd729135317ef98d895ebb04af8cd6e50722423dd0e289fed0fb41908811"
+          },
+          "outside_entries": []
+        },
+        {
+          "phase": "private_staging_created",
+          "elapsed_seconds": 0.0009364580037072301,
+          "os_name": "posix",
+          "stage": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/security-symlink/mode-output/.vfstage/4ce568b6",
+            "exists": true,
+            "symlink": false,
+            "mode": 448
+          },
+          "root": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/security-symlink/mode-output/.vfstage",
+            "exists": true,
+            "symlink": false,
+            "mode": 448
+          },
+          "source": {
+            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/security-symlink/staged/id123.mp4",
+            "exists": true,
+            "symlink": false,
+            "mode": 420,
+            "size_bytes": 22,
+            "sha256": "0851bd729135317ef98d895ebb04af8cd6e50722423dd0e289fed0fb41908811"
+          },
+          "outside_entries": []
+        }
+      ]
+    },
+    "old_root": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-lt9gfph_/cases/security-symlink",
+    "folder": "security-symlink"
+  }
+]

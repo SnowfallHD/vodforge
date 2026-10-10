@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import queue
 import re
 import threading
@@ -9,6 +10,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 from .metrics import ResourceSampler
 from .util import sha256_file, tree_size
@@ -290,7 +292,7 @@ class StagingTraceRecorder:
         self._last_signature = signature
         self.trace.append(
             {
-                "elapsed_seconds": round(time.monotonic() - self.events.started, 4),
+                "elapsed_seconds": time.monotonic() - self.events.started,
                 "status": status,
                 "root_present": root_present,
                 "root_mode": root_mode,
@@ -310,6 +312,9 @@ class StagingTraceRecorder:
             self._snapshot()
 
     def start(self) -> None:
+        # Capture the precondition synchronously; an asynchronous first sample
+        # may already observe worker effects and cannot prove initial absence.
+        self._snapshot()
         self._thread.start()
 
     def stop(self) -> list[dict[str, Any]]:
@@ -347,6 +352,7 @@ class HeadlessPipelineRunner:
         cleanup_global_children: bool = True,
         history_records: list[dict[str, Any]] | None = None,
         ffmpeg_override: str | None = None,
+        fixture_state: Any = None,
     ) -> dict[str, Any]:
         import yt_downloader.app as app_module
 
@@ -401,6 +407,23 @@ class HeadlessPipelineRunner:
         outcome: Any = None
         error: str | None = None
         cancellation_thread: threading.Thread | None = None
+        before_worker: dict[str, Any] = {
+            "output_files": [str(path) for path in _output_files(output_dir)],
+            "output_exists": output_dir.exists(),
+            "output_mode": output_dir.stat().st_mode & 0o777
+            if output_dir.exists()
+            else None,
+            "output_writable": os.access(output_dir, os.W_OK),
+        }
+        if ffmpeg_override is not None:
+            before_worker["dependency_override"] = {
+                "path": ffmpeg_override,
+                "sha256": sha256_file(Path(ffmpeg_override)),
+                "executable": os.access(ffmpeg_override, os.X_OK),
+            }
+        if fixture_state is not None:
+            before_worker["fixture_state"] = fixture_state.snapshot()
+            before_worker["fixture_elapsed_seconds"] = time.monotonic() - events.started
         staging_recorder = StagingTraceRecorder(output_dir, events)
         staging_recorder.start()
 
@@ -453,10 +476,39 @@ class HeadlessPipelineRunner:
                 target=cancellation_watch, name=f"quality-cancel-{case_id}", daemon=True
             )
             cancellation_thread.start()
+        child_registration_trace: list[dict[str, Any]] = []
+        observed_children: list[Any] = []
+        original_registration = app_module.register_active_child_process
+
+        def traced_registration(process: Any) -> None:
+            original_registration(process)
+            observed_children.append(process)
+            child_registration_trace.append(
+                {
+                    "elapsed_seconds": time.monotonic() - events.started,
+                    "run_id": job.run_id,
+                    "pid": process.pid,
+                    "args": _jsonable(process.args),
+                }
+            )
+
         try:
             if validate_destination:
-                app_module.validate_output_directory_access(output_dir)
-            outcome = app._download_worker_single(job, re_raise=re_raise)
+                control_observation("preflight_started")
+                try:
+                    app_module.validate_output_directory_access(output_dir)
+                except Exception:
+                    control_observation("preflight_refused")
+                    raise
+                control_observation("preflight_completed")
+            control_observation("worker_dispatched")
+            if ffmpeg_override is not None:
+                with patch.object(
+                    app_module, "register_active_child_process", traced_registration
+                ):
+                    outcome = app._download_worker_single(job, re_raise=re_raise)
+            else:
+                outcome = app._download_worker_single(job, re_raise=re_raise)
         except Exception as exc:  # noqa: BLE001 - production failures are the subject of the harness
             error = f"{type(exc).__name__}: {exc}"
         finally:
@@ -475,6 +527,13 @@ class HeadlessPipelineRunner:
             staging_trace = staging_recorder.stop()
             resource_metrics = sampler.stop()
             active_children_before_harness_cleanup = active_child_snapshot(app_module)
+            for process, observation in zip(
+                observed_children, child_registration_trace, strict=True
+            ):
+                observation["returncode_after_worker"] = process.poll()
+                observation["exit_observed_elapsed_seconds"] = (
+                    time.monotonic() - events.started
+                )
             if cleanup_global_children and any(
                 item["alive"] for item in active_children_before_harness_cleanup
             ):
@@ -531,6 +590,8 @@ class HeadlessPipelineRunner:
         )
         result = {
             "case_id": case_id,
+            "observation_clock_origin_monotonic": events.started,
+            "before_worker": before_worker,
             "pipeline_entrypoint": "yt_downloader.app.DownloadWorkerCore._download_worker_single",
             "job": {
                 "run_id": job.run_id,
@@ -555,6 +616,7 @@ class HeadlessPipelineRunner:
             "events": events.trace,
             "progress_trace": progress_trace,
             "control_trace": list(control_trace),
+            "child_registration_trace": child_registration_trace,
             "control_observer_errors": list(control_errors),
             "control_observer_stopped": cancellation_thread is None
             or not cancellation_thread.is_alive(),
@@ -580,6 +642,32 @@ class HeadlessPipelineRunner:
             "diagnostics_path": str(diagnostic_path),
             "diagnostic_excerpt": diagnostics[-12000:],
         }
+        if fixture_state is not None:
+            result["fixture_state_after"] = fixture_state.snapshot()
+            result["fixture_after_elapsed_seconds"] = time.monotonic() - events.started
+            offset = len(before_worker["fixture_state"]["responses"])
+            result["fixture_response_trace"] = [
+                {
+                    "elapsed_seconds": row["observed_at_monotonic"] - events.started,
+                    "route": row["route"],
+                    "status": row["status"],
+                }
+                for row in result["fixture_state_after"]["responses"][offset:]
+            ]
+            interrupt_offset = len(before_worker["fixture_state"]["interruption_trace"])
+            result["fixture_interruption_trace"] = [
+                {
+                    **{
+                        key: value
+                        for key, value in row.items()
+                        if key != "observed_at_monotonic"
+                    },
+                    "elapsed_seconds": row["observed_at_monotonic"] - events.started,
+                }
+                for row in result["fixture_state_after"]["interruption_trace"][
+                    interrupt_offset:
+                ]
+            ]
         (case_dir / "pipeline-result.json").write_text(
             json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )

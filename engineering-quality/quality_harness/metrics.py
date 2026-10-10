@@ -212,6 +212,7 @@ class LifecycleCheckpointRecorder:
         collected = gc.collect()
         sample: dict[str, Any] = {
             "phase": phase,
+            "observation_clock_origin_monotonic": self._started,
             "job_index": job_index,
             "elapsed_seconds": round(time.monotonic() - self._started, 4),
             "gc": {

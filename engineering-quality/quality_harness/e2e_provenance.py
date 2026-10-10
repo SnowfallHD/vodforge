@@ -218,7 +218,9 @@ def _attestation_errors(
     if not isinstance(output_root, str) or not _path_is_within(
         output_root, _resolved(state_paths["output"])
     ):
-        errors.append("attestation output_root escaped the isolated Downloads directory")
+        errors.append(
+            "attestation output_root escaped the isolated Downloads directory"
+        )
     isolation_root = _resolved(state_paths["isolation_root"])
     for key in (
         "home",

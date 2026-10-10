@@ -12,10 +12,12 @@ import hashlib
 import json
 import os
 import sys
+import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from .util import run_command
+from .transaction_observation import file_observation
+from .util import run_command, sha256_file
 
 _BASE = "tests/test_library_media_recovery.py::"
 _NEW = "tests/test_library_recovery_regressions.py::"
@@ -129,7 +131,22 @@ def recovery_class_contract(
     (output_dir / "isolated-home").mkdir(exist_ok=True)
     report = output_dir / "cases.xml"
     report.unlink(missing_ok=True)
+    started = time.monotonic()
     before = source_binding(source)
+    assets_before = {
+        p.relative_to(source).as_posix(): sha256_file(p)
+        for p in sorted((source / "yt_downloader").rglob("*"))
+        if p.is_file() and p.suffix in {".qml", ".js", ".svg", ".vert", ".frag", ".qsb"}
+    }
+    trace = [
+        {
+            "phase": "before_suite",
+            "elapsed_seconds": time.monotonic() - started,
+            "report": file_observation(report),
+            "source": before,
+            "assets": assets_before,
+        }
+    ]
     fixture_files = {selector.split("::")[0] for selector in selectors}
     fixtures = {
         name: hashlib.sha256((repo_root / name).read_bytes()).hexdigest()
@@ -167,7 +184,20 @@ def recovery_class_contract(
             "PYTHONDONTWRITEBYTECODE": "1",
         },
     )
+    trace.append(
+        {
+            "phase": "suite_returned",
+            "elapsed_seconds": time.monotonic() - started,
+            "report": file_observation(report),
+            "command_result": result.as_dict(),
+        }
+    )
     after = source_binding(source)
+    assets_after = {
+        p.relative_to(source).as_posix(): sha256_file(p)
+        for p in sorted((source / "yt_downloader").rglob("*"))
+        if p.is_file() and p.suffix in {".qml", ".js", ".svg", ".vert", ".frag", ".qsb"}
+    }
     fixtures_after = {
         name: hashlib.sha256((repo_root / name).read_bytes()).hexdigest()
         if (repo_root / name).is_file()
@@ -175,6 +205,17 @@ def recovery_class_contract(
         for name in sorted(fixture_files)
     }
     probes_unchanged = fixtures == fixtures_after
+    trace[0]["probes"] = fixtures
+    trace.append(
+        {
+            "phase": "authority_reobserved",
+            "elapsed_seconds": time.monotonic() - started,
+            "report": file_observation(report),
+            "source": after,
+            "assets": assets_after,
+            "probes": fixtures_after,
+        }
+    )
     if regression_class == "durable_roundtrip" and not required_nodes:
         required_nodes = tuple(selector for selector in selectors if "::" in selector)
     complete, count = complete_report(report, minimum, required_nodes)
@@ -204,6 +245,7 @@ def recovery_class_contract(
         and complete
         and before == after
         and probes_unchanged
+        and assets_before == assets_after
     )
     scenario = {
         "id": scenario_prefix + regression_class,
@@ -231,6 +273,31 @@ def recovery_class_contract(
         if passed
         else "Regression class failed or evidence was incomplete",
     }
+    observation = output_dir / "interaction-observation.json"
+    observation.write_text(
+        json.dumps(
+            {
+                "scenario_id": scenario["id"],
+                "contract": "bound-source-regression-suite-v1",
+                "scope": "maintained source regression execution; not native or packaged UX",
+                "selectors": list(selectors),
+                "minimum": minimum,
+                "required_nodeids": list(required_nodes),
+                "trace": trace,
+                "junit": {
+                    "path": str(report),
+                    "sha256": sha256_file(report) if report.exists() else None,
+                },
+                "command": {"path": str(raw), "sha256": sha256_file(raw)},
+                "binding": {"path": str(binding), "sha256": sha256_file(binding)},
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+    scenario["raw_result"] = str(observation)
+    scenario["raw_result_sha256"] = sha256_file(observation)
+    scenario["artifacts"].append(str(observation))
     return scenario, []
 
 

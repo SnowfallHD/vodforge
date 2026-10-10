@@ -26,8 +26,11 @@ QUEUED_LIBRARY_DESCRIPTION_STRESS_ROUTE = "/slow/page/queued-library-description
 class FaultState:
     def __init__(self) -> None:
         self.lock = threading.Lock()
+        self.origin: str | None = None
         self.requests: Counter[str] = Counter()
         self.statuses: Counter[str] = Counter()
+        self.responses: list[dict[str, Any]] = []
+        self.interruption_trace: list[dict[str, Any]] = []
         self.bytes_sent: Counter[str] = Counter()
         self.retry_failures_remaining = 2
         self.interruptions_remaining = 1
@@ -37,9 +40,27 @@ class FaultState:
         with self.lock:
             self.requests[route] += 1
 
-    def record_status(self, status: int) -> None:
+    def record_status(self, status: int, route: str = "") -> None:
         with self.lock:
             self.statuses[str(status)] += 1
+            self.responses.append(
+                {
+                    "observed_at_monotonic": time.monotonic(),
+                    "route": route,
+                    "status": status,
+                }
+            )
+
+    def record_interruption(self, route: str, sent: int, length: int) -> None:
+        with self.lock:
+            self.interruption_trace.append(
+                {
+                    "observed_at_monotonic": time.monotonic(),
+                    "route": route,
+                    "sent_bytes": sent,
+                    "advertised_bytes": length,
+                }
+            )
 
     def record_bytes(self, route: str, size: int) -> None:
         with self.lock:
@@ -48,8 +69,13 @@ class FaultState:
     def snapshot(self) -> dict[str, Any]:
         with self.lock:
             return {
+                "origin": self.origin,
                 "requests": dict(self.requests),
                 "statuses": dict(self.statuses),
+                "responses": [dict(row) for row in self.responses],
+                "interruption_trace": [dict(row) for row in self.interruption_trace],
+                "retry_failures_remaining": self.retry_failures_remaining,
+                "interruptions_remaining": self.interruptions_remaining,
                 "bytes_sent": dict(self.bytes_sent),
                 "total_requests": sum(self.requests.values()),
                 "total_bytes_sent": sum(self.bytes_sent.values()),
@@ -357,7 +383,7 @@ class FixtureHTTPServer:
                 for name, value in (headers or {}).items():
                     self.send_header(name, value)
                 self.end_headers()
-                state.record_status(status)
+                state.record_status(status, urllib.parse.urlsplit(self.path).path)
                 if send_body:
                     try:
                         self.wfile.write(body)
@@ -423,7 +449,7 @@ class FixtureHTTPServer:
                     self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
                 self.send_header("Connection", "close")
                 self.end_headers()
-                state.record_status(int(status))
+                state.record_status(int(status), route)
                 if not send_body:
                     return
                 remaining = length
@@ -442,6 +468,7 @@ class FixtureHTTPServer:
                             sent += len(chunk)
                             state.record_bytes(route, len(chunk))
                             if should_interrupt and sent >= interrupt_after:
+                                state.record_interruption(route, sent, length)
                                 try:
                                     self.connection.shutdown(socket.SHUT_RDWR)
                                 except OSError:
@@ -455,6 +482,8 @@ class FixtureHTTPServer:
 
         self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self._server.daemon_threads = True
+        with state.lock:
+            state.origin = self.base_url
         self._thread = threading.Thread(
             target=self._server.serve_forever,
             name="vodforge-quality-http-origin",

@@ -283,3 +283,49 @@ def test_native_profile_controls_held_out_exploration(tmp_path, monkeypatch, pro
         tmp_path, tmp_path, profile=profile
     )
     assert scenario["status"] == "passed"
+
+
+@pytest.mark.parametrize("profile", ["normal", "deep"])
+def test_qt_reported_regressions_are_required_and_offscreen_scope_is_explicit(
+    tmp_path, monkeypatch, profile
+):
+    observed = []
+
+    def run(command, **kwargs):
+        observed.extend(part for part in command if part.startswith("tests/test_qt_"))
+        Path(kwargs["env"]["VODFORGE_NATIVE_EVIDENCE_DIR"], "native.xml").write_text(
+            "<testsuite><testcase /></testsuite>"
+        )
+        return CommandResult(command, 0, 0.1, "passed", "")
+
+    monkeypatch.setattr(native_ui_checks, "run_command", run)
+    scenario, _ = native_ui_checks.native_surface_contract(
+        tmp_path, tmp_path, ui="qt", profile=profile
+    )
+    required = {
+        "test_qt_inspector_description_geometry",
+        "test_qt_folder_columns_responsive",
+        "test_qt_composer_custom_options",
+        "test_qt_composer_feedback",
+        "test_qt_all_runs_hover_seam",
+        "test_qt_output_path_layout",
+        "test_qt_run_deck_responsive_labels",
+        "test_qt_recovery_draft_retirement",
+        "test_qt_retry_recovery_membership",
+        "test_qt_move_dialog_content_fit",
+        "test_qt_move_root_notice",
+        "test_qt_inspector_recovery_details",
+        "test_qt_worker_control_context",
+        "test_qt_scroll_lifecycle",
+        "test_qt_vertical_scroll_chain",
+        "test_qt_artwork_continuity",
+        "test_qt_player_resize_continuity",
+    }
+    assert {"tests/" + name + ".py" for name in required} <= set(observed)
+    assert len(observed) == len(set(observed))
+    assert scenario["metrics"]["render_surface"] == "offscreen_qml_components"
+    assert scenario["metrics"]["native_window_observed"] is False
+    assert any(
+        "offscreen" in entry.lower() and "native input" in entry.lower()
+        for entry in scenario["evidence"]
+    )

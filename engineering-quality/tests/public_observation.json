@@ -1,0 +1,535 @@
+{
+  "scenario": {
+    "id": "correctness.public_w3c_generic_boundary",
+    "evidence_tier": "headless_production_pipeline",
+    "category": "correctness",
+    "status": "passed",
+    "duration_seconds": 0.5506,
+    "metrics": {
+      "jobs_attempted": 1,
+      "jobs_completed": 0,
+      "jobs_failed": 1,
+      "jobs_cancelled": 0,
+      "job_duration_seconds": 0.5506,
+      "job_initialization_seconds": null,
+      "output_bytes": 0,
+      "media_output_count": 0,
+      "effective_throughput_bytes_per_second": null,
+      "peak_rss_bytes": 153829376,
+      "peak_cpu_percent": 94.7,
+      "peak_disk_bytes": 0,
+      "fd_delta": 3,
+      "thread_delta": 0,
+      "peak_child_processes": 0,
+      "peak_zombie_processes": 0,
+      "orphaned_child_processes": 0,
+      "harness_emergency_cleanup_used": false,
+      "staging_entries_after": 0,
+      "external_public_media": true
+    },
+    "evidence": [
+      "W3C explicitly published this Sintel trailer for HTML media testing; the underlying film is CC BY 3.0.",
+      "Generic-source outcome: explicit rejection; error=_DownloadItemExecutionError: ERROR: [generic] Got HTTP Error 403 caused by Cloudflare anti-bot challenge; try again with  --extractor-args \"generic:impersonate\"",
+      "Committed media outputs: 0; staging residue: []",
+      "This scenario does not treat generic URL support as promised VODForge behavior; it tests boundary cleanliness."
+    ],
+    "artifacts": [
+      "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-3uwyflbi/production-state/diagnostics/latest.log"
+    ],
+    "error": "_DownloadItemExecutionError: ERROR: [generic] Got HTTP Error 403 caused by Cloudflare anti-bot challenge; try again with  --extractor-args \"generic:impersonate\"",
+    "raw_result": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-3uwyflbi/cases/public-w3c-sintel/pipeline-result.json",
+    "raw_result_sha256": "daa823f1cc199613fc8576287cf0104d6f84df0fe5d8e006d9776567d33c0c3a",
+    "interaction_coverage": {
+      "status": "unproven",
+      "scenario_id": "correctness.public_w3c_generic_boundary",
+      "reason": "Before/during/after requirement-to-assertion review is pending. Existing scenario status and raw traces do not establish complete temporal coverage. Preserve their narrower evidence.",
+      "required_phases": [
+        "before",
+        "during",
+        "after"
+      ],
+      "assertion_mapping": [],
+      "phase_review": {
+        "before": "unproven",
+        "during": "unproven",
+        "after": "unproven"
+      },
+      "usability_review": {
+        "status": "unproven",
+        "applicability": "unreviewed",
+        "reason": "Usability evidence and reviewer mapping have not been enrolled. Unknown applicability is not an exemption; functional success does not establish clarity, restraint or accessible interaction.",
+        "dimensions": {
+          "orientation_navigation": "unproven",
+          "action_hierarchy": "unproven",
+          "progressive_disclosure": "unproven",
+          "visual_hierarchy": "unproven",
+          "sparse_busy_content": "unproven",
+          "feedback": "unproven",
+          "accessibility": "unproven"
+        }
+      }
+    }
+  },
+  "raw": {
+    "case_id": "public-w3c-sintel",
+    "observation_clock_origin_monotonic": 132840.156010916,
+    "before_worker": {
+      "output_files": [],
+      "output_exists": false,
+      "output_mode": null,
+      "output_writable": false
+    },
+    "pipeline_entrypoint": "yt_downloader.app.DownloadWorkerCore._download_worker_single",
+    "job": {
+      "run_id": "8de6474fac2243c78f03c3acf1aae3f7",
+      "url": "https://media.w3.org/2010/05/sintel/trailer.mp4",
+      "output_type": "MP4",
+      "quality_label": "480p",
+      "embed_thumbnail": false,
+      "embed_metadata": true,
+      "requested_mp3_bitrate_kbps": null,
+      "output_dir": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-3uwyflbi/cases/public-w3c-sintel/output"
+    },
+    "duration_seconds": 0.5506,
+    "job_initialization_seconds": null,
+    "outcome": null,
+    "error": "_DownloadItemExecutionError: ERROR: [generic] Got HTTP Error 403 caused by Cloudflare anti-bot challenge; try again with  --extractor-args \"generic:impersonate\"",
+    "failure_diagnostic": {
+      "failure_code": null,
+      "format_count": null,
+      "video_format_count": null,
+      "audio_format_count": null,
+      "tls_verify_code": null,
+      "reason": "unknown",
+      "stage": "analysis",
+      "error_type": "ExtractorError",
+      "http_status": 403,
+      "os_error": null,
+      "windows_error": null,
+      "error_chain": "DownloadError>ExtractorError>HTTPError>ExtractorError",
+      "extractor_expected": "yes",
+      "tool_exit_code": null,
+      "source_module": "app",
+      "source_line": 3672,
+      "source_scope": "first_party_frame",
+      "source_trace": "app:977>app:948>app:1213>app:3691>app:1111>app:3692>app:3592>app:3672",
+      "cookie_failure": null,
+      "path_style": null,
+      "path_units": null,
+      "path_component_count": null,
+      "path_longest_component_bytes": null
+    },
+    "cancel_requested": false,
+    "skip_video_requested": false,
+    "control_request": null,
+    "events": [
+      {
+        "elapsed_seconds": 0.0092,
+        "kind": "job_log",
+        "payload": {
+          "job": {
+            "url": "https://media.w3.org/2010/05/sintel/trailer.mp4",
+            "output_dir": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-3uwyflbi/cases/public-w3c-sintel/output",
+            "output_type": "MP4",
+            "quality_label": "480p",
+            "export_mode": "Auto CBR",
+            "manual_settings": {
+              "video_bitrate_kbps": 10000,
+              "audio_bitrate_kbps": 320,
+              "audio_sample_rate": "48000",
+              "audio_channels": "2",
+              "audio_codec": "AAC",
+              "x264_preset": "medium",
+              "video_crf": null
+            },
+            "mp3_settings": {
+              "bitrate_kbps": 192,
+              "sample_rate": null,
+              "channels": null,
+              "embed_metadata": true,
+              "embed_cover_art": true,
+              "custom_cover_art_path": null
+            },
+            "single_video_only": true,
+            "use_nvenc": false,
+            "embed_thumbnail": false,
+            "write_thumbnail": true,
+            "embed_metadata": true,
+            "write_info_json": true,
+            "tags": [
+              "vodforge-quality",
+              "synthetic-fixture",
+              "unicode-\u0394"
+            ],
+            "urls": [
+              "https://media.w3.org/2010/05/sintel/trailer.mp4"
+            ],
+            "use_cookies": false,
+            "cookie_file": null,
+            "cookie_browser": null,
+            "batch_mode": false,
+            "completed_batch_items": 0,
+            "batch_outcome": {
+              "success_count": 0,
+              "failure_count": 0,
+              "skipped_count": 0,
+              "sidecar_failure_count": 0
+            },
+            "batch_list_path": "",
+            "preview_info": null,
+            "preview_source_owner": null,
+            "annotation_source_owner": null,
+            "run_id": "8de6474fac2243c78f03c3acf1aae3f7",
+            "origin_run_id": null,
+            "recovery_reason": null,
+            "execution_run_id": null,
+            "retry_of_run_id": null,
+            "metadata_keys": [],
+            "history_identities": [],
+            "history_archive_owners": [],
+            "terminal_status": null,
+            "terminal_message": "",
+            "item_terminal_emitted": false,
+            "failure_diagnostic": null,
+            "telemetry_operation_id": null,
+            "failure_stage": "preparation",
+            "selection_dimensions": {},
+            "nvenc_applicable": null,
+            "translated_subtitle_language": null
+          },
+          "line": "Normalized URL: https://media.w3.org/2010/05/sintel/trailer.mp4"
+        }
+      },
+      {
+        "elapsed_seconds": 0.0093,
+        "kind": "progress",
+        "payload": 0
+      },
+      {
+        "elapsed_seconds": 0.0094,
+        "kind": "job_log",
+        "payload": {
+          "job": {
+            "url": "https://media.w3.org/2010/05/sintel/trailer.mp4",
+            "output_dir": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-3uwyflbi/cases/public-w3c-sintel/output",
+            "output_type": "MP4",
+            "quality_label": "480p",
+            "export_mode": "Auto CBR",
+            "manual_settings": {
+              "video_bitrate_kbps": 10000,
+              "audio_bitrate_kbps": 320,
+              "audio_sample_rate": "48000",
+              "audio_channels": "2",
+              "audio_codec": "AAC",
+              "x264_preset": "medium",
+              "video_crf": null
+            },
+            "mp3_settings": {
+              "bitrate_kbps": 192,
+              "sample_rate": null,
+              "channels": null,
+              "embed_metadata": true,
+              "embed_cover_art": true,
+              "custom_cover_art_path": null
+            },
+            "single_video_only": true,
+            "use_nvenc": false,
+            "embed_thumbnail": false,
+            "write_thumbnail": true,
+            "embed_metadata": true,
+            "write_info_json": true,
+            "tags": [
+              "vodforge-quality",
+              "synthetic-fixture",
+              "unicode-\u0394"
+            ],
+            "urls": [
+              "https://media.w3.org/2010/05/sintel/trailer.mp4"
+            ],
+            "use_cookies": false,
+            "cookie_file": null,
+            "cookie_browser": null,
+            "batch_mode": false,
+            "completed_batch_items": 0,
+            "batch_outcome": {
+              "success_count": 0,
+              "failure_count": 0,
+              "skipped_count": 0,
+              "sidecar_failure_count": 0
+            },
+            "batch_list_path": "",
+            "preview_info": null,
+            "preview_source_owner": null,
+            "annotation_source_owner": null,
+            "run_id": "8de6474fac2243c78f03c3acf1aae3f7",
+            "origin_run_id": null,
+            "recovery_reason": null,
+            "execution_run_id": null,
+            "retry_of_run_id": null,
+            "metadata_keys": [],
+            "history_identities": [],
+            "history_archive_owners": [],
+            "terminal_status": null,
+            "terminal_message": "",
+            "item_terminal_emitted": false,
+            "failure_diagnostic": null,
+            "telemetry_operation_id": null,
+            "failure_stage": "preparation",
+            "selection_dimensions": {},
+            "nvenc_applicable": null,
+            "translated_subtitle_language": null
+          },
+          "line": "Single video detected."
+        }
+      },
+      {
+        "elapsed_seconds": 0.0095,
+        "kind": "status",
+        "payload": "Video 1 of 1 \u2014 analyzing source formats"
+      },
+      {
+        "elapsed_seconds": 0.0095,
+        "kind": "job_log",
+        "payload": {
+          "job": {
+            "url": "https://media.w3.org/2010/05/sintel/trailer.mp4",
+            "output_dir": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-3uwyflbi/cases/public-w3c-sintel/output",
+            "output_type": "MP4",
+            "quality_label": "480p",
+            "export_mode": "Auto CBR",
+            "manual_settings": {
+              "video_bitrate_kbps": 10000,
+              "audio_bitrate_kbps": 320,
+              "audio_sample_rate": "48000",
+              "audio_channels": "2",
+              "audio_codec": "AAC",
+              "x264_preset": "medium",
+              "video_crf": null
+            },
+            "mp3_settings": {
+              "bitrate_kbps": 192,
+              "sample_rate": null,
+              "channels": null,
+              "embed_metadata": true,
+              "embed_cover_art": true,
+              "custom_cover_art_path": null
+            },
+            "single_video_only": true,
+            "use_nvenc": false,
+            "embed_thumbnail": false,
+            "write_thumbnail": true,
+            "embed_metadata": true,
+            "write_info_json": true,
+            "tags": [
+              "vodforge-quality",
+              "synthetic-fixture",
+              "unicode-\u0394"
+            ],
+            "urls": [
+              "https://media.w3.org/2010/05/sintel/trailer.mp4"
+            ],
+            "use_cookies": false,
+            "cookie_file": null,
+            "cookie_browser": null,
+            "batch_mode": false,
+            "completed_batch_items": 0,
+            "batch_outcome": {
+              "success_count": 0,
+              "failure_count": 0,
+              "skipped_count": 0,
+              "sidecar_failure_count": 0
+            },
+            "batch_list_path": "",
+            "preview_info": null,
+            "preview_source_owner": null,
+            "annotation_source_owner": null,
+            "run_id": "8de6474fac2243c78f03c3acf1aae3f7",
+            "origin_run_id": null,
+            "recovery_reason": null,
+            "execution_run_id": null,
+            "retry_of_run_id": null,
+            "metadata_keys": [],
+            "history_identities": [],
+            "history_archive_owners": [],
+            "terminal_status": null,
+            "terminal_message": "",
+            "item_terminal_emitted": false,
+            "failure_diagnostic": null,
+            "telemetry_operation_id": "cf0b756a-3258-4db5-b4b4-1e811e046a26",
+            "failure_stage": "analysis",
+            "selection_dimensions": {},
+            "nvenc_applicable": null,
+            "translated_subtitle_language": null
+          },
+          "line": "Video 1 of 1: URL https://media.w3.org/2010/05/sintel/trailer.mp4"
+        }
+      },
+      {
+        "elapsed_seconds": 0.0096,
+        "kind": "progress",
+        "payload": 0.0
+      }
+    ],
+    "progress_trace": [],
+    "control_trace": [
+      {
+        "elapsed_seconds": 0.008944,
+        "run_id": "8de6474fac2243c78f03c3acf1aae3f7",
+        "phase": "worker_started"
+      },
+      {
+        "elapsed_seconds": 0.008952,
+        "run_id": "8de6474fac2243c78f03c3acf1aae3f7",
+        "phase": "preflight_started"
+      },
+      {
+        "elapsed_seconds": 0.009172,
+        "run_id": "8de6474fac2243c78f03c3acf1aae3f7",
+        "phase": "preflight_completed"
+      },
+      {
+        "elapsed_seconds": 0.009174,
+        "run_id": "8de6474fac2243c78f03c3acf1aae3f7",
+        "phase": "worker_dispatched"
+      },
+      {
+        "elapsed_seconds": 0.558155,
+        "run_id": "8de6474fac2243c78f03c3acf1aae3f7",
+        "phase": "worker_finished"
+      }
+    ],
+    "child_registration_trace": [],
+    "control_observer_errors": [],
+    "control_observer_stopped": true,
+    "latest_metadata": null,
+    "outputs": [],
+    "media_output_count": 0,
+    "output_bytes": 0,
+    "staging_entries_after": [],
+    "staging_trace": [
+      {
+        "elapsed_seconds": 0.008886958996299654,
+        "status": "",
+        "root_present": false,
+        "root_mode": null,
+        "run_directories": [],
+        "entries": [],
+        "final": false
+      },
+      {
+        "elapsed_seconds": 0.04654512502020225,
+        "status": "Video 1 of 1 \u2014 analyzing source formats",
+        "root_present": false,
+        "root_mode": null,
+        "run_directories": [],
+        "entries": [],
+        "final": false
+      },
+      {
+        "elapsed_seconds": 0.5582334170176182,
+        "status": "Video 1 of 1 \u2014 analyzing source formats",
+        "root_present": false,
+        "root_mode": null,
+        "run_directories": [],
+        "entries": [],
+        "final": true
+      }
+    ],
+    "diagnostic_timings": {},
+    "effective_throughput_bytes_per_second": null,
+    "resource_metrics": {
+      "sample_count": 7,
+      "peak_rss_bytes": 153829376,
+      "mean_cpu_percent": 50.129,
+      "peak_cpu_percent": 94.7,
+      "peak_disk_bytes": 0,
+      "peak_child_processes": 0,
+      "peak_zombie_processes": 0,
+      "fd_count_before": 8,
+      "fd_count_after": 11,
+      "fd_delta": 3,
+      "thread_count_before": 2,
+      "thread_count_after": 2,
+      "thread_delta": 0,
+      "samples": [
+        {
+          "elapsed_seconds": 0.0075,
+          "rss_bytes": 134348800,
+          "cpu_percent": 94.7,
+          "child_processes": 0,
+          "zombies": 0,
+          "disk_bytes": 0,
+          "threads": 4,
+          "fds": 9
+        },
+        {
+          "elapsed_seconds": 0.0855,
+          "rss_bytes": 143818752,
+          "cpu_percent": 93.4,
+          "child_processes": 0,
+          "zombies": 0,
+          "disk_bytes": 0,
+          "threads": 5,
+          "fds": 8
+        },
+        {
+          "elapsed_seconds": 0.2947,
+          "rss_bytes": 149307392,
+          "cpu_percent": 92.8,
+          "child_processes": 0,
+          "zombies": 0,
+          "disk_bytes": 0,
+          "threads": 5,
+          "fds": 9
+        },
+        {
+          "elapsed_seconds": 0.3603,
+          "rss_bytes": 152862720,
+          "cpu_percent": 26.2,
+          "child_processes": 0,
+          "zombies": 0,
+          "disk_bytes": 0,
+          "threads": 5,
+          "fds": 11
+        },
+        {
+          "elapsed_seconds": 0.4209,
+          "rss_bytes": 153223168,
+          "cpu_percent": 14.6,
+          "child_processes": 0,
+          "zombies": 0,
+          "disk_bytes": 0,
+          "threads": 5,
+          "fds": 11
+        },
+        {
+          "elapsed_seconds": 0.487,
+          "rss_bytes": 153829376,
+          "cpu_percent": 17.6,
+          "child_processes": 0,
+          "zombies": 0,
+          "disk_bytes": 0,
+          "threads": 4,
+          "fds": 11
+        },
+        {
+          "elapsed_seconds": 0.5546,
+          "rss_bytes": 153829376,
+          "cpu_percent": 11.6,
+          "child_processes": 0,
+          "zombies": 0,
+          "disk_bytes": 0,
+          "threads": 4,
+          "fds": 11
+        }
+      ]
+    },
+    "active_children_before_harness_cleanup": [],
+    "active_children_after_harness_cleanup": [],
+    "harness_emergency_cleanup_used": false,
+    "diagnostics_path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-3uwyflbi/production-state/diagnostics/latest.log",
+    "diagnostic_excerpt": "[2026-10-10T10:15:59.766] playlist detection skipped: Ignore playlists is active\n[2026-10-10T10:15:59.767] single video detected\n[2026-10-10T10:15:59.767] Video 1 of 1 preflight runtime path: ffmpeg=/opt/homebrew/bin/ffmpeg\n[2026-10-10T10:15:59.767] Video 1 of 1 preflight runtime path: deno=/opt/homebrew/bin/deno\n[2026-10-10T10:15:59.767] Video 1 of 1 preflight Deno/bundled-EJS enabled\n[2026-10-10T10:15:59.767] Video 1 of 1 preflight options: {\n  \"extract_flat\": false,\n  \"extractor_retries\": 5,\n  \"ffmpeg_location\": \"/opt/homebrew/bin\",\n  \"fragment_retries\": 0,\n  \"ignore_no_formats_error\": true,\n  \"js_runtimes\": {\n    \"deno\": {\n      \"path\": \"/opt/homebrew/bin/deno\"\n    }\n  },\n  \"noplaylist\": true,\n  \"quiet\": true,\n  \"retries\": 0,\n  \"retry_sleep_functions\": {\n    \"extractor\": \"<callable ytdlp_retry_sleep_seconds>\"\n  },\n  \"skip_download\": true,\n  \"socket_timeout\": 30\n}\n[2026-10-10T10:15:59.767] Video 1 of 1 analysis start\n[2026-10-10T10:16:00.056] preflight yt-dlp DEBUG: [generic] Extracting URL: https://media.w3.org/2010/05/sintel/trailer.mp4\n[2026-10-10T10:16:00.056] preflight yt-dlp DEBUG: [generic] trailer: Downloading webpage\n[2026-10-10T10:16:00.217] preflight yt-dlp ERROR: ERROR: [generic] Got HTTP Error 403 caused by Cloudflare anti-bot challenge; try again with  --extractor-args \"generic:impersonate\"\n[2026-10-10T10:16:00.315] download worker error: DownloadError: ERROR: [generic] Got HTTP Error 403 caused by Cloudflare anti-bot challenge; try again with  --extractor-args \"generic:impersonate\"\n[2026-10-10T10:16:00.315] QUALITY CASE public-w3c-sintel 8de6474fac2243c78f03c3acf1aae3f7 END\n"
+  },
+  "old_root": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-3uwyflbi/cases/public-w3c-sintel",
+  "original_hash": "daa823f1cc199613fc8576287cf0104d6f84df0fe5d8e006d9776567d33c0c3a"
+}

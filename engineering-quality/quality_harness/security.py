@@ -1,13 +1,27 @@
 from __future__ import annotations
 
 import ast
+import json
 import os
 import stat
+import time
 import urllib.parse
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 from .fault_server import FixtureHTTPServer
+from .transaction_observation import file_observation
+
+
+def _bind_component(scenario, case_dir, observation):
+    path = case_dir / "interaction-observation.json"
+    path.write_text(json.dumps(observation, indent=2, default=str) + "\n")
+    scenario["raw_result"] = str(path)
+    from .util import sha256_file
+
+    scenario["raw_result_sha256"] = sha256_file(path)
+    scenario["artifacts"].append(str(path))
 
 
 def _finding(
@@ -44,6 +58,16 @@ def path_and_subprocess_probe(
 
     case_dir.mkdir(parents=True, exist_ok=True)
     output_root = case_dir / "chosen-output"
+    started = time.monotonic()
+    trace = [
+        {
+            "phase": "before_construction",
+            "elapsed_seconds": time.monotonic() - started,
+            "output_root": str(output_root),
+            "root_exists": output_root.exists(),
+            "marker_exists": (case_dir / "SHOULD_NOT_EXIST").exists(),
+        }
+    ]
     malicious = {
         "id": "../../id/../escape",
         "title": "../../outside;$(touch SHOULD_NOT_EXIST)|CON:<script>\x00",
@@ -60,6 +84,17 @@ def path_and_subprocess_probe(
     injection_marker = case_dir / "SHOULD_NOT_EXIST"
     payload_path = case_dir / "source;$(touch SHOULD_NOT_EXIST).mp4"
     command = build_vod_ffmpeg_command("ffmpeg", payload_path, case_dir / "output.mp4")
+    trace.append(
+        {
+            "phase": "construction_returned",
+            "elapsed_seconds": time.monotonic() - started,
+            "metadata": malicious,
+            "target_dir": str(target_dir),
+            "target_name": target_name,
+            "source_path": str(payload_path),
+            "command": command,
+        }
+    )
     source_arg_count = sum(argument == str(payload_path) for argument in command)
 
     source = (repo_root / "yt_downloader" / "app.py").read_text(encoding="utf-8")
@@ -128,6 +163,25 @@ def path_and_subprocess_probe(
                 "security.path_and_subprocess_arguments",
             )
         )
+    trace.append(
+        {
+            "phase": "source_review_returned",
+            "elapsed_seconds": time.monotonic() - started,
+            "marker_exists": injection_marker.exists(),
+            "source": file_observation(repo_root / "yt_downloader" / "app.py"),
+            "shell_true": shell_true,
+            "string_subprocess": string_subprocess,
+        }
+    )
+    _bind_component(
+        scenario,
+        case_dir,
+        {
+            "scenario_id": scenario["id"],
+            "contract": "static-path-argv-construction-v1",
+            "trace": trace,
+        },
+    )
     return scenario, findings
 
 
@@ -155,6 +209,20 @@ def symlink_and_temp_probe(
         "uploader": "Creator",
         "webpage_url": "https://example.invalid/watch?v=id123",
     }
+    started = time.monotonic()
+    trace = [
+        {
+            "phase": "before_packaging",
+            "elapsed_seconds": time.monotonic() - started,
+            "source": file_observation(staging_source),
+            "output_root": str(output_root),
+            "outside": str(outside),
+            "link": str(output_root / "Creator"),
+            "link_is_symlink": (output_root / "Creator").is_symlink(),
+            "link_target": str((output_root / "Creator").resolve()),
+            "outside_entries": [str(p) for p in outside.rglob("*")],
+        }
+    ]
     rejected = False
     rejection_evidence = ""
     packaged: list[Path] = []
@@ -169,6 +237,16 @@ def symlink_and_temp_probe(
     except UnsafeOutputPathError as exc:
         rejected = True
         rejection_evidence = f"{type(exc).__name__}: {exc}"
+    trace.append(
+        {
+            "phase": "packaging_returned",
+            "elapsed_seconds": time.monotonic() - started,
+            "exception_type": "UnsafeOutputPathError" if rejected else None,
+            "packaged": [str(p) for p in packaged],
+            "source": file_observation(staging_source),
+            "outside_entries": [str(p) for p in outside.rglob("*")],
+        }
+    )
     resolved_targets = [path.resolve(strict=False) for path in packaged]
     escaped = any(
         os.path.commonpath([str(output_root.resolve()), str(path)])
@@ -264,6 +342,26 @@ def symlink_and_temp_probe(
         "artifacts": [str(path) for path in packaged],
         "error": None,
     }
+    trace.append(
+        {
+            "phase": "private_staging_created",
+            "elapsed_seconds": time.monotonic() - started,
+            "os_name": os.name,
+            "stage": file_observation(staging),
+            "root": file_observation(staging.parent),
+            "source": file_observation(staging_source),
+            "outside_entries": [str(p) for p in outside.rglob("*")],
+        }
+    )
+    _bind_component(
+        scenario,
+        case_dir,
+        {
+            "scenario_id": scenario["id"],
+            "contract": "symlink-refusal-private-stage-v1",
+            "trace": trace,
+        },
+    )
     return scenario, findings
 
 
@@ -358,6 +456,40 @@ def fresh_output_contract_probe(
         effective_audio_kbps=192,
         audio_bitrate_kbps=320,
     )
+    started = time.monotonic()
+    calls = []
+
+    def observed_validate(label, path, output_type, binary, **kwargs):
+        row = {
+            "label": label,
+            "entered_seconds": time.monotonic() - started,
+            "source_before": file_observation(path),
+            "output_type": output_type.value,
+            "binary": binary,
+            "plan": asdict(kwargs["plan"]),
+            "probe": kwargs["ffprobe_data"],
+            "expectations": {
+                k: v for k, v in kwargs.items() if k not in {"plan", "ffprobe_data"}
+            },
+        }
+        try:
+            result = validate_output_artifact(path, output_type, binary, **kwargs)
+        except Exception as exc:
+            row.update(
+                returned_seconds=time.monotonic() - started,
+                exception_type=type(exc).__name__,
+                source_after=file_observation(path),
+            )
+            calls.append(row)
+            raise
+        row.update(
+            returned_seconds=time.monotonic() - started,
+            exception_type=None,
+            source_after=file_observation(path),
+        )
+        calls.append(row)
+        return result
+
     accepted: list[str] = []
     valid_rejections: list[str] = []
     valid_mp3_probe = {
@@ -501,7 +633,8 @@ def fresh_output_contract_probe(
         )
     for label, path, output_type, plan, probe in invalid_probes:
         try:
-            validate_output_artifact(
+            observed_validate(
+                label,
                 path,
                 output_type,
                 "unused",
@@ -596,7 +729,8 @@ def fresh_output_contract_probe(
     ]
     for label, path, output_type, plan, probe, expectations in embedding_invalid_probes:
         try:
-            validate_output_artifact(
+            observed_validate(
+                label,
                 path,
                 output_type,
                 "unused",
@@ -664,7 +798,8 @@ def fresh_output_contract_probe(
         ),
     ):
         try:
-            validate_output_artifact(
+            observed_validate(
+                label,
                 path,
                 output_type,
                 "unused",
@@ -711,6 +846,18 @@ def fresh_output_contract_probe(
         "artifacts": [str(weak_mp3), str(weak_mp4)],
         "error": None,
     }
+    _bind_component(
+        scenario,
+        case_dir,
+        {
+            "scenario_id": scenario["id"],
+            "contract": "resolved-plan-validator-calls-v1",
+            "scope": "injected ffprobe data; no real media decoding or worker commit",
+            "clock_origin_monotonic": started,
+            "calls": calls,
+            "files_after": [file_observation(weak_mp3), file_observation(weak_mp4)],
+        },
+    )
     return scenario, [finding] if failed else []
 
 
@@ -721,6 +868,23 @@ def url_secret_persistence_probe(
     from yt_downloader.history import sanitize_history_record
 
     case_dir.mkdir(parents=True, exist_ok=True)
+    started = time.monotonic()
+    paths = [
+        case_dir / name
+        for name in (
+            "batch-url-failures.txt",
+            "activity.log",
+            "diagnostics.log",
+            "metadata/metadata.json",
+        )
+    ]
+    trace = [
+        {
+            "phase": "before_sinks",
+            "elapsed_seconds": time.monotonic() - started,
+            "files": [file_observation(path) for path in paths],
+        }
+    ]
     secret = "TOPSECRET-HARNESS-CANARY"
     url = f"https://user:pass@example.invalid/media?id=1&token={secret}#fragment"
     record = sanitize_history_record(
@@ -770,6 +934,33 @@ def url_secret_persistence_probe(
         "diagnostic": diagnostic.read_text(encoding="utf-8"),
         "compact_metadata": metadata.read_text(encoding="utf-8"),
     }
+    trace.append(
+        {
+            "phase": "sinks_closed",
+            "elapsed_seconds": time.monotonic() - started,
+            "text": durable_text,
+            "files": [
+                file_observation(path)
+                for path in (report, activity, diagnostic, metadata)
+            ],
+        }
+    )
+    trace.append(
+        {
+            "phase": "durable_reobserved",
+            "elapsed_seconds": time.monotonic() - started,
+            "files": [
+                file_observation(path)
+                for path in (report, activity, diagnostic, metadata)
+            ],
+            "text": {
+                "persistent_activity": activity.read_text(encoding="utf-8"),
+                "batch_failure": report.read_text(encoding="utf-8"),
+                "diagnostic": diagnostic.read_text(encoding="utf-8"),
+                "compact_metadata": metadata.read_text(encoding="utf-8"),
+            },
+        }
+    )
     safe_identity = "https://example.invalid/media"
     persisted = {
         name: secret in text or "user:pass" in text
@@ -855,6 +1046,19 @@ def url_secret_persistence_probe(
         "artifacts": [str(report), str(activity), str(diagnostic), str(metadata)],
         "error": None,
     }
+    _bind_component(
+        scenario,
+        case_dir,
+        {
+            "scenario_id": scenario["id"],
+            "contract": "controlled-url-secret-sinks-v1",
+            "scope": "synthetic canary sinks and POSIX log modes",
+            "os_name": os.name,
+            "input_url": url,
+            "canary": secret,
+            "trace": trace,
+        },
+    )
     return scenario, findings
 
 
@@ -867,38 +1071,78 @@ def thumbnail_network_authority_probe(
     case_dir.mkdir(parents=True, exist_ok=True)
     source_url = source_server.url("/page/normal")
     same_origin_url = source_server.url("/thumbnail.jpg")
-    same_origin_payload = download_bounded_url_bytes(
-        same_origin_url,
-        source_url=source_url,
-        timeout_seconds=5,
-    )
-
+    started = time.monotonic()
+    calls = []
+    trace = []
     with FixtureHTTPServer(source_server.fixture_dir) as target_server:
         target_url = target_server.url("/thumbnail.jpg")
-        direct_rejection = ""
-        try:
-            download_bounded_url_bytes(
-                target_url,
-                source_url=source_url,
-                timeout_seconds=5,
-            )
-        except RuntimeError as exc:
-            direct_rejection = f"{type(exc).__name__}: {exc}"
-
         redirect_url = source_server.url(
             "/redirect/thumbnail?to=" + urllib.parse.quote(target_url, safe="")
         )
-        redirect_rejection = ""
-        try:
-            download_bounded_url_bytes(
-                redirect_url,
-                source_url=source_url,
-                timeout_seconds=5,
-            )
-        except RuntimeError as exc:
-            redirect_rejection = f"{type(exc).__name__}: {exc}"
+        trace.append(
+            {
+                "phase": "before_fetches",
+                "elapsed_seconds": time.monotonic() - started,
+                "source": source_server.state.snapshot(),
+                "target": target_server.state.snapshot(),
+            }
+        )
 
+        def observed_fetch(label, url):
+            row = {
+                "label": label,
+                "url": url,
+                "source_url": source_url,
+                "timeout_seconds": 5,
+                "entered_seconds": time.monotonic() - started,
+                "source_before": source_server.state.snapshot(),
+                "target_before": target_server.state.snapshot(),
+            }
+            payload = b""
+            rejection = ""
+            try:
+                payload = download_bounded_url_bytes(
+                    url, source_url=source_url, timeout_seconds=5
+                )
+                row["exception_type"] = None
+            except RuntimeError as exc:
+                row["exception_type"] = type(exc).__name__
+                rejection = f"{type(exc).__name__}: {exc}"
+            import hashlib
+
+            row.update(
+                {
+                    "returned_seconds": time.monotonic() - started,
+                    "payload_size": len(payload),
+                    "payload_sha256": hashlib.sha256(payload).hexdigest(),
+                    "rejection": rejection,
+                    "source_after": source_server.state.snapshot(),
+                    "target_after": target_server.state.snapshot(),
+                }
+            )
+            calls.append(row)
+            return payload, rejection
+
+        same_origin_payload, _ = observed_fetch("same_origin", same_origin_url)
+        _, direct_rejection = observed_fetch("direct_cross_origin", target_url)
+        _, redirect_rejection = observed_fetch("redirect_cross_origin", redirect_url)
         target_snapshot = target_server.state.snapshot()
+        trace.append(
+            {
+                "phase": "calls_returned",
+                "elapsed_seconds": time.monotonic() - started,
+                "source": source_server.state.snapshot(),
+                "target": target_snapshot,
+            }
+        )
+    trace.append(
+        {
+            "phase": "target_closed",
+            "elapsed_seconds": time.monotonic() - started,
+            "source": source_server.state.snapshot(),
+            "target": target_server.state.snapshot(),
+        }
+    )
 
     source_snapshot = source_server.state.snapshot()
     same_origin_succeeded = bool(same_origin_payload)
@@ -940,6 +1184,20 @@ def thumbnail_network_authority_probe(
         "artifacts": [],
         "error": None,
     }
+    _bind_component(
+        scenario,
+        case_dir,
+        {
+            "scenario_id": scenario_id,
+            "contract": "loopback-thumbnail-authority-v1",
+            "scope": "two loopback HTTP origins; no external authority requests",
+            "source_url": source_url,
+            "target_url": target_url,
+            "trace": trace,
+            "calls": calls,
+            "fixture": file_observation(source_server.fixture_dir / "thumbnail.jpg"),
+        },
+    )
     if passed:
         return scenario, []
     return scenario, [

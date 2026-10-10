@@ -1,0 +1,660 @@
+[
+  {
+    "scenario": {
+      "id": "security.url_secret_persistence",
+      "evidence_tier": "unit_static",
+      "category": "security",
+      "status": "passed",
+      "duration_seconds": 0.0031,
+      "metrics": {
+        "leaked_area_count": 0,
+        "safe_identity_missing_area_count": 0,
+        "diagnostic_mode_octal": "0o600",
+        "activity_mode_octal": "0o600",
+        "failure_report_mode_octal": "0o600",
+        "posix_mode_contract_applicable": true
+      },
+      "evidence": [
+        "Unique canary persisted in: []",
+        "Safe URL identity missing from: []",
+        "Diagnostics mode: 0o600",
+        "Activity mode: 0o600",
+        "Batch-failure mode: 0o600"
+      ],
+      "artifacts": [
+        "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-9xcecmdo/cases/security-url-secret/batch-url-failures.txt",
+        "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-9xcecmdo/cases/security-url-secret/activity.log",
+        "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-9xcecmdo/cases/security-url-secret/diagnostics.log",
+        "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-9xcecmdo/cases/security-url-secret/metadata/metadata.json",
+        "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-9xcecmdo/cases/security-url-secret/interaction-observation.json"
+      ],
+      "error": null,
+      "raw_result": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-9xcecmdo/cases/security-url-secret/interaction-observation.json",
+      "raw_result_sha256": "ae9911ef1e07fd034d88bf3f6701919e932b746ade17de317b368a0cb76ba9c6",
+      "interaction_coverage": {
+        "status": "unproven",
+        "scenario_id": "security.url_secret_persistence",
+        "reason": "Before/during/after requirement-to-assertion review is pending. Existing scenario status and raw traces do not establish complete temporal coverage. Preserve their narrower evidence.",
+        "required_phases": [
+          "before",
+          "during",
+          "after"
+        ],
+        "assertion_mapping": [],
+        "phase_review": {
+          "before": "unproven",
+          "during": "unproven",
+          "after": "unproven"
+        },
+        "usability_review": {
+          "status": "unproven",
+          "applicability": "unreviewed",
+          "reason": "Usability evidence and reviewer mapping have not been enrolled. Unknown applicability is not an exemption; functional success does not establish clarity, restraint or accessible interaction.",
+          "dimensions": {
+            "orientation_navigation": "unproven",
+            "action_hierarchy": "unproven",
+            "progressive_disclosure": "unproven",
+            "visual_hierarchy": "unproven",
+            "sparse_busy_content": "unproven",
+            "feedback": "unproven",
+            "accessibility": "unproven"
+          }
+        }
+      }
+    },
+    "raw": {
+      "scenario_id": "security.url_secret_persistence",
+      "contract": "controlled-url-secret-sinks-v1",
+      "scope": "synthetic canary sinks and POSIX log modes",
+      "os_name": "posix",
+      "input_url": "https://user:pass@example.invalid/media?id=1&token=TOPSECRET-HARNESS-CANARY#fragment",
+      "canary": "TOPSECRET-HARNESS-CANARY",
+      "trace": [
+        {
+          "phase": "before_sinks",
+          "elapsed_seconds": 3.7500140024349093e-06,
+          "files": [
+            {
+              "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-9xcecmdo/cases/security-url-secret/batch-url-failures.txt",
+              "exists": false
+            },
+            {
+              "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-9xcecmdo/cases/security-url-secret/activity.log",
+              "exists": false
+            },
+            {
+              "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-9xcecmdo/cases/security-url-secret/diagnostics.log",
+              "exists": false
+            },
+            {
+              "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-9xcecmdo/cases/security-url-secret/metadata/metadata.json",
+              "exists": false
+            }
+          ]
+        },
+        {
+          "phase": "sinks_closed",
+          "elapsed_seconds": 0.0023785840021446347,
+          "text": {
+            "history_activity": "['Normalized URL: https://example.invalid/media']",
+            "history_url": "https://example.invalid/media",
+            "persistent_activity": "Normalized URL: https://example.invalid/media\n",
+            "batch_failure": "[2026-10-10T09:41:42]\nURL: https://example.invalid/media\nIssue: injected failure while requesting https://example.invalid/media\n\n",
+            "diagnostic": "[2026-10-10T09:41:42.229] URL received: https://example.invalid/media\n",
+            "compact_metadata": "{\n  \"id\": \"secret-case\",\n  \"title\": \"Secret case\",\n  \"webpage_url\": \"https://example.invalid/media\",\n  \"thumbnail\": \"https://example.invalid/media\",\n  \"best_thumbnail\": {\n    \"url\": \"https://example.invalid/media\"\n  },\n  \"vodforge_output_type\": \"MP4\"\n}\n"
+          },
+          "files": [
+            {
+              "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-9xcecmdo/cases/security-url-secret/batch-url-failures.txt",
+              "exists": true,
+              "symlink": false,
+              "mode": 384,
+              "size_bytes": 129,
+              "sha256": "b2f244466238e70bef9b00885959a99b947a55344edd4ca745aae646c89c125a"
+            },
+            {
+              "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-9xcecmdo/cases/security-url-secret/activity.log",
+              "exists": true,
+              "symlink": false,
+              "mode": 384,
+              "size_bytes": 46,
+              "sha256": "0d5320151efc21422a6aaa2242768753ecd44680585b2fe1eff274374f997b29"
+            },
+            {
+              "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-9xcecmdo/cases/security-url-secret/diagnostics.log",
+              "exists": true,
+              "symlink": false,
+              "mode": 384,
+              "size_bytes": 70,
+              "sha256": "b5ff2d46fbac2db0c0453755327b9ed1ed69780720e59400bc313f1a7f633b85"
+            },
+            {
+              "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-9xcecmdo/cases/security-url-secret/metadata/metadata.json",
+              "exists": true,
+              "symlink": false,
+              "mode": 420,
+              "size_bytes": 253,
+              "sha256": "82c00615d0c4841891fa0afcf47c88ad86715930c36bdaf36f11f0740090a057"
+            }
+          ]
+        },
+        {
+          "phase": "durable_reobserved",
+          "elapsed_seconds": 0.0025291670026490465,
+          "files": [
+            {
+              "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-9xcecmdo/cases/security-url-secret/batch-url-failures.txt",
+              "exists": true,
+              "symlink": false,
+              "mode": 384,
+              "size_bytes": 129,
+              "sha256": "b2f244466238e70bef9b00885959a99b947a55344edd4ca745aae646c89c125a"
+            },
+            {
+              "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-9xcecmdo/cases/security-url-secret/activity.log",
+              "exists": true,
+              "symlink": false,
+              "mode": 384,
+              "size_bytes": 46,
+              "sha256": "0d5320151efc21422a6aaa2242768753ecd44680585b2fe1eff274374f997b29"
+            },
+            {
+              "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-9xcecmdo/cases/security-url-secret/diagnostics.log",
+              "exists": true,
+              "symlink": false,
+              "mode": 384,
+              "size_bytes": 70,
+              "sha256": "b5ff2d46fbac2db0c0453755327b9ed1ed69780720e59400bc313f1a7f633b85"
+            },
+            {
+              "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-9xcecmdo/cases/security-url-secret/metadata/metadata.json",
+              "exists": true,
+              "symlink": false,
+              "mode": 420,
+              "size_bytes": 253,
+              "sha256": "82c00615d0c4841891fa0afcf47c88ad86715930c36bdaf36f11f0740090a057"
+            }
+          ],
+          "text": {
+            "persistent_activity": "Normalized URL: https://example.invalid/media\n",
+            "batch_failure": "[2026-10-10T09:41:42]\nURL: https://example.invalid/media\nIssue: injected failure while requesting https://example.invalid/media\n\n",
+            "diagnostic": "[2026-10-10T09:41:42.229] URL received: https://example.invalid/media\n",
+            "compact_metadata": "{\n  \"id\": \"secret-case\",\n  \"title\": \"Secret case\",\n  \"webpage_url\": \"https://example.invalid/media\",\n  \"thumbnail\": \"https://example.invalid/media\",\n  \"best_thumbnail\": {\n    \"url\": \"https://example.invalid/media\"\n  },\n  \"vodforge_output_type\": \"MP4\"\n}\n"
+          }
+        }
+      ]
+    },
+    "old_run_root": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-9xcecmdo",
+    "folder": "security-url-secret"
+  },
+  {
+    "scenario": {
+      "id": "security.thumbnail_network_authority",
+      "evidence_tier": "unit_static",
+      "category": "security",
+      "status": "passed",
+      "duration_seconds": 0.5062,
+      "metrics": {
+        "same_origin_fetch_succeeded": true,
+        "direct_cross_origin_rejected": true,
+        "cross_origin_redirect_rejected": true,
+        "forbidden_target_request_count": 0,
+        "redirect_first_hop_request_count": 1
+      },
+      "evidence": [
+        "Explicit same-origin fixture thumbnail succeeded: True",
+        "Direct cross-origin metadata URL rejection: RuntimeError: Thumbnail URL authority is not trusted for this source",
+        "Allowed first hop to cross-origin redirect rejection: RuntimeError: Thumbnail URL authority is not trusted for this source",
+        "Forbidden target-origin request count: 0",
+        "Source-origin redirect first-hop request count: 1"
+      ],
+      "artifacts": [
+        "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-9xcecmdo/cases/security-thumbnail-network/interaction-observation.json"
+      ],
+      "error": null,
+      "raw_result": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-9xcecmdo/cases/security-thumbnail-network/interaction-observation.json",
+      "raw_result_sha256": "9f5926fc1da085a8d2a767a45da1650e3cbe85e3295e3e9147bacf3d7254401f",
+      "interaction_coverage": {
+        "status": "unproven",
+        "scenario_id": "security.thumbnail_network_authority",
+        "reason": "Before/during/after requirement-to-assertion review is pending. Existing scenario status and raw traces do not establish complete temporal coverage. Preserve their narrower evidence.",
+        "required_phases": [
+          "before",
+          "during",
+          "after"
+        ],
+        "assertion_mapping": [],
+        "phase_review": {
+          "before": "unproven",
+          "during": "unproven",
+          "after": "unproven"
+        },
+        "usability_review": {
+          "status": "unproven",
+          "applicability": "unreviewed",
+          "reason": "Usability evidence and reviewer mapping have not been enrolled. Unknown applicability is not an exemption; functional success does not establish clarity, restraint or accessible interaction.",
+          "dimensions": {
+            "orientation_navigation": "unproven",
+            "action_hierarchy": "unproven",
+            "progressive_disclosure": "unproven",
+            "visual_hierarchy": "unproven",
+            "sparse_busy_content": "unproven",
+            "feedback": "unproven",
+            "accessibility": "unproven"
+          }
+        }
+      }
+    },
+    "raw": {
+      "scenario_id": "security.thumbnail_network_authority",
+      "contract": "loopback-thumbnail-authority-v1",
+      "scope": "two loopback HTTP origins; no external authority requests",
+      "source_url": "http://127.0.0.1:55702/page/normal",
+      "target_url": "http://127.0.0.1:55703/thumbnail.jpg",
+      "trace": [
+        {
+          "phase": "before_fetches",
+          "elapsed_seconds": 0.001824749997467734,
+          "source": {
+            "origin": "http://127.0.0.1:55702",
+            "requests": {},
+            "statuses": {},
+            "responses": [],
+            "interruption_trace": [],
+            "retry_failures_remaining": 2,
+            "interruptions_remaining": 1,
+            "bytes_sent": {},
+            "total_requests": 0,
+            "total_bytes_sent": 0,
+            "interruptions_injected": 0
+          },
+          "target": {
+            "origin": "http://127.0.0.1:55703",
+            "requests": {},
+            "statuses": {},
+            "responses": [],
+            "interruption_trace": [],
+            "retry_failures_remaining": 2,
+            "interruptions_remaining": 1,
+            "bytes_sent": {},
+            "total_requests": 0,
+            "total_bytes_sent": 0,
+            "interruptions_injected": 0
+          }
+        },
+        {
+          "phase": "calls_returned",
+          "elapsed_seconds": 0.018273541005328298,
+          "source": {
+            "origin": "http://127.0.0.1:55702",
+            "requests": {
+              "/thumbnail.jpg": 1,
+              "/redirect/thumbnail": 1
+            },
+            "statuses": {
+              "200": 1,
+              "302": 1
+            },
+            "responses": [
+              {
+                "observed_at_monotonic": 130782.656086375,
+                "route": "/thumbnail.jpg",
+                "status": 200
+              },
+              {
+                "observed_at_monotonic": 130782.662077,
+                "route": "/redirect/thumbnail",
+                "status": 302
+              }
+            ],
+            "interruption_trace": [],
+            "retry_failures_remaining": 2,
+            "interruptions_remaining": 1,
+            "bytes_sent": {
+              "/thumbnail.jpg": 1603,
+              "/redirect/thumbnail": 0
+            },
+            "total_requests": 2,
+            "total_bytes_sent": 1603,
+            "interruptions_injected": 0
+          },
+          "target": {
+            "origin": "http://127.0.0.1:55703",
+            "requests": {},
+            "statuses": {},
+            "responses": [],
+            "interruption_trace": [],
+            "retry_failures_remaining": 2,
+            "interruptions_remaining": 1,
+            "bytes_sent": {},
+            "total_requests": 0,
+            "total_bytes_sent": 0,
+            "interruptions_injected": 0
+          }
+        },
+        {
+          "phase": "target_closed",
+          "elapsed_seconds": 0.5040747500024736,
+          "source": {
+            "origin": "http://127.0.0.1:55702",
+            "requests": {
+              "/thumbnail.jpg": 1,
+              "/redirect/thumbnail": 1
+            },
+            "statuses": {
+              "200": 1,
+              "302": 1
+            },
+            "responses": [
+              {
+                "observed_at_monotonic": 130782.656086375,
+                "route": "/thumbnail.jpg",
+                "status": 200
+              },
+              {
+                "observed_at_monotonic": 130782.662077,
+                "route": "/redirect/thumbnail",
+                "status": 302
+              }
+            ],
+            "interruption_trace": [],
+            "retry_failures_remaining": 2,
+            "interruptions_remaining": 1,
+            "bytes_sent": {
+              "/thumbnail.jpg": 1603,
+              "/redirect/thumbnail": 0
+            },
+            "total_requests": 2,
+            "total_bytes_sent": 1603,
+            "interruptions_injected": 0
+          },
+          "target": {
+            "origin": "http://127.0.0.1:55703",
+            "requests": {},
+            "statuses": {},
+            "responses": [],
+            "interruption_trace": [],
+            "retry_failures_remaining": 2,
+            "interruptions_remaining": 1,
+            "bytes_sent": {},
+            "total_requests": 0,
+            "total_bytes_sent": 0,
+            "interruptions_injected": 0
+          }
+        }
+      ],
+      "calls": [
+        {
+          "label": "same_origin",
+          "url": "http://127.0.0.1:55702/thumbnail.jpg",
+          "source_url": "http://127.0.0.1:55702/page/normal",
+          "timeout_seconds": 5,
+          "entered_seconds": 0.0018352500046603382,
+          "source_before": {
+            "origin": "http://127.0.0.1:55702",
+            "requests": {},
+            "statuses": {},
+            "responses": [],
+            "interruption_trace": [],
+            "retry_failures_remaining": 2,
+            "interruptions_remaining": 1,
+            "bytes_sent": {},
+            "total_requests": 0,
+            "total_bytes_sent": 0,
+            "interruptions_injected": 0
+          },
+          "target_before": {
+            "origin": "http://127.0.0.1:55703",
+            "requests": {},
+            "statuses": {},
+            "responses": [],
+            "interruption_trace": [],
+            "retry_failures_remaining": 2,
+            "interruptions_remaining": 1,
+            "bytes_sent": {},
+            "total_requests": 0,
+            "total_bytes_sent": 0,
+            "interruptions_injected": 0
+          },
+          "exception_type": null,
+          "returned_seconds": 0.012356666004052386,
+          "payload_size": 1603,
+          "payload_sha256": "38df719fc1e0ed14acd92a722575320ced151930deb322cf8ddf875d0b4c0979",
+          "rejection": "",
+          "source_after": {
+            "origin": "http://127.0.0.1:55702",
+            "requests": {
+              "/thumbnail.jpg": 1
+            },
+            "statuses": {
+              "200": 1
+            },
+            "responses": [
+              {
+                "observed_at_monotonic": 130782.656086375,
+                "route": "/thumbnail.jpg",
+                "status": 200
+              }
+            ],
+            "interruption_trace": [],
+            "retry_failures_remaining": 2,
+            "interruptions_remaining": 1,
+            "bytes_sent": {
+              "/thumbnail.jpg": 1603
+            },
+            "total_requests": 1,
+            "total_bytes_sent": 1603,
+            "interruptions_injected": 0
+          },
+          "target_after": {
+            "origin": "http://127.0.0.1:55703",
+            "requests": {},
+            "statuses": {},
+            "responses": [],
+            "interruption_trace": [],
+            "retry_failures_remaining": 2,
+            "interruptions_remaining": 1,
+            "bytes_sent": {},
+            "total_requests": 0,
+            "total_bytes_sent": 0,
+            "interruptions_injected": 0
+          }
+        },
+        {
+          "label": "direct_cross_origin",
+          "url": "http://127.0.0.1:55703/thumbnail.jpg",
+          "source_url": "http://127.0.0.1:55702/page/normal",
+          "timeout_seconds": 5,
+          "entered_seconds": 0.01236679099383764,
+          "source_before": {
+            "origin": "http://127.0.0.1:55702",
+            "requests": {
+              "/thumbnail.jpg": 1
+            },
+            "statuses": {
+              "200": 1
+            },
+            "responses": [
+              {
+                "observed_at_monotonic": 130782.656086375,
+                "route": "/thumbnail.jpg",
+                "status": 200
+              }
+            ],
+            "interruption_trace": [],
+            "retry_failures_remaining": 2,
+            "interruptions_remaining": 1,
+            "bytes_sent": {
+              "/thumbnail.jpg": 1603
+            },
+            "total_requests": 1,
+            "total_bytes_sent": 1603,
+            "interruptions_injected": 0
+          },
+          "target_before": {
+            "origin": "http://127.0.0.1:55703",
+            "requests": {},
+            "statuses": {},
+            "responses": [],
+            "interruption_trace": [],
+            "retry_failures_remaining": 2,
+            "interruptions_remaining": 1,
+            "bytes_sent": {},
+            "total_requests": 0,
+            "total_bytes_sent": 0,
+            "interruptions_injected": 0
+          },
+          "exception_type": "RuntimeError",
+          "returned_seconds": 0.012415457997121848,
+          "payload_size": 0,
+          "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rejection": "RuntimeError: Thumbnail URL authority is not trusted for this source",
+          "source_after": {
+            "origin": "http://127.0.0.1:55702",
+            "requests": {
+              "/thumbnail.jpg": 1
+            },
+            "statuses": {
+              "200": 1
+            },
+            "responses": [
+              {
+                "observed_at_monotonic": 130782.656086375,
+                "route": "/thumbnail.jpg",
+                "status": 200
+              }
+            ],
+            "interruption_trace": [],
+            "retry_failures_remaining": 2,
+            "interruptions_remaining": 1,
+            "bytes_sent": {
+              "/thumbnail.jpg": 1603
+            },
+            "total_requests": 1,
+            "total_bytes_sent": 1603,
+            "interruptions_injected": 0
+          },
+          "target_after": {
+            "origin": "http://127.0.0.1:55703",
+            "requests": {},
+            "statuses": {},
+            "responses": [],
+            "interruption_trace": [],
+            "retry_failures_remaining": 2,
+            "interruptions_remaining": 1,
+            "bytes_sent": {},
+            "total_requests": 0,
+            "total_bytes_sent": 0,
+            "interruptions_injected": 0
+          }
+        },
+        {
+          "label": "redirect_cross_origin",
+          "url": "http://127.0.0.1:55702/redirect/thumbnail?to=http%3A%2F%2F127.0.0.1%3A55703%2Fthumbnail.jpg",
+          "source_url": "http://127.0.0.1:55702/page/normal",
+          "timeout_seconds": 5,
+          "entered_seconds": 0.012420333005138673,
+          "source_before": {
+            "origin": "http://127.0.0.1:55702",
+            "requests": {
+              "/thumbnail.jpg": 1
+            },
+            "statuses": {
+              "200": 1
+            },
+            "responses": [
+              {
+                "observed_at_monotonic": 130782.656086375,
+                "route": "/thumbnail.jpg",
+                "status": 200
+              }
+            ],
+            "interruption_trace": [],
+            "retry_failures_remaining": 2,
+            "interruptions_remaining": 1,
+            "bytes_sent": {
+              "/thumbnail.jpg": 1603
+            },
+            "total_requests": 1,
+            "total_bytes_sent": 1603,
+            "interruptions_injected": 0
+          },
+          "target_before": {
+            "origin": "http://127.0.0.1:55703",
+            "requests": {},
+            "statuses": {},
+            "responses": [],
+            "interruption_trace": [],
+            "retry_failures_remaining": 2,
+            "interruptions_remaining": 1,
+            "bytes_sent": {},
+            "total_requests": 0,
+            "total_bytes_sent": 0,
+            "interruptions_injected": 0
+          },
+          "exception_type": "RuntimeError",
+          "returned_seconds": 0.018264250000356697,
+          "payload_size": 0,
+          "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rejection": "RuntimeError: Thumbnail URL authority is not trusted for this source",
+          "source_after": {
+            "origin": "http://127.0.0.1:55702",
+            "requests": {
+              "/thumbnail.jpg": 1,
+              "/redirect/thumbnail": 1
+            },
+            "statuses": {
+              "200": 1,
+              "302": 1
+            },
+            "responses": [
+              {
+                "observed_at_monotonic": 130782.656086375,
+                "route": "/thumbnail.jpg",
+                "status": 200
+              },
+              {
+                "observed_at_monotonic": 130782.662077,
+                "route": "/redirect/thumbnail",
+                "status": 302
+              }
+            ],
+            "interruption_trace": [],
+            "retry_failures_remaining": 2,
+            "interruptions_remaining": 1,
+            "bytes_sent": {
+              "/thumbnail.jpg": 1603,
+              "/redirect/thumbnail": 0
+            },
+            "total_requests": 2,
+            "total_bytes_sent": 1603,
+            "interruptions_injected": 0
+          },
+          "target_after": {
+            "origin": "http://127.0.0.1:55703",
+            "requests": {},
+            "statuses": {},
+            "responses": [],
+            "interruption_trace": [],
+            "retry_failures_remaining": 2,
+            "interruptions_remaining": 1,
+            "bytes_sent": {},
+            "total_requests": 0,
+            "total_bytes_sent": 0,
+            "interruptions_injected": 0
+          }
+        }
+      ],
+      "fixture": {
+        "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-9xcecmdo/fixtures/thumbnail.jpg",
+        "exists": true,
+        "symlink": false,
+        "mode": 420,
+        "size_bytes": 1603,
+        "sha256": "38df719fc1e0ed14acd92a722575320ced151930deb322cf8ddf875d0b4c0979"
+      }
+    },
+    "old_run_root": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-9xcecmdo",
+    "folder": "security-thumbnail-network"
+  }
+]

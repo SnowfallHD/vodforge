@@ -3189,3 +3189,186 @@ The isolated source-native My Files journey now has a 271-pixel description
 viewport and both its footer and independently measured table end at 634 pixels.
 Source/native checks do not qualify a rebuilt signed package or close the
 remaining telemetry and interaction release rows.
+
+
+### Evidence enrollment and omitted Qt regressions — 2026-10-10
+
+The interaction migration originally inventoried required scenarios but returned
+`unproven` for every non-exempt domain. The release evaluator also discarded
+reviewed statuses. A green functional endpoint and a raw trace still cannot
+establish temporal coverage; an explicit domain oracle must evaluate its facts.
+
+`pipeline_interaction.py` now owns the first seven reviewed real-worker
+contracts: local MP4, local MP3 bitrate, MP4 without embedding, both source-height
+selections, and cancellation during download or transcode. It rehashes the raw
+receipt before evaluating the initial destination/staging inventory, monotonic
+same-run worker interval, positive transfer into private staging, independently
+probed committed media or cancelled absence, final staging inventory, production
+child cleanup before emergency containment, and observer retirement. Duplicate
+worker boundaries, foreign/traversal paths, backward clocks, retained children,
+emergency cleanup, changed receipts, incorrect media and missing observations
+have independent negative controls. Unknown domains still fail closed.
+
+Further authority controls reject a content-bound receipt from a different
+same-format case and reject an unrelated terminal error masked by the
+cancellation flag. Both controls failed before the repair. Raw case identity
+must match the enrolled scenario; cancellation requires the owned cancellation
+terminal error as well as an in-flight request and absent committed media.
+Missing case identity remains unproven.
+
+The first source-height oracle checked the committed output but omitted the
+observed source selection. It could certify a correctly resized output even
+when the wrong source was selected. The two controlled source-quality contracts
+now bind the requested ceiling to timestamped same-run metadata, the offered
+360/540 format inventory before transfer, the highest eligible source observed
+after transfer and before transcode, and matching terminal metadata. A preview
+may initially describe the default high format; it is not accepted as the actual
+selected source. Wrong ceilings, foreign owners/sources, late selection, wrong
+source height/format/resource, altered inventory and contradictory terminal
+metadata fail independently despite a correct output resolution. Missing
+observations remain unproven. This strengthens the two existing headless domains;
+it adds no new enrollment, native UX claim or release qualification.
+
+A fresh bounded HTTP 404 analysis-refusal domain now adds an eighth worker
+contract. Its independent fixture records the real listening origin, an empty
+pre-worker request baseline and timestamped route/status responses. The worker
+records dispatch after destination preflight. The oracle requires a same-job
+404 during source analysis, no media transfer or staging creation, empty output
+and staging inventories after return, and production child/observer retirement
+before emergency containment. It cannot certify a generic failure or a local
+preflight refusal as provider-error handling.
+
+A fault-mutated real receipt initially passed with a different loopback port.
+The missing listener authority was corrected in the producer and oracle; its
+first incomplete receipt remains unproven and was not backfilled. A separate
+fresh receipt passes all three temporal phases. Twenty-three contradictory
+copies fail and thirteen missing-observation copies remain unproven despite
+retaining functional pass flags. NORMAL/DEEP unreviewed mapping rows decrease
+from 202 to 198 (98 NORMAL, 100 DEEP); this one-domain qualification makes no
+full-profile, native usability, signed artifact or release claim.
+
+These contracts contain no rendered user interface. Their reviewed usability
+applicability is limited to that headless scope; they grant no exemption to the
+separate native or packaged usability reviews. The release gate consumes the
+maintained oracle result and continues to ignore receipt-supplied pass flags.
+
+Real worker execution exposed a second observation defect: staging timestamps
+were rounded to four decimal places while control events used six. A final clean
+inventory could appear earlier than worker completion by two microseconds. The
+recorder now retains its actual monotonic timestamp and captures its initial
+inventory synchronously before the worker starts. Deterministic precision and
+asynchronous-baseline regressions protect that broader causal-order invariant.
+An unavailable raw receipt preserves the original functional failure and cannot
+qualify interaction coverage.
+
+NORMAL and DEEP also omitted 17 newer Qt regression files from their component
+execution list. A separate required process group now covers the first selected
+folder description, responsive folder columns, composer/custom options and
+feedback, All runs hover seam, output paths, Run Deck labels, retry draft
+retirement/membership, move dialog/root notice, recovery inspector, worker
+control context, scroll ownership, artwork continuity and player resize
+continuity. The enrollment assertions fail against the previous list. Its
+metrics and evidence explicitly identify offscreen QML components; those tests
+do not observe native windows, physical input or displayed-frame timing.
+
+The initial newly enrolled worker run retains its original MP3 temporal failure;
+a separate corrected-clock MP3 run follows it. Neither subset constitutes a full
+NORMAL/DEEP release result. Existing signed artifact receipts retain their exact
+source identities. Six native acceptance entries, remaining domain reviews and
+the full signed-artifact telemetry/update journeys remain independent required
+proof. No release gate, native acceptance entry or artifact identity is waived.
+
+Ownership remains inside the engineering-quality harness. Observation capture,
+domain evaluation and release decisions remain separate; app.py, DownloaderApp,
+Qt Bridge, durable history and process lifecycle gain no responsibilities. The
+unreviewed domains and native/device evidence are explicit outstanding work.
+
+
+### Independent failure and lifecycle domain qualification — 2026-10-10
+
+The five reliability domains (bounded 503 retry, interrupted-body range recovery,
+permission refusal, malformed input and controlled FFmpeg child failure) now bind
+actual preconditions, in-flight callbacks/fixture responses and terminal ownership.
+A requested interruption counter did not prove a body was actually truncated;
+the fixture now records bytes sent before closing that response. Likewise the
+old FFmpeg fixture could pass because yt-dlp never discovered its executable.
+The preserved prior capture shows that false positive. The successor answers
+both discovery probes and requires a registered media invocation with independently
+observed exit 17. Missing destination directories and absent dependent observations
+remain explicit precondition failures or unproven evidence. No product owner changed.
+Five original worker receipts pass independent review; 113 altered copies are
+rejected (71 failed, 42 unproven). The 118 oracle cases passed across the initial
+run and six targeted repairs; four separate functional FFmpeg guard cases pass.
+
+Concurrency and repeated-job coverage now compose hashed original worker receipts
+with actual shared monotonic clock origins, thread entry/return and post-GC samples.
+A global child registry observed while another worker is active cannot prove that
+worker leaked: the concurrency oracle requires the final registry after both return
+and before emergency cleanup. It also requires actual worker overlap and distinct
+run/output owners. NORMAL's three jobs do not stand in for DEEP's 50 jobs: each
+workload was captured once. All 50 exports completed with unchanged descriptor
+count, no owned surviving processes/staging and zero retained DownloadJob/YoutubeDL
+objects. RSS/allocation trends remain comparison-required, never a universal memory
+pass. Snapshot attribution found a large Python path-component intern-table
+allocation; direct production allocations had the same measured delta at jobs
+10, 25 and 50. Ninety component oracle cases pass and 87 actual altered composite
+receipts are rejected (70 failed, 17 unproven). Existing receipts/source identities
+are preserved; this is neither full-profile nor native/physical acceptance.
+
+Three additional controlled transaction domains bind actual report reset refusal,
+owned staging transitions and durable orphan recovery. The restart scenario had
+an obsolete Failed expectation although production correctly retained Paused;
+its original failed receipt remains unchanged. The successor independently
+observes the recorded orphan and owned partial staging before recovery, and
+production retirement before fixture cleanup, with saved selections/queue order
+unchanged. This controlled recovery seam does not simulate physical power loss.
+Staging review requires skipped item feedback to retain its distinct item ID and
+explicit origin/execution links to the active run; equality with the parent ID
+was an incorrect first reviewer assertion, preserved as a failed review. Actual
+Library record removal preserves independently active staging and saved media
+bytes. Ninety altered actual observations fail closed (81 failed, 9 unproven); 93 oracle cases and 12 enrollment guard cases pass.
+Batch report refusal is a controlled unit seam, with no network/media dispatch.
+Neither it nor offscreen Qt Library ownership qualifies native UX.
+
+Three source/component domains now bind actual path/argv construction, descendant
+symlink packaging refusal/private POSIX staging, and all 27 injected validator
+calls (22 invalid, five matching). Previous probes only exposed aggregate flags;
+the successor records each call's plan/probe inputs, entry/return time, actual
+exception outcome and unchanged file hashes. The independent input matrix does
+not call the product validator to judge its own outcomes. The path probe does
+not execute a subprocess; synthetic ffprobe data do not prove real decoding or
+fresh worker commit. POSIX 0700 evidence does not qualify Windows ACLs. All 132
+altered actual receipts are rejected (122 failed, 10 unproven), and 135
+oracle cases pass. Existing prior receipts remain unchanged.
+
+Real duplicate-artifact review now binds fourteen fresh/reuse/repair worker
+receipts to ordered pre/post file inventories and actual history updates/reloads.
+Settings variants retain four physical namespaces; repeat/sidecar repair retains
+selected media paths/hashes and existing media. The first capture omitted six
+Original-audio phase inventories and is retained as incomplete; only its separate
+successor is qualified. History publication names the selected item's containing
+folder, not the caller's broader selected root; a mistaken equality assertion
+was corrected to exact parent containment, without changing production history.
+All 155 altered actual composites fail closed (151 failed, 4 unproven),
+and 156 component oracle cases pass. This does not qualify packaged multi-select
+or native interactions. Original worker receipts and failed reviews are unchanged.
+
+The explicit mapping inventory is 142 outstanding rows (NORMAL 70, DEEP 72), down
+from 198 before these fourteen domains were enrolled. The independent source-height
+and HTTP404 domains remain qualified without replay. Separate packaged preview-D1,
+Update/Repair, native usability and pending physical-input rows remain open.
+
+
+Bounded security continuation: the synthetic credential/query/fragment URL passes through six observed sink values, with four actual closed-file text/size/hash observations and a durable reread. Three log modes are POSIX 0600. Two loopback HTTP origins record all three fetch intervals, exact allowed JPEG hash, direct refusal and first-hop redirect refusal with zero forbidden-origin requests before and after target closure. The aggregate-only predecessors had no independently reviewable sink text or per-call request ownership. All 111 altered actual receipts reject (failed or unproven); 113 focused oracle cases pass. This certifies controlled security components only: no live credential, external provider, Windows ACL or native acceptance. Sixteen domains qualify in this continuation; mapping gaps are now 134 (NORMAL 66, DEEP 68), separate from full-profile and artifact/native gates. Production sources are unchanged; no publication.
+
+
+Maintained recovery/scene suite continuation: 27 explicit source domains have 1,259 actual per-case outcomes on a separately observed successor, all successful. Each domain independently verifies an exact selector and executed-test roster, absent admission report, content-bound command/JUnit/source-binding artifacts, return interval, and unchanged Python, QML/JavaScript/SVG/shader and probe authorities. Existing source suites checked aggregate minimums and omitted asset inventory; their predecessor functional receipts are preserved. All 1,053 altered actual receipts reject (972 failed, 81 unproven); 1,080 focused oracle cases pass. These phases describe suite admission, per-case execution and reobserved authority, not native UI interaction or user experience. Controlled providers, headless Tcl and offscreen Qt assertions remain distinct from packaged/native acceptance. Forty-three domains qualify in this continuation; mapping gaps are 26 (NORMAL 12, DEEP 14). No product source edits or publication.
+
+
+Two durability domains qualify: controlled Activity failure/recovery/second-failure episodes and nine actual private-copy mutants, each with 76-case baseline/mutant rosters. All 182 altered actual receipts reject; 184 focused oracle cases pass. Forty-five continuation domains qualified; remaining mapping rows 18 (NORMAL 8, DEEP 10). Product sources unchanged. Skip-feedback reviewer disposition: original same-ID terminal expectation was wrong; linked distinct execution child retained with its own owner, actual production behavior was correct. No native input or publication. Next: three local telemetry domains using installed Node24; Node25 missing-library failure preserved.
+
+
+Three local telemetry domains qualify: exact 263 backend case-name multiplicities on unchanged clean site source; real private HTTP/Worker/D1 lifetime with empty-before-consent, single installation/credential/update, 395 unique producer payloads and 396 exactly matched D1 rows, silence after consent withdrawal and six ownership entry points; private synthetic audit dispatch with four refusals and two safe cases without DNS/socket/HTTP I/O. All 478 altered actual constituents reject and 481 oracle cases pass. Initial reviewer scope-string and unique-display-name assumptions are preserved as failed review: six legitimate parameterized tests share one title, so exact case-name multiplicity is required. Node25 missing Homebrew library failure is preserved; installed Node24 succeeds without installation changes. Forty-eight continuation domains qualified, mapping gaps 6 (NORMAL 2, DEEP 4). These are local contracts, not deployed telemetry, native UX, audible output or public release.
+
+
+Final eligible DEEP public generic-source boundary independently qualifies: actual W3C response was HTTP403 at source analysis, with no transfer, media, output bytes or staging directory; the same run owns ordered preflight/dispatch/analysis/return and child/observer cleanup. All 46 altered actual receipts reject; 47 focused oracle cases pass. This is clean explicit refusal, not successful public-media decoding or a provider-support promise. Forty-nine of the fifty continuation domains qualify; mapping gaps are 4 (NORMAL 2, DEEP 2), all from the native surface domain. Six native Mac acceptance rows remain held for unanswered alternate-input approval. Source/offscreen evidence is not substituted. Separate full signed Mac/Windows/preview-D1, consent-launch, Update/Repair and exact source/artifact integration gates remain open. No publication or product changes.

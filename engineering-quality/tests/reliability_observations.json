@@ -1,0 +1,2559 @@
+{
+  "reliability.transient_http_retry": {
+    "case_id": "reliability-retry-503",
+    "pipeline_entrypoint": "yt_downloader.app.DownloadWorkerCore._download_worker_single",
+    "before_worker": {
+      "output_files": [],
+      "output_exists": false,
+      "output_mode": null,
+      "output_writable": false,
+      "fixture_state": {
+        "origin": "http://127.0.0.1:54143",
+        "requests": {},
+        "statuses": {},
+        "responses": [],
+        "interruption_trace": [],
+        "retry_failures_remaining": 2,
+        "interruptions_remaining": 1,
+        "bytes_sent": {},
+        "total_requests": 0,
+        "total_bytes_sent": 0,
+        "interruptions_injected": 0
+      },
+      "fixture_elapsed_seconds": 0.008649416005937383
+    },
+    "job": {
+      "run_id": "6260bad69cdd44529b1ab06128e3c76e",
+      "url": "http://127.0.0.1:54143/fault/retry/page",
+      "output_type": "MP3",
+      "quality_label": "360p",
+      "embed_thumbnail": false,
+      "embed_metadata": true,
+      "requested_mp3_bitrate_kbps": 192,
+      "output_dir": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-retry-503/output"
+    },
+    "control_trace": [
+      {
+        "elapsed_seconds": 0.008744,
+        "run_id": "6260bad69cdd44529b1ab06128e3c76e",
+        "phase": "worker_started"
+      },
+      {
+        "elapsed_seconds": 0.008981,
+        "run_id": "6260bad69cdd44529b1ab06128e3c76e",
+        "phase": "worker_dispatched"
+      },
+      {
+        "elapsed_seconds": 1.283848,
+        "run_id": "6260bad69cdd44529b1ab06128e3c76e",
+        "phase": "worker_finished"
+      }
+    ],
+    "events": [
+      {
+        "elapsed_seconds": 0.0094,
+        "kind": "status",
+        "payload": "Video 1 of 1 \u2014 analyzing source formats"
+      },
+      {
+        "elapsed_seconds": 0.291,
+        "kind": "job_log",
+        "payload": {
+          "job": {
+            "url": "http://127.0.0.1:54143/fault/retry/page",
+            "output_dir": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-retry-503/output",
+            "output_type": "MP3",
+            "quality_label": "360p",
+            "export_mode": "Auto CBR",
+            "manual_settings": {
+              "video_bitrate_kbps": 10000,
+              "audio_bitrate_kbps": 320,
+              "audio_sample_rate": "48000",
+              "audio_channels": "2",
+              "audio_codec": "AAC",
+              "x264_preset": "medium",
+              "video_crf": null
+            },
+            "mp3_settings": {
+              "bitrate_kbps": 192,
+              "sample_rate": null,
+              "channels": null,
+              "embed_metadata": true,
+              "embed_cover_art": true,
+              "custom_cover_art_path": null
+            },
+            "single_video_only": true,
+            "use_nvenc": false,
+            "embed_thumbnail": false,
+            "write_thumbnail": true,
+            "embed_metadata": true,
+            "write_info_json": true,
+            "tags": [
+              "vodforge-quality",
+              "synthetic-fixture",
+              "unicode-\u0394"
+            ],
+            "urls": [
+              "http://127.0.0.1:54143/fault/retry/page"
+            ],
+            "use_cookies": false,
+            "cookie_file": null,
+            "cookie_browser": null,
+            "batch_mode": false,
+            "completed_batch_items": 0,
+            "batch_outcome": {
+              "success_count": 0,
+              "failure_count": 0,
+              "skipped_count": 0,
+              "sidecar_failure_count": 0
+            },
+            "batch_list_path": "",
+            "preview_info": null,
+            "preview_source_owner": null,
+            "annotation_source_owner": null,
+            "run_id": "6260bad69cdd44529b1ab06128e3c76e",
+            "origin_run_id": null,
+            "recovery_reason": null,
+            "execution_run_id": null,
+            "retry_of_run_id": null,
+            "metadata_keys": [],
+            "history_identities": [],
+            "history_archive_owners": [],
+            "terminal_status": null,
+            "terminal_message": "",
+            "item_terminal_emitted": false,
+            "failure_diagnostic": null,
+            "telemetry_operation_id": "2f77d915-a763-4707-b445-6b948b39f77f",
+            "failure_stage": "analysis",
+            "selection_dimensions": {},
+            "nvenc_applicable": null,
+            "translated_subtitle_language": null
+          },
+          "line": "Video 1 of 1 source analysis transient network failure on attempt 1/6; retrying attempt 2/6 in 0.000s: DownloadError: ERROR: [generic] page: Unable to download webpage: HTTP Error 503: Service Unavailable (caused by <HTTPError 503: Service Unavailable>)"
+        }
+      },
+      {
+        "elapsed_seconds": 0.332,
+        "kind": "job_log",
+        "payload": {
+          "job": {
+            "url": "http://127.0.0.1:54143/fault/retry/page",
+            "output_dir": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-retry-503/output",
+            "output_type": "MP3",
+            "quality_label": "360p",
+            "export_mode": "Auto CBR",
+            "manual_settings": {
+              "video_bitrate_kbps": 10000,
+              "audio_bitrate_kbps": 320,
+              "audio_sample_rate": "48000",
+              "audio_channels": "2",
+              "audio_codec": "AAC",
+              "x264_preset": "medium",
+              "video_crf": null
+            },
+            "mp3_settings": {
+              "bitrate_kbps": 192,
+              "sample_rate": null,
+              "channels": null,
+              "embed_metadata": true,
+              "embed_cover_art": true,
+              "custom_cover_art_path": null
+            },
+            "single_video_only": true,
+            "use_nvenc": false,
+            "embed_thumbnail": false,
+            "write_thumbnail": true,
+            "embed_metadata": true,
+            "write_info_json": true,
+            "tags": [
+              "vodforge-quality",
+              "synthetic-fixture",
+              "unicode-\u0394"
+            ],
+            "urls": [
+              "http://127.0.0.1:54143/fault/retry/page"
+            ],
+            "use_cookies": false,
+            "cookie_file": null,
+            "cookie_browser": null,
+            "batch_mode": false,
+            "completed_batch_items": 0,
+            "batch_outcome": {
+              "success_count": 0,
+              "failure_count": 0,
+              "skipped_count": 0,
+              "sidecar_failure_count": 0
+            },
+            "batch_list_path": "",
+            "preview_info": null,
+            "preview_source_owner": null,
+            "annotation_source_owner": null,
+            "run_id": "6260bad69cdd44529b1ab06128e3c76e",
+            "origin_run_id": null,
+            "recovery_reason": null,
+            "execution_run_id": null,
+            "retry_of_run_id": null,
+            "metadata_keys": [],
+            "history_identities": [],
+            "history_archive_owners": [],
+            "terminal_status": null,
+            "terminal_message": "",
+            "item_terminal_emitted": false,
+            "failure_diagnostic": null,
+            "telemetry_operation_id": "2f77d915-a763-4707-b445-6b948b39f77f",
+            "failure_stage": "analysis",
+            "selection_dimensions": {},
+            "nvenc_applicable": null,
+            "translated_subtitle_language": null
+          },
+          "line": "Video 1 of 1 source analysis transient network failure on attempt 2/6; retrying attempt 3/6 in 0.000s: DownloadError: ERROR: [generic] page: Unable to download webpage: HTTP Error 503: Service Unavailable (caused by <HTTPError 503: Service Unavailable>)"
+        }
+      },
+      {
+        "elapsed_seconds": 0.8108,
+        "kind": "status",
+        "payload": "Video 1 of 1 \u2014 downloading"
+      },
+      {
+        "elapsed_seconds": 0.8876,
+        "kind": "status",
+        "payload": "Downloading page-1.mp4 \u2014 ?/s ETA ?"
+      },
+      {
+        "elapsed_seconds": 0.891,
+        "kind": "status",
+        "payload": "Download finished; finalizing output\u2026"
+      },
+      {
+        "elapsed_seconds": 1.2034,
+        "kind": "status",
+        "payload": "Video 1 of 1 \u2014 MP3 encoded"
+      },
+      {
+        "elapsed_seconds": 1.2034,
+        "kind": "status",
+        "payload": "Video 1 of 1 \u2014 validating output"
+      },
+      {
+        "elapsed_seconds": 1.2836,
+        "kind": "status",
+        "payload": "Video 1 of 1 complete \u2014 MP3 audio"
+      }
+    ],
+    "progress_trace": [
+      {
+        "elapsed_seconds": 0.8875,
+        "status": "downloading",
+        "downloaded_bytes": 1024,
+        "total_bytes": 875140.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-retry-503/output/.vfstage/bb04f8ed/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.8878,
+        "status": "downloading",
+        "downloaded_bytes": 3072,
+        "total_bytes": 876164.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-retry-503/output/.vfstage/bb04f8ed/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.888,
+        "status": "downloading",
+        "downloaded_bytes": 7168,
+        "total_bytes": 878212.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-retry-503/output/.vfstage/bb04f8ed/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.8882,
+        "status": "downloading",
+        "downloaded_bytes": 15360,
+        "total_bytes": 882308.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-retry-503/output/.vfstage/bb04f8ed/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.8884,
+        "status": "downloading",
+        "downloaded_bytes": 31744,
+        "total_bytes": 890500.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-retry-503/output/.vfstage/bb04f8ed/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.8887,
+        "status": "downloading",
+        "downloaded_bytes": 64512,
+        "total_bytes": 906884.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-retry-503/output/.vfstage/bb04f8ed/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.8889,
+        "status": "downloading",
+        "downloaded_bytes": 130048,
+        "total_bytes": 939652.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-retry-503/output/.vfstage/bb04f8ed/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.8891,
+        "status": "downloading",
+        "downloaded_bytes": 261120,
+        "total_bytes": 1005188.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-retry-503/output/.vfstage/bb04f8ed/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.8894,
+        "status": "downloading",
+        "downloaded_bytes": 523264,
+        "total_bytes": 1136260.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-retry-503/output/.vfstage/bb04f8ed/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.8899,
+        "status": "downloading",
+        "downloaded_bytes": 875140,
+        "total_bytes": 1398404.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-retry-503/output/.vfstage/bb04f8ed/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.8903,
+        "status": "downloading",
+        "downloaded_bytes": 875140,
+        "total_bytes": 1750280.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-retry-503/output/.vfstage/bb04f8ed/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.891,
+        "status": "finished",
+        "downloaded_bytes": 875140,
+        "total_bytes": 875140,
+        "speed_bytes_per_second": 162207927.99328294,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-retry-503/output/.vfstage/bb04f8ed/page-1.mp4"
+      }
+    ],
+    "staging_trace": [
+      {
+        "elapsed_seconds": 0.008683958003530279,
+        "status": "",
+        "root_present": false,
+        "root_mode": null,
+        "run_directories": [],
+        "entries": [],
+        "final": false
+      },
+      {
+        "elapsed_seconds": 0.05004654100048356,
+        "status": "Video 1 of 1 \u2014 analyzing source formats",
+        "root_present": false,
+        "root_mode": null,
+        "run_directories": [],
+        "entries": [],
+        "final": false
+      },
+      {
+        "elapsed_seconds": 0.848434208004619,
+        "status": "Video 1 of 1 \u2014 downloading",
+        "root_present": true,
+        "root_mode": 448,
+        "run_directories": [
+          "bb04f8ed"
+        ],
+        "entries": [
+          {
+            "path": "bb04f8ed",
+            "kind": "directory",
+            "size_bytes": null
+          }
+        ],
+        "final": false
+      },
+      {
+        "elapsed_seconds": 0.8788817500026198,
+        "status": "Video 1 of 1 \u2014 downloading",
+        "root_present": true,
+        "root_mode": 448,
+        "run_directories": [
+          "bb04f8ed"
+        ],
+        "entries": [
+          {
+            "path": "bb04f8ed",
+            "kind": "directory",
+            "size_bytes": null
+          },
+          {
+            "path": "bb04f8ed/page-1.jpg",
+            "kind": "file",
+            "size_bytes": 1603
+          }
+        ],
+        "final": false
+      },
+      {
+        "elapsed_seconds": 0.9097040000051493,
+        "status": "Download finished; finalizing output\u2026",
+        "root_present": true,
+        "root_mode": 448,
+        "run_directories": [
+          "bb04f8ed"
+        ],
+        "entries": [
+          {
+            "path": "bb04f8ed",
+            "kind": "directory",
+            "size_bytes": null
+          },
+          {
+            "path": "bb04f8ed/page-1.jpg",
+            "kind": "file",
+            "size_bytes": 1603
+          },
+          {
+            "path": "bb04f8ed/page-1.mp4",
+            "kind": "file",
+            "size_bytes": 875140
+          }
+        ],
+        "final": false
+      },
+      {
+        "elapsed_seconds": 1.0417137080075918,
+        "status": "Download finished; finalizing output\u2026",
+        "root_present": true,
+        "root_mode": 448,
+        "run_directories": [
+          "bb04f8ed"
+        ],
+        "entries": [
+          {
+            "path": "bb04f8ed",
+            "kind": "directory",
+            "size_bytes": null
+          },
+          {
+            "path": "bb04f8ed/page-1.jpg",
+            "kind": "file",
+            "size_bytes": 1603
+          },
+          {
+            "path": "bb04f8ed/page-1.mp4",
+            "kind": "file",
+            "size_bytes": 875140
+          },
+          {
+            "path": "bb04f8ed/page-1.temp.mp4",
+            "kind": "file",
+            "size_bytes": 834888
+          }
+        ],
+        "final": false
+      },
+      {
+        "elapsed_seconds": 1.0688359580090037,
+        "status": "Download finished; finalizing output\u2026",
+        "root_present": true,
+        "root_mode": 448,
+        "run_directories": [
+          "bb04f8ed"
+        ],
+        "entries": [
+          {
+            "path": "bb04f8ed",
+            "kind": "directory",
+            "size_bytes": null
+          },
+          {
+            "path": "bb04f8ed/page-1.jpg",
+            "kind": "file",
+            "size_bytes": 1603
+          },
+          {
+            "path": "bb04f8ed/page-1.mp4",
+            "kind": "file",
+            "size_bytes": 834888
+          }
+        ],
+        "final": false
+      },
+      {
+        "elapsed_seconds": 1.1295730410056422,
+        "status": "Download finished; finalizing output\u2026",
+        "root_present": true,
+        "root_mode": 448,
+        "run_directories": [
+          "bb04f8ed"
+        ],
+        "entries": [
+          {
+            "path": "bb04f8ed",
+            "kind": "directory",
+            "size_bytes": null
+          },
+          {
+            "path": "bb04f8ed/page-1.jpg",
+            "kind": "file",
+            "size_bytes": 1603
+          },
+          {
+            "path": "bb04f8ed/page-1.mp3",
+            "kind": "file",
+            "size_bytes": 0
+          },
+          {
+            "path": "bb04f8ed/page-1.mp4",
+            "kind": "file",
+            "size_bytes": 834888
+          }
+        ],
+        "final": false
+      },
+      {
+        "elapsed_seconds": 1.1600572910101619,
+        "status": "Download finished; finalizing output\u2026",
+        "root_present": true,
+        "root_mode": 448,
+        "run_directories": [
+          "bb04f8ed"
+        ],
+        "entries": [
+          {
+            "path": "bb04f8ed",
+            "kind": "directory",
+            "size_bytes": null
+          },
+          {
+            "path": "bb04f8ed/page-1.jpg",
+            "kind": "file",
+            "size_bytes": 1603
+          },
+          {
+            "path": "bb04f8ed/page-1.mp3",
+            "kind": "file",
+            "size_bytes": 146451
+          }
+        ],
+        "final": false
+      },
+      {
+        "elapsed_seconds": 1.211713750002673,
+        "status": "Video 1 of 1 \u2014 validating output",
+        "root_present": true,
+        "root_mode": 448,
+        "run_directories": [
+          "bb04f8ed"
+        ],
+        "entries": [
+          {
+            "path": "bb04f8ed",
+            "kind": "directory",
+            "size_bytes": null
+          },
+          {
+            "path": "bb04f8ed/page-1.mp3",
+            "kind": "file",
+            "size_bytes": 148977
+          }
+        ],
+        "final": false
+      },
+      {
+        "elapsed_seconds": 1.274431875004666,
+        "status": "Video 1 of 1 \u2014 validating output",
+        "root_present": true,
+        "root_mode": 448,
+        "run_directories": [
+          "bb04f8ed"
+        ],
+        "entries": [
+          {
+            "path": "bb04f8ed",
+            "kind": "directory",
+            "size_bytes": null
+          }
+        ],
+        "final": false
+      },
+      {
+        "elapsed_seconds": 1.2838960000080988,
+        "status": "Video 1 of 1 complete \u2014 MP3 audio",
+        "root_present": false,
+        "root_mode": null,
+        "run_directories": [],
+        "entries": [],
+        "final": true
+      }
+    ],
+    "outputs": [
+      {
+        "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-retry-503/output/Unknown Channel/videos - no playlist/A_B test \u2014 \u0394\u03bf\u03ba\u03b9\u2026 [page-1] - MP3 192k sourceHz sourceCh art [2500d537efd68a99]/A_B test \u2014 \u0394\u03bf\u03ba\u03b9\u2026.mp3",
+        "size_bytes": 148977,
+        "sha256": "4d050f2abbed202f2cc68f7835579b54e755534bdc702a31691a763121c64fe1",
+        "ffprobe": {
+          "programs": [],
+          "stream_groups": [],
+          "streams": [
+            {
+              "codec_name": "mp3",
+              "codec_type": "audio",
+              "sample_rate": "48000",
+              "channels": 1,
+              "r_frame_rate": "0/0",
+              "avg_frame_rate": "0/0",
+              "bit_rate": "192000",
+              "disposition": {
+                "default": 0,
+                "dub": 0,
+                "original": 0,
+                "comment": 0,
+                "lyrics": 0,
+                "karaoke": 0,
+                "forced": 0,
+                "hearing_impaired": 0,
+                "visual_impaired": 0,
+                "clean_effects": 0,
+                "attached_pic": 0,
+                "timed_thumbnails": 0,
+                "non_diegetic": 0,
+                "captions": 0,
+                "descriptions": 0,
+                "metadata": 0,
+                "dependent": 0,
+                "still_image": 0,
+                "multilayer": 0
+              }
+            },
+            {
+              "codec_name": "mjpeg",
+              "profile": "Baseline",
+              "codec_type": "video",
+              "width": 640,
+              "height": 360,
+              "pix_fmt": "yuvj420p",
+              "r_frame_rate": "90000/1",
+              "avg_frame_rate": "0/0",
+              "disposition": {
+                "default": 0,
+                "dub": 0,
+                "original": 0,
+                "comment": 0,
+                "lyrics": 0,
+                "karaoke": 0,
+                "forced": 0,
+                "hearing_impaired": 0,
+                "visual_impaired": 0,
+                "clean_effects": 0,
+                "attached_pic": 1,
+                "timed_thumbnails": 0,
+                "non_diegetic": 0,
+                "captions": 0,
+                "descriptions": 0,
+                "metadata": 0,
+                "dependent": 0,
+                "still_image": 0,
+                "multilayer": 0
+              },
+              "tags": {}
+            }
+          ],
+          "format": {
+            "format_name": "mp3",
+            "duration": "6.037333",
+            "size": "148977",
+            "tags": {
+              "major_brand": "isom",
+              "minor_version": "512",
+              "compatible_brands": "isomiso2avc1mp41",
+              "keywords": "vodforge-quality,synthetic-fixture,unicode-\u0394",
+              "title": "A/B test \u2014 \u0394\u03bf\u03ba\u03b9\u03bc\u03ae_\u65e5\u672c\u8a9e_emoji-\ud83d\ude80_quotes-'double'_colon:_question?_asterisk*_|pipe|_a deliberately long title that pressures path budgets without being meaningless (1)",
+              "description": "Synthetic metadata-rich VODForge fixture with a thumbnail and tags.",
+              "synopsis": "Synthetic metadata-rich VODForge fixture with a thumbnail and tags.",
+              "purl": "http://127.0.0.1:54143/fault/retry/page",
+              "comment": "http://127.0.0.1:54143/fault/retry/page",
+              "encoder": "Lavf63.1.101"
+            }
+          }
+        },
+        "readable": true
+      },
+      {
+        "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-retry-503/output/Unknown Channel/videos - no playlist/A_B test \u2014 \u0394\u03bf\u03ba\u03b9\u2026 [page-1] - MP3 192k sourceHz sourceCh art [2500d537efd68a99]/metadata.json",
+        "size_bytes": 2211,
+        "sha256": "a4640671f66806f0cd6de7ec4dec8e364a4226b3504144c149e828c0450b7fcd"
+      },
+      {
+        "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-retry-503/output/Unknown Channel/videos - no playlist/A_B test \u2014 \u0394\u03bf\u03ba\u03b9\u2026 [page-1] - MP3 192k sourceHz sourceCh art [2500d537efd68a99]/thumbnail.jpeg",
+        "size_bytes": 1926,
+        "sha256": "d2df2d2feb8fe3eb5bed9005ba3e10bbca2e07797a3d7090933fb788348f158b"
+      }
+    ],
+    "media_output_count": 1,
+    "error": null,
+    "failure_diagnostic": null,
+    "cancel_requested": false,
+    "control_request": null,
+    "staging_entries_after": [],
+    "active_children_before_harness_cleanup": [],
+    "harness_emergency_cleanup_used": false,
+    "control_observer_stopped": true,
+    "control_observer_errors": [],
+    "fixture_response_trace": [
+      {
+        "elapsed_seconds": 0.2859012080007233,
+        "route": "/fault/retry/page",
+        "status": 503
+      },
+      {
+        "elapsed_seconds": 0.33062312500260305,
+        "route": "/fault/retry/page",
+        "status": 503
+      },
+      {
+        "elapsed_seconds": 0.3642318750062259,
+        "route": "/fault/retry/page",
+        "status": 200
+      },
+      {
+        "elapsed_seconds": 0.48827375000109896,
+        "route": "/hls/hls-short/master.m3u8",
+        "status": 200
+      },
+      {
+        "elapsed_seconds": 0.8532612500130199,
+        "route": "/thumbnail.jpg",
+        "status": 200
+      },
+      {
+        "elapsed_seconds": 0.8550326660042629,
+        "route": "/hls/hls-short/media.m3u8",
+        "status": 200
+      },
+      {
+        "elapsed_seconds": 0.8868083750130609,
+        "route": "/hls/hls-short/segment-000.ts",
+        "status": 200
+      },
+      {
+        "elapsed_seconds": 1.2542466250015423,
+        "route": "/thumbnail.jpg",
+        "status": 200
+      },
+      {
+        "elapsed_seconds": 1.281111125004827,
+        "route": "/thumbnail.jpg",
+        "status": 200
+      }
+    ],
+    "fixture_state_after": {
+      "origin": "http://127.0.0.1:54143",
+      "requests": {
+        "/fault/retry/page": 3,
+        "/hls/hls-short/master.m3u8": 1,
+        "/thumbnail.jpg": 3,
+        "/hls/hls-short/media.m3u8": 1,
+        "/hls/hls-short/segment-000.ts": 1
+      },
+      "statuses": {
+        "503": 2,
+        "200": 7
+      },
+      "responses": [
+        {
+          "observed_at_monotonic": 127057.395636458,
+          "route": "/fault/retry/page",
+          "status": 503
+        },
+        {
+          "observed_at_monotonic": 127057.440358375,
+          "route": "/fault/retry/page",
+          "status": 503
+        },
+        {
+          "observed_at_monotonic": 127057.473967125,
+          "route": "/fault/retry/page",
+          "status": 200
+        },
+        {
+          "observed_at_monotonic": 127057.598009,
+          "route": "/hls/hls-short/master.m3u8",
+          "status": 200
+        },
+        {
+          "observed_at_monotonic": 127057.9629965,
+          "route": "/thumbnail.jpg",
+          "status": 200
+        },
+        {
+          "observed_at_monotonic": 127057.964767916,
+          "route": "/hls/hls-short/media.m3u8",
+          "status": 200
+        },
+        {
+          "observed_at_monotonic": 127057.996543625,
+          "route": "/hls/hls-short/segment-000.ts",
+          "status": 200
+        },
+        {
+          "observed_at_monotonic": 127058.363981875,
+          "route": "/thumbnail.jpg",
+          "status": 200
+        },
+        {
+          "observed_at_monotonic": 127058.390846375,
+          "route": "/thumbnail.jpg",
+          "status": 200
+        }
+      ],
+      "interruption_trace": [],
+      "retry_failures_remaining": 0,
+      "interruptions_remaining": 1,
+      "bytes_sent": {
+        "/fault/retry/page": 1166,
+        "/hls/hls-short/master.m3u8": 166,
+        "/thumbnail.jpg": 4809,
+        "/hls/hls-short/media.m3u8": 146,
+        "/hls/hls-short/segment-000.ts": 875140
+      },
+      "total_requests": 9,
+      "total_bytes_sent": 881427,
+      "interruptions_injected": 0
+    },
+    "fixture_after_elapsed_seconds": 1.3161755830078619,
+    "fixture_interruption_trace": []
+  },
+  "reliability.network_interruption_recovery": {
+    "case_id": "reliability-interrupted-transfer",
+    "pipeline_entrypoint": "yt_downloader.app.DownloadWorkerCore._download_worker_single",
+    "before_worker": {
+      "output_files": [],
+      "output_exists": false,
+      "output_mode": null,
+      "output_writable": false,
+      "fixture_state": {
+        "origin": "http://127.0.0.1:54143",
+        "requests": {
+          "/fault/retry/page": 3,
+          "/hls/hls-short/master.m3u8": 1,
+          "/thumbnail.jpg": 3,
+          "/hls/hls-short/media.m3u8": 1,
+          "/hls/hls-short/segment-000.ts": 1
+        },
+        "statuses": {
+          "503": 2,
+          "200": 7
+        },
+        "responses": [
+          {
+            "observed_at_monotonic": 127057.395636458,
+            "route": "/fault/retry/page",
+            "status": 503
+          },
+          {
+            "observed_at_monotonic": 127057.440358375,
+            "route": "/fault/retry/page",
+            "status": 503
+          },
+          {
+            "observed_at_monotonic": 127057.473967125,
+            "route": "/fault/retry/page",
+            "status": 200
+          },
+          {
+            "observed_at_monotonic": 127057.598009,
+            "route": "/hls/hls-short/master.m3u8",
+            "status": 200
+          },
+          {
+            "observed_at_monotonic": 127057.9629965,
+            "route": "/thumbnail.jpg",
+            "status": 200
+          },
+          {
+            "observed_at_monotonic": 127057.964767916,
+            "route": "/hls/hls-short/media.m3u8",
+            "status": 200
+          },
+          {
+            "observed_at_monotonic": 127057.996543625,
+            "route": "/hls/hls-short/segment-000.ts",
+            "status": 200
+          },
+          {
+            "observed_at_monotonic": 127058.363981875,
+            "route": "/thumbnail.jpg",
+            "status": 200
+          },
+          {
+            "observed_at_monotonic": 127058.390846375,
+            "route": "/thumbnail.jpg",
+            "status": 200
+          }
+        ],
+        "interruption_trace": [],
+        "retry_failures_remaining": 0,
+        "interruptions_remaining": 1,
+        "bytes_sent": {
+          "/fault/retry/page": 1166,
+          "/hls/hls-short/master.m3u8": 166,
+          "/thumbnail.jpg": 4809,
+          "/hls/hls-short/media.m3u8": 146,
+          "/hls/hls-short/segment-000.ts": 875140
+        },
+        "total_requests": 9,
+        "total_bytes_sent": 881427,
+        "interruptions_injected": 0
+      },
+      "fixture_elapsed_seconds": 0.007655833003809676
+    },
+    "job": {
+      "run_id": "60f131ab6d2a49f18fe4f43b70af0adc",
+      "url": "http://127.0.0.1:54143/fault/interrupt/page",
+      "output_type": "MP4",
+      "quality_label": "720p",
+      "embed_thumbnail": false,
+      "embed_metadata": true,
+      "requested_mp3_bitrate_kbps": null,
+      "output_dir": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output"
+    },
+    "control_trace": [
+      {
+        "elapsed_seconds": 0.007738,
+        "run_id": "60f131ab6d2a49f18fe4f43b70af0adc",
+        "phase": "worker_started"
+      },
+      {
+        "elapsed_seconds": 0.007945,
+        "run_id": "60f131ab6d2a49f18fe4f43b70af0adc",
+        "phase": "worker_dispatched"
+      },
+      {
+        "elapsed_seconds": 3.047786,
+        "run_id": "60f131ab6d2a49f18fe4f43b70af0adc",
+        "phase": "worker_finished"
+      }
+    ],
+    "events": [
+      {
+        "elapsed_seconds": 0.0082,
+        "kind": "status",
+        "payload": "Video 1 of 1 \u2014 analyzing source formats"
+      },
+      {
+        "elapsed_seconds": 0.1395,
+        "kind": "status",
+        "payload": "Video 1 of 1 \u2014 downloading"
+      },
+      {
+        "elapsed_seconds": 0.1764,
+        "kind": "status",
+        "payload": "Downloading page-1.mp4 \u2014 ?/s ETA ?"
+      },
+      {
+        "elapsed_seconds": 0.1953,
+        "kind": "status",
+        "payload": "Download finished; finalizing output\u2026"
+      },
+      {
+        "elapsed_seconds": 0.3646,
+        "kind": "status",
+        "payload": "Video 1 of 1 \u2014 transcoding"
+      },
+      {
+        "elapsed_seconds": 2.9873,
+        "kind": "status",
+        "payload": "Video 1 of 1 \u2014 validating output"
+      },
+      {
+        "elapsed_seconds": 3.0475,
+        "kind": "status",
+        "payload": "Video 1 of 1 complete \u2014 MP4 video"
+      }
+    ],
+    "progress_trace": [
+      {
+        "elapsed_seconds": 0.1764,
+        "status": "downloading",
+        "downloaded_bytes": 1024,
+        "total_bytes": 6591468.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1766,
+        "status": "downloading",
+        "downloaded_bytes": 3072,
+        "total_bytes": 6594540.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1768,
+        "status": "downloading",
+        "downloaded_bytes": 7168,
+        "total_bytes": 6600684.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1772,
+        "status": "downloading",
+        "downloaded_bytes": 15360,
+        "total_bytes": 6612972.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1774,
+        "status": "downloading",
+        "downloaded_bytes": 31744,
+        "total_bytes": 6637548.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1776,
+        "status": "downloading",
+        "downloaded_bytes": 64512,
+        "total_bytes": 6686700.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1779,
+        "status": "downloading",
+        "downloaded_bytes": 130048,
+        "total_bytes": 6785004.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1782,
+        "status": "downloading",
+        "downloaded_bytes": 261120,
+        "total_bytes": 6981612.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1785,
+        "status": "downloading",
+        "downloaded_bytes": 523264,
+        "total_bytes": 7374828.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1799,
+        "status": "downloading",
+        "downloaded_bytes": 524288,
+        "total_bytes": 8161260.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1801,
+        "status": "downloading",
+        "downloaded_bytes": 526336,
+        "total_bytes": 8164332.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1802,
+        "status": "downloading",
+        "downloaded_bytes": 530432,
+        "total_bytes": 8170476.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1804,
+        "status": "downloading",
+        "downloaded_bytes": 538624,
+        "total_bytes": 8182764.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1807,
+        "status": "downloading",
+        "downloaded_bytes": 555008,
+        "total_bytes": 8207340.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1809,
+        "status": "downloading",
+        "downloaded_bytes": 587776,
+        "total_bytes": 8256492.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1811,
+        "status": "downloading",
+        "downloaded_bytes": 653312,
+        "total_bytes": 8354796.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1813,
+        "status": "downloading",
+        "downloaded_bytes": 784384,
+        "total_bytes": 8551404.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1816,
+        "status": "downloading",
+        "downloaded_bytes": 1046528,
+        "total_bytes": 8944620.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1821,
+        "status": "downloading",
+        "downloaded_bytes": 1570816,
+        "total_bytes": 9731052.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1827,
+        "status": "downloading",
+        "downloaded_bytes": 2197156,
+        "total_bytes": 11303916.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1831,
+        "status": "downloading",
+        "downloaded_bytes": 2197156,
+        "total_bytes": 13182936.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1851,
+        "status": "downloading",
+        "downloaded_bytes": 2198180,
+        "total_bytes": 6350922.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1855,
+        "status": "downloading",
+        "downloaded_bytes": 2200228,
+        "total_bytes": 6352458.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1857,
+        "status": "downloading",
+        "downloaded_bytes": 2204324,
+        "total_bytes": 6355530.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1859,
+        "status": "downloading",
+        "downloaded_bytes": 2212516,
+        "total_bytes": 6361674.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1861,
+        "status": "downloading",
+        "downloaded_bytes": 2228900,
+        "total_bytes": 6373962.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1862,
+        "status": "downloading",
+        "downloaded_bytes": 2261668,
+        "total_bytes": 6398538.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1864,
+        "status": "downloading",
+        "downloaded_bytes": 2327204,
+        "total_bytes": 6447690.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1867,
+        "status": "downloading",
+        "downloaded_bytes": 2458276,
+        "total_bytes": 6545994.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1869,
+        "status": "downloading",
+        "downloaded_bytes": 2720420,
+        "total_bytes": 6742602.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1873,
+        "status": "downloading",
+        "downloaded_bytes": 3244708,
+        "total_bytes": 7135818.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1883,
+        "status": "downloading",
+        "downloaded_bytes": 4233948,
+        "total_bytes": 7922250.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1886,
+        "status": "downloading",
+        "downloaded_bytes": 4233948,
+        "total_bytes": 9406110.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1904,
+        "status": "downloading",
+        "downloaded_bytes": 4234972,
+        "total_bytes": 6063564.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1906,
+        "status": "downloading",
+        "downloaded_bytes": 4237020,
+        "total_bytes": 6064588.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1908,
+        "status": "downloading",
+        "downloaded_bytes": 4241116,
+        "total_bytes": 6066636.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.191,
+        "status": "downloading",
+        "downloaded_bytes": 4249308,
+        "total_bytes": 6070732.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1912,
+        "status": "downloading",
+        "downloaded_bytes": 4265692,
+        "total_bytes": 6078924.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1914,
+        "status": "downloading",
+        "downloaded_bytes": 4298460,
+        "total_bytes": 6095308.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1916,
+        "status": "downloading",
+        "downloaded_bytes": 4363996,
+        "total_bytes": 6128076.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1918,
+        "status": "downloading",
+        "downloaded_bytes": 4495068,
+        "total_bytes": 6193612.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1921,
+        "status": "downloading",
+        "downloaded_bytes": 4757212,
+        "total_bytes": 6324684.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1926,
+        "status": "downloading",
+        "downloaded_bytes": 5281500,
+        "total_bytes": 6586828.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1934,
+        "status": "downloading",
+        "downloaded_bytes": 6063564,
+        "total_bytes": 7111116.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1938,
+        "status": "downloading",
+        "downloaded_bytes": 6063564,
+        "total_bytes": 7893180.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.1953,
+        "status": "finished",
+        "downloaded_bytes": 6063564,
+        "total_bytes": 6063564,
+        "speed_bytes_per_second": 303558452.8646829,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/.vfstage/0d97803e/page-1.mp4"
+      }
+    ],
+    "staging_trace": [
+      {
+        "elapsed_seconds": 0.007686166005441919,
+        "status": "",
+        "root_present": false,
+        "root_mode": null,
+        "run_directories": [],
+        "entries": [],
+        "final": false
+      },
+      {
+        "elapsed_seconds": 0.03862875000049826,
+        "status": "Video 1 of 1 \u2014 analyzing source formats",
+        "root_present": false,
+        "root_mode": null,
+        "run_directories": [],
+        "entries": [],
+        "final": false
+      },
+      {
+        "elapsed_seconds": 0.16996958300296683,
+        "status": "Video 1 of 1 \u2014 downloading",
+        "root_present": true,
+        "root_mode": 448,
+        "run_directories": [
+          "0d97803e"
+        ],
+        "entries": [
+          {
+            "path": "0d97803e",
+            "kind": "directory",
+            "size_bytes": null
+          }
+        ],
+        "final": false
+      },
+      {
+        "elapsed_seconds": 0.20745533300214447,
+        "status": "Download finished; finalizing output\u2026",
+        "root_present": true,
+        "root_mode": 448,
+        "run_directories": [
+          "0d97803e"
+        ],
+        "entries": [
+          {
+            "path": "0d97803e",
+            "kind": "directory",
+            "size_bytes": null
+          },
+          {
+            "path": "0d97803e/page-1.mp4",
+            "kind": "file",
+            "size_bytes": 6063564
+          }
+        ],
+        "final": false
+      },
+      {
+        "elapsed_seconds": 0.3191662910103332,
+        "status": "Download finished; finalizing output\u2026",
+        "root_present": true,
+        "root_mode": 448,
+        "run_directories": [
+          "0d97803e"
+        ],
+        "entries": [
+          {
+            "path": "0d97803e",
+            "kind": "directory",
+            "size_bytes": null
+          },
+          {
+            "path": "0d97803e/page-1.mp4",
+            "kind": "file",
+            "size_bytes": 6063564
+          },
+          {
+            "path": "0d97803e/page-1.temp.mp4",
+            "kind": "file",
+            "size_bytes": 5845904
+          }
+        ],
+        "final": false
+      },
+      {
+        "elapsed_seconds": 0.3494517080107471,
+        "status": "Download finished; finalizing output\u2026",
+        "root_present": true,
+        "root_mode": 448,
+        "run_directories": [
+          "0d97803e"
+        ],
+        "entries": [
+          {
+            "path": "0d97803e",
+            "kind": "directory",
+            "size_bytes": null
+          },
+          {
+            "path": "0d97803e/page-1.mp4",
+            "kind": "file",
+            "size_bytes": 5845904
+          }
+        ],
+        "final": false
+      },
+      {
+        "elapsed_seconds": 0.3751381660113111,
+        "status": "Video 1 of 1 \u2014 transcoding",
+        "root_present": true,
+        "root_mode": 448,
+        "run_directories": [
+          "0d97803e"
+        ],
+        "entries": [
+          {
+            "path": "0d97803e",
+            "kind": "directory",
+            "size_bytes": null
+          },
+          {
+            "path": "0d97803e/page-1.mp4",
+            "kind": "file",
+            "size_bytes": 5846426
+          }
+        ],
+        "final": false
+      },
+      {
+        "elapsed_seconds": 0.39916708300006576,
+        "status": "Video 1 of 1 \u2014 transcoding",
+        "root_present": true,
+        "root_mode": 448,
+        "run_directories": [
+          "0d97803e"
+        ],
+        "entries": [
+          {
+            "path": "0d97803e",
+            "kind": "directory",
+            "size_bytes": null
+          },
+          {
+            "path": "0d97803e/__vodforge-tmp.mp4",
+            "kind": "file",
+            "size_bytes": 48
+          },
+          {
+            "path": "0d97803e/page-1.mp4",
+            "kind": "file",
+            "size_bytes": 5846426
+          }
+        ],
+        "final": false
+      },
+      {
+        "elapsed_seconds": 3.0092263750120765,
+        "status": "Video 1 of 1 \u2014 validating output",
+        "root_present": true,
+        "root_mode": 448,
+        "run_directories": [
+          "0d97803e"
+        ],
+        "entries": [
+          {
+            "path": "0d97803e",
+            "kind": "directory",
+            "size_bytes": null
+          },
+          {
+            "path": "0d97803e/page-1.mp4",
+            "kind": "file",
+            "size_bytes": 8244532
+          }
+        ],
+        "final": false
+      },
+      {
+        "elapsed_seconds": 3.0349652910081204,
+        "status": "Video 1 of 1 \u2014 validating output",
+        "root_present": true,
+        "root_mode": 448,
+        "run_directories": [
+          "0d97803e"
+        ],
+        "entries": [
+          {
+            "path": "0d97803e",
+            "kind": "directory",
+            "size_bytes": null
+          }
+        ],
+        "final": false
+      },
+      {
+        "elapsed_seconds": 3.047854541000561,
+        "status": "Video 1 of 1 complete \u2014 MP4 video",
+        "root_present": false,
+        "root_mode": null,
+        "run_directories": [],
+        "entries": [],
+        "final": true
+      }
+    ],
+    "outputs": [
+      {
+        "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/Unknown Channel/videos - no playlist/A_B test \u2014 \u0394\u03bf\u03ba\u03b9\u2026 [page-1] - MP4 720p CTV [98feca74f9a0c650]/A_B test \u2014 \u0394\u03bf\u03ba\u03b9\u03bc\u03ae_\u65e5\u2026.mp4",
+        "size_bytes": 8244532,
+        "sha256": "fc2265fc29b7b0a3b0ae117cb5007d37318fd278eee5b77e4232a8d53e9bf446",
+        "ffprobe": {
+          "programs": [],
+          "stream_groups": [],
+          "streams": [
+            {
+              "codec_name": "h264",
+              "profile": "High",
+              "codec_type": "video",
+              "width": 960,
+              "height": 540,
+              "pix_fmt": "yuv420p",
+              "r_frame_rate": "30/1",
+              "avg_frame_rate": "30/1",
+              "bit_rate": "2576724",
+              "disposition": {
+                "default": 1,
+                "dub": 0,
+                "original": 0,
+                "comment": 0,
+                "lyrics": 0,
+                "karaoke": 0,
+                "forced": 0,
+                "hearing_impaired": 0,
+                "visual_impaired": 0,
+                "clean_effects": 0,
+                "attached_pic": 0,
+                "timed_thumbnails": 0,
+                "non_diegetic": 0,
+                "captions": 0,
+                "descriptions": 0,
+                "metadata": 0,
+                "dependent": 0,
+                "still_image": 0,
+                "multilayer": 0
+              },
+              "tags": {
+                "language": "und"
+              }
+            },
+            {
+              "codec_name": "aac",
+              "profile": "LC",
+              "codec_type": "audio",
+              "sample_rate": "48000",
+              "channels": 2,
+              "r_frame_rate": "0/0",
+              "avg_frame_rate": "0/0",
+              "bit_rate": "158264",
+              "disposition": {
+                "default": 1,
+                "dub": 0,
+                "original": 0,
+                "comment": 0,
+                "lyrics": 0,
+                "karaoke": 0,
+                "forced": 0,
+                "hearing_impaired": 0,
+                "visual_impaired": 0,
+                "clean_effects": 0,
+                "attached_pic": 0,
+                "timed_thumbnails": 0,
+                "non_diegetic": 0,
+                "captions": 0,
+                "descriptions": 0,
+                "metadata": 0,
+                "dependent": 0,
+                "still_image": 0,
+                "multilayer": 0
+              },
+              "tags": {
+                "language": "und"
+              }
+            }
+          ],
+          "format": {
+            "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+            "duration": "24.033333",
+            "size": "8244532",
+            "tags": {
+              "major_brand": "isom",
+              "minor_version": "512",
+              "compatible_brands": "isomiso2avc1mp41",
+              "title": "A/B test \u2014 \u0394\u03bf\u03ba\u03b9\u03bc\u03ae_\u65e5\u672c\u8a9e_emoji-\ud83d\ude80_quotes-'double'_colon:_question?_asterisk*_|pipe|_a deliberately long title that pressures path budgets without being meaningless (1)",
+              "encoder": "Lavf63.1.101",
+              "comment": "http://127.0.0.1:54143/fault/interrupt/page",
+              "description": "Synthetic metadata-rich VODForge fixture with a thumbnail and tags.",
+              "synopsis": "Synthetic metadata-rich VODForge fixture with a thumbnail and tags.",
+              "keywords": "vodforge-quality,synthetic-fixture,unicode-\u0394"
+            }
+          }
+        },
+        "readable": true
+      },
+      {
+        "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/Unknown Channel/videos - no playlist/A_B test \u2014 \u0394\u03bf\u03ba\u03b9\u2026 [page-1] - MP4 720p CTV [98feca74f9a0c650]/metadata.json",
+        "size_bytes": 2656,
+        "sha256": "8b3fe480d882ebcf658b00a95e6354e3c8377b9ff8945ec298822777a4364d73"
+      },
+      {
+        "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-interrupted-transfer/output/Unknown Channel/videos - no playlist/A_B test \u2014 \u0394\u03bf\u03ba\u03b9\u2026 [page-1] - MP4 720p CTV [98feca74f9a0c650]/thumbnail.jpeg",
+        "size_bytes": 1926,
+        "sha256": "d2df2d2feb8fe3eb5bed9005ba3e10bbca2e07797a3d7090933fb788348f158b"
+      }
+    ],
+    "media_output_count": 1,
+    "error": null,
+    "failure_diagnostic": null,
+    "cancel_requested": false,
+    "control_request": null,
+    "staging_entries_after": [],
+    "active_children_before_harness_cleanup": [],
+    "harness_emergency_cleanup_used": false,
+    "control_observer_stopped": true,
+    "control_observer_errors": [],
+    "fixture_response_trace": [
+      {
+        "elapsed_seconds": 0.04474187501182314,
+        "route": "/fault/interrupt/page",
+        "status": 200
+      },
+      {
+        "elapsed_seconds": 0.0476184160070261,
+        "route": "/fault/interrupt/hls/hls-long/master.m3u8",
+        "status": 200
+      },
+      {
+        "elapsed_seconds": 0.17441770801087841,
+        "route": "/fault/interrupt/hls/hls-long/media.m3u8",
+        "status": 200
+      },
+      {
+        "elapsed_seconds": 0.1757955830107676,
+        "route": "/fault/interrupt/hls/hls-long/segment-000.ts",
+        "status": 200
+      },
+      {
+        "elapsed_seconds": 0.1793993750034133,
+        "route": "/fault/interrupt/hls/hls-long/segment-000.ts",
+        "status": 206
+      },
+      {
+        "elapsed_seconds": 0.18459733300551306,
+        "route": "/fault/interrupt/hls/hls-long/segment-001.ts",
+        "status": 200
+      },
+      {
+        "elapsed_seconds": 0.18997354101156816,
+        "route": "/fault/interrupt/hls/hls-long/segment-002.ts",
+        "status": 200
+      },
+      {
+        "elapsed_seconds": 3.0342371250008,
+        "route": "/thumbnail.jpg",
+        "status": 200
+      },
+      {
+        "elapsed_seconds": 3.0450322079996113,
+        "route": "/thumbnail.jpg",
+        "status": 200
+      }
+    ],
+    "fixture_state_after": {
+      "origin": "http://127.0.0.1:54143",
+      "requests": {
+        "/fault/retry/page": 3,
+        "/hls/hls-short/master.m3u8": 1,
+        "/thumbnail.jpg": 5,
+        "/hls/hls-short/media.m3u8": 1,
+        "/hls/hls-short/segment-000.ts": 1,
+        "/fault/interrupt/page": 1,
+        "/fault/interrupt/hls/hls-long/master.m3u8": 1,
+        "/fault/interrupt/hls/hls-long/media.m3u8": 1,
+        "/fault/interrupt/hls/hls-long/segment-000.ts": 2,
+        "/fault/interrupt/hls/hls-long/segment-001.ts": 1,
+        "/fault/interrupt/hls/hls-long/segment-002.ts": 1
+      },
+      "statuses": {
+        "503": 2,
+        "200": 15,
+        "206": 1
+      },
+      "responses": [
+        {
+          "observed_at_monotonic": 127057.395636458,
+          "route": "/fault/retry/page",
+          "status": 503
+        },
+        {
+          "observed_at_monotonic": 127057.440358375,
+          "route": "/fault/retry/page",
+          "status": 503
+        },
+        {
+          "observed_at_monotonic": 127057.473967125,
+          "route": "/fault/retry/page",
+          "status": 200
+        },
+        {
+          "observed_at_monotonic": 127057.598009,
+          "route": "/hls/hls-short/master.m3u8",
+          "status": 200
+        },
+        {
+          "observed_at_monotonic": 127057.9629965,
+          "route": "/thumbnail.jpg",
+          "status": 200
+        },
+        {
+          "observed_at_monotonic": 127057.964767916,
+          "route": "/hls/hls-short/media.m3u8",
+          "status": 200
+        },
+        {
+          "observed_at_monotonic": 127057.996543625,
+          "route": "/hls/hls-short/segment-000.ts",
+          "status": 200
+        },
+        {
+          "observed_at_monotonic": 127058.363981875,
+          "route": "/thumbnail.jpg",
+          "status": 200
+        },
+        {
+          "observed_at_monotonic": 127058.390846375,
+          "route": "/thumbnail.jpg",
+          "status": 200
+        },
+        {
+          "observed_at_monotonic": 127058.4722175,
+          "route": "/fault/interrupt/page",
+          "status": 200
+        },
+        {
+          "observed_at_monotonic": 127058.475094041,
+          "route": "/fault/interrupt/hls/hls-long/master.m3u8",
+          "status": 200
+        },
+        {
+          "observed_at_monotonic": 127058.601893333,
+          "route": "/fault/interrupt/hls/hls-long/media.m3u8",
+          "status": 200
+        },
+        {
+          "observed_at_monotonic": 127058.603271208,
+          "route": "/fault/interrupt/hls/hls-long/segment-000.ts",
+          "status": 200
+        },
+        {
+          "observed_at_monotonic": 127058.606875,
+          "route": "/fault/interrupt/hls/hls-long/segment-000.ts",
+          "status": 206
+        },
+        {
+          "observed_at_monotonic": 127058.612072958,
+          "route": "/fault/interrupt/hls/hls-long/segment-001.ts",
+          "status": 200
+        },
+        {
+          "observed_at_monotonic": 127058.617449166,
+          "route": "/fault/interrupt/hls/hls-long/segment-002.ts",
+          "status": 200
+        },
+        {
+          "observed_at_monotonic": 127061.46171275,
+          "route": "/thumbnail.jpg",
+          "status": 200
+        },
+        {
+          "observed_at_monotonic": 127061.472507833,
+          "route": "/thumbnail.jpg",
+          "status": 200
+        }
+      ],
+      "interruption_trace": [
+        {
+          "observed_at_monotonic": 127058.606067208,
+          "route": "/fault/interrupt/hls/hls-long/segment-000.ts",
+          "sent_bytes": 737280,
+          "advertised_bytes": 2197156
+        }
+      ],
+      "retry_failures_remaining": 0,
+      "interruptions_remaining": 0,
+      "bytes_sent": {
+        "/fault/retry/page": 1166,
+        "/hls/hls-short/master.m3u8": 166,
+        "/thumbnail.jpg": 8015,
+        "/hls/hls-short/media.m3u8": 146,
+        "/hls/hls-short/segment-000.ts": 875140,
+        "/fault/interrupt/page": 1172,
+        "/fault/interrupt/hls/hls-long/master.m3u8": 196,
+        "/fault/interrupt/hls/hls-long/media.m3u8": 302,
+        "/fault/interrupt/hls/hls-long/segment-000.ts": 2411172,
+        "/fault/interrupt/hls/hls-long/segment-001.ts": 2036792,
+        "/fault/interrupt/hls/hls-long/segment-002.ts": 1829616
+      },
+      "total_requests": 18,
+      "total_bytes_sent": 7163883,
+      "interruptions_injected": 1
+    },
+    "fixture_after_elapsed_seconds": 3.087156916008098,
+    "fixture_interruption_trace": [
+      {
+        "route": "/fault/interrupt/hls/hls-long/segment-000.ts",
+        "sent_bytes": 737280,
+        "advertised_bytes": 2197156,
+        "elapsed_seconds": 0.17859158301143907
+      }
+    ]
+  },
+  "reliability.ffmpeg_child_failure": {
+    "case_id": "reliability-ffmpeg-child-failure",
+    "pipeline_entrypoint": "yt_downloader.app.DownloadWorkerCore._download_worker_single",
+    "before_worker": {
+      "output_files": [],
+      "output_exists": false,
+      "output_mode": null,
+      "output_writable": false,
+      "dependency_override": {
+        "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-dq6katqe/cases/reliability-ffmpeg-child-failure/tools/ffmpeg",
+        "sha256": "4ae86952e1a22a6c415fb8e1bea1f26eec43874868955e74bef69c04f7a3a668",
+        "executable": true
+      },
+      "fixture_state": {
+        "origin": "http://127.0.0.1:54237",
+        "requests": {},
+        "statuses": {},
+        "responses": [],
+        "interruption_trace": [],
+        "retry_failures_remaining": 2,
+        "interruptions_remaining": 1,
+        "bytes_sent": {},
+        "total_requests": 0,
+        "total_bytes_sent": 0,
+        "interruptions_injected": 0
+      },
+      "fixture_elapsed_seconds": 0.007528166999691166
+    },
+    "job": {
+      "run_id": "1b8c9e7148ab4709be5b6cfc44c9332f",
+      "url": "http://127.0.0.1:54237/page/unicode",
+      "output_type": "MP4",
+      "quality_label": "360p",
+      "embed_thumbnail": false,
+      "embed_metadata": true,
+      "requested_mp3_bitrate_kbps": null,
+      "output_dir": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-dq6katqe/cases/reliability-ffmpeg-child-failure/output"
+    },
+    "control_trace": [
+      {
+        "elapsed_seconds": 0.007608,
+        "run_id": "1b8c9e7148ab4709be5b6cfc44c9332f",
+        "phase": "worker_started"
+      },
+      {
+        "elapsed_seconds": 0.007614,
+        "run_id": "1b8c9e7148ab4709be5b6cfc44c9332f",
+        "phase": "preflight_started"
+      },
+      {
+        "elapsed_seconds": 0.007831,
+        "run_id": "1b8c9e7148ab4709be5b6cfc44c9332f",
+        "phase": "preflight_completed"
+      },
+      {
+        "elapsed_seconds": 0.007832,
+        "run_id": "1b8c9e7148ab4709be5b6cfc44c9332f",
+        "phase": "worker_dispatched"
+      },
+      {
+        "elapsed_seconds": 0.801305,
+        "run_id": "1b8c9e7148ab4709be5b6cfc44c9332f",
+        "phase": "worker_finished"
+      }
+    ],
+    "events": [
+      {
+        "elapsed_seconds": 0.0082,
+        "kind": "status",
+        "payload": "Video 1 of 1 \u2014 analyzing source formats"
+      },
+      {
+        "elapsed_seconds": 0.6674,
+        "kind": "status",
+        "payload": "Video 1 of 1 \u2014 downloading"
+      },
+      {
+        "elapsed_seconds": 0.7431,
+        "kind": "status",
+        "payload": "Downloading unicode-1.mp4 \u2014 ?/s ETA ?"
+      },
+      {
+        "elapsed_seconds": 0.7465,
+        "kind": "status",
+        "payload": "Download finished; finalizing output\u2026"
+      }
+    ],
+    "progress_trace": [
+      {
+        "elapsed_seconds": 0.7431,
+        "status": "downloading",
+        "downloaded_bytes": 1024,
+        "total_bytes": 875140.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-dq6katqe/cases/reliability-ffmpeg-child-failure/output/.vfstage/ee2e8ee0/unicode-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.7433,
+        "status": "downloading",
+        "downloaded_bytes": 3072,
+        "total_bytes": 876164.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-dq6katqe/cases/reliability-ffmpeg-child-failure/output/.vfstage/ee2e8ee0/unicode-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.7435,
+        "status": "downloading",
+        "downloaded_bytes": 7168,
+        "total_bytes": 878212.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-dq6katqe/cases/reliability-ffmpeg-child-failure/output/.vfstage/ee2e8ee0/unicode-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.7437,
+        "status": "downloading",
+        "downloaded_bytes": 15360,
+        "total_bytes": 882308.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-dq6katqe/cases/reliability-ffmpeg-child-failure/output/.vfstage/ee2e8ee0/unicode-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.7439,
+        "status": "downloading",
+        "downloaded_bytes": 31744,
+        "total_bytes": 890500.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-dq6katqe/cases/reliability-ffmpeg-child-failure/output/.vfstage/ee2e8ee0/unicode-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.7441,
+        "status": "downloading",
+        "downloaded_bytes": 64512,
+        "total_bytes": 906884.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-dq6katqe/cases/reliability-ffmpeg-child-failure/output/.vfstage/ee2e8ee0/unicode-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.7443,
+        "status": "downloading",
+        "downloaded_bytes": 130048,
+        "total_bytes": 939652.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-dq6katqe/cases/reliability-ffmpeg-child-failure/output/.vfstage/ee2e8ee0/unicode-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.7445,
+        "status": "downloading",
+        "downloaded_bytes": 261120,
+        "total_bytes": 1005188.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-dq6katqe/cases/reliability-ffmpeg-child-failure/output/.vfstage/ee2e8ee0/unicode-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.7448,
+        "status": "downloading",
+        "downloaded_bytes": 523264,
+        "total_bytes": 1136260.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-dq6katqe/cases/reliability-ffmpeg-child-failure/output/.vfstage/ee2e8ee0/unicode-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.7453,
+        "status": "downloading",
+        "downloaded_bytes": 875140,
+        "total_bytes": 1398404.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-dq6katqe/cases/reliability-ffmpeg-child-failure/output/.vfstage/ee2e8ee0/unicode-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.7456,
+        "status": "downloading",
+        "downloaded_bytes": 875140,
+        "total_bytes": 1750280.0,
+        "speed_bytes_per_second": 0,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-dq6katqe/cases/reliability-ffmpeg-child-failure/output/.vfstage/ee2e8ee0/unicode-1.mp4"
+      },
+      {
+        "elapsed_seconds": 0.7465,
+        "status": "finished",
+        "downloaded_bytes": 875140,
+        "total_bytes": 875140,
+        "speed_bytes_per_second": 168678057.19222462,
+        "eta_seconds": null,
+        "filename": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-dq6katqe/cases/reliability-ffmpeg-child-failure/output/.vfstage/ee2e8ee0/unicode-1.mp4"
+      }
+    ],
+    "staging_trace": [
+      {
+        "elapsed_seconds": 0.007556083990493789,
+        "status": "",
+        "root_present": false,
+        "root_mode": null,
+        "run_directories": [],
+        "entries": [],
+        "final": false
+      },
+      {
+        "elapsed_seconds": 0.05273458399460651,
+        "status": "Video 1 of 1 \u2014 analyzing source formats",
+        "root_present": false,
+        "root_mode": null,
+        "run_directories": [],
+        "entries": [],
+        "final": false
+      },
+      {
+        "elapsed_seconds": 0.7060885419923579,
+        "status": "Video 1 of 1 \u2014 downloading",
+        "root_present": true,
+        "root_mode": 448,
+        "run_directories": [
+          "ee2e8ee0"
+        ],
+        "entries": [
+          {
+            "path": "ee2e8ee0",
+            "kind": "directory",
+            "size_bytes": null
+          }
+        ],
+        "final": false
+      },
+      {
+        "elapsed_seconds": 0.7768497499928344,
+        "status": "Download finished; finalizing output\u2026",
+        "root_present": true,
+        "root_mode": 448,
+        "run_directories": [
+          "ee2e8ee0"
+        ],
+        "entries": [
+          {
+            "path": "ee2e8ee0",
+            "kind": "directory",
+            "size_bytes": null
+          },
+          {
+            "path": "ee2e8ee0/unicode-1.mp4",
+            "kind": "file",
+            "size_bytes": 875140
+          }
+        ],
+        "final": false
+      },
+      {
+        "elapsed_seconds": 0.8005463339941343,
+        "status": "Download finished; finalizing output\u2026",
+        "root_present": true,
+        "root_mode": 448,
+        "run_directories": [],
+        "entries": [
+          {
+            "path": "ee2e8ee0",
+            "kind": "other",
+            "size_bytes": null
+          }
+        ],
+        "final": false
+      },
+      {
+        "elapsed_seconds": 0.8013828339899192,
+        "status": "Download finished; finalizing output\u2026",
+        "root_present": false,
+        "root_mode": null,
+        "run_directories": [],
+        "entries": [],
+        "final": true
+      }
+    ],
+    "outputs": [],
+    "media_output_count": 0,
+    "error": "_DownloadItemExecutionError: ERROR: Postprocessing: VODForge controlled FFmpeg child exit 17",
+    "failure_diagnostic": {
+      "failure_code": null,
+      "format_count": null,
+      "video_format_count": null,
+      "audio_format_count": null,
+      "tls_verify_code": null,
+      "reason": "transcoding",
+      "stage": "download",
+      "error_type": "DownloadError",
+      "http_status": null,
+      "os_error": null,
+      "windows_error": null,
+      "error_chain": "DownloadError>other",
+      "extractor_expected": null,
+      "tool_exit_code": null,
+      "source_module": "app",
+      "source_line": 2787,
+      "source_scope": "first_party_frame",
+      "source_trace": "app:6804>app:6533>app:1213>app:3746>app:3719>app:2786>app:3592>app:2787",
+      "cookie_failure": null,
+      "path_style": null,
+      "path_units": null,
+      "path_component_count": null,
+      "path_longest_component_bytes": null
+    },
+    "cancel_requested": false,
+    "control_request": null,
+    "staging_entries_after": [],
+    "active_children_before_harness_cleanup": [],
+    "harness_emergency_cleanup_used": false,
+    "control_observer_stopped": true,
+    "control_observer_errors": [],
+    "fixture_response_trace": [
+      {
+        "elapsed_seconds": 0.25556987499294337,
+        "route": "/page/unicode",
+        "status": 200
+      },
+      {
+        "elapsed_seconds": 0.32010962499771267,
+        "route": "/hls/hls-short/master.m3u8",
+        "status": 200
+      },
+      {
+        "elapsed_seconds": 0.7105247089930344,
+        "route": "/hls/hls-short/media.m3u8",
+        "status": 200
+      },
+      {
+        "elapsed_seconds": 0.7423755419877125,
+        "route": "/hls/hls-short/segment-000.ts",
+        "status": 200
+      }
+    ],
+    "fixture_state_after": {
+      "origin": "http://127.0.0.1:54237",
+      "requests": {
+        "/page/unicode": 1,
+        "/hls/hls-short/master.m3u8": 1,
+        "/hls/hls-short/media.m3u8": 1,
+        "/hls/hls-short/segment-000.ts": 1
+      },
+      "statuses": {
+        "200": 4
+      },
+      "responses": [
+        {
+          "observed_at_monotonic": 127307.368453541,
+          "route": "/page/unicode",
+          "status": 200
+        },
+        {
+          "observed_at_monotonic": 127307.432993291,
+          "route": "/hls/hls-short/master.m3u8",
+          "status": 200
+        },
+        {
+          "observed_at_monotonic": 127307.823408375,
+          "route": "/hls/hls-short/media.m3u8",
+          "status": 200
+        },
+        {
+          "observed_at_monotonic": 127307.855259208,
+          "route": "/hls/hls-short/segment-000.ts",
+          "status": 200
+        }
+      ],
+      "interruption_trace": [],
+      "retry_failures_remaining": 2,
+      "interruptions_remaining": 1,
+      "bytes_sent": {
+        "/page/unicode": 1142,
+        "/hls/hls-short/master.m3u8": 166,
+        "/hls/hls-short/media.m3u8": 146,
+        "/hls/hls-short/segment-000.ts": 875140
+      },
+      "total_requests": 4,
+      "total_bytes_sent": 876594,
+      "interruptions_injected": 0
+    },
+    "fixture_after_elapsed_seconds": 0.8022751669923309,
+    "fixture_interruption_trace": [],
+    "child_registration_trace": [
+      {
+        "elapsed_seconds": 0.4813518339942675,
+        "run_id": "1b8c9e7148ab4709be5b6cfc44c9332f",
+        "pid": 4417,
+        "args": [
+          "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-dq6katqe/cases/reliability-ffmpeg-child-failure/tools/ffmpeg",
+          "-bsfs"
+        ],
+        "returncode_after_worker": 0,
+        "exit_observed_elapsed_seconds": 0.8015087089879671
+      },
+      {
+        "elapsed_seconds": 0.7138589169917395,
+        "run_id": "1b8c9e7148ab4709be5b6cfc44c9332f",
+        "pid": 4418,
+        "args": [
+          "ffmpeg",
+          "-bsfs"
+        ],
+        "returncode_after_worker": 0,
+        "exit_observed_elapsed_seconds": 0.8015099999902304
+      },
+      {
+        "elapsed_seconds": 0.7521777499932796,
+        "run_id": "1b8c9e7148ab4709be5b6cfc44c9332f",
+        "pid": 4420,
+        "args": [
+          "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-dq6katqe/cases/reliability-ffmpeg-child-failure/tools/ffmpeg",
+          "-i",
+          "file:/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-dq6katqe/cases/reliability-ffmpeg-child-failure/output/.vfstage/ee2e8ee0/unicode-1.mp4"
+        ],
+        "returncode_after_worker": 17,
+        "exit_observed_elapsed_seconds": 0.8015106669918168
+      },
+      {
+        "elapsed_seconds": 0.7773366249894025,
+        "run_id": "1b8c9e7148ab4709be5b6cfc44c9332f",
+        "pid": 4421,
+        "args": [
+          "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-dq6katqe/cases/reliability-ffmpeg-child-failure/tools/ffmpeg",
+          "-y",
+          "-loglevel",
+          "repeat+info",
+          "-i",
+          "file:/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-dq6katqe/cases/reliability-ffmpeg-child-failure/output/.vfstage/ee2e8ee0/unicode-1.mp4",
+          "-map",
+          "0",
+          "-dn",
+          "-ignore_unknown",
+          "-c",
+          "copy",
+          "-f",
+          "mp4",
+          "-movflags",
+          "+faststart",
+          "file:/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-dq6katqe/cases/reliability-ffmpeg-child-failure/output/.vfstage/ee2e8ee0/unicode-1.temp.mp4"
+        ],
+        "returncode_after_worker": 17,
+        "exit_observed_elapsed_seconds": 0.8015136249887291
+      }
+    ]
+  },
+  "reliability.malformed_url": {
+    "case_id": "reliability-malformed-url",
+    "pipeline_entrypoint": "yt_downloader.app.DownloadWorkerCore._download_worker_single",
+    "before_worker": {
+      "output_files": [],
+      "output_exists": false,
+      "output_mode": null,
+      "output_writable": false
+    },
+    "job": {
+      "run_id": "0124875d97d544ab8597ff3ad0a73649",
+      "url": "not a URL://[]",
+      "output_type": "MP4",
+      "quality_label": "360p",
+      "embed_thumbnail": false,
+      "embed_metadata": true,
+      "requested_mp3_bitrate_kbps": null,
+      "output_dir": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-ny08loro/cases/reliability-malformed-url/output"
+    },
+    "control_trace": [
+      {
+        "elapsed_seconds": 0.007161,
+        "run_id": "0124875d97d544ab8597ff3ad0a73649",
+        "phase": "worker_started"
+      },
+      {
+        "elapsed_seconds": 0.007356,
+        "run_id": "0124875d97d544ab8597ff3ad0a73649",
+        "phase": "worker_dispatched"
+      },
+      {
+        "elapsed_seconds": 1.432569,
+        "run_id": "0124875d97d544ab8597ff3ad0a73649",
+        "phase": "worker_finished"
+      }
+    ],
+    "events": [
+      {
+        "elapsed_seconds": 0.0075,
+        "kind": "status",
+        "payload": "Video 1 of 1 \u2014 analyzing source formats"
+      }
+    ],
+    "progress_trace": [],
+    "staging_trace": [
+      {
+        "elapsed_seconds": 0.007098415997461416,
+        "status": "",
+        "root_present": false,
+        "root_mode": null,
+        "run_directories": [],
+        "entries": [],
+        "final": false
+      },
+      {
+        "elapsed_seconds": 0.03685487499751616,
+        "status": "Video 1 of 1 \u2014 analyzing source formats",
+        "root_present": false,
+        "root_mode": null,
+        "run_directories": [],
+        "entries": [],
+        "final": false
+      },
+      {
+        "elapsed_seconds": 1.4326259160006884,
+        "status": "Video 1 of 1 \u2014 analyzing source formats",
+        "root_present": false,
+        "root_mode": null,
+        "run_directories": [],
+        "entries": [],
+        "final": true
+      }
+    ],
+    "outputs": [],
+    "media_output_count": 0,
+    "error": "_DownloadItemExecutionError: ERROR: Unsupported URL: https://www.youtube.com/watch?v=not%20a%20URL://%5B%5D",
+    "failure_diagnostic": {
+      "failure_code": null,
+      "format_count": null,
+      "video_format_count": null,
+      "audio_format_count": null,
+      "tls_verify_code": null,
+      "reason": "invalid_input",
+      "stage": "analysis",
+      "error_type": "DownloadError",
+      "http_status": null,
+      "os_error": null,
+      "windows_error": null,
+      "error_chain": "DownloadError>other",
+      "extractor_expected": null,
+      "tool_exit_code": null,
+      "source_module": "app",
+      "source_line": 3672,
+      "source_scope": "first_party_frame",
+      "source_trace": "app:977>app:948>app:1213>app:3691>app:1111>app:3692>app:3592>app:3672",
+      "cookie_failure": null,
+      "path_style": null,
+      "path_units": null,
+      "path_component_count": null,
+      "path_longest_component_bytes": null
+    },
+    "cancel_requested": false,
+    "control_request": null,
+    "staging_entries_after": [],
+    "active_children_before_harness_cleanup": [],
+    "harness_emergency_cleanup_used": false,
+    "control_observer_stopped": true,
+    "control_observer_errors": []
+  },
+  "reliability.unwritable_output_directory": {
+    "case_id": "reliability-unwritable-output",
+    "pipeline_entrypoint": "yt_downloader.app.DownloadWorkerCore._download_worker_single",
+    "before_worker": {
+      "output_files": [],
+      "output_exists": true,
+      "output_mode": 320,
+      "output_writable": false
+    },
+    "job": {
+      "run_id": "b8434c14b3504fc1ae97bf60567f0f39",
+      "url": "http://127.0.0.1:9/not-reached",
+      "output_type": "MP4",
+      "quality_label": "360p",
+      "embed_thumbnail": false,
+      "embed_metadata": true,
+      "requested_mp3_bitrate_kbps": null,
+      "output_dir": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-yhchjprm/cases/reliability-unwritable-output/output"
+    },
+    "control_trace": [
+      {
+        "elapsed_seconds": 0.008188,
+        "run_id": "b8434c14b3504fc1ae97bf60567f0f39",
+        "phase": "worker_started"
+      },
+      {
+        "elapsed_seconds": 0.008193,
+        "run_id": "b8434c14b3504fc1ae97bf60567f0f39",
+        "phase": "preflight_started"
+      },
+      {
+        "elapsed_seconds": 0.008296,
+        "run_id": "b8434c14b3504fc1ae97bf60567f0f39",
+        "phase": "preflight_refused"
+      },
+      {
+        "elapsed_seconds": 0.008305,
+        "run_id": "b8434c14b3504fc1ae97bf60567f0f39",
+        "phase": "worker_finished"
+      }
+    ],
+    "events": [],
+    "progress_trace": [],
+    "staging_trace": [
+      {
+        "elapsed_seconds": 0.008132957998896018,
+        "status": "",
+        "root_present": false,
+        "root_mode": null,
+        "run_directories": [],
+        "entries": [],
+        "final": false
+      },
+      {
+        "elapsed_seconds": 0.00833924999460578,
+        "status": "",
+        "root_present": false,
+        "root_mode": null,
+        "run_directories": [],
+        "entries": [],
+        "final": true
+      }
+    ],
+    "outputs": [],
+    "media_output_count": 0,
+    "error": "PermissionError: [Errno 13] Permission denied: '/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-yhchjprm/cases/reliability-unwritable-output/output/.vodforge-access-697c8cfb5b1d4da590949b151398b092.tmp'",
+    "failure_diagnostic": null,
+    "cancel_requested": false,
+    "control_request": null,
+    "staging_entries_after": [],
+    "active_children_before_harness_cleanup": [],
+    "harness_emergency_cleanup_used": false,
+    "control_observer_stopped": true,
+    "control_observer_errors": [],
+    "child_registration_trace": []
+  }
+}
