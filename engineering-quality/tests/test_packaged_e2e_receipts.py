@@ -20,6 +20,7 @@ from quality_harness.fixtures import (
     LIBRARY_DESCRIPTION_STRESS_TITLE,
 )
 from quality_harness.packaged_e2e import (
+    _application_data_path,
     _history_persistence_receipt,
     _library_description_visibility_receipt,
     _persisted_state_snapshot,
@@ -64,10 +65,17 @@ def test_qt_visibility_gate_binds_renderer_and_recomputes_geometry(
     if pinned_footer:
         fields.update(
             details_bounds={"x": 700, "y": 300, "width": 380, "height": 278},
-            description_viewport_bounds={"x": 710, "y": 335, "width": 360, "height": 243},
+            description_viewport_bounds={
+                "x": 710,
+                "y": 335,
+                "width": 360,
+                "height": 243,
+            },
             footer_bounds={"x": 700, "y": 586, "width": 380, "height": 74},
             footer_action_bounds={"x": 700, "y": 586, "width": 380, "height": 40},
-            footer_visible=True, footer_action_visible=True, location_visible=True,
+            footer_visible=True,
+            footer_action_visible=True,
+            location_visible=True,
         )
     receipt_path = write_quality_e2e_qt_library_visibility_receipt(
         **fields, environ=environment, pid=7001
@@ -101,14 +109,16 @@ def test_qt_visibility_gate_binds_renderer_and_recomputes_geometry(
     assert result["verified"] is (mutation is None), result["errors"]
 
 
-
-@pytest.mark.parametrize("mutation", (
-    ("footer_bounds", {"x": 700, "y": 590, "width": 380, "height": 74}),
-    ("footer_action_bounds", {"x": 700, "y": 580, "width": 380, "height": 40}),
-    ("footer_mapped_and_viewable", False),
-    ("details_minimum_available_height_px", 360),
-    ("reader_footer_gap_delta_px", 1),
-))
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        ("footer_bounds", {"x": 700, "y": 590, "width": 380, "height": 74}),
+        ("footer_action_bounds", {"x": 700, "y": 580, "width": 380, "height": 40}),
+        ("footer_mapped_and_viewable", False),
+        ("details_minimum_available_height_px", 360),
+        ("reader_footer_gap_delta_px", 1),
+    ),
+)
 def test_qt_pinned_footer_rejects_changed_geometry_and_claims(tmp_path, mutation):
     test_qt_visibility_gate_binds_renderer_and_recomputes_geometry(
         tmp_path, mutation, "library_description_observed", True
@@ -829,9 +839,7 @@ def test_history_persistence_binds_two_launches_to_stable_output(
     media = home / "Downloads" / "Channel" / "video.mp4"
     media.parent.mkdir(parents=True)
     media.write_bytes(b"committed-media")
-    history_path = (
-        home / "Library" / "Application Support" / "VODForge" / "download-history.json"
-    )
+    history_path = _application_data_path(home) / "download-history.json"
     history_path.parent.mkdir(parents=True)
     history_path.write_text(
         json.dumps(
@@ -915,9 +923,7 @@ def test_telemetry_persistence_covers_mixed_outputs_and_designated_description(
         probes.append(
             {"path": str(media), "sha256": sha256_file(media), "readable": True}
         )
-    history = (
-        home / "Library" / "Application Support" / "VODForge" / "download-history.json"
-    )
+    history = _application_data_path(home) / "download-history.json"
     history.parent.mkdir(parents=True)
     if defect == "wrong_format":
         items[-1]["vodforge_output_type"] = "MP3"

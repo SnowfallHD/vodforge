@@ -155,6 +155,10 @@ def _artifact_receipt(
     if artifact_policy not in {"development", "release"}:
         raise ValueError(f"unsupported artifact policy: {artifact_policy}")
     artifact = artifact.resolve()
+    if sys.platform == "win32":
+        from .windows_e2e_platform import windows_artifact_receipt
+
+        return windows_artifact_receipt(artifact, repo_root, artifact_policy)
     executable = artifact / "Contents" / "MacOS" / "VODForge"
     ffmpeg = artifact / "Contents" / "Frameworks" / "ffmpeg"
     ffprobe = artifact / "Contents" / "Frameworks" / "ffprobe"
@@ -605,9 +609,7 @@ def _exported_media_paths(home: Path) -> list[Path]:
 
 
 def _persisted_state_snapshot(home: Path) -> dict[str, Any]:
-    history_path = (
-        home / "Library" / "Application Support" / "VODForge" / "download-history.json"
-    )
+    history_path = _application_data_path(home) / "download-history.json"
     media = []
     for path in _exported_media_paths(home):
         media.append(
@@ -637,9 +639,7 @@ def _history_persistence_receipt(
     expected_description_title: str | None = None,
     qt_restart_visibility_verified: bool | None = None,
 ) -> dict[str, Any]:
-    history_path = (
-        home / "Library" / "Application Support" / "VODForge" / "download-history.json"
-    )
+    history_path = _application_data_path(home) / "download-history.json"
     history_error = None
     payload: dict[str, Any] = {}
     if history_path.is_file():
@@ -1239,15 +1239,27 @@ def _launch(
 ) -> tuple[subprocess.Popen[bytes], Any, Any]:
     stdout_handle = stdout_path.open("ab")
     stderr_handle = stderr_path.open("ab")
-    process = subprocess.Popen(
-        [str(executable)],
-        env=env,
-        cwd=executable.parents[3],
-        stdin=subprocess.DEVNULL,
-        stdout=stdout_handle,
-        stderr=stderr_handle,
-        start_new_session=True,
-    )
+    try:
+        if sys.platform == "win32":
+            from .windows_e2e_platform import launch_owned_windows
+
+            process = launch_owned_windows(
+                executable, env, stdout_handle, stderr_handle
+            )
+        else:
+            process = subprocess.Popen(
+                [str(executable)],
+                env=env,
+                cwd=executable.parents[3],
+                stdin=subprocess.DEVNULL,
+                stdout=stdout_handle,
+                stderr=stderr_handle,
+                start_new_session=True,
+            )
+    except Exception:
+        stdout_handle.close()
+        stderr_handle.close()
+        raise
     return process, stdout_handle, stderr_handle
 
 
@@ -1280,6 +1292,10 @@ class _OwnedLaunchRegistry:
             if survivors:
                 self.cleanup_receipts.append(terminate_owned_group(process, launch))
             launch["group_survivors_after_exit"] = owned_group_survivors(launch)
+            if sys.platform == "win32" and not launch["group_survivors_after_exit"]:
+                from .windows_e2e_platform import close_owned_windows_job
+
+                close_owned_windows_job(launch)
             stdout_handle.close()
             stderr_handle.close()
 
@@ -1295,12 +1311,22 @@ class _OwnedLaunchRegistry:
             self.resources = self._sampler.stop()
 
 
+def _application_data_path(home: Path) -> Path:
+    if sys.platform == "win32":
+        return home / "AppData" / "Local" / "VODForge"
+    return home / "Library" / "Application Support" / "VODForge"
+
+
 def _isolated_state_paths(workspace: Path) -> dict[str, str]:
     root = workspace.resolve()
     home = (root / "home").resolve()
     tmp = (root / "tmp").resolve()
-    application_data = home / "Library" / "Application Support" / "VODForge"
-    diagnostics = home / "Library" / "Logs" / "VODForge"
+    application_data = _application_data_path(home)
+    diagnostics = (
+        application_data / "logs"
+        if sys.platform == "win32"
+        else home / "Library" / "Logs" / "VODForge"
+    )
     return {
         "isolation_root": str(root),
         "home": str(home),
@@ -1375,10 +1401,20 @@ def _launch_and_attest(
             # even when live attestation failed before psutil exposed a time.
             "create_time": 0.0,
         }
+        if sys.platform == "win32":
+            from .windows_e2e_platform import close_owned_windows_job, job_token
+
+            provisional["windows_job_token"] = job_token(process.pid)
         terminate_owned_group(process, provisional)
+        if sys.platform == "win32":
+            close_owned_windows_job(provisional)
         stdout_handle.close()
         stderr_handle.close()
         raise
+    if sys.platform == "win32":
+        from .windows_e2e_platform import job_token
+
+        launch["windows_job_token"] = job_token(process.pid)
     return process, stdout_handle, stderr_handle, launch, environment
 
 
@@ -1463,9 +1499,9 @@ def _load_resumable_session(path: Path, args: argparse.Namespace) -> dict[str, A
 def run_packaged_e2e_session(
     args: argparse.Namespace, *, repo_root: Path, harness_root: Path
 ) -> int:
-    if sys.platform != "darwin":
+    if sys.platform not in {"darwin", "win32"}:
         print(
-            "[e2e] packaged macOS E2E requires macOS; no headless result is substituted",
+            "[e2e] packaged E2E requires macOS or Windows; no headless result is substituted",
             file=sys.stderr,
         )
         return 2
@@ -1563,7 +1599,12 @@ def run_packaged_e2e_session(
     fixture_manifest = (
         resumed["fixture_manifest"]
         if resumed
-        else generate_fixtures(fixtures, deep=False)
+        else generate_fixtures(
+            fixtures,
+            deep=False,
+            ffmpeg_path=str(receipt["bundled_dependencies"]["ffmpeg"]["path"]),
+            ffprobe_path=str(receipt["bundled_ffprobe"]["path"]),
+        )
     )
     driver_events_path = session_dir / "driver-events.json"
     control_path = session_dir / "control.json"
@@ -1571,6 +1612,13 @@ def run_packaged_e2e_session(
         json_dump(driver_events_path, {"events": [], "screenshots": [], "notes": []})
     json_dump(control_path, {"action": "running"})
     env = os.environ.copy()
+    if sys.platform == "win32":
+        env.update(
+            {
+                "USERPROFILE": state_paths["home"],
+                "APPDATA": str(home / "AppData" / "Roaming"),
+            }
+        )
     env.update(
         {
             "HOME": state_paths["home"],
@@ -1897,8 +1945,8 @@ def run_packaged_e2e_session(
     missing_events = trace_validation["missing_events"]
     media_paths = _exported_media_paths(home)
     media_probes = _probe_media(media_paths, receipt, repo_root=repo_root)
-    diagnostic_path = home / "Library" / "Logs" / "VODForge" / "latest.log"
-    activity_path = home / "Library" / "Logs" / "VODForge" / "activity.log"
+    diagnostic_path = Path(state_paths["diagnostics_log"])
+    activity_path = Path(state_paths["diagnostics"]) / "activity.log"
     diagnostics = (
         diagnostic_path.read_text(encoding="utf-8", errors="replace")
         if diagnostic_path.is_file()

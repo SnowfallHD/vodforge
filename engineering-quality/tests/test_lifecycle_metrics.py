@@ -9,6 +9,7 @@ from typing import Any, cast
 import pytest
 from quality_harness import scenarios as scenarios_module
 from quality_harness.cli import _parser
+from quality_harness.fault_server import FaultState
 from quality_harness.metrics import (
     LifecycleCheckpointRecorder,
     lifecycle_growth_summary,
@@ -129,6 +130,11 @@ def test_soak_releases_results_reuses_source_and_gates_worker_retention(
             sentinel = ResultSentinel()
             result_sentinels.append(weakref.ref(sentinel))
             output_dir = tmp_path / str(kwargs["case_id"]) / "output"
+            output_dir.parent.mkdir()
+            (output_dir.parent / "pipeline-result.json").write_text(
+                json.dumps({"case_id": kwargs["case_id"], "media_output_count": 1}),
+                encoding="utf-8",
+            )
             return {
                 "case_id": kwargs["case_id"],
                 "duration_seconds": 0.1,
@@ -146,11 +152,14 @@ def test_soak_releases_results_reuses_source_and_gates_worker_retention(
             }
 
     class FakeServer:
+        state = FaultState()
+
         def url(self, path: str) -> str:
             return f"http://fixture.invalid{path}"
 
     class FakeRecorder:
         def __init__(self, run_root: Path, *, jobs: int, detailed: bool) -> None:
+            self.observation_dir = run_root / "observations"
             self.samples_path = run_root / "samples.jsonl"
             self.samples_path.write_text("", encoding="utf-8")
             self.artifacts = [str(self.samples_path)]
@@ -211,6 +220,10 @@ def test_soak_releases_results_reuses_source_and_gates_worker_retention(
     )
 
     assert scenario["status"] == expected_status
+    observation = json.loads(Path(scenario["raw_result"]).read_text(encoding="utf-8"))
+    assert len(observation["workers"]) == 2
+    assert all(Path(row["path"]).is_file() for row in observation["workers"])
+    assert observation["before"]["fixture"]["total_requests"] == 0
     assert bool(findings) is bool(final_worker_count)
     assert len(set(observed_urls)) == 1
     assert observed_urls == [

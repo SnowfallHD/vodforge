@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import secrets
 import shutil
 import stat
@@ -95,10 +96,20 @@ def _validate_member_path(name: str) -> tuple[str, ...]:
     if not path.parts or ":" in path.parts[0]:
         raise RuntimeError("candidate archive contains an absolute or drive path")
     top_level = path.parts[0]
-    if top_level not in {"VODForge.app", "__MACOSX"}:
+    if top_level not in {"VODForge.app", "VODForge", "__MACOSX"}:
         raise RuntimeError(
-            "candidate archive must contain only VODForge.app and macOS metadata"
+            "candidate archive must contain one VODForge application root"
         )
+    if top_level == "VODForge":
+        for part in path.parts:
+            stem = part.split(".", 1)[0].upper()
+            if (
+                part.endswith((".", " "))
+                or any(ord(c) < 32 or c in '<>:"|?*' for c in part)
+                or stem in {"CON", "PRN", "AUX", "NUL"}
+                or re.fullmatch(r"(?:COM|LPT)[1-9]", stem)
+            ):
+                raise RuntimeError("candidate archive contains an unsafe Windows path")
     return path.parts
 
 
@@ -132,6 +143,8 @@ def validate_candidate_archive(archive: Path) -> dict[str, Any]:
     seen_paths: set[str] = set()
     seen_casefolded_paths: set[str] = set()
     app_member_count = 0
+    app_roots: set[str] = set()
+    mac_metadata = False
     total_uncompressed = 0
     try:
         with zipfile.ZipFile(archive) as bundle_zip:
@@ -150,8 +163,11 @@ def validate_candidate_archive(archive: Path) -> dict[str, Any]:
                     )
                 seen_paths.add(normalized)
                 seen_casefolded_paths.add(casefolded)
-                if parts[0] == "VODForge.app":
+                if parts[0] in {"VODForge.app", "VODForge"}:
+                    app_roots.add(parts[0])
                     app_member_count += 1
+                else:
+                    mac_metadata = True
 
                 total_uncompressed += int(member.file_size)
                 if total_uncompressed > MAX_UNCOMPRESSED_BYTES:
@@ -165,6 +181,10 @@ def validate_candidate_archive(archive: Path) -> dict[str, Any]:
                 if file_type not in allowed_types:
                     raise RuntimeError("candidate archive contains a special file")
                 if file_type == stat.S_IFLNK:
+                    if parts[0] == "VODForge":
+                        raise RuntimeError(
+                            "Windows candidate archive must not contain symlinks"
+                        )
                     if member.file_size > 4096:
                         raise RuntimeError("candidate archive has an oversized symlink")
                     try:
@@ -180,9 +200,20 @@ def validate_candidate_archive(archive: Path) -> dict[str, Any]:
     except zipfile.BadZipFile as exc:
         raise RuntimeError("candidate artifact is not a readable ZIP archive") from exc
 
-    if app_member_count == 0:
-        raise RuntimeError("candidate archive does not contain VODForge.app")
+    if len(app_roots) != 1 or ("VODForge" in app_roots and mac_metadata):
+        raise RuntimeError(
+            "candidate archive must contain exactly one platform application"
+        )
+    app_root = next(iter(app_roots))
+    expected_executable = (
+        "VODForge/VODForge.exe"
+        if app_root == "VODForge"
+        else "VODForge.app/Contents/MacOS/VODForge"
+    )
+    if expected_executable not in seen_paths:
+        raise RuntimeError("candidate archive is missing its application executable")
     return {
+        "app_root": app_root,
         "entry_count": len(seen_paths),
         "app_entry_count": app_member_count,
         "uncompressed_bytes": total_uncompressed,
@@ -252,6 +283,15 @@ def _freeze_archive(source: Path, candidate_dir: Path) -> dict[str, Any]:
     }
 
 
+def _extract_archive(archive: Path, destination: Path) -> None:
+    layout = validate_candidate_archive(archive)
+    if layout["app_root"] == "VODForge":
+        with zipfile.ZipFile(archive) as source:
+            source.extractall(destination)
+    else:
+        _ditto_extract(archive, destination)
+
+
 def _ditto_extract(archive: Path, destination: Path) -> None:
     ditto = Path("/usr/bin/ditto")
     if not ditto.is_file():
@@ -273,9 +313,13 @@ def _ditto_extract(archive: Path, destination: Path) -> None:
 
 
 def _extracted_app(extraction_root: Path) -> Path:
-    expected = extraction_root / "VODForge.app"
-    if expected.is_symlink() or not expected.is_dir():
-        raise RuntimeError("candidate archive did not extract one real VODForge.app")
+    roots = [extraction_root / name for name in ("VODForge.app", "VODForge")]
+    present = [path for path in roots if path.exists() or path.is_symlink()]
+    if len(present) != 1 or present[0].is_symlink() or not present[0].is_dir():
+        raise RuntimeError("candidate archive did not extract one real application")
+    expected = present[0]
+    if expected.name == "VODForge" and not (expected / "VODForge.exe").is_file():
+        raise RuntimeError("Windows candidate executable is missing")
     unexpected: list[Path] = []
     for path in extraction_root.rglob("*.app"):
         if "__MACOSX" in path.parts:
@@ -455,7 +499,7 @@ def create_candidate_receipt(
         archive_validation = validate_candidate_archive(Path(frozen["path"]))
         extraction_root = candidate_dir / "extracted"
         extraction_root.mkdir(mode=0o700)
-        (extractor or _ditto_extract)(Path(frozen["path"]), extraction_root)
+        (extractor or _extract_archive)(Path(frozen["path"]), extraction_root)
         artifact = _extracted_app(extraction_root)
         inspector = artifact_inspector or _default_artifact_inspector
         artifact_receipt = inspector(artifact, repo_root, artifact_policy)
@@ -539,9 +583,17 @@ def _receipt_path_failures(receipt: Mapping[str, Any], receipt_path: Path) -> li
     ):
         failures.append("frozen archive path is not bound to the candidate directory")
     artifact_payload = receipt.get("artifact")
+    platform = (
+        artifact_payload.get("platform")
+        if isinstance(artifact_payload, Mapping)
+        else None
+    )
+    app_root = "VODForge" if platform == "windows" else "VODForge.app"
+    if platform not in {None, "macos", "windows"}:
+        failures.append("artifact platform is unsupported")
     if not isinstance(artifact_payload, Mapping) or artifact_payload.get(
         "artifact"
-    ) != str((candidate_dir / "extracted" / "VODForge.app").resolve()):
+    ) != str((candidate_dir / "extracted" / app_root).resolve()):
         failures.append("artifact path is not bound to the candidate directory")
     return failures
 
@@ -643,7 +695,7 @@ def materialize_candidate_for_e2e(
         raise RuntimeError("candidate E2E destination parent must be a real directory")
     destination.mkdir(mode=0o700)
     try:
-        (extractor or _ditto_extract)(archive, destination)
+        (extractor or _extract_archive)(archive, destination)
         artifact = _extracted_app(destination)
         fresh_tree = bundle_tree_receipt(artifact)
         artifact_payload = receipt["artifact"]

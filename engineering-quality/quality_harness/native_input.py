@@ -261,6 +261,71 @@ def post_text(quartz, text, guard, on_dispatch=lambda: None):
         time.sleep(0.005)
 
 
+def post_pointer_trace(
+    quartz,
+    points,
+    guard,
+    on_frame,
+    on_dispatch=lambda: None,
+    *,
+    duration=1.0,
+    drag=False,
+    scroll_delta=None,
+):
+    """Keep a bounded input sequence and release a held button on every exit."""
+    if (
+        not 2 <= len(points) <= 40
+        or not math.isfinite(duration)
+        or not 0.05 <= duration <= 8
+    ):
+        raise ValueError("Native trace requires 2–40 samples and 0.05–8 seconds")
+    if scroll_delta is not None and (
+        not isinstance(scroll_delta, int) or not 1 <= abs(scroll_delta) <= 100
+    ):
+        raise ValueError("Native scroll delta must be a bounded nonzero integer")
+
+    def mouse(kind, point):
+        event = quartz.CGEventCreateMouseEvent(
+            None, kind, point, quartz.kCGMouseButtonLeft
+        )
+        quartz.CGEventSetFlags(event, 0)
+        on_dispatch()
+        quartz.CGEventPost(quartz.kCGHIDEventTap, event)
+
+    guard()
+    held = False
+    last_point = points[0]
+    try:
+        mouse(quartz.kCGEventMouseMoved, last_point)
+        if drag:
+            guard()
+            held = True
+            mouse(quartz.kCGEventLeftMouseDown, last_point)
+        for index, point in enumerate(points):
+            guard()
+            last_point = point
+            mouse(
+                quartz.kCGEventLeftMouseDragged if drag else quartz.kCGEventMouseMoved,
+                point,
+            )
+            if scroll_delta is not None:
+                event = quartz.CGEventCreateScrollWheelEvent(
+                    None, quartz.kCGScrollEventUnitPixel, 1, scroll_delta
+                )
+                quartz.CGEventSetFlags(event, 0)
+                quartz.CGEventSetIntegerValueField(
+                    event, quartz.kCGScrollWheelEventIsContinuous, 1
+                )
+                on_dispatch()
+                quartz.CGEventPost(quartz.kCGHIDEventTap, event)
+            time.sleep(duration / len(points))
+            guard()
+            on_frame(index, held)
+    finally:
+        if held:
+            mouse(quartz.kCGEventLeftMouseUp, last_point)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--session", type=Path, required=True)
@@ -274,6 +339,17 @@ def main(argv=None):
     click.add_argument("--right", action="store_true")
     for name in ("x", "y", "image-width", "image-height"):
         click.add_argument(f"--{name}", type=float, required=True)
+    for action in ("hover", "drag", "scroll"):
+        trace = actions.add_parser(action)
+        for name in ("x", "y", "image-width", "image-height"):
+            trace.add_argument(f"--{name}", type=float, required=True)
+        trace.add_argument("--steps", type=int, default=12)
+        trace.add_argument("--duration", type=float, default=1.2)
+        if action == "drag":
+            trace.add_argument("--to-x", type=float, required=True)
+            trace.add_argument("--to-y", type=float, required=True)
+        if action == "scroll":
+            trace.add_argument("--delta", type=int, required=True)
     key = actions.add_parser("key")
     key.add_argument("--code", type=int, required=True)
     key.add_argument("--command", action="store_true")
@@ -385,6 +461,73 @@ def main(argv=None):
                     )
 
             post_click(Quartz, point, click_guard, dispatched, right=args.right)
+        elif args.action in {"hover", "drag", "scroll"}:
+            bounds = dict(target["kCGWindowBounds"])
+            start = image_point(
+                bounds, args.x, args.y, args.image_width, args.image_height
+            )
+            end = (
+                image_point(
+                    bounds, args.to_x, args.to_y, args.image_width, args.image_height
+                )
+                if args.action == "drag"
+                else start
+            )
+            if not 2 <= args.steps <= 40:
+                raise ValueError("Native trace sample count is out of bounds")
+            if hit_test_pid(start) != pid:
+                raise RuntimeError(
+                    "Native trace start is covered by another desktop surface"
+                )
+            points = [
+                (
+                    start[0] + (end[0] - start[0]) * i / (args.steps - 1),
+                    start[1] + (end[1] - start[1]) * i / (args.steps - 1),
+                )
+                for i in range(args.steps)
+            ]
+            frame_root = args.output.with_name(args.output.stem + "-frames")
+            frame_root.mkdir(exist_ok=False)
+            receipt["in_flight_frames"] = []
+
+            def frame(index, held):
+                match = named(args.window_title)
+                if len(match) != 1:
+                    raise RuntimeError("Trace window became ambiguous")
+                current = dict(match[0]["kCGWindowBounds"])
+                rectangle = ",".join(
+                    str(round(current[k])) for k in ("X", "Y", "Width", "Height")
+                )
+                path = frame_root / f"{index:03d}.png"
+                subprocess.run(
+                    ["/usr/sbin/screencapture", "-x", f"-R{rectangle}", str(path)],
+                    check=True,
+                    timeout=10,
+                )  # nosec B603
+                from .util import sha256_file, utc_now
+
+                receipt["in_flight_frames"].append(
+                    {
+                        "index": index,
+                        "at": utc_now(),
+                        "monotonic_ns": time.monotonic_ns(),
+                        "button_held": held,
+                        "bounds": current,
+                        "image_path": str(path),
+                        "image_sha256": sha256_file(path),
+                    }
+                )
+
+            post_pointer_trace(
+                Quartz,
+                points,
+                guard,
+                frame,
+                dispatched,
+                duration=args.duration,
+                drag=args.action == "drag",
+                scroll_delta=args.delta if args.action == "scroll" else None,
+            )
         elif args.action == "key":
             if not 0 <= args.code <= 127:
                 raise ValueError("Invalid native key code")

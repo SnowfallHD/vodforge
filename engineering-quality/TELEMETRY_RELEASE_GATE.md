@@ -15,7 +15,7 @@ telemetry exclusively to the fixed preview host. Production telemetry remains
 forbidden. Disabled artifacts cannot be enabled by these flags. The unconditional
 `VODFORGE_DISABLE_TELEMETRY=1` switch is retained for the negative journey.
 
-The maintained Mac launcher supports `packaged-e2e --profile telemetry --telemetry preview`; it sets
+The maintained macOS and Windows launcher supports `packaged-e2e --profile telemetry --telemetry preview`; it sets
 an isolated profile and removes the off switch only from its own child environment.
 Supply the QA key privately in the parent environment, never in receipts, commands,
 source, or the artifact. Windows journeys must use the same explicit environment
@@ -70,6 +70,8 @@ native text entry, Return to select the path, and Return to open the selected fi
 Observe the sheet transition before proceeding; do not assume a dispatched key worked.
 The expected transition must be observed before the next input. If focus differs,
 inspect the named window rather than sending keys to any window with the same PID.
+
+The authorized native runner also supports `hover`, `drag`, and `scroll` with explicitly sized image coordinates. Each bounded sequence checks the focused attested window at every sample, saves fresh in-flight frames and geometry, and releases a held button on failure. Drag endpoints must come from the current observed image; scroll uses a bounded pixel delta. These synthetic native traces are separate from physical-device acceptance.
 
 The input receipt reports dispatch, not feature success. Inspect its screenshot,
 then use the existing `record-e2e-event` to record a passing observation. A timeout

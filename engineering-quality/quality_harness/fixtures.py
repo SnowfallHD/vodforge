@@ -274,9 +274,15 @@ def _generate_original_audio_fixtures(ffmpeg: str, source: Path, root: Path) -> 
     _dash_fixture_resources(opus / "manifest.mpd")
 
 
-def generate_fixtures(root: Path, *, deep: bool = False) -> dict[str, Any]:
-    ffmpeg = find_ffmpeg()
-    ffprobe = find_ffprobe(ffmpeg)
+def generate_fixtures(
+    root: Path,
+    *,
+    deep: bool = False,
+    ffmpeg_path: str | None = None,
+    ffprobe_path: str | None = None,
+) -> dict[str, Any]:
+    ffmpeg = ffmpeg_path or find_ffmpeg()
+    ffprobe = ffprobe_path or find_ffprobe(ffmpeg)
     root.mkdir(parents=True, exist_ok=True)
     short_path = root / "short-av.mp4"
     short_high_path = root / "short-high-av.mp4"

@@ -82,7 +82,9 @@ The command copies the ZIP to a private, read-only candidate directory. Packaged
   --output-dir engineering-quality/reports/<e2e-id>
 ```
 
-The runner fails before UI control if another VODForge process exists or if artifact, PID, executable, version, environment, state paths, app startup attestation, native window owner/title, or candidate hashes do not agree. It only cleans the process group it launched.
+The runner fails before UI control if another VODForge process exists or if artifact, PID, executable, version, environment, state paths, app startup attestation, native window owner/title, or candidate hashes do not agree. On macOS it only cleans the process group it launched. On Windows the launcher assigns the suspended child to a harness-owned OS job before its first instruction, then records that job’s ownership token. Cleanup queries all job members, including orphaned children, and cannot terminate another process by name. Windows portable candidates use the same frozen ZIP and fresh extraction workflow, with live Authenticode publisher/timestamp, packaged revision/version, and bundled-tool checks.
+
+On Windows invoke the CLI using the existing Python environment: `python -m quality_harness.cli`, with `PYTHONPATH` set to the repository and its `engineering-quality` directory. The ordered telemetry journey and consent negatives are identical on both platforms.
 
 After FAST, NORMAL, packaged E2E, and DEEP, bind the receipts:
 

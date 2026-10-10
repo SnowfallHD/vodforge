@@ -168,6 +168,7 @@ def test_preexisting_scan_is_read_only_and_finds_unrelated_vodforge(
 def test_owned_cleanup_refuses_group_with_prelaunch_process(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(e2e_provenance.sys, "platform", "darwin")
     process = _PopenDouble()
     older = {
         "pid": 811,
@@ -197,6 +198,7 @@ def test_owned_cleanup_refuses_group_with_prelaunch_process(
 def test_owned_cleanup_signals_only_attested_process_group(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(e2e_provenance.sys, "platform", "darwin")
     process = _PopenDouble()
     owned = {
         "pid": 912,
@@ -405,6 +407,8 @@ def test_windows_live_process_binding_retains_parent_time_environment_and_hash(
             "VODFORGE_QUALITY_E2E_SESSION_NONCE": "test-nonce",
             "VODFORGE_QUALITY_E2E_WINDOW_TOKEN": "test-token",
             "HOME": state_paths["home"],
+            "USERPROFILE": state_paths["home"],
+            "APPDATA": str(Path(state_paths["home"]) / "AppData" / "Roaming"),
             "XDG_DATA_HOME": state_paths["xdg_data"],
             "LOCALAPPDATA": state_paths["local_app_data"],
             "TMPDIR": state_paths["tmp"],

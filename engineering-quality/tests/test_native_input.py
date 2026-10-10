@@ -293,3 +293,62 @@ def test_right_click_releases_matching_button_and_clears_modifiers(monkeypatch):
     native_input.post_click(quartz, (10, 10), lambda: None, right=True)
     assert [e["kind"] for e in quartz.events] == [1, 4, 5]
     assert all(e["flags"] == 0 for e in quartz.events)
+
+
+@pytest.mark.parametrize("drag", [True, False])
+def test_pointer_trace_retains_held_frames_and_releases_on_guard_failure(
+    monkeypatch, drag
+):
+    from types import SimpleNamespace
+
+    from quality_harness.native_input import post_pointer_trace
+
+    events = []
+    guards = []
+    frames = []
+    quartz = SimpleNamespace(
+        kCGMouseButtonLeft=0,
+        kCGEventMouseMoved=5,
+        kCGEventLeftMouseDown=1,
+        kCGEventLeftMouseUp=2,
+        kCGEventLeftMouseDragged=6,
+        kCGHIDEventTap=0,
+        CGEventCreateMouseEvent=lambda _, kind, point, button: kind,
+        CGEventSetFlags=lambda *args: None,
+        CGEventPost=lambda _, event: events.append(event),
+    )
+    monkeypatch.setattr("quality_harness.native_input.time.sleep", lambda _: None)
+
+    def guard():
+        guards.append(True)
+        if len(guards) == (5 if drag else 4):
+            raise RuntimeError("focus changed")
+
+    with pytest.raises(RuntimeError, match="focus changed"):
+        post_pointer_trace(
+            quartz,
+            [(1, 1), (2, 2), (3, 3)],
+            guard,
+            lambda index, held: frames.append((index, held)),
+            drag=drag,
+        )
+    assert frames == [(0, drag)]
+    assert events[-1] == (2 if drag else 5)
+    assert events.count(1) == events.count(2) == int(drag)
+
+
+@pytest.mark.parametrize(
+    "duration,delta", [(float("nan"), None), (9, None), (1, 101), (1, 0)]
+)
+def test_pointer_trace_refuses_invalid_sequence_before_input(duration, delta):
+    from quality_harness.native_input import post_pointer_trace
+
+    with pytest.raises(ValueError):
+        post_pointer_trace(
+            None,
+            [(1, 1), (2, 2)],
+            lambda: None,
+            lambda *a: None,
+            duration=duration,
+            scroll_delta=delta,
+        )

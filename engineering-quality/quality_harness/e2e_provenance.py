@@ -111,7 +111,7 @@ def _looks_like_vodforge(row: dict[str, Any], expected_executable: Path) -> bool
         candidates.append(Path(executable).name)
     if command:
         candidates.append(Path(str(command[0])).name)
-    if any(value.casefold() == "vodforge" for value in candidates):
+    if any(value.casefold() in {"vodforge", "vodforge.exe"} for value in candidates):
         return True
     try:
         return (
@@ -285,7 +285,12 @@ def attest_owned_launch(
             errors.append("live process parent mismatch")
         if sys.platform != "win32" and process_group_id != process.pid:
             errors.append("live process group is not harness-owned")
-        for key in E2E_ENV_KEYS:
+        environment_keys = (
+            (*E2E_ENV_KEYS, "USERPROFILE", "APPDATA")
+            if sys.platform == "win32"
+            else E2E_ENV_KEYS
+        )
+        for key in environment_keys:
             if observed_environment.get(key) != expected_environment.get(key):
                 errors.append(f"live process environment mismatch: {key}")
         if not attestation_path.is_file():
@@ -388,6 +393,11 @@ def verify_live_launch(launch: dict[str, Any]) -> dict[str, Any]:
         "TMP": launch.get("state_paths", {}).get("tmp"),
         "TEMP": launch.get("state_paths", {}).get("tmp"),
     }
+    if sys.platform == "win32":
+        home = _resolved(str(launch.get("state_paths", {}).get("home") or ""))
+        expected_environment.update(
+            {"USERPROFILE": str(home), "APPDATA": str(home / "AppData" / "Roaming")}
+        )
     for key, value in expected_environment.items():
         if observed_environment.get(key) != value:
             errors.append(f"live launch environment mismatch: {key}")
@@ -550,6 +560,10 @@ def _verify_windows_window_identity(
 
 
 def owned_group_survivors(launch: dict[str, Any]) -> list[dict[str, Any]]:
+    if sys.platform == "win32":
+        from .windows_e2e_platform import owned_windows_survivors
+
+        return owned_windows_survivors(launch)
     psutil = _psutil()
     pgid = int(launch.get("pgid") or -1)
     launched_at = float(launch.get("create_time") or 0.0)
@@ -579,6 +593,10 @@ def terminate_owned_group(
     process: subprocess.Popen[bytes], launch: dict[str, Any], *, timeout: float = 10.0
 ) -> dict[str, Any]:
     """Terminate only the attested new process group; never search by app name."""
+    if sys.platform == "win32":
+        from .windows_e2e_platform import terminate_owned_windows
+
+        return terminate_owned_windows(process, launch, timeout)
     survivors_before = owned_group_survivors(launch)
     if any(not item["owned_create_time"] for item in survivors_before):
         return {
