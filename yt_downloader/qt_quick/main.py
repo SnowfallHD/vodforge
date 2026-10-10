@@ -186,7 +186,7 @@ from yt_downloader.player_related import player_related_plan
 from yt_downloader.product_telemetry import BoundProductOperation, product_output_kind
 from yt_downloader.qt_quick.analytics import QtAnalyticsSession
 from yt_downloader.qt_quick.artwork import QtArtwork, ThumbnailReductionProvider
-from yt_downloader.qt_quick.library_files import QtLibraryFiles
+from yt_downloader.qt_quick.library_files import QtLibraryFiles, relocated_owner_map
 from yt_downloader.qt_quick.library_window_model import register_window_model
 from yt_downloader.qt_quick.local_conversion import LocalConversionRuntime
 from yt_downloader.qt_quick.mac_windowing import integrate_qt_main_window
@@ -6715,11 +6715,29 @@ class Bridge(QObject):
             if actual is not None:
                 previous = self._runtime.history
                 self._runtime.history = actual
-                current_owners = {history_archive_owner(row) for row in actual}
+                relocated = relocated_owner_map(previous, actual)
+                for attribute in (
+                    "_library_detail_owner",
+                    "_folder_inspector_owner",
+                    "_folder_inspector_key",
+                ):
+                    owner = getattr(self, attribute)
+                    if owner in relocated:
+                        setattr(self, attribute, relocated[owner])
+                for versions in (
+                    self._detail_versions,
+                    self._folder_inspector_versions,
+                ):
+                    for version in versions:
+                        owner = version["owner"]
+                        if owner in relocated:
+                            version["owner"] = relocated[owner]
+                current_annotations = {history_annotation_owner(row) for row in actual}
                 for row in previous:
-                    if history_archive_owner(row) not in current_owners:
+                    annotation_owner = history_annotation_owner(row)
+                    if annotation_owner not in current_annotations:
                         try:
-                            self._annotations.remove(history_annotation_owner(row))
+                            self._annotations.remove(annotation_owner)
                         except LibraryAnnotationsError:
                             pass
                 if not self._files.pending and self._runtime.recovery_notice == (

@@ -1,5 +1,9 @@
 # VODForge engineering-quality harness
 
+Consult [the change and test log](change-and-test-log.md) before assigning or
+repeating qualification work. Retain valid prior passes; record a concrete
+affected change or evidence defect before repeating a check.
+
 ## Recovery, Watch and batch presentation gaps — 2026-10-10
 
 The private Qt pass exposed gaps that membership-only and object-existence tests

@@ -4,12 +4,18 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QCoreApplication, QEvent, QObject
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, QUrl
 from PySide6.QtTest import QSignalSpy
 
 from tests.test_qt_scene_port import qt_app, saved
 from tests.test_run_identity import make_job
-from yt_downloader.history import load_history, save_history
+from yt_downloader.history import (
+    history_annotation_owner,
+    history_archive_owner,
+    load_history,
+    save_history,
+)
+from yt_downloader.library_annotations import LibraryAnnotation
 from yt_downloader.qt_quick import main as qt_main
 
 
@@ -371,3 +377,78 @@ def test_denied_location_preserves_exact_owner_recovery_actions(
     assert media.read_bytes() == original_media
     if history is not None:
         assert bridge._runtime.history_path.read_bytes() == history
+
+
+@pytest.mark.parametrize("route", ["detail", "folders"])
+@pytest.mark.parametrize("run_id", ["", "import-fixture"])
+def test_repeated_move_keeps_selected_media_and_annotations(
+    scene, tmp_path, route, run_id
+):
+    app, bridge, _window = scene
+    source = tmp_path / "loose-source"
+    source.mkdir()
+    media = source / "Imported.mp4"
+    media.write_bytes(b"owned disposable fixture")
+    row = saved(source, "Imported", "MP4")
+    row.update(vodforge_run_id=run_id, description="Original description")
+    if run_id:
+        row["id"] = "local-fixture"
+    else:
+        row["vodforge_archive_root"] = str(tmp_path)
+    save_history(bridge._runtime.history_path, [row])
+    bridge._runtime.history = load_history(bridge._runtime.history_path)
+    row = bridge._runtime.history[0]
+    original_owner = history_archive_owner(row)
+    annotation_owner = history_annotation_owner(row)
+    note = LibraryAnnotation(
+        note="Keep my note", tags=("keep-tag",), description="Keep my description"
+    )
+    bridge._annotations.replace(annotation_owner, note)
+    bridge.select("Library")
+    if route == "detail":
+        assert bridge.openLibraryDetails(original_owner)
+    else:
+        bridge.navigateLibraryFolders("all")
+        component = next(
+            item
+            for item in bridge.libraryFolders["components"]
+            if item["kind"] == "media"
+        )
+        assert bridge.selectLibraryFolderComponent(component["key"])
+    app.processEvents()
+    for relative in ("foreign/nested", "final"):
+        destination = tmp_path / relative
+        destination.mkdir(parents=True)
+        owner = history_archive_owner(bridge._runtime.history[0])
+        assert bridge.startFileAction(
+            "move", owner, QUrl.fromLocalFile(str(destination))
+        )
+        bridge._files.worker.join(30)
+        assert not bridge._files.worker.is_alive()
+        bridge._pump()
+        assert bridge.confirmFileAction(), bridge.fileActionStatus
+        bridge._files.worker.join(30)
+        assert not bridge._files.worker.is_alive()
+        bridge._pump()
+        app.processEvents()
+        assert bridge._files.phase == "done", bridge.fileActionStatus
+        detail = (
+            bridge.libraryDetail if route == "detail" else bridge.libraryFolderInspector
+        )
+        assert detail.get("title") == "Imported"
+        assert detail["owner"] == history_archive_owner(bridge._runtime.history[0])
+        target = (
+            destination / media.name
+            if run_id
+            else destination / source.name / media.name
+        )
+        assert Path(detail["location"]) == target
+        assert detail["description"] == "Keep my description"
+        assert detail["note"] == "Keep my note"
+        assert detail["tags"] == ["keep-tag"]
+        assert bridge._annotations.annotation_for(annotation_owner) == note
+        if route == "folders":
+            assert any(
+                version["owner"] == detail["owner"] for version in detail["versions"]
+            )
+        assert target.read_bytes() == b"owned disposable fixture"

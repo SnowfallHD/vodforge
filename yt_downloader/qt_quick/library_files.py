@@ -21,9 +21,29 @@ from yt_downloader.archive_file_operations import (
     recover_move_cleanup,
 )
 from yt_downloader.archive_relink import record_fingerprint
-from yt_downloader.history import load_history
+from yt_downloader.history import (
+    history_activity_owner_keys,
+    history_archive_owner,
+    load_history,
+)
 from yt_downloader.library_move_summary import move_summary
 from yt_downloader.platform_services import system_trash_available
+
+
+def relocated_owner_map(
+    previous: Sequence[dict[str, Any]], current: Sequence[dict[str, Any]]
+) -> dict[str, str]:
+    """Follow only the durable relink lineage, never titles or list positions."""
+    current_owners = {history_archive_owner(row) for row in current}
+    relocated = {}
+    for row in previous:
+        owner = history_archive_owner(row)
+        if owner in current_owners:
+            continue
+        matches = history_activity_owner_keys({owner}) & current_owners
+        if len(matches) == 1:
+            relocated[owner] = matches.pop()
+    return relocated
 
 
 class QtLibraryFiles:
