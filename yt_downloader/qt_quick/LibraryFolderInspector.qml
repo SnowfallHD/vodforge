@@ -10,6 +10,18 @@ Column {
     readonly property var issueSettings: item.settings || ({})
     readonly property var recoveryActions: appBridge.inspectorRecoveryActions || ({})
     property string section: "Item"
+    onRecoveryActionsChanged: {
+        if (retrySettingsToggle.selectionKey !== (recoveryActions.selectionKey || "")) {
+            retrySettingsToggle.expanded = false
+            retrySettingsToggle.selectionKey = recoveryActions.selectionKey || ""
+        }
+    }
+    Connections {
+        target: inspector.appBridge
+        function onIssueRetrySettingsRequested() {
+            Qt.callLater(function() { retrySettingsToggle.expanded = true })
+        }
+    }
     property real targetPanelBottom: height
     spacing: 8
 
@@ -28,7 +40,7 @@ Column {
             if (!issueManualSettings.visible)
                 return
             const viewport = issuePanel.contentItem
-            const manualTop = issueManualSettings.y + issueContent.y
+            const manualTop = issueManualSettings.mapToItem(issueContent, 0, 0).y + issueContent.y
             const target = manualTop - viewport.height * 0.45
             viewport.contentY = Math.max(0, Math.min(target,
                 viewport.contentHeight - viewport.height))
@@ -258,7 +270,7 @@ Column {
         objectName: "libraryIssueInspector"
         visible: !!inspector.item.issue
         width: parent.width
-        height: Math.max(0, inspector.height - eyebrow.height - overview.height - inspector.spacing * 3)
+        height: Math.max(0, inspector.height - y - recoveryFooter.height - inspector.spacing * 2)
         contentHeight: issueContent.implicitHeight + 20
         clip: true
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
@@ -354,22 +366,28 @@ Column {
                 width: parent.width; height: 1
                 color: theme.muted; opacity: 0.3
             }
-            Text {
-                objectName: "libraryIssueRetrySettingsHeading"
-                text: "RETRY SETTINGS"
-                visible: !inspector.item.missing || inspector.item.canRedownload
-                color: theme.accent
-                font.pixelSize: 12
-                font.bold: true
-            }
-            Text { text: "Save to"; visible: !inspector.item.missing || inspector.item.canRedownload; color: theme.muted; font.pixelSize: 12; font.bold: true }
             StoneButton {
+                id: retrySettingsToggle
+                objectName: "libraryIssueRetrySettingsHeading"
+                property bool expanded: false
+                property string selectionKey: ""
+                label: "Retry settings  " + (expanded ? "▴" : "▾")
+                visible: !inspector.item.missing || inspector.item.canRedownload
+                width: parent.width; height: 30; size: "inline"
+                onActivated: expanded = !expanded
+            }
+            Column {
+                width: parent.width
+                spacing: 8
+                visible: retrySettingsToggle.expanded
+            Text { text: "Save to"; visible: !inspector.item.missing || inspector.item.canRedownload; color: theme.muted; font.pixelSize: 12; font.bold: true }
+            OutputPathField {
                 objectName: "libraryIssueOutputFolder"
                 visible: !inspector.item.missing || inspector.item.canRedownload
                 width: parent.width; height: 40
-                label: inspector.issueSettings.output_dir || "Choose output folder…"
+                path: inspector.issueSettings.output_dir || "Choose output folder…"
+                interactive: true
                 accessibilityLabel: "Choose output folder for this retry"
-                LiquidToolTip { visible: parent.hovered && !!inspector.issueSettings.output_dir; text: inspector.issueSettings.output_dir || "" }
                 onActivated: {
                     issueFolderDialog.currentFolder = inspector.issueSettings.output_url || ""
                     issueFolderDialog.open()
@@ -497,15 +515,17 @@ Column {
                 width: parent.width; wrapMode: Text.WordWrap
                 color: theme.muted; font.pixelSize: 12
             }
+            }
             StoneButton {
                 objectName: "libraryIssueDownload"
                 visible: !inspector.item.missing || inspector.item.canRedownload
                 width: parent.width; height: 42
-                label: "Download"
+                label: !inspector.item.missing && inspector.item.status === "Paused" ? "Resume" :
+                       !inspector.item.missing && inspector.item.status === "Partial" ? "Retry" : "Download"
                 emphasized: true
                 enabled: inspector.item.missing ?
                          inspector.item.canRedownload && ["Queued", "Preparing", "Downloading", "Transcoding"].indexOf(inspector.item.status) < 0 :
-                         ["Failed", "Stopped", "Skipped"].indexOf(inspector.item.status) >= 0
+                         ["Failed", "Stopped", "Skipped", "Paused", "Partial"].indexOf(inspector.item.status) >= 0
                 onActivated: inspector.appBridge.downloadSelectedIssue()
             }
             SelectableText {
@@ -670,7 +690,7 @@ Column {
     }
     Item {
         width: parent.width
-        height: Math.max(0, inspector.targetPanelBottom - y - recoveryFooter.height - inspector.spacing)
+        height: issuePanel.visible ? 0 : Math.max(0, inspector.targetPanelBottom - y - recoveryFooter.height - inspector.spacing)
     }
     Column {
         id: recoveryFooter
@@ -709,9 +729,9 @@ Column {
                 width: Math.min(parent.width, implicitWidth)
                 height: 28
                 size: "inline"
-                label: "Dismiss run"
-                accessibilityLabel: "Dismiss run; keep downloaded files"
-                onActivated: inspector.appBridge.dismissTerminal(inspector.recoveryActions.dismissRunId)
+                label: "Remove"
+                accessibilityLabel: "Remove run and review owned files for Trash"
+                onActivated: inspector.appBridge.requestRunRemoval(inspector.recoveryActions.dismissRunId)
             }
             StoneButton {
                 objectName: "libraryInspectorRemoveCard"
@@ -719,8 +739,8 @@ Column {
                 width: Math.min(parent.width, implicitWidth)
                 height: 28
                 size: "inline"
-                label: "Remove Library card"
-                accessibilityLabel: "Remove Library card; keep downloaded files"
+                label: "Remove"
+                accessibilityLabel: "Review owned media for removal to Trash"
                 onActivated: inspector.appBridge.requestInspectorLibraryRemoval(inspector.recoveryActions.selectionKey)
             }
         }

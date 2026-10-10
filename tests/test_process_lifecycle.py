@@ -148,7 +148,7 @@ def test_recorded_child_accepts_resolved_executable_identity(
     terminate_recorded_children(
         [{"pid": 654, "argv": [str(alias), str(stage / "input.mp4")]}],
         [stage],
-        command_reader=lambda _pid: f"{real} {stage}/input.mp4",
+        command_reader=lambda _pid: f"{real.resolve()} {stage / 'input.mp4'}",
         pid_terminator=lambda pid: terminated.append(pid) is None or True,
     )
 

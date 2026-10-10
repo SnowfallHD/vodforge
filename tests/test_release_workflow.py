@@ -116,7 +116,7 @@ def test_release_builds_pin_yt_dlp_with_matching_ejs_scripts():
     requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines()
     app_source = (ROOT / "yt_downloader" / "app.py").read_text(encoding="utf-8")
 
-    assert "yt-dlp[default]==2026.8.19" in requirements
+    assert "yt-dlp[default,curl-cffi]==2026.8.19" in requirements
     assert not any(line.startswith("yt-dlp>=") for line in requirements)
     assert 'PINNED_YTDLP_VERSION = "2026.8.19"' in app_source
     assert 'PINNED_YTDLP_EJS_VERSION = "0.8.0"' in app_source
@@ -376,3 +376,8 @@ def test_artifact_only_dispatch_skips_all_release_mutation():
     assert "gh release upload" not in workflow
     assert "gh release edit" not in workflow
     assert "--draft" in draft
+
+
+def test_builds_collect_impersonation_runtime():
+    for name in ("build_macos.sh", "build_windows.ps1"):
+        assert "--collect-all curl_cffi" in (ROOT / name).read_text()

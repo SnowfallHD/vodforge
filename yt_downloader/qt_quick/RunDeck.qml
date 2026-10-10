@@ -12,8 +12,8 @@ Item {
     readonly property var workRecords: (projection.records || []).filter(
         record => ["active", "queued", "completed", "terminal"].indexOf(record.kind) >= 0)
     readonly property var allRunsRecords: workRecords.slice().sort((left, right) => {
-        const priority = {active: 0, queued: 1, terminal: 2, completed: 3}
-        return (priority[left.kind] ?? 4) - (priority[right.kind] ?? 4)
+        const priority = record => record.status === "Paused" ? 0.5 : ({active: 0, queued: 1, terminal: 2, completed: 3}[record.kind] ?? 4)
+        return priority(left) - priority(right)
     })
     readonly property var visibleRecords: allRunsRecords.slice(0, 4)
     readonly property string workSummary: {
@@ -207,7 +207,7 @@ Item {
                 visible: !!action.label
                 label: action.label || ""
                 Accessible.description: action.description || ""
-                LiquidToolTip { visible: parent.hovered; text: parent.action.description || "" }
+                LiquidToolTip { singleLine: true; visible: parent.hovered; text: parent.action.description || "" }
                 Layout.fillWidth: true
                 onActivated: {
                     deck.appBridge.controlRun(deck.selectedRecord.runId, action.operation)
@@ -220,7 +220,7 @@ Item {
                 visible: !!action.label
                 label: action.label || ""
                 Accessible.description: action.description || ""
-                LiquidToolTip { visible: parent.hovered; text: parent.action.description || "" }
+                LiquidToolTip { singleLine: true; visible: parent.hovered; text: parent.action.description || "" }
                 Layout.fillWidth: true
                 onActivated: {
                     deck.appBridge.controlRun(deck.selectedRecord.runId, action.operation)
@@ -233,7 +233,7 @@ Item {
                 visible: !!action.label
                 label: action.label || ""
                 Accessible.description: action.description || ""
-                LiquidToolTip { visible: parent.hovered; text: parent.action.description || "" }
+                LiquidToolTip { singleLine: true; visible: parent.hovered; text: parent.action.description || "" }
                 Layout.fillWidth: true
                 onActivated: {
                     deck.appBridge.controlRun(deck.selectedRecord.runId, action.operation)
@@ -248,16 +248,31 @@ Item {
             }
             StoneButton {
                 visible: deck.selectedRecord.kind === "terminal"
-                label: "Retry run"
+                objectName: "runResumeOrRetry"
+                label: deck.selectedRecord.status === "Paused" ? "Resume" : "Retry run"
                 Layout.fillWidth: true
                 onActivated: { deck.appBridge.retryTerminal(deck.selectedRecord.runId); actionsPopup.close() }
             }
             StoneButton {
+                objectName: "runShowFolder"
+                visible: deck.selectedRecord.kind === "terminal" && deck.appBridge.runHasSavedFile(deck.selectedRecord.runId || "")
+                label: "Show in Folder"
+                Layout.fillWidth: true
+                onActivated: { deck.appBridge.openRunFolder(deck.selectedRecord.runId); actionsPopup.close() }
+            }
+            StoneButton {
                 objectName: "dismissTerminalRun"
                 visible: deck.selectedRecord.kind === "terminal"
-                label: "Dismiss run"
+                label: "Remove"
                 Layout.fillWidth: true
-                onActivated: { deck.appBridge.dismissTerminal(deck.selectedRecord.runId); actionsPopup.close() }
+                onActivated: { deck.appBridge.requestRunRemoval(deck.selectedRecord.runId); actionsPopup.close() }
+            }
+            StoneButton {
+                objectName: "runOpenIssues"
+                visible: deck.selectedRecord.kind === "terminal" || deck.selectedRecord.kind === "active"
+                label: "Open Issues & Recovery"
+                Layout.fillWidth: true
+                onActivated: { deck.appBridge.openRunIssues(deck.selectedRecord.runId); actionsPopup.close() }
             }
             StoneButton {
                 label: "View Activity"

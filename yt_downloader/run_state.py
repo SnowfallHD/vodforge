@@ -39,11 +39,14 @@ from .safe_output import (
 
 RUN_STATE_SCHEMA_VERSION = 1
 MAX_RUN_STATE_BYTES = 512 * 1024
-INTERRUPTED_FAILURE_MESSAGE = (
-    "VODForge closed before this run finished. Unfinished download files were "
-    "removed. Try the run again."
+INTERRUPTED_PAUSE_MESSAGE = (
+    "Paused because VODForge closed. Resume continues remaining URLs; "
+    "the interrupted item may need to download again."
 )
-PERSISTED_TERMINAL_STATUSES = frozenset({"Failed", "Stopped", "Skipped"})
+INTERRUPTED_FAILURE_MESSAGE = "VODForge closed before this run finished. Unfinished download files were removed. Try the run again."
+PERSISTED_TERMINAL_STATUSES = frozenset(
+    {"Failed", "Stopped", "Skipped", "Paused", "Partial"}
+)
 
 
 class RunStateError(RuntimeError):
@@ -222,6 +225,8 @@ def serialize_download_job(job: DownloadJob) -> dict[str, Any]:
         "translated_subtitle_language": job.translated_subtitle_language,
         "tags": [sanitize_durable_text(value)[:500] for value in job.tags[:500]],
         "batch_mode": job.batch_mode,
+        "completed_batch_items": job.completed_batch_items,
+        "batch_list_path": job.batch_list_path,
         "preview_info": _safe_preview(job.preview_info),
         "run_id": job.run_id,
         "origin_run_id": job.origin_run_id,
@@ -304,6 +309,8 @@ def deserialize_download_job(
             ),
             tags=[str(value)[:500] for value in payload.get("tags", [])[:500]],
             batch_mode=_required_bool(payload, "batch_mode"),
+            completed_batch_items=payload.get("completed_batch_items", 0),
+            batch_list_path=str(payload.get("batch_list_path") or "")[:4096],
             preview_info=_safe_preview(payload.get("preview_info")),
             run_id=str(payload.get("run_id") or "")[:128],
             execution_run_id=str(payload.get("execution_run_id") or "")[:128] or None,
@@ -320,6 +327,10 @@ def deserialize_download_job(
         )
     except (TypeError, ValueError) as exc:
         raise RunStateError(f"The interrupted run record is invalid: {exc}") from exc
+    if type(
+        job.completed_batch_items
+    ) is not int or not 0 <= job.completed_batch_items <= len(job.urls):
+        raise RunStateError("The batch checkpoint is outside the saved URL list.")
     if not job.run_id:
         raise RunStateError("The interrupted run record has no run identity.")
     return job
@@ -587,9 +598,47 @@ class ActiveRunStore:
             if not isinstance(job, dict) or job.get("run_id") != run_id:
                 return
             preview = _safe_preview(info)
+            if job.get("batch_mode") and not (
+                preview.get("thumbnail") or preview.get("best_thumbnail")
+            ):
+                previous = job.get("preview_info") or {}
+                for key in ("thumbnail", "best_thumbnail"):
+                    if previous.get(key):
+                        preview[key] = previous[key]
             if (job.get("preview_info") or {}).get("vodforge_issue_retry") is True:
                 preview["vodforge_issue_retry"] = True
             job["preview_info"] = preview
+            self._write_unlocked(payload)
+
+    def checkpoint_batch(self, job: DownloadJob) -> None:
+        """Commit each finished URL before the worker proceeds to the next one."""
+        with self._lock:
+            payload = self._read_unlocked()
+            if not payload or payload.get("state") != "active":
+                raise RunStateError("The batch checkpoint has no active owner.")
+            saved = payload.get("job", {})
+            if saved.get("run_id") != job.run_id:
+                raise RunStateError("The batch checkpoint owner changed.")
+            saved["completed_batch_items"] = job.completed_batch_items
+            self._write_unlocked(payload)
+
+    def pause_queue(self) -> None:
+        """A reopened app never starts saved waiting work without user intent."""
+        with self._lock:
+            payload = self._read_unlocked()
+            if not payload or not self._queued_records(payload):
+                return
+            failures = self._failure_records(payload)
+            for job in self._queued_records(payload):
+                failures.append(
+                    {
+                        "job": job,
+                        "terminal_status": "Paused",
+                        "terminal_message": "Paused while VODForge was closed. Resume when ready.",
+                    }
+                )
+            payload["recovered_failures"] = failures
+            payload["queued_jobs"] = []
             self._write_unlocked(payload)
 
     def add_staging_dir(self, run_id: str, path: Path) -> None:
@@ -923,7 +972,7 @@ def recover_interrupted_run(
             stage="staging_cleanup",
             attempt_key=job.run_id,
         ) from exc
-    store.mark_failed()
+    store.mark_terminal("Paused", INTERRUPTED_PAUSE_MESSAGE)
     return store.load_terminal_jobs()
 
 
@@ -1051,6 +1100,8 @@ class RunRecoveryOwner:
         queued = self.queued_at_startup()
         if self._available:
             try:
+                self.store.pause_queue()
+                queued = []
                 terminal = self.store.load_terminal_jobs()
             except RunStateError as exc:
                 self._failed_startup(exc)

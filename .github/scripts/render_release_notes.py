@@ -30,7 +30,22 @@ def render_release_notes(version: str, *, draft: bool = False) -> str:
             "checksums regenerated.\n\n"
         )
 
-    return f"""{draft_notice}## Download VODForge
+    release_details = (
+        """
+## What’s new in 0.2.6
+
+- Interrupted single downloads and URL batches return as Paused, with Resume in Forge and Run Deck. Resume keeps the run’s saved settings and destination; batches continue with the remaining URLs.
+- URL batches show the current video’s title and thumbnail and progress across the whole list. Paused batches retain their last thumbnail, with a VODForge placeholder when none was fetched.
+- Watch’s Recently Added rail and See All now share newest-first ordering. See All sits beside the rail heading as a text link.
+- Retry opens a choice of the same settings or the selected item’s expanded recovery settings. Recovery uses the shared folder control and keeps the inspector within its column.
+- Custom Options keeps selections open, hides the unused CRF or CBR field, and scrolls expanded selectors into view. All runs remains open when hovering over its action controls.
+- The packaged download runtime includes browser impersonation support. Additional bounded diagnostics and process-cleanup regressions cover provider failures and interrupted runs.
+"""
+        if version == "0.2.6"
+        else ""
+    )
+
+    notes = f"""{draft_notice}## Download VODForge
 
 ### Newer Macs — Apple silicon
 
@@ -54,6 +69,7 @@ Choose this only when **About This Mac** shows an **Intel Processor**. Using thi
 
 [Download the portable Windows version]({asset_url(version, windows_portable)}) only if you specifically do not want an installed app.
 
+{release_details}
 ## About this release
 
 - **Qt Quick desktop interface:** Forge, Library, Watch and Activity use the shared stone controls and retain their familiar layout. Run progress now shows failure in red, stopped or skipped work in orange, and completed work in green.
@@ -68,6 +84,11 @@ Choose this only when **About This Mac** shows an **Intel Processor**. Using thi
 
 Checksums for every download are available in `SHA256SUMS.txt` below.
 """
+    if version == "0.2.6":
+        return notes.split("## About this release", 1)[0] + (
+            "Checksums for every download are available in `SHA256SUMS.txt` below.\n"
+        )
+    return notes
 
 
 def main() -> None:

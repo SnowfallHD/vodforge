@@ -17,7 +17,7 @@ Item {
     Rectangle {
         objectName: "runProgressFill"
         height: parent.height
-        width: parent.width * tone.progressValue(progressTrack.kind, progressTrack.progress) / 100
+        width: parent.width * tone.progressValue(progressTrack.kind, progressTrack.progress, progressTrack.status) / 100
         color: tone.colorFor(progressTrack.kind, progressTrack.status, progressTrack.colors)
         visible: width > 0
     }

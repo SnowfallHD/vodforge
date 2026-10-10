@@ -168,7 +168,7 @@ def test_recovery_stops_only_bound_child_then_cleans_stage(tmp_path: Path) -> No
     )
 
     assert len(recovered) == 1
-    assert recovered[0].terminal_status == "Failed"
+    assert recovered[0].terminal_status == "Paused"
     assert terminated == [4321]
     assert not stage.exists()
 

@@ -237,3 +237,51 @@ def test_settings_save_failure_does_not_report_successful_snapshot(
     monkeypatch.setattr(settings_store, "save_settings", fail)
     owner.flush()
     assert seen == []
+
+
+@pytest.mark.parametrize("targets", [[], [("Chrome", "other")]])
+def test_impersonation_smoke_rejects_missing_browser_backend(monkeypatch, targets):
+    from types import SimpleNamespace
+
+    from yt_downloader import app
+
+    class Downloader:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            pass
+
+        def _get_available_impersonate_targets(self):
+            return targets
+
+    monkeypatch.setattr(
+        app,
+        "load_yt_dlp",
+        lambda: SimpleNamespace(YoutubeDL=lambda _opts: Downloader()),
+    )
+    with pytest.raises(RuntimeError, match="no impersonation targets"):
+        app._smoke_impersonation_targets()
+
+
+def test_impersonation_smoke_checks_targets_without_forcing_requests(monkeypatch):
+    from types import SimpleNamespace
+
+    from yt_downloader import app
+
+    class Downloader:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            pass
+
+        def _get_available_impersonate_targets(self):
+            return [("Chrome", "curl_cffi")]
+
+    def create(options):
+        assert "impersonate" not in options
+        return Downloader()
+
+    monkeypatch.setattr(app, "load_yt_dlp", lambda: SimpleNamespace(YoutubeDL=create))
+    assert app._smoke_impersonation_targets() == ("Chrome",)

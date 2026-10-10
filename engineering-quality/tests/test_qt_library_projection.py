@@ -52,6 +52,7 @@ def test_search_and_type_filter_keep_play_bound_to_original_history(
             self.history = records
             self.activity: list[dict[str, str]] = []
             self.active_job = None
+            self.recovered = []
             self.submitted: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
 
         def start(self, *arguments: Any, **options: Any) -> object:

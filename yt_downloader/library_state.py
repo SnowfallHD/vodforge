@@ -28,7 +28,9 @@ ANNOTATION_OWNER_KEY = "vodforge_annotation_owner"
 TRANSIENT_LIBRARY_STATUSES = frozenset(
     {"Queued", "Preparing", "Downloading", "Transcoding", "Validating", "Finalizing"}
 )
-TERMINAL_LIBRARY_STATUSES = frozenset({"Completed", "Failed", "Stopped", "Skipped"})
+TERMINAL_LIBRARY_STATUSES = frozenset(
+    {"Completed", "Failed", "Stopped", "Skipped", "Paused", "Partial"}
+)
 _ACTIVE_METADATA_STALE_KEYS = (
     "vodforge_preview_complete",
     "vodforge_preview_run_id",
@@ -429,13 +431,17 @@ class LibraryProjectionOwner:
         )
         for kind, job in ordered_sources:
             run_id = str(job.run_id)
-            if run_id in committed_run_ids and (
-                kind != "active"
-                or any(
-                    str(saved.get("vodforge_run_id") or "") == run_id
-                    and metadata_run_key(saved)
-                    == metadata_run_key(job.preview_info or {})
-                    for saved in history_rows
+            if (
+                job.terminal_status != "Paused"
+                and run_id in committed_run_ids
+                and (
+                    kind != "active"
+                    or any(
+                        str(saved.get("vodforge_run_id") or "") == run_id
+                        and metadata_run_key(saved)
+                        == metadata_run_key(job.preview_info or {})
+                        for saved in history_rows
+                    )
                 )
             ):
                 continue

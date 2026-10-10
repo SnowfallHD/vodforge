@@ -12,8 +12,8 @@ QtObject {
         return palette.muted
     }
 
-    function progressValue(kind, progress) {
-        if (kind === "terminal" || kind === "completed") return 100
+    function progressValue(kind, progress, status) {
+        if ((kind === "terminal" && status !== "Paused") || kind === "completed") return 100
         const value = Number(progress || 0)
         return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0
     }

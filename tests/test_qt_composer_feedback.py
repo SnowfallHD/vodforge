@@ -1,7 +1,7 @@
 """Composer feedback geometry and execution ownership."""
 
 import pytest
-from PySide6.QtCore import QObject, QPointF
+from PySide6.QtCore import QObject, QPointF, QUrl
 from PySide6.QtTest import QSignalSpy
 
 from tests import test_qt_inspector_actions as inspector_actions
@@ -43,15 +43,25 @@ def test_notice_tracks_composer_bounds(feedback_scene, width, height):
     assert not notice.property("modal")
 
 
-def test_admitted_run_preparing_is_not_notice(feedback_scene, tmp_path, monkeypatch):
+@pytest.mark.parametrize("batch", [False, True])
+def test_admitted_run_preparing_is_not_notice(
+    feedback_scene, tmp_path, monkeypatch, batch
+):
     app, bridge, window = feedback_scene
     bridge._timer.stop()
     monkeypatch.setattr(runtime_module.threading, "Thread", DormantThread)
     job = make_job(tmp_path)
+    if batch:
+        source_list = tmp_path / "sources.txt"
+        source_list.write_text(job.url + "\nhttps://example.com/two\n")
+        bridge.loadBatchUrl(QUrl.fromLocalFile(str(source_list)))
     spy = QSignalSpy(bridge.operationFeedback)
     assert bridge.submit(job.url, "MP4")
     app.processEvents()
     assert spy.count() == 0
+    from PySide6.QtTest import QTest
+
+    QTest.qWait(300)  # The prior list-loaded notice retracts through its animation.
     selected = window.property("selectedForgeRun")
     assert selected["kind"] == "active"
     assert "Preparing" in selected["status"]
@@ -213,3 +223,47 @@ def test_compact_notice_overflow_reaches_deck_and_tracks_scroll(feedback_scene):
         window.contentItem(), QPointF(0, viewport.height())
     ).y()
     assert deck_bottom <= viewport_bottom + 1
+
+
+@pytest.mark.parametrize("batch", [False, True])
+@pytest.mark.parametrize("terminal", ["stopped", "partial", "error"])
+def test_window_close_pauses_active_download_and_retires_after_worker(
+    feedback_scene, tmp_path, monkeypatch, batch, terminal
+):
+    from dataclasses import replace
+
+    from PySide6.QtTest import QTest
+
+    app, bridge, window = feedback_scene
+    bridge._timer.stop()
+    monkeypatch.setattr(runtime_module.threading, "Thread", DormantThread)
+    job = make_job(tmp_path)
+    job.batch_mode = batch
+    if batch:
+        job.urls = [job.url, "https://example.com/second"]
+        job.completed_batch_items = 1
+    bridge._runtime.start_job(job)
+    queued = replace(
+        job,
+        run_id="queued-at-close",
+        url="https://example.com/queued",
+        urls=["https://example.com/queued"],
+        activity_lines=[],
+    )
+    bridge._runtime.start_job(queued)
+    sink = bridge._runtime._worker_app.events
+    window.close()
+    app.processEvents()
+    assert bridge._runtime._closing
+    assert window.isVisible(), "Wait for the active worker before retiring the window"
+    sink.put((terminal, "Interrupted while closing"))
+    bridge._pump()
+    QTest.qWait(50)
+    assert not window.isVisible()
+    assert bridge._runtime.active_job is None
+    assert bridge._runtime.queued == [queued]
+    paused = next(
+        item for item in bridge._runtime.recovered if item.run_id == job.run_id
+    )
+    assert paused.terminal_status == "Paused"
+    assert paused.completed_batch_items == job.completed_batch_items

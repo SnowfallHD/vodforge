@@ -146,13 +146,15 @@ Window {
         inspect(window.contentItem)
         presentationDiagnosticSnapshot = counts
     }
+    property bool closePending: false
+    function finishPendingClose() {
+        if (closePending && !bridge.running && !bridge.localRunning)
+            Qt.callLater(window.close)
+    }
     onClosing: function(close) {
-        if (bridge.running) {
-            bridge.cancel()
-            close.accepted = false
-        }
-        if (bridge.localRunning) {
-            bridge.cancelLocalConversion()
+        if (bridge.running || bridge.localRunning) {
+            closePending = true
+            bridge.beginShutdown()
             close.accepted = false
         }
     }
@@ -193,6 +195,8 @@ Window {
     }
     Connections {
         target: bridge
+        function onRunningChanged() { window.finishPendingClose() }
+        function onLocalChanged() { window.finishPendingClose() }
         function onSelectionChanged() {
             // Visibility bindings must settle before testing the outgoing owner.
             Qt.callLater(window.retireHiddenSceneFocus)
@@ -223,7 +227,11 @@ Window {
         function onSocialInvitationRequested() { socialInvitationPopup.open() }
         function onFileActionRequested() { fileActionPopup.open() }
         function onLibraryRemovalRequested() { libraryRemovalPopup.open() }
-        function onSourceAccepted() { urlInput.text = "" }
+        function onSourceAccepted() {
+            urlInput.text = ""
+            operationNoticeTimer.stop()
+            operationNotice.close()
+        }
         function onSourcePrepared(url) { urlInput.text = url }
         function onMissingMediaRequested() { missingMediaPopup.open() }
         function onFolderRelinkRequested(path) {
@@ -1171,6 +1179,7 @@ Window {
         ScrollView {
             id: forgeViewport
             objectName: "forgeViewport"
+            Component.onCompleted: Qt.callLater(bridge.restorePausedComposer)
             implicitHeight: 0
             implicitWidth: 0
             visible: bridge.selection === "Forge"
@@ -1241,7 +1250,7 @@ Window {
                 }
                 StoneButton {
                     objectName: "forgeDownloadButton"
-                    label: bridge.running ? "Queue" : "Download"
+                    label: bridge.composerResume ? "Resume" : bridge.running ? "Queue" : "Download"
                     emphasized: true
                     primary: true
                     Layout.preferredWidth: 131
@@ -1266,10 +1275,13 @@ Window {
                 spacing: 12
                 StoneButton {
                     objectName: "forgeLoadListButton"
-                    label: bridge.batchSummary === "No URL list loaded" ? "Load URL list" : "List loaded"
+                    label: bridge.batchLoaded ? "List loaded" : "Load list"
+                    selected: bridge.batchLoaded
+                    Accessible.checkable: true
+                    Accessible.checked: bridge.batchLoaded
                     Layout.preferredWidth: 131
                     Layout.preferredHeight: 44
-                    onActivated: urlListDialog.open()
+                    onActivated: bridge.batchLoaded ? bridge.clearBatchList() : urlListDialog.open()
                 }
                 RowLayout {
                     id: forgeComposerAuxRow
@@ -1457,8 +1469,41 @@ Window {
                         onActivated: bridge.openLibraryFolder(forgeCompletedActions.owner)
                     }
                 }
+                Row {
+                    id: forgeFailedActions
+                    objectName: "forgeFailedActions"
+                    visible: window.selectedForgeRun.kind === "terminal"
+                    spacing: 8
+                    StoneButton {
+                        objectName: "forgeFailedRetry"
+                        label: window.selectedForgeRun.status === "Paused" ? "Resume" : "Retry"; size: "inline"; width: 82; deepHover: true
+                        onActivated: {
+                            if (window.selectedForgeRun.status === "Paused") { bridge.retryTerminal(window.selectedForgeRun.runId); return }
+                            forgeRetryPopup.runId = window.selectedForgeRun.runId
+                            forgeRetryPopup.anchorItem = this
+                            forgeRetryPopup.toggleFrom(this)
+                        }
+                    }
+                    StoneButton {
+                        objectName: "forgeFailedIssues"
+                        label: "Issues & Recovery"; size: "inline"; width: 150; deepHover: true
+                        onActivated: bridge.openRunIssues(window.selectedForgeRun.runId)
+                    }
+                    StoneButton {
+                        objectName: "forgeFailedFolder"
+                        label: "Show in Folder"; size: "inline"; width: 136; deepHover: true
+                        visible: forgeFailedActions.visible && bridge.runHasSavedFile(window.selectedForgeRun.runId || "")
+                        onActivated: bridge.openRunFolder(window.selectedForgeRun.runId)
+                    }
+                    StoneButton {
+                        objectName: "forgeFailedRemove"
+                        label: "Remove"; size: "inline"; width: 80; deepHover: true
+                        enabled: !bridge.fileActionBusy
+                        onActivated: bridge.requestRunRemoval(window.selectedForgeRun.runId)
+                    }
+                }
                 Text {
-                    visible: !forgeCompletedActions.visible
+                    visible: !forgeCompletedActions.visible && !forgeFailedActions.visible
                     text: window.selectedForgeRun.kind === "completed" ? "Complete / Ready to open in Library" :
                           window.selectedForgeRun.kind === "terminal" ? window.selectedForgeRun.status + " / Retry is available" :
                           window.selectedForgeRun.kind === "queued" ? "Queued / Waiting for the current run" :
@@ -1542,7 +1587,7 @@ Window {
                             visible: !!action.label
                             label: action.label || ""
                             Accessible.description: action.description || ""
-                            LiquidToolTip { visible: parent.hovered; text: parent.action.description || "" }
+                            LiquidToolTip { singleLine: true; visible: parent.hovered; text: parent.action.description || "" }
                             Layout.preferredHeight: 36
                             onActivated: {
                                 if (action.operation === "cancel") bridge.cancel()
@@ -1556,7 +1601,7 @@ Window {
                             visible: !!action.label
                             label: action.label || ""
                             Accessible.description: action.description || ""
-                            LiquidToolTip { visible: parent.hovered; text: parent.action.description || "" }
+                            LiquidToolTip { singleLine: true; visible: parent.hovered; text: parent.action.description || "" }
                             Layout.preferredHeight: 36
                             onActivated: {
                                 if (action.operation === "cancel") bridge.cancel()
@@ -1570,7 +1615,7 @@ Window {
                             visible: !!action.label
                             label: action.label || ""
                             Accessible.description: action.description || ""
-                            LiquidToolTip { visible: parent.hovered; text: parent.action.description || "" }
+                            LiquidToolTip { singleLine: true; visible: parent.hovered; text: parent.action.description || "" }
                             Layout.preferredHeight: 36
                             onActivated: {
                                 if (action.operation === "cancel") bridge.cancel()
@@ -1971,6 +2016,7 @@ Window {
     StonePopup {
         id: fileActionPopup
         objectName: "libraryFileActionPopup"
+        onClosed: bridge.cancelRunRemovalReview()
         x: Math.max(0, (window.width - width) / 2)
         y: Math.max(0, (window.height - height) / 2)
         width: Math.min(490, window.width - 40)
@@ -2048,7 +2094,7 @@ Window {
                 StoneButton {
                     objectName: "fileActionConfirmButton"
                     visible: bridge.fileActionEligible
-                    label: bridge.fileActionName === "move" ? "Move verified media" : "Move to Trash"
+                    label: bridge.fileActionName === "move" ? "Move verified media" : bridge.fileActionName === "remove_run" ? "Remove run" : "Move to Trash"
                     Layout.fillWidth: true
                     Layout.preferredHeight: 40
                     onActivated: bridge.confirmFileAction()
@@ -3094,11 +3140,12 @@ Window {
         x: Math.max(0, (window.width - width) / 2)
         y: Math.max(0, (window.height - height) / 2)
         width: Math.min(500, window.width - 40)
-        height: 310
+        height: Math.min(window.height - 40, localConversionContent.implicitHeight + topPadding + bottomPadding)
         padding: 18
         modal: true
         closePolicy: bridge.localRunning ? Popup.NoAutoClose : Popup.CloseOnEscape | Popup.CloseOnPressOutside
         ColumnLayout {
+            id: localConversionContent
             anchors.fill: parent
             spacing: 10
             Text { text: "Create video from local audio"; color: theme.text; font.pixelSize: 21; font.bold: true }
@@ -3140,6 +3187,32 @@ Window {
                 Item { Layout.fillWidth: true }
                 StoneButton { label: "Close"; Layout.preferredWidth: 82; Layout.preferredHeight: 40; enabled: !bridge.localRunning; onActivated: localConversionPopup.close() }
                 StoneButton { label: bridge.localRunning ? "Stop" : "Create MP4"; emphasized: !bridge.localRunning; Layout.preferredWidth: 110; Layout.preferredHeight: 40; onActivated: bridge.localRunning ? bridge.cancelLocalConversion() : bridge.startLocalConversion() }
+            }
+        }
+    }
+    AnchoredPopup {
+        id: forgeRetryPopup
+        objectName: "forgeRetryPopup"
+        property string runId: ""
+        parent: window.contentItem
+        preferAbove: true
+        width: 210
+        height: 100
+        padding: 6
+        Column {
+            anchors.fill: parent
+            spacing: 4
+            StoneButton {
+                objectName: "forgeRetrySameSettings"
+                width: parent.width; height: 42
+                label: "Same settings"
+                onActivated: { const run = forgeRetryPopup.runId; forgeRetryPopup.close(); bridge.retryTerminal(run) }
+            }
+            StoneButton {
+                objectName: "forgeRetryChangeSettings"
+                width: parent.width; height: 42
+                label: "Change settings"
+                onActivated: { const run = forgeRetryPopup.runId; forgeRetryPopup.close(); bridge.openRunRetrySettings(run) }
             }
         }
     }

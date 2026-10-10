@@ -15,7 +15,7 @@ from .library_state import (
 from .run_identity import metadata_output_profile
 
 PAGE_SIZE = 48
-ISSUE_STATUSES = frozenset({"Failed", "Stopped", "Skipped"})
+ISSUE_STATUSES = frozenset({"Failed", "Stopped", "Skipped", "Paused", "Partial"})
 
 
 @dataclass(frozen=True, slots=True)

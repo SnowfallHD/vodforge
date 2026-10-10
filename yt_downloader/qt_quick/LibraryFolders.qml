@@ -262,6 +262,30 @@ Item {
                                     browser.appBridge.selectLibraryFolderComponent(modelData.key)
                                 else browser.appBridge.openLibraryFolderComponent(modelData.key)
                             }
+                            Keys.onDeletePressed: {
+                                if (browser.model.mode === "issues" && browser.appBridge.selectLibraryFolderComponent(modelData.key))
+                                    browser.appBridge.requestInspectorLibraryRemoval(modelData.key)
+                            }
+                            Keys.onPressed: event => {
+                                if (event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && event.modifiers & Qt.ShiftModifier)) {
+                                    if (browser.appBridge.selectLibraryFolderComponent(modelData.key)) {
+                                        issueContext.anchorItem = parent
+                                        issueContext.open()
+                                        event.accepted = true
+                                    }
+                                }
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                acceptedButtons: Qt.RightButton
+                                enabled: browser.model.mode === "issues"
+                                onClicked: {
+                                    if (browser.appBridge.selectLibraryFolderComponent(modelData.key)) {
+                                        issueContext.anchorItem = parent
+                                        issueContext.open()
+                                    }
+                                }
+                            }
                             RowLayout {
                                 anchors.fill: parent
                                 anchors.margins: 13
@@ -319,6 +343,9 @@ Item {
         }
         LibraryFolderInspector {
             id: selectedInspector
+            Layout.minimumHeight: 0
+            Layout.preferredHeight: Math.max(0, browser.height - 12)
+            Layout.maximumHeight: Math.max(0, browser.height - 12)
             visible: browser.showInspector
             Layout.minimumWidth: Layout.preferredWidth
             Layout.preferredWidth: visible ? browser.inspectorColumnWidth : 0
@@ -381,6 +408,25 @@ Item {
             anchors.fill: parent
             anchors.margins: 12
             appBridge: browser.appBridge
+        }
+    }
+    AnchoredPopup {
+        id: issueContext
+        objectName: "libraryIssueContextMenu"
+        width: 180
+        padding: 10
+        property string capturedKey: ""
+        onOpened: capturedKey = browser.model.selectedKey || ""
+        Column {
+            width: parent.width
+            StoneButton {
+                label: "Remove"
+                width: parent.width
+                onActivated: {
+                    browser.appBridge.requestInspectorLibraryRemoval(issueContext.capturedKey)
+                    issueContext.close()
+                }
+            }
         }
     }
 }

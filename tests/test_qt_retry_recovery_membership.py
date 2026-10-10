@@ -91,7 +91,9 @@ def test_legacy_queued_retry_membership_derived_from_lineage(tmp_path, monkeypat
     job = replace(make_job(tmp_path), origin_run_id="prior", retry_of_run_id="prior")
     runtime.recovery.queue_changed([job])
     restored = DownloadRuntime()
-    assert restored.queued[0].retry_of_run_id == "prior"
+    assert restored.queued == []
+    assert restored.recovered[0].terminal_status == "Paused"
+    assert restored.recovered[0].retry_of_run_id == "prior"
     assert len(issue_rows(restored)) == 1
     runtime.close()
     restored.close()

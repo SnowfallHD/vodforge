@@ -152,7 +152,7 @@ def test_source_discovery_finds_product_actions_and_flags_unmapped():
         list((ROOT / "yt_downloader/qt_quick").glob("*.qml"))
     )
     dismiss = [
-        s for s in found["sites"] if "deck.appBridge.dismissTerminal" in s["calls"]
+        s for s in found["sites"] if "deck.appBridge.requestRunRemoval" in s["calls"]
     ]
     assert len(dismiss) == 1
     assert dismiss[0]["properties"]["objectName"] == '"dismissTerminalRun"'
@@ -527,7 +527,7 @@ def test_native_history_rejects_missing_revision_even_when_owners_agree(
     assert report["rejected"][0]["reason"] == "owner_window_revision_exit_mismatch"
 
 
-def test_terminal_dismissal_requires_issues_route_from_home_and_visible_popup_is_one_click():
+def test_terminal_removal_review_has_context_route_and_visible_popup_is_one_click():
     from quality_harness.workflow_coverage import semantic_report
 
     report = semantic_report(inventory(ROOT), {})
@@ -536,7 +536,7 @@ def test_terminal_dismissal_requires_issues_route_from_home_and_visible_popup_is
         for r in report["rows"]
         if r["location"] == "Library" and r["feature"] == "dismiss_run"
     )
-    assert row["modeled"]["click_count"] == 4
+    assert row["modeled"]["click_count"] == 3
     candidates = [
         r
         for r in report["rows"]

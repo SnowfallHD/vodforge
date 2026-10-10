@@ -356,6 +356,11 @@ def watch_scene(
         else tuple(video for rail in playlists for video in rail.videos)
     )
     videos = unique_watch_videos(records, source_videos)
+    if effective_route != "group":
+        # History is newest first. Rail construction sorts by playlist position
+        # and title; restore recency for Recently Added and its See All view.
+        # Use every variant for recency while retaining playback preference.
+        videos = tuple(sorted(videos, key=lambda video: min(video.indices)))
     media_image = _defer_artwork if defer_media_artwork else artwork
     group_image = _defer_artwork if defer_group_artwork else artwork
     hero_image = _defer_artwork if defer_hero_artwork else artwork

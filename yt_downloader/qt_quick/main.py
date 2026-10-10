@@ -246,7 +246,7 @@ from yt_downloader.ui_theme import (
     theme_motif,
 )
 from yt_downloader.updates import RELEASES_PAGE, record_update_telemetry_receipts
-from yt_downloader.url_list_inputs import read_url_list_file
+from yt_downloader.url_list_inputs import parse_url_list_text
 from yt_downloader.version import __version__
 from yt_downloader.volume_storage import StorageCapacityOwner, format_storage_bytes
 from yt_downloader.watch_library import watch_media_kind
@@ -266,6 +266,7 @@ _QVARIANT_MAP = cast(type, "QVariantMap")
 
 
 class _SubmitJobOptions(TypedDict):
+    batch_list_path: str
     urls: list[str] | None
     batch_mode: bool
     cookie_source: CookieSource
@@ -397,6 +398,7 @@ class Bridge(QObject):
     libraryRemovalRequested = Signal()
     outputPathChanged = Signal()
     selectionChanged = Signal()
+    issueRetrySettingsRequested = Signal()
     progressChanged = Signal()
     runningChanged = Signal()
     historyChanged = Signal()
@@ -453,6 +455,7 @@ class Bridge(QObject):
     def __init__(self, event_log: Path | None) -> None:
         super().__init__()
         self._runtime = DownloadRuntime()
+        self._download_poll_failed = False
         self._run_menu_identity_job: Any | None = None
         self._run_menu_identity_token = ""  # nosec B105 - empty UI identity sentinel
         self._run_menu_admitted_job: Any | None = None
@@ -562,6 +565,7 @@ class Bridge(QObject):
         self._folder_file_path = ""
         self._folder_file_owner = ""
         self._folder_file_detail_text = ""
+        self._remove_run_request: tuple[Any, tuple[str, ...]] | None = None
         self._issue_run_id = ""
         self._missing_issue_owner = ""
         self._missing_retry_run_id = ""
@@ -747,6 +751,10 @@ class Bridge(QObject):
         self._local_profile = LOCAL_VIDEO_PROFILE_OPTIONS[0]
         self._local_progress = ""
         self._local_running = False
+        self._composer_resume_run_id = ""
+        self._batch_path = ""
+        self._batch_snapshot_admitted = False
+        self._batch_path_checked_at = 0.0
         self._batch_urls: list[str] = []
         self._batch_name = ""
         self._extra_tags = ""
@@ -823,7 +831,19 @@ class Bridge(QObject):
 
     @Property(str, notify=fileActionChanged)
     def fileActionStatus(self) -> str:
-        return self._files.status
+        message = self._files.status
+        if self._files.phase == "preview" and self._files.plan is not None:
+            paths = [
+                str(artifact.path)
+                for item in self._files.plan.items
+                if item.state == "ready"
+                for artifact in item.artifacts
+            ]
+            if paths:
+                message += "\n\nVerified owned files:\n" + "\n".join(paths)
+            if self._remove_run_request:
+                message += "\n\nThe run is removed only after all selected entries are cleared. Unverified files and unrelated folders are kept."
+        return message
 
     @Property(str, notify=fileActionChanged)
     def fileActionName(self) -> str:
@@ -835,7 +855,10 @@ class Bridge(QObject):
 
     @Property(bool, notify=fileActionChanged)
     def fileActionEligible(self) -> bool:
-        return self._files.phase == "preview" and self._files.eligible
+        return self._files.phase == "preview" and (
+            self._files.eligible
+            or bool(self._remove_run_request and not self._remove_run_request[1])
+        )
 
     @Property(str, notify=fileActionChanged)
     def fileActionReviewOwner(self) -> str:
@@ -1017,7 +1040,8 @@ class Bridge(QObject):
             "dismissRunId": job.run_id
             if job is not None
             and job in self._runtime.recovered
-            and job.terminal_status in {"Failed", "Stopped", "Skipped"}
+            and job.terminal_status
+            in {"Failed", "Stopped", "Skipped", "Paused", "Partial"}
             else "",
             "savedOwner": str(item.get("owner") or self._missing_issue_owner or ""),
         }
@@ -1039,10 +1063,13 @@ class Bridge(QObject):
     def requestInspectorLibraryRemoval(self, selection_key: str) -> bool:
         if self._selection != "Library" or selection_key != self._folder_inspector_key:
             return False
-        owner = str(self.inspectorRecoveryActions.get("savedOwner") or "")
-        if not owner or not self.prepareLibraryRemoval(owner):
+        actions = self.inspectorRecoveryActions
+        if actions.get("dismissRunId"):
+            return self.requestRunRemoval(str(actions["dismissRunId"]))
+        owner = str(actions.get("savedOwner") or "")
+        if not owner or not self.startFileActions("delete", [owner], QUrl()):
             return False
-        self.libraryRemovalRequested.emit()
+        self.fileActionRequested.emit()
         return True
 
     @Slot(str, str, str, result=bool)
@@ -1250,6 +1277,7 @@ class Bridge(QObject):
         if pending:
             self.fileActionChanged.emit()
             return True
+        self._remove_run_request = None
         items = [self._saved_item_for_owner(owner) for owner in owners]
         if any(item is None for item in items):
             self._status = "Selected Library items changed. Select them again."
@@ -1291,6 +1319,35 @@ class Bridge(QObject):
             or self._file_action_busy
         ):
             return False
+        if self._remove_run_request:
+            job, owners = self._remove_run_request
+            if (
+                self._issue_job(job.run_id) is not job
+                or job not in self._runtime.recovered
+            ):
+                self._files.phase = "error"
+                self._files.status = "Run changed. Select it again. No files changed."
+                self._remove_run_request = None
+                self.fileActionChanged.emit()
+                return False
+            current_owners = tuple(
+                history_archive_owner(row)
+                for row in self._runtime.history
+                if row.get("vodforge_run_id") == job.run_id
+            )
+            if current_owners != owners:
+                self._files.phase = "error"
+                self._files.status = (
+                    "Run files changed. Review Remove again. No files changed."
+                )
+                self._remove_run_request = None
+                self.fileActionChanged.emit()
+                return False
+            if not owners and self._files.phase == "preview":
+                self._files.phase = "done"
+                self._finish_run_removal()
+                self.fileActionChanged.emit()
+                return True
         started = self._files.confirm(self._runtime.history)
         if started:
             self._file_action_busy = True
@@ -1388,6 +1445,40 @@ class Bridge(QObject):
         opened = QDesktopServices.openUrl(QUrl(RELEASES_PAGE))
         self._updates.observe("manual_opened" if opened else "manual_failed")
 
+    def _update_work_pending(self) -> bool:
+        return bool(
+            self._download_poll_failed
+            or self._runtime.recovery_notice
+            or self._runtime.active_job is not None
+            or self._runtime.busy
+            or self._runtime.queued
+            or self._local_running
+            or self._import_pending
+            or self._file_action_busy
+            or self._files.busy
+            or self._files.uncertain
+            or self._files.pending
+            or self._relink.active
+        )
+
+    def _download_poll_can_resume(self) -> bool:
+        # A failed poll may already have consumed an event or partly persisted a
+        # terminal transition. Never infer idle from an empty event queue alone.
+        if (
+            self._runtime.active_job is not None
+            or self._runtime.busy
+            or self._runtime.queued
+            or not self._runtime.events.empty()
+        ):
+            return False
+        try:
+            return (
+                self._runtime.recovery.store.load() is None
+                and not self._runtime.recovery.store.load_queued_jobs()
+            )
+        except (HistoryError, OSError, RunStateError, ValueError):
+            return False
+
     @Slot()
     def installUpdate(self) -> None:
         window = self._window
@@ -1398,12 +1489,7 @@ class Bridge(QObject):
         )
         telemetry = self._analytics.telemetry
         accepted = self._updates.install(
-            downloads_busy=(
-                self._runtime.active_job is not None
-                or self._runtime.busy
-                or bool(getattr(self._runtime, "queued", []))
-                or self._local_running
-            ),
+            downloads_busy=self._update_work_pending(),
             telemetry_permitted=telemetry is not None and telemetry.permitted(),
             window_bounds=bounds,
         )
@@ -2736,6 +2822,43 @@ class Bridge(QObject):
             self.extraTagsChanged.emit()
         return True
 
+    @Property(bool, notify=batchListChanged)
+    def composerResume(self) -> bool:
+        return any(
+            job.run_id == self._composer_resume_run_id
+            and job.terminal_status == "Paused"
+            for job in self._runtime.recovered
+        )
+
+    @Slot()
+    def restorePausedComposer(self) -> None:
+        paused = next(
+            (job for job in self._runtime.recovered if job.terminal_status == "Paused"),
+            None,
+        )
+        if paused is not None:
+            self.selectRunRecord("terminal:" + paused.run_id)
+
+    def _prepare_paused_composer(self, job: Any) -> None:
+        self._composer_resume_run_id = job.run_id
+        self._batch_snapshot_admitted = True
+        self._batch_path = job.batch_list_path
+        self._batch_urls = list(job.urls) if job.batch_mode else []
+        self._batch_name = (
+            Path(job.batch_list_path).name if job.batch_list_path else "Saved URL list"
+        )
+        self._recent_interrupted_run_id = job.run_id
+        self.batchListChanged.emit()
+        self.sourcePrepared.emit(job.batch_list_path or job.url)
+
+    @Property(bool, notify=batchListChanged)
+    def batchLoaded(self) -> bool:
+        return bool(self._batch_urls)
+
+    @Property(str, notify=batchListChanged)
+    def batchPath(self) -> str:
+        return self._batch_path
+
     @Property(str, notify=batchListChanged)
     def batchSummary(self) -> str:
         if not self._batch_urls:
@@ -2917,7 +3040,9 @@ class Bridge(QObject):
                         "runId": job.run_id,
                         "selectionKey": kind + ":" + job.run_id,
                         "kind": kind,
-                        "title": str(
+                        "title": "Batch List"
+                        if job.batch_mode and job.terminal_status == "Paused"
+                        else str(
                             preview.get("title") or f"{job.output_type.value} download"
                         ),
                         "detail": str(
@@ -2928,7 +3053,9 @@ class Bridge(QObject):
                         ),
                         "status": job.terminal_status or "Queued",
                         "type": job.output_type.value,
-                        "progress": 0,
+                        "progress": 100
+                        * job.completed_batch_items
+                        / max(1, len(job.urls)),
                         "duration": format_duration(preview.get("duration")),
                         "_artwork_info": preview,
                     }
@@ -2961,15 +3088,19 @@ class Bridge(QObject):
                 }
             )
         records.sort(
-            key=lambda record: {
-                "preview": 0,
-                "active": 1,
-                "queued": 2,
-                "completed": 4,
-                "terminal": 3
-                if record.get("runId") == self._recent_interrupted_run_id
-                else 5,
-            }.get(str(record["kind"]), 5)
+            key=lambda record: (
+                1.5
+                if record.get("status") == "Paused"
+                else {
+                    "preview": 0,
+                    "active": 1,
+                    "queued": 2,
+                    "completed": 4,
+                    "terminal": 3
+                    if record.get("runId") == self._recent_interrupted_run_id
+                    else 5,
+                }.get(str(record["kind"]), 5)
+            )
         )
         visible_work = 0
         for record in records:
@@ -3173,6 +3304,17 @@ class Bridge(QObject):
         ):
             return False
         self._selected_run_key = selection_key
+        paused = next(
+            (
+                job
+                for job in self._runtime.recovered
+                if selection_key == "terminal:" + job.run_id
+                and job.terminal_status == "Paused"
+            ),
+            None,
+        )
+        if paused is not None:
+            self._prepare_paused_composer(paused)
         self.runDeckChanged.emit()
         self.activityChanged.emit()
         self.select("Forge")
@@ -3690,9 +3832,18 @@ class Bridge(QObject):
         if self._missing_issue_owner:
             return self._download_missing_issue()
         job = self._issue_job(self._issue_run_id)
-        if job is None or job.terminal_status not in {"Failed", "Stopped", "Skipped"}:
+        if job is None or job.terminal_status not in {
+            "Failed",
+            "Stopped",
+            "Skipped",
+            "Paused",
+            "Partial",
+        }:
             self._set_status("Select an interrupted run before downloading.")
             return False
+        if job.terminal_status in {"Paused", "Partial"}:
+            # Resume belongs to the durable run owner, never the editable draft.
+            return self._admit_retry(job.run_id, stay_in_issues=True)
         config = self._issue_settings
         if not all(
             config.get(key)
@@ -3763,7 +3914,8 @@ class Bridge(QObject):
         existing = self._issue_job(self._missing_retry_run_id)
         if (
             existing is not None
-            and existing.terminal_status in {"Failed", "Stopped", "Skipped"}
+            and existing.terminal_status
+            in {"Failed", "Stopped", "Skipped", "Paused", "Partial"}
             and row is not None
         ):
             plan = self._media_recovery.plan(
@@ -5110,30 +5262,77 @@ class Bridge(QObject):
         self.exportSettingsChanged.emit()
         self._schedule_preferences_save()
 
-    @Slot(QUrl)
-    def loadBatchUrl(self, url: QUrl) -> None:
-        if not url.isLocalFile():
-            return
-        path = Path(url.toLocalFile())
+    def _load_batch_path(self, path: Path) -> bool:
+        self._batch_urls = []
+        self._batch_name = ""
+        self._batch_path = ""
+        self._batch_snapshot_admitted = False
         try:
-            urls = read_url_list_file(path)
+            # Bound composer-driven reads; no asynchronous parser can restore an
+            # obsolete selection after an edit or toggle.
+            if not path.is_file():
+                raise ValueError("Choose an existing URL list file.")
+            with path.open("rb") as source:
+                payload = source.read(2 * 1024 * 1024 + 1)
+            if len(payload) > 2 * 1024 * 1024:
+                raise ValueError("Choose a URL list smaller than 2 MB.")
+            urls = parse_url_list_text(payload.decode("utf-8-sig"))
             if not urls:
                 raise ValueError("That text file contains no http or https URLs.")
         except (OSError, UnicodeError, ValueError) as exc:
             self._status = str(exc)
+            self.batchListChanged.emit()
             self.statusChanged.emit()
-            return
+            return False
         self._batch_urls = urls
+        self._batch_path = str(path)
         self._batch_name = path.name
         self._status = f"Loaded {len(urls)} URL(s). They will run one at a time."
         self.batchListChanged.emit()
         self.statusChanged.emit()
+        return True
+
+    @Slot(QUrl)
+    def loadBatchUrl(self, url: QUrl) -> None:
+        if url.isLocalFile() and self._load_batch_path(Path(url.toLocalFile())):
+            self.sourcePrepared.emit(self._batch_path)
+
+    @staticmethod
+    def _batch_file_available(value: str) -> bool:
+        try:
+            return Path(value).is_file()
+        except OSError:
+            return False
+
+    def _clear_missing_batch_list(self) -> None:
+        # Only detach the composer. Admitted runs own an immutable URL snapshot.
+        self._reset_batch_composer()
+        self._set_status(
+            "Batch list missing. Choose the list again by clicking Load list."
+        )
+
+    def _check_batch_list_file(self) -> bool:
+        if self._batch_snapshot_admitted:
+            return True
+        if self._batch_path and not self._batch_file_available(self._batch_path):
+            self._clear_missing_batch_list()
+            return False
+        return True
 
     @Slot()
     def clearBatchList(self) -> None:
+        self._reset_batch_composer()
+        self._set_status("URL list cleared.")
+
+    def _reset_batch_composer(self) -> None:
+        """Detach the draft without issuing feedback for an admitted run."""
+        self._composer_resume_run_id = ""
         self._batch_urls = []
         self._batch_name = ""
+        self._batch_path = ""
+        self._batch_snapshot_admitted = False
         self.batchListChanged.emit()
+        self.sourcePrepared.emit("")
 
     @Slot(str)
     def setCookieSource(self, value: str) -> None:
@@ -5214,6 +5413,44 @@ class Bridge(QObject):
     @Slot(str)
     def sourceInputChanged(self, value: str) -> None:
         """A reviewed recovery draft expires as soon as its source is edited."""
+        candidate = value.strip()
+        paused = next(
+            (
+                job
+                for job in self._runtime.recovered
+                if job.run_id == self._composer_resume_run_id
+            ),
+            None,
+        )
+        if paused is not None and candidate != (paused.batch_list_path or paused.url):
+            self._composer_resume_run_id = ""
+            self.batchListChanged.emit()
+        if (
+            len(candidate) >= 2
+            and candidate[0] == candidate[-1]
+            and candidate[0] in {"'", '"'}
+        ):
+            candidate = candidate[1:-1]
+        paused_source_unchanged = paused is not None and candidate == (
+            paused.batch_list_path or paused.url
+        )
+        if (
+            candidate != self._batch_path or not candidate
+        ) and not paused_source_unchanged:
+            if self._batch_urls:
+                self._batch_urls = []
+                self._batch_name = ""
+                self._batch_path = ""
+                self._batch_snapshot_admitted = False
+                self.batchListChanged.emit()
+            if candidate and not candidate.lower().startswith(("http://", "https://")):
+                try:
+                    path = Path(candidate).expanduser()
+                    if path.is_absolute():
+                        self._load_batch_path(path)
+                except (OSError, ValueError, RuntimeError):
+                    self._set_status("Choose an existing URL list file.")
+
         if self._recovery_source_url and value.strip() != self._recovery_source_url:
             self._media_recovery.clear_destination()
             self._recovery_source_url = ""
@@ -5907,6 +6144,15 @@ class Bridge(QObject):
             self._record_player_feature(action)
 
     @Slot()
+    def beginShutdown(self) -> None:
+        self._runtime.begin_shutdown()
+        if self.running:
+            self._status = "Pausing downloads…"
+            self.statusChanged.emit()
+        if self.localRunning:
+            self.cancelLocalConversion()
+
+    @Slot()
     def cancel(self) -> None:
         if self.running:
             self._runtime.cancel()
@@ -5994,23 +6240,136 @@ class Bridge(QObject):
     def retryTerminal(self, run_id: str) -> bool:
         return self._admit_retry(run_id)
 
+    @Slot()
+    def cancelRunRemovalReview(self) -> None:
+        if not self._files.busy and self._files.phase not in {"checking", "working"}:
+            self._remove_run_request = None
+
     @Slot(str, result=bool)
-    def dismissTerminal(self, run_id: str) -> bool:
-        try:
-            dismissed = self._runtime.dismiss_terminal(run_id)
-        except RunStateError:
+    def openRunFolder(self, run_id: str) -> bool:
+        # A configured output directory alone is not evidence of associated files.
+        if self._issue_job(run_id) is None:
+            return False
+        for row in self._runtime.history:
+            if row.get("vodforge_run_id") == run_id:
+                path = history_output_path(row)
+                try:
+                    if path is not None and path.is_file():
+                        return QDesktopServices.openUrl(
+                            QUrl.fromLocalFile(str(path.parent))
+                        )
+                except OSError:
+                    pass
+        return False
+
+    @Slot(str, result=bool)
+    def runHasSavedFile(self, run_id: str) -> bool:
+        for row in self._runtime.history:
+            if row.get("vodforge_run_id") == run_id:
+                path = history_output_path(row)
+                try:
+                    if path is not None and path.is_file():
+                        return True
+                except OSError:
+                    pass
+        return False
+
+    @Slot(str, result=bool)
+    def openRunIssues(self, run_id: str) -> bool:
+        if self._issue_job(run_id) is None:
+            return False
+        self.select("Library")
+        self.navigateLibraryFolders("issues")
+        for component in self._folder_browser.components:
+            if any(
+                str(
+                    self._folder_browser.records[index].get("vodforge_terminal_run_id")
+                    or self._folder_browser.records[index].get("vodforge_active_run_id")
+                    or self._folder_browser.records[index].get("vodforge_queued_run_id")
+                    or ""
+                )
+                == run_id
+                for index in component.indices
+            ):
+                return self.selectLibraryFolderComponent(component.key)
+        return False
+
+    @Slot(str, result=bool)
+    def openRunRetrySettings(self, run_id: str) -> bool:
+        if not self.openRunIssues(run_id):
+            return False
+        self.issueRetrySettingsRequested.emit()
+        return True
+
+    @Slot(str, result=bool)
+    def requestRunRemoval(self, run_id: str) -> bool:
+        job = self._issue_job(run_id)
+        if (
+            job is None
+            or job not in self._runtime.recovered
+            or job.terminal_status
+            not in {"Failed", "Stopped", "Skipped", "Paused", "Partial"}
+            or self._update_work_pending()
+            or self._files.phase in {"checking", "working"}
+        ):
             self.operationFeedback.emit(
-                "The interrupted run could not be dismissed safely."
+                "Finish active work or recovery before removing this run."
             )
             return False
-        if dismissed:
-            self.operationFeedback.emit(
-                "Interrupted run dismissed. Saved files were kept."
+        owners = tuple(
+            history_archive_owner(row)
+            for row in self._runtime.history
+            if row.get("vodforge_run_id") == run_id
+        )
+        if owners:
+            if not self.startFileActions("delete", list(owners), QUrl()):
+                return False
+        else:
+            self._files.plan = None
+            self._files.action = "remove_run"
+            self._files.phase = "preview"
+            self._files.status = (
+                "Remove this run? No owned Library files are recorded. "
+                "Unindexed partial files cannot be verified and will be kept. "
+                "The output folder and unrelated files will not be removed.\n\n"
+                + str(job.output_dir)
             )
-            self.historyChanged.emit()
-            self.activityChanged.emit()
-            self.runDeckChanged.emit()
-        return dismissed
+        self._remove_run_request = (job, owners)
+        self.fileActionChanged.emit()
+        self.fileActionRequested.emit()
+        return True
+
+    @Slot(str, result=bool)
+    def dismissTerminal(self, run_id: str) -> bool:
+        # Compatibility entry point: every UI path now requires confirmation.
+        return self.requestRunRemoval(run_id)
+
+    def _finish_run_removal(self) -> None:
+        request = self._remove_run_request
+        if request is None:
+            return
+        self._remove_run_request = None
+        job, owners = request
+        remaining = {history_archive_owner(row) for row in self._runtime.history}
+        if self._files.phase != "done" or any(owner in remaining for owner in owners):
+            self._files.status += " Run kept because cleanup was incomplete."
+            return
+        try:
+            removed = self._issue_job(
+                job.run_id
+            ) is job and self._runtime.dismiss_terminal(job.run_id)
+        except RunStateError:
+            removed = False
+        self._files.status = (
+            "Run removed. Verified files moved to Trash; already-missing entries cleared."
+            if removed and owners
+            else "Run removed. No owned files were recorded; unverified files were kept."
+            if removed
+            else "File cleanup finished, but the run could not be removed. Retry Remove."
+        )
+        self.historyChanged.emit()
+        self.activityChanged.emit()
+        self.runDeckChanged.emit()
 
     def _admit_retry(
         self,
@@ -6058,6 +6417,9 @@ class Bridge(QObject):
             self._status = str(exc)
             self.statusChanged.emit()
             return False
+        if self._composer_resume_run_id == run_id:
+            self._reset_batch_composer()
+            self.sourceAccepted.emit()
         if retry is self._runtime.active_job:
             self._status_text = "Retry started."
             self.statusChanged.emit()
@@ -6077,6 +6439,10 @@ class Bridge(QObject):
         return True
 
     def _pump(self) -> None:
+        now = time.monotonic()
+        if self._batch_path and now - self._batch_path_checked_at >= 2:
+            self._batch_path_checked_at = now
+            self._check_batch_list_file()
         if self._closed:
             return
         availability = self._availability_work.poll()
@@ -6365,6 +6731,12 @@ class Bridge(QObject):
                     self.libraryCategoryChanged.emit()
                 self.historyChanged.emit()
                 self.activityChanged.emit()
+            if self._remove_run_request and self._files.phase in {
+                "done",
+                "error",
+                "recovery",
+            }:
+                self._finish_run_removal()
             self.fileActionChanged.emit()
         if self._updates.poll():
             self.updateChanged.emit()
@@ -6389,23 +6761,32 @@ class Bridge(QObject):
         if self._analytics.settled and self._analytics.allowed:
             self._analytics.start_first_launch_delivery()
         self._analytics.poll_first_launch_delivery()
-        try:
-            active_job_before = self._runtime.active_job
-            if (
-                active_job_before is not None
-                and active_job_before.run_id != self._forge_run_id
-            ):
-                self._forge_run_id = active_job_before.run_id
-                self._forge_technical = "\n".join(active_job_before.activity_lines)[
-                    -50_000:
-                ]
-                self.activityChanged.emit()
-            events = self._runtime.poll()
-        except (HistoryError, OSError, RunStateError, ValueError):
-            self._status = "Download state needs attention. See Technical details."
-            self.statusChanged.emit()
-            self._timer.stop()
-            return
+        poll_failure_notice = "Download state needs attention. Close and reopen VODForge before starting more work."
+        active_job_before = self._runtime.active_job
+        events = []
+        if self._download_poll_failed and self._download_poll_can_resume():
+            self._download_poll_failed = False
+            if self._runtime.recovery_notice == poll_failure_notice:
+                self._runtime.recovery_notice = None
+        if not self._download_poll_failed:
+            try:
+                active_job_before = self._runtime.active_job
+                if (
+                    active_job_before is not None
+                    and active_job_before.run_id != self._forge_run_id
+                ):
+                    self._forge_run_id = active_job_before.run_id
+                    self._forge_technical = "\n".join(active_job_before.activity_lines)[
+                        -50_000:
+                    ]
+                    self.activityChanged.emit()
+                events = self._runtime.poll()
+            except (HistoryError, OSError, RunStateError, ValueError):
+                self._status = "Download state needs attention. See Technical details."
+                self.statusChanged.emit()
+                self._download_poll_failed = True
+                if not self._runtime.recovery_notice:
+                    self._runtime.recovery_notice = poll_failure_notice
         for kind, payload in self._run_control_events.take_context_events():
             self._run_controls.observe(active_job_before, kind, payload)
         for kind, payload in events:
@@ -6446,7 +6827,12 @@ class Bridge(QObject):
                     + ("\n" if self._forge_technical else "")
                     + str(payload)
                 )[-50_000:]
-            elif kind in {"history_record", "job_metadata", "item_terminal"}:
+            elif kind in {
+                "history_record",
+                "job_metadata",
+                "item_terminal",
+                "batch_item",
+            }:
                 self.historyChanged.emit()
             elif kind in {"done", "partial", "stopped", "error"}:
                 if (
@@ -6532,13 +6918,12 @@ class Bridge(QObject):
                 self.statusChanged.emit()
             self.localChanged.emit()
         if self._updates.pending_install and self._updates.ready is not None:
-            if (
-                self._runtime.active_job is not None
-                or self._runtime.busy
-                or bool(self._runtime.queued)
-                or self._local_running
-            ):
-                status = "Update downloaded. Finish active and queued work; VODForge will restart when it is idle."
+            if self._update_work_pending():
+                status = (
+                    "Update verified, but download state needs attention. Close and reopen VODForge, then check for updates again."
+                    if self._download_poll_failed or self._runtime.recovery_notice
+                    else "Update downloaded. Finish active and queued work; VODForge will restart when it is idle."
+                )
                 if self._updates.status != status:
                     self._updates.status = status
                     self.updateChanged.emit()
@@ -6699,6 +7084,10 @@ class Bridge(QObject):
 
     @Slot(str, str, result=bool)
     def submit(self, value: str, output_format: str) -> bool:
+        if not self._check_batch_list_file():
+            return False
+        if self.composerResume:
+            return self.retryTerminal(self._composer_resume_run_id)
         try:
             if self._recovery_source_url and (
                 value.strip() != self._recovery_source_url or self._batch_urls
@@ -6738,6 +7127,7 @@ class Bridge(QObject):
             job_options: _SubmitJobOptions = {
                 "urls": self._batch_urls if self._batch_urls else None,
                 "batch_mode": bool(self._batch_urls),
+                "batch_list_path": self._batch_path,
                 "cookie_source": self._cookie_source,
                 "cookie_file": self._cookie_file,
                 "cookie_browser": self._cookie_browser,
@@ -6768,9 +7158,11 @@ class Bridge(QObject):
                 if key := metadata_run_key(preview):
                     job.metadata_keys.add(key)
                 job.preview_source_owner = subject
+                job.batch_list_path = self._batch_path
                 self._runtime.start_job(job)
             else:
                 job = self._runtime.start(*job_arguments, **job_options)
+            self._batch_snapshot_admitted = bool(self._batch_urls)
             if subject is not None:
                 self._library_projection.consume_preview_subject(subject)
                 self._metadata_preview_info = None
@@ -6788,7 +7180,7 @@ class Bridge(QObject):
                 self._recovery_source_url = ""
                 self.outputPathChanged.emit()
                 self.exportModeChanged.emit()
-            self.clearBatchList()
+            self._reset_batch_composer()
             self.sourceAccepted.emit()
             self.historyChanged.emit()
             self._progress = 0.0

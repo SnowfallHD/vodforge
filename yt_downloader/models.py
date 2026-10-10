@@ -168,6 +168,8 @@ class DownloadJob:
     cookie_file: Path | None = None
     cookie_browser: str | None = None
     batch_mode: bool = False
+    completed_batch_items: int = 0
+    batch_list_path: str = ""
     preview_info: dict[str, Any] | None = None
     # Ephemeral canonical preview provenance; consumed only after run admission.
     preview_source_owner: str | None = None

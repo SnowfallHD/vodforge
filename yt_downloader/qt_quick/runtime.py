@@ -104,6 +104,9 @@ class DownloadRuntime:
         self._active_feedback_job: DownloadJob | None = None
         self._active_status = "Preparing download"
         self._active_progress = 0.0
+        self._active_batch_child: DownloadJob | None = None
+        self._batch_index = 0
+        self._batch_total = 0
         self._worker_app: DownloadWorkerCore | None = None
         self.provider_network = ProviderNetworkCoordinator()
         self._closing = False
@@ -149,7 +152,9 @@ class DownloadRuntime:
     def _reset_active_feedback(self, job: DownloadJob) -> None:
         self._active_feedback_job = job
         self._active_status = "Preparing download"
-        self._active_progress = 0.0
+        self._active_progress = (
+            100.0 * job.completed_batch_items / max(1, len(job.urls))
+        )
 
     def start(
         self,
@@ -164,6 +169,7 @@ class DownloadRuntime:
         *,
         urls: list[str] | None = None,
         batch_mode: bool = False,
+        batch_list_path: str = "",
         cookie_source: CookieSource = CookieSource.PUBLIC,
         cookie_file: Path | None = None,
         cookie_browser: str | None = None,
@@ -190,6 +196,7 @@ class DownloadRuntime:
             mp3_settings,
             urls=urls,
             batch_mode=batch_mode,
+            batch_list_path=batch_list_path,
             cookie_source=cookie_source,
             cookie_file=cookie_file,
             cookie_browser=cookie_browser,
@@ -239,6 +246,7 @@ class DownloadRuntime:
         *,
         urls: list[str] | None = None,
         batch_mode: bool = False,
+        batch_list_path: str = "",
         cookie_source: CookieSource = CookieSource.PUBLIC,
         cookie_file: Path | None = None,
         cookie_browser: str | None = None,
@@ -297,6 +305,7 @@ class DownloadRuntime:
             else Mp3ExportSettings(),
             single_video_only=preferences.single_video_only,
             batch_mode=batch_mode,
+            batch_list_path=batch_list_path,
             use_cookies=use_cookies,
             cookie_file=selected_file,
             cookie_browser=selected_browser,
@@ -335,6 +344,8 @@ class DownloadRuntime:
             "Failed",
             "Stopped",
             "Skipped",
+            "Paused",
+            "Partial",
         }:
             raise ValueError("That saved run is no longer available to retry.")
         previous = matches[0]
@@ -363,7 +374,12 @@ class DownloadRuntime:
         try:
             status, url = self.terminal_retry_source(run_id)
         except ValueError:
-            if previous.terminal_status not in {"Failed", "Stopped", "Skipped"}:
+            if previous.terminal_status not in {
+                "Failed",
+                "Stopped",
+                "Skipped",
+                "Paused",
+            }:
                 raise
             saved_url = retry_url_for_item(previous.preview_info or {}, previous.url)
             parsed = urlparse(saved_url)
@@ -373,6 +389,9 @@ class DownloadRuntime:
                 raise
             status = previous.terminal_status
             url = current_job.url
+        if status in {"Paused", "Partial"}:
+            url = previous.url
+            current_job = None
         if status == "Failed":
             if (
                 current_job is None
@@ -404,9 +423,12 @@ class DownloadRuntime:
         retry = replace(
             settings_job,
             url=url,
-            urls=[url],
+            urls=list(previous.urls) if status in {"Paused", "Partial"} else [url],
+            completed_batch_items=previous.completed_batch_items
+            if status == "Paused"
+            else 0,
             run_id=uuid.uuid4().hex,
-            origin_run_id=previous.run_id,
+            origin_run_id=None if status in {"Paused", "Partial"} else previous.run_id,
             retry_of_run_id=previous.execution_run_id or previous.run_id,
             execution_run_id=None,
             preview_source_owner=None,
@@ -474,6 +496,7 @@ class DownloadRuntime:
                 "Partial": "partial",
                 "Failed": "failed",
                 "Stopped": "stopped",
+                "Paused": "stopped",
             }[status]
         try:
             telemetry.record(
@@ -613,6 +636,39 @@ class DownloadRuntime:
                 retain_context = getattr(self.events, "retain_context_event", None)
                 if retain_context is not None:
                     retain_context(event)
+            if kind == "batch_item" and isinstance(payload, dict):
+                if payload.get("job") is not self.active_job:
+                    continue
+                active_job = self.active_job
+                if active_job is None:
+                    continue
+                if self._active_feedback_job is not self.active_job:
+                    self._reset_active_feedback(active_job)
+                child = payload.get("child")
+                index, total = payload.get("index"), payload.get("total")
+                if (
+                    not isinstance(child, DownloadJob)
+                    or child.run_id != active_job.run_id
+                    or not isinstance(index, int)
+                    or not isinstance(total, int)
+                    or not 1 <= index <= total
+                    or total != len(active_job.urls)
+                ):
+                    continue
+                if payload.get("finished") and not self._history_error:
+                    # Prior history_record events have now committed durably.
+                    active_job.completed_batch_items = index
+                    self.recovery.store.checkpoint_batch(active_job)
+                self._batch_index, self._batch_total = index, total
+                self._active_batch_child = child
+                if not payload.get("finished"):
+                    active_job.preview_info = {}
+                self._active_progress = (
+                    100.0 * (index if payload.get("finished") else index - 1) / total
+                )
+                result.append(("progress", self._active_progress))
+                result.append(event)
+                continue
             if self.active_job is not None and kind in {
                 "status",
                 "progress",
@@ -623,7 +679,18 @@ class DownloadRuntime:
                 if kind == "status":
                     self._active_status = str(payload)
                 elif payload is not None:
-                    self._active_progress = max(0.0, min(100.0, float(payload)))
+                    percentage = max(0.0, min(100.0, float(payload)))
+                    if self._batch_total:
+                        # Equal source shares; prevent an intermediate audio or
+                        # video transfer from completing its whole source early.
+                        percentage = max(
+                            self._active_progress,
+                            100.0
+                            * (self._batch_index - 1 + min(99.0, percentage) / 100.0)
+                            / self._batch_total,
+                        )
+                        event = kind, percentage
+                    self._active_progress = percentage
             if kind == "history_record" and isinstance(payload, dict):
                 try:
                     self._record_history(payload)
@@ -643,17 +710,23 @@ class DownloadRuntime:
                 info = payload.get("info")
                 if (
                     isinstance(job, DownloadJob)
-                    and job is self.active_job
+                    and self.active_job is not None
+                    and (job is self.active_job or job is self._active_batch_child)
                     and isinstance(info, dict)
                 ):
                     if (
                         job.retry_of_run_id
                         or (job.preview_info or {}).get("vodforge_issue_retry") is True
                     ):
-                        job.preview_info = {**info, "vodforge_issue_retry": True}
+                        self.active_job.preview_info = {
+                            **info,
+                            "vodforge_issue_retry": True,
+                        }
                     else:
-                        job.preview_info = info
-                    self._activity_upsert(job, "Running", "Processing media")
+                        self.active_job.preview_info = info
+                    self._activity_upsert(
+                        self.active_job, "Running", "Processing media"
+                    )
             elif kind == "item_terminal":
                 if not self._record_item_terminal(payload):
                     continue
@@ -701,7 +774,8 @@ class DownloadRuntime:
             and child.origin_run_id == active.run_id
             and child.execution_run_id == active.run_id
             and child.run_id != active.run_id
-            and child.terminal_status in {"Failed", "Stopped", "Skipped"}
+            and child.terminal_status
+            in {"Failed", "Stopped", "Skipped", "Paused", "Partial"}
         ):
             return False
         terminal = replace(child, preview_info=dict(info))
@@ -792,20 +866,23 @@ class DownloadRuntime:
             "stopped": "Stopped",
             "error": "Failed",
         }[kind]
+        if self._closing and status in {"Stopped", "Failed", "Partial"}:
+            status = "Paused"
+            message = "Paused because VODForge closed. Resume continues remaining URLs; the interrupted item may need to download again."
         self._observe_run(
             "run_completed"
             if status in {"Completed", "Partial"}
             else "run_stopped"
-            if status == "Stopped"
+            if status in {"Stopped", "Paused"}
             else "run_failed",
             job,
             status=status,
         )
         self._activity_upsert(job, status, message)
-        if status in {"Failed", "Stopped"}:
+        if status in {"Failed", "Stopped", "Paused", "Partial"}:
             self.recovery.terminal(status, message, activity_lines=job.activity_lines)
             self.recovered = self.recovery.store.load_terminal_jobs()
-        if status not in {"Failed", "Stopped"}:
+        if status not in {"Failed", "Stopped", "Paused", "Partial"}:
             self.recovery.finished(job.run_id, application_closing=self._closing)
         if status == "Completed" and job.recovery_reason == "missing_media":
             telemetry = self.product_telemetry
@@ -817,10 +894,15 @@ class DownloadRuntime:
         self.active_job = None
         self._worker_app = None
 
-    def close(self) -> None:
+    def begin_shutdown(self) -> None:
+        """Retire admission before asynchronously stopping the active worker."""
         self._closing = True
         self.cancel()
+
+    def close(self) -> None:
+        self.begin_shutdown()
         if self.worker is not None and self.worker.is_alive():
             self.worker.join(timeout=10)
         if not self.busy:
+            self.poll()
             set_active_child_process_observer(None)

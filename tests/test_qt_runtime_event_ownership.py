@@ -196,3 +196,158 @@ def test_owned_batch_history_and_item_terminal_keep_existing_identity_guards(
     assert runtime.history[0]["vodforge_run_activity"] == ["Saved batch child"]
     assert runtime.recovered[0].run_id == terminal_child.run_id
     assert runtime.recovered[0].terminal_status == "Skipped"
+
+
+def test_restart_pauses_active_and_queued_without_starting_workers(runtime, tmp_path):
+    from yt_downloader.run_state import RunRecoveryOwner
+
+    job = make_job(tmp_path)
+    job.urls = ["https://example.com/one", "https://example.com/two"]
+    job.url = job.urls[0]
+    queued = replace(job, run_id="waiting", completed_batch_items=0)
+    runtime.recovery.begin(job, [queued])
+    job.completed_batch_items = 1
+    runtime.recovery.store.checkpoint_batch(job)
+    restored, waiting = RunRecoveryOwner(runtime.recovery.store.path).startup_recovery()
+    assert waiting == []
+    assert [entry.terminal_status for entry in restored] == ["Paused", "Paused"]
+    assert restored[0].completed_batch_items == 1
+    runtime.recovered = restored
+    resumed = runtime.retry_terminal(job.run_id)
+    assert resumed.urls == job.urls
+    assert resumed.completed_batch_items == 1
+    assert resumed.output_dir == job.output_dir
+    assert runtime.active_job is resumed
+    assert [entry.run_id for entry in runtime.recovered] == ["waiting"]
+
+
+def test_clean_quit_cancel_becomes_paused_but_explicit_stop_does_not(runtime, tmp_path):
+    job = make_job(tmp_path)
+    launch(runtime, job)
+    runtime._closing = True
+    runtime._finish("stopped", "Cancelled")
+    assert runtime.recovered[0].terminal_status == "Paused"
+    runtime._closing = False
+    resumed = runtime.retry_terminal(job.run_id)
+    runtime._finish("stopped", "Cancelled by user")
+    assert runtime.recovered[0].run_id == resumed.run_id
+    assert runtime.recovered[0].terminal_status == "Stopped"
+
+
+def test_batch_resume_worker_skips_durable_finished_prefix(
+    runtime, tmp_path, monkeypatch
+):
+    from yt_downloader.app import DownloadWorkerCore
+    from yt_downloader.models import DownloadOutcome
+    from yt_downloader.qt_quick.runtime import _WorkerEventQueue
+
+    job = make_job(tmp_path)
+    job.urls = [
+        "https://example.com/one",
+        "https://example.com/two",
+        "https://example.com/three",
+    ]
+    job.completed_batch_items = 1
+    runtime.recovery.begin(job, [])
+    worker = DownloadWorkerCore()
+    runtime.active_job = job
+    worker.events = _WorkerEventQueue(runtime.events, job)
+    worker.cancel_requested = False
+    worker.run_recovery = runtime.recovery
+    monkeypatch.setattr(worker, "_emit_job_log", lambda *args: None)
+    visited = []
+
+    def download(child, **kwargs):
+        visited.append(child.url)
+        return DownloadOutcome(success_count=1)
+
+    monkeypatch.setattr(worker, "_download_worker_single", download)
+    worker._coordinate_download_batch(job, job.urls)
+    runtime.poll()
+    assert visited == job.urls[1:]
+    assert runtime.recovery.store.load()["job"]["completed_batch_items"] == 3
+
+
+@pytest.mark.parametrize("batch", [False, True])
+def test_resume_uses_immutable_saved_settings_not_current_composer(
+    runtime, tmp_path, batch
+):
+    job = make_job(tmp_path)
+    job.batch_mode = batch
+    job.batch_list_path = str(tmp_path / "deleted-list.txt") if batch else ""
+    if batch:
+        job.urls = [job.url, "https://example.com/two"]
+    runtime.recovery.terminal_attempt(job, "Paused", "Closed")
+    runtime.recovered = runtime.recovery.store.load_terminal_jobs()
+    original = runtime.recovered[0]
+    changed = replace(job, output_dir=tmp_path / "different", quality_label="360p")
+    resumed = runtime.retry_terminal(job.run_id, current_job=changed)
+    assert resumed.output_dir == original.output_dir
+    assert resumed.quality_label == original.quality_label
+    assert resumed.urls == original.urls
+    assert resumed.batch_list_path == original.batch_list_path
+
+
+@pytest.mark.parametrize("cursor", [-1, 999, 1.5, True, "1"])
+def test_invalid_resume_cursor_is_rejected(tmp_path, cursor):
+    from yt_downloader.run_state import (
+        RunStateError,
+        deserialize_download_job,
+        serialize_download_job,
+    )
+
+    payload = serialize_download_job(make_job(tmp_path))
+    payload["completed_batch_items"] = cursor
+    with pytest.raises(RunStateError):
+        deserialize_download_job(payload)
+
+
+@pytest.mark.parametrize("first_thumbnail", [None, "https://example.com/last.jpg"])
+def test_pause_keeps_last_batch_artwork_when_next_item_has_none(
+    runtime, tmp_path, first_thumbnail
+):
+    from yt_downloader.run_state import RunRecoveryOwner
+
+    job = make_job(tmp_path)
+    job.batch_mode = True
+    runtime.recovery.begin(job, [])
+    first = {"id": "one", "title": "First"}
+    if first_thumbnail:
+        first["thumbnail"] = first_thumbnail
+    runtime.recovery.store.update_preview(job.run_id, first)
+    runtime.recovery.store.update_preview(job.run_id, {"id": "two", "title": "Second"})
+    restored, _ = RunRecoveryOwner(runtime.recovery.store.path).startup_recovery()
+    assert restored[0].preview_info.get("thumbnail") == first_thumbnail
+    assert restored[0].terminal_status == "Paused"
+
+
+def test_batch_checkpoint_does_not_skip_output_when_history_save_fails(
+    runtime, tmp_path, monkeypatch
+):
+    job = make_job(tmp_path)
+    job.urls = [job.url, "https://example.com/next"]
+    sink = launch(runtime, job)
+    child = replace(job, urls=[job.url])
+
+    def refuse_history(payload):
+        raise OSError("Synthetic disk write failure")
+
+    monkeypatch.setattr(runtime, "_record_history", refuse_history)
+    sink.put(
+        (
+            "history_record",
+            {"job": child, "info": {"id": "one"}, "output_dir": str(tmp_path)},
+        )
+    )
+    sink.put(
+        (
+            "batch_item",
+            {"job": job, "child": child, "index": 1, "total": 2, "finished": True},
+        )
+    )
+    runtime.poll()
+    assert runtime.recovery.store.load()["job"]["completed_batch_items"] == 0
+    runtime._closing = True
+    runtime._finish("stopped", "Closing")
+    assert runtime.recovered[0].completed_batch_items == 0
+    assert runtime.recovered[0].terminal_status == "Paused"

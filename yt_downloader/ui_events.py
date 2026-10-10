@@ -55,6 +55,7 @@ JobInfoEventName: TypeAlias = Literal[
 TransferUiEvent: TypeAlias = (
     tuple[Literal["log", "status"], str]
     | tuple[Literal["job_log"], JobLogPayload]
+    | tuple[Literal["batch_item"], dict[str, Any]]
     | tuple[Literal["progress"], int | float]
     | tuple[Literal["progress_determinate"], int | float | None]
     | tuple[

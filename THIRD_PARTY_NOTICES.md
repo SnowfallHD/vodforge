@@ -98,6 +98,9 @@ Development-only test and analysis tools are not part of this runtime list.
 | Pillow | Image loading and thumbnails | [MIT-CMU](https://github.com/python-pillow/Pillow/blob/main/LICENSE) |
 | imageio-ffmpeg | FFmpeg discovery helper | [BSD 2-Clause](https://github.com/imageio/imageio-ffmpeg/blob/main/LICENSE) |
 | PyObjC | macOS Cocoa integration | [MIT; upstream source and license files](https://github.com/ronaldoussoren/pyobjc) |
+| curl_cffi | Browser TLS impersonation support requested by extractors | [MIT; bundled curl and TLS dependencies retain their notices](https://github.com/lexiforest/curl_cffi/blob/main/LICENSE) |
+| CFFI | Native-library bindings for curl_cffi | [MIT-0](https://github.com/python-cffi/cffi) |
+| pycparser | C declaration parsing for CFFI | [BSD 3-Clause](https://github.com/eliben/pycparser) |
 | Requests | HTTP transport | [Apache 2.0](https://github.com/psf/requests/blob/main/LICENSE) |
 | urllib3 | HTTP connection support | [MIT](https://github.com/urllib3/urllib3/blob/main/LICENSE.txt) |
 | certifi | Certificate trust bundle | [MPL 2.0](https://github.com/certifi/python-certifi/blob/master/LICENSE) |

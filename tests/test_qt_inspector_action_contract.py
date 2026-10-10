@@ -15,10 +15,10 @@ def test_inspector_actions_use_authoritative_selection_and_keep_file_actions_sep
     assert "visible: !!inspector.recoveryActions.canOpenLocation" in panel
     assert "openInspectorLocation(inspector.recoveryActions.selectionKey)" in panel
     assert "visible: !!inspector.recoveryActions.dismissRunId" in panel
-    assert "dismissTerminal(inspector.recoveryActions.dismissRunId)" in panel
+    assert "requestRunRemoval(inspector.recoveryActions.dismissRunId)" in panel
     assert "visible: !!inspector.recoveryActions.savedOwner" in panel
     assert (
         "requestInspectorLibraryRemoval(inspector.recoveryActions.selectionKey)"
         in panel
     )
-    assert "trash" not in panel.casefold()
+    assert "review owned files for Trash" in panel

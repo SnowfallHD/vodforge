@@ -307,6 +307,7 @@ fi
   --name "VODForge" \
   --distpath "$dist_dir" \
   --collect-all yt_dlp \
+  --collect-all curl_cffi \
   --collect-data certifi \
   --osx-bundle-identifier "com.snowfallhd.vodforge" \
   --icon "$icon_file" \

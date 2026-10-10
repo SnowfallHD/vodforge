@@ -35,12 +35,16 @@ def test_saved_inspector_always_has_metadata_facts(tmp_path, monkeypatch):
 
 
 def test_retry_chooser_and_tooltips_use_exact_inspector_path():
-    source = (Path(qt_main.__file__).parent / "LibraryFolderInspector.qml").read_text()
+    source = (Path(qt_main.__file__).parent / "LibraryFolderInspector.qml").read_text(
+        encoding="utf-8"
+    )
     assert (
         'issueFolderDialog.currentFolder = inspector.issueSettings.output_url || ""'
         in source
     )
-    assert 'text: inspector.issueSettings.output_dir || ""' in source
+    assert (
+        'path: inspector.issueSettings.output_dir || "Choose output folder…"' in source
+    )
     assert "visible: !inspector.recoveryActions.location && !!path" in source
     assert "selectedLocationHover" not in source
     assert (

@@ -1,5 +1,44 @@
 # VODForge engineering-quality harness
 
+## Recovery, Watch and batch presentation gaps — 2026-10-10
+
+The private Qt pass exposed gaps that membership-only and object-existence tests
+missed. These are now explicit regressions in `tests/test_qt_scene_port.py`, which
+is already in the macOS build's scene-test partition:
+
+- Issues inspector dimensions must settle inside the browser after selection and
+  retry expansion; merely finding its controls did not detect runaway layout.
+- Retry Save to must use the shared interactive path field and folder emblem.
+  Changing retry mode must not collapse the settings through a stale selection key.
+- Recently Added and See All preserve newest-first history across playlist/title
+  ordering and multiple output variants; playlist browsing keeps playlist order.
+- Watch See All links sit beside headings, use text-only backgrounds, and retain
+  route actions. Native hover aesthetics still require visual acceptance.
+- The real batch coordinator sends explicit child boundaries. Qt must accept only
+  the current child's title/thumbnail, reject prior-child metadata, retire the old
+  artwork at boundaries, and show monotonic equal-URL batch progress (25%,75%,100%
+  for two half-complete sources). Success, failure and skipped outcomes are covered.
+- Confirmed run removal checks exact owned files, changed files, active work,
+  failed Trash, cancellation and unrelated-file retention. Unindexed partials are
+  explicitly retained. Native OS Trash is not claimed by the temporary adapter.
+- URL-list composer edits/toggle and Create Video footer bounds are checked in QML;
+  short control help checks one-line text and clamping at both window edges.
+- Updater poll-failure injection proves the shared timer stays alive while unsafe
+  installation remains blocked; this does not prove the historical incident cause.
+
+`quality_harness/workflow_coverage.py` maps the new removal-review entry points.
+Source/offscreen results do not replace frozen Mac or native Windows receipts.
+
+The impersonation warning exposed a second gap: imports/version checks alone did
+not prove browser targets existed. The compatible yt-dlp curl-cffi extra is now
+explicit, both build scripts collect its native payload, and `--runtime-smoke`
+requires the pinned yt-dlp handler to expose actual targets. Tests reject missing
+or wrong handlers and verify the probe never forces impersonation on requests.
+Existing smoke gates cover FFmpeg, ffprobe, Deno, TLS roots, pinned extractor/EJS
+versions and readable solver resources. Hardware NVENC is optional on Mac; libVLC
+is required only by the legacy Tk player, not the Qt Multimedia build.
+
+
 ## Popup gesture and focus restoration — 2026-10-06
 
 A popup close must survive the remainder of the same held trigger gesture and
@@ -3071,3 +3110,49 @@ Prior failed receipts and the phase trace remain outside the worktree.
 ### Headless lifecycle baseline — 2026-10-09
 
 The 945d025 100-job soak completed all jobs with no worker/child retention but failed the release contract with a persistent descriptor delta of one. A separate lsof diagnostic identified the process-owned diagnostics/latest.log opened during the first job. Normal startup initializes this sink before work; the headless sandbox reset it without initializing it. Sandbox setup now writes its startup diagnostic before resource baselines. No workload warm-up is discarded and no descriptor is subtracted from metrics. Existing post-job lifecycle tests missed the lazy process-owned resource. A new regression fails before the setup correction and verifies stable sink ownership across writes; a separate gate test keeps a genuine +1 descriptor delta failing. Original receipts remain valid failures; successor 100-job qualification is required. This does not establish native interaction acceptance or full DEEP success.
+
+
+### Interrupted downloads remain paused
+
+Regression coverage must restore an active single URL and a partially completed URL list after process exit, retain saved output settings, leave waiting runs paused, and start only on Resume. Explicit Stop remains Stopped. Finished-URL checkpoints follow durable Library writes; a failed Library write must not advance the resume cursor. Cover repeat restarts, malformed cursors, and the Forge Resume action. Current recovery resumes at URL/item granularity: incomplete staging is cleaned under existing ownership checks and the interrupted item may redownload; byte-level continuation is not claimed. Completed exported files are retained.
+
+
+### Windows font evidence and inspector removal contracts — 2026-10-10
+
+The Windows offscreen Qt plugin did not discover native fonts in the private QA
+venv. The unchanged header regression failed with missing-font diagnostics, then
+passed with QT_QPA_FONTDIR pointing at the installed Windows Fonts directory.
+The test configuration now supplies that directory on Windows when it exists,
+without overriding an explicitly configured font directory. Geometry assertions
+remain unchanged; offscreen results still do not establish native GUI acceptance.
+
+Inspector removal tests now exercise the shared file-action review instead of
+the retired immediate-dismiss/card-only path. They verify review cancellation,
+exact owned-file Trash with unrelated media retained, changed-owner refusal,
+active-work refusal, and confirmation of Failed/Stopped/Skipped/Paused/Partial
+run removal without deleting unindexed files. Deferred startup completes before
+synthetic recovery state is inserted, and file-operation fixtures use normalized
+persisted history so they exercise the production snapshot contract.
+
+
+### Bounded real child-resource recovery — 2026-10-10
+
+`tests/test_process_cleanup_soak.py` repeats twelve actual process captures each
+for completion, cancellation and timeout. Every recorded PID must be absent
+immediately after the operation, the active registry must be empty, weak
+references must release within two seconds, and settled handles/RSS must stay
+bounded without discarding any cycle. Windows pipe-reader threads briefly
+outlive the reaped OS child; an independent twelve-cycle diagnostic showed
+reference release by 10 ms. The original zero-scheduler-latency failure is
+retained. Five real abandoned-launcher cycles persist a child identity and
+staging transaction, then exercise production startup recovery to Paused;
+children must be conclusively dead before staging is removed.
+
+This coverage supplements native packaged normal-quit and force-interruption
+acceptance; it does not establish an indefinite memory soak or byte-level
+resume. The normal window-close regression now requires runtime shutdown
+intent before cancellation so interrupted single/batch work becomes Paused and
+the window closes after the worker settles. Frozen Mac acceptance includes
+Cmd-Q, SIGKILL during the second item, restoration of the latest paused run,
+resume without the source list, retained completed-file hashes and independent
+media decode.

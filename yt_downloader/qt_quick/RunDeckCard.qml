@@ -39,6 +39,16 @@ StoneField {
                 source: card.artworkSource
                 inset: 0
             }
+            Image {
+                objectName: card.slotIndex >= 0 ? "runDeckPlaceholder_" + card.slotIndex : "allRunsPlaceholder"
+                anchors.centerIn: parent
+                width: card.compact ? 32 : 40
+                height: width
+                visible: !card.artworkSource
+                source: assetUrl + "brand/icon-180.png"
+                fillMode: Image.PreserveAspectFit
+                smooth: true
+            }
         }
         ColumnLayout {
             Layout.fillWidth: true

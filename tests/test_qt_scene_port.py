@@ -1008,6 +1008,12 @@ def test_issue_inspector_retries_with_selected_settings_and_stays_until_success(
             "libraryIssueDownload",
         ):
             assert window.findChild(QObject, name) is not None
+        window.findChild(QObject, "libraryIssueRetrySettingsHeading").activated.emit()
+        app.processEvents()
+        destination = window.findChild(QObject, "libraryIssueOutputFolder")
+        assert destination.property("path") == str(tmp_path)
+        assert destination.property("interactive")
+        assert destination.findChild(QObject, "outputPathText") is not None
         mode_selector = window.findChild(QObject, "libraryIssueModeSelector")
         mode_button = window.findChild(QObject, "libraryIssueMode")
         closed_height = mode_selector.property("height")
@@ -1976,7 +1982,7 @@ def test_qt_routes_keep_tk_channel_playlist_collection_and_media_membership(tmp_
     assert selected["groupTitle"] == "Travel"
     assert [row["title"] for row in selected["media"]] == ["Video A"]
     watch = watch_scene(records, "home")
-    assert watch["hero"]["title"] == "Audio B"
+    assert watch["hero"]["title"] == "Video A"
     assert len(watch["channels"]) == len(watch["playlists"]) == 1
     assert watch["collections"][0]["title"] == "Travel"
     group = watch_scene(
@@ -4874,6 +4880,12 @@ def test_qt_watch_empty_sections_keep_fresh_placeholders_after_a_download(
         assert bridge.watchScene["channels"]
         assert visual("watchHomeSeeAll_channels").property("enabled")
         assert visual("watchHomeSeeAll_videos").property("enabled")
+        for name in ("watchHomeSeeAll_channels", "watchHomeSeeAll_videos"):
+            link = visual(name)
+            assert link.property("text") == "> See All"
+            # Links stay next to headings, not at the rail's far edge.
+            assert link.x() < link.parentItem().width() / 2
+            assert not link.property("background").childItems()
 
         filed = saved(tmp_path, "Filed", "MP4")
         bridge._runtime.history.append(filed)
@@ -6529,6 +6541,819 @@ def test_qt_player_subtitle_label_fits_native_fonts_and_is_centered(
                 assert overlay.property("minimumControlsWidth") <= width
     finally:
         overlay.deleteLater()
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+@pytest.mark.parametrize("blocker", ["move", "import", "relink", "recovery"])
+def test_qt_update_waits_for_library_mutations(tmp_path, monkeypatch, blocker):
+    from yt_downloader.qt_quick import update_session
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    qt_app()
+    bridge = qt_main.Bridge(None)
+    bridge._timer.stop()
+    handoffs = []
+    monkeypatch.setattr(update_session, "is_windows", lambda: True)
+    monkeypatch.setattr(
+        update_session, "launch_windows_update", lambda *a, **k: handoffs.append(True)
+    )
+    monkeypatch.setattr(qt_main.QTimer, "singleShot", lambda *a: None)
+    monkeypatch.setattr(bridge._runtime, "poll", list)
+    monkeypatch.setattr(bridge._files, "poll", lambda: False)
+    try:
+        bridge._updates.ready = tmp_path / "verified.exe"
+        bridge._updates.pending_install = True
+        if blocker == "move":
+            bridge._file_action_busy = True
+        elif blocker == "import":
+            bridge._import_pending = True
+        elif blocker == "relink":
+            monkeypatch.setattr(
+                type(bridge._relink), "active", property(lambda self: True)
+            )
+        else:
+            bridge._runtime.recovery_notice = "Uncertain recovery"
+        bridge.installUpdate()
+        bridge._pump()
+        assert not handoffs and bridge._updates.pending_install
+        bridge._file_action_busy = False
+        bridge._import_pending = False
+        if blocker == "relink":
+            monkeypatch.setattr(
+                type(bridge._relink), "active", property(lambda self: False)
+            )
+        bridge._runtime.recovery_notice = None
+        bridge._pump()
+        bridge._pump()
+        assert len(handoffs) == 1
+    finally:
+        bridge._import_pending = False
+        bridge.close()
+
+
+@pytest.mark.parametrize(
+    "blocker",
+    ["none", "active", "worker", "events", "journal", "queued_journal", "unreadable"],
+)
+def test_qt_update_poll_fault_keeps_services_and_requires_proven_idle(
+    tmp_path, monkeypatch, blocker
+):
+    from yt_downloader.qt_quick import update_session
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    qt_app()
+    bridge = qt_main.Bridge(None)
+    handoffs, quits, polls, services = [], [], [], []
+    monkeypatch.setattr(update_session, "is_windows", lambda: True)
+    monkeypatch.setattr(
+        update_session, "launch_windows_update", lambda *a, **k: handoffs.append(True)
+    )
+    monkeypatch.setattr(qt_main.QTimer, "singleShot", lambda *a: quits.append(True))
+    monkeypatch.setattr(bridge._local, "poll", lambda: services.append(True) or [])
+
+    def fail_once():
+        polls.append(True)
+        if len(polls) == 1:
+            raise OSError("controlled runtime persistence fault")
+        return []
+
+    monkeypatch.setattr(bridge._runtime, "poll", fail_once)
+    try:
+        bridge._updates.pending_install = True
+        bridge._updates.busy = True
+        bridge._updates.events.put(("ready", tmp_path / "verified.exe"))
+        bridge._pump()
+        assert bridge._timer.isActive()
+        assert bridge._download_poll_failed and not handoffs and not quits
+        assert "state needs attention" in bridge.updateStatus
+        bridge.updateOfferClosed(False)
+        assert bridge._updates.pending_install
+        if blocker == "active":
+            bridge._runtime.active_job = make_job(tmp_path)
+        elif blocker == "worker":
+            bridge._runtime.worker = SimpleNamespace(is_alive=lambda: True)
+        elif blocker == "queued_journal":
+            monkeypatch.setattr(
+                bridge._runtime.recovery.store, "load_queued_jobs", lambda: ["pending"]
+            )
+        elif blocker == "events":
+            bridge._runtime.events.put(("status", "unprocessed event"))
+        elif blocker == "journal":
+            monkeypatch.setattr(
+                bridge._runtime.recovery.store, "load", lambda: {"status": "running"}
+            )
+        elif blocker == "unreadable":
+
+            def unreadable():
+                raise OSError("cannot establish idle")
+
+            monkeypatch.setattr(bridge._runtime.recovery.store, "load", unreadable)
+        bridge.installUpdate()
+        assert not handoffs
+        bridge._pump()
+        assert len(services) == 2
+        if blocker == "none":
+            assert len(handoffs) == len(quits) == 1
+            assert not bridge._download_poll_failed
+            bridge._pump()
+            assert len(handoffs) == 1
+        else:
+            assert not handoffs and bridge._download_poll_failed and len(polls) == 1
+            bridge._runtime.active_job = None
+            while not bridge._runtime.events.empty():
+                bridge._runtime.events.get_nowait()
+            bridge._runtime.worker = None
+            monkeypatch.setattr(bridge._runtime.recovery.store, "load", lambda: None)
+            monkeypatch.setattr(
+                bridge._runtime.recovery.store, "load_queued_jobs", list
+            )
+            bridge._pump()
+            assert len(handoffs) == len(quits) == 1
+    finally:
+        bridge._runtime.active_job = None
+        bridge._runtime.worker = None
+        bridge.close()
+
+
+@pytest.mark.parametrize("status", ["Failed", "Stopped", "Skipped"])
+def test_qt_run_remove_requires_confirmation_and_keeps_unowned_files(
+    tmp_path, monkeypatch, status
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    qt_app()
+    bridge = qt_main.Bridge(None)
+    bridge._timer.stop()
+    job = make_job(tmp_path)
+    job.terminal_status = status
+    bridge._runtime.recovery.terminal_attempt(job, status, "Test")
+    bridge._runtime.recovered = bridge._runtime.recovery.store.load_terminal_jobs()
+    unrelated = tmp_path / "unrelated.txt"
+    unrelated.write_text("Keep")
+    try:
+        assert bridge.openRunIssues(job.run_id)
+        assert bridge._issue_run_id == job.run_id
+        assert bridge.requestRunRemoval(job.run_id)
+        assert bridge._runtime.recovered
+        assert "Unindexed partial files" in bridge.fileActionStatus
+        bridge.cancelRunRemovalReview()
+        assert not bridge.confirmFileAction()
+        assert bridge._runtime.recovered
+        assert bridge.requestRunRemoval(job.run_id)
+        assert bridge.confirmFileAction()
+        assert not bridge._runtime.recovered
+        assert not bridge.confirmFileAction()
+        assert unrelated.read_text() == "Keep"
+    finally:
+        bridge.close()
+
+
+def test_qt_recovery_ui_loads_and_create_footer_fits(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    bridge = qt_main.Bridge(None)
+    bridge._timer.stop()
+    job = make_job(tmp_path)
+    job.terminal_status = "Failed"
+    bridge._runtime.recovery.terminal_attempt(job, "Failed", "Test")
+    bridge._runtime.recovered = bridge._runtime.recovery.store.load_terminal_jobs()
+    engine = qt_main.create_engine(bridge)
+    try:
+        assert engine.rootObjects()
+        window = engine.rootObjects()[0]
+        assert bridge.selectRunRecord("terminal:" + job.run_id)
+        app.processEvents()
+        assert window.findChild(QObject, "forgeFailedActions").property("visible")
+        assert (
+            window.findChild(QObject, "forgeFailedRemove").property("label") == "Remove"
+        )
+        assert bridge.openRunIssues(job.run_id)
+        app.processEvents()
+        toggle = window.findChild(QObject, "libraryIssueRetrySettingsHeading")
+        assert not toggle.property("expanded")
+        assert window.findChild(QObject, "libraryIssueContextMenu") is not None
+        popup = window.findChild(QObject, "localConversionPopup")
+        for width, height in [(1280, 800), (1000, 650)]:
+            window.setProperty("width", width)
+            window.setProperty("height", height)
+            popup.open()
+            app.processEvents()
+            assert popup.property("height") <= height - 40
+            assert popup.property("height") > 310
+            popup.close()
+    finally:
+        for window in engine.rootObjects():
+            window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+@pytest.mark.parametrize("fault", ["none", "trash", "changed", "active"])
+def test_qt_run_remove_trashes_only_verified_owned_files(tmp_path, monkeypatch, fault):
+    from yt_downloader import archive_file_operations as ops
+    from yt_downloader.history import save_history
+    from yt_downloader.qt_quick import library_files
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    qt_app()
+    bridge = qt_main.Bridge(None)
+    bridge._timer.stop()
+    job = make_job(tmp_path)
+    job.terminal_status = "Failed"
+    bridge._runtime.recovery.terminal_attempt(job, "Failed", "Test")
+    bridge._runtime.recovered = bridge._runtime.recovery.store.load_terminal_jobs()
+    folder = (tmp_path / "owned").resolve()
+    folder.mkdir()
+    media = folder / "video.mp4"
+    media.write_bytes(b"synthetic media")
+    personal = folder / "personal.txt"
+    personal.write_text("keep")
+    record = {
+        "id": "synthetic",
+        "title": "Synthetic",
+        "vodforge_run_id": job.run_id,
+        "vodforge_output_type": "MP4",
+        "vodforge_output_path": str(media),
+        "vodforge_output_dir": str(folder),
+        "vodforge_recorded_at": "2026-10-10T00:00:00+00:00",
+    }
+    bridge._runtime.history = [record]
+    save_history(bridge._files.history_path, [record])
+    trash = tmp_path / "synthetic-trash"
+    trash.mkdir()
+
+    def fake_trash(path):
+        if fault == "trash":
+            raise OSError("Synthetic Trash failure")
+        target = trash / path.name
+        path.rename(target)
+        return str(target)
+
+    monkeypatch.setattr(library_files, "system_trash_available", lambda: True)
+    monkeypatch.setattr(
+        library_files,
+        "delete_files",
+        lambda *a, **k: ops.delete_files(*a, **k, trash=fake_trash),
+    )
+    try:
+        assert bridge.requestRunRemoval(job.run_id)
+        bridge._files.worker.join(timeout=10)
+        bridge._pump()
+        assert bridge.fileActionEligible
+        assert str(media) in bridge.fileActionStatus
+        assert bridge._runtime.recovered
+        if fault == "changed":
+            media.write_bytes(b"replacement")
+        if fault == "active":
+            bridge._local_running = True
+            assert not bridge.confirmFileAction()
+            bridge._local_running = False
+            assert media.exists()
+            return
+        assert bridge.confirmFileAction()
+        assert not bridge.confirmFileAction()
+        bridge._files.worker.join(timeout=10)
+        bridge._pump()
+        assert personal.read_text() == "keep"
+        if fault == "none":
+            assert not media.exists()
+            assert (trash / "video.mp4").read_bytes() == b"synthetic media"
+            assert not bridge._runtime.recovered
+            assert not bridge._runtime.history
+        else:
+            assert media.exists()
+            assert bridge._runtime.recovered
+            assert bridge._runtime.history
+            assert "kept" in bridge.fileActionStatus
+    finally:
+        bridge.close()
+
+
+def test_qt_list_composer_sync_picker_edits_and_toggle(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    bridge = qt_main.Bridge(None)
+    bridge._timer.stop()
+    first = tmp_path / "first list.txt"
+    first.write_text("https://example.com/one\nhttps://example.com/two\n")
+    second = tmp_path / "second.txt"
+    second.write_text("https://example.com/three\n")
+    invalid = tmp_path / "invalid.txt"
+    invalid.write_text("Not a URL")
+    engine = qt_main.create_engine(bridge)
+    try:
+        window = engine.rootObjects()[0]
+        field = window.findChild(QObject, "forgeUrlInput")
+        button = window.findChild(QObject, "forgeLoadListButton")
+        bridge.loadBatchUrl(QUrl.fromLocalFile(str(first)))
+        app.processEvents()
+        assert field.property("text") == str(first)
+        assert bridge.batchLoaded and button.property("selected")
+        assert button.property("label") == "List loaded"
+        button.activated.emit()
+        app.processEvents()
+        assert not bridge.batchLoaded and field.property("text") == ""
+        assert first.exists()
+        for value in (str(first), '"' + str(second) + '"', "'" + str(first) + "'"):
+            field.setProperty("text", value)
+            app.processEvents()
+            assert bridge.batchLoaded
+        for value in (
+            "",
+            "https://example.com/video",
+            str(invalid),
+            str(tmp_path / "missing.txt"),
+            str(tmp_path),
+        ):
+            field.setProperty("text", value)
+            app.processEvents()
+            assert not bridge.batchLoaded
+            assert not button.property("selected")
+        for _ in range(3):
+            field.setProperty("text", str(second))
+            app.processEvents()
+            assert bridge._batch_urls == ["https://example.com/three"]
+            bridge.clearBatchList()
+            app.processEvents()
+            assert field.property("text") == ""
+            assert not bridge._batch_urls
+    finally:
+        for window in engine.rootObjects():
+            window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+def test_qt_issue_inspector_height_stays_bounded_after_selection(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    bridge = qt_main.Bridge(None)
+    bridge._timer.stop()
+    job = make_job(tmp_path)
+    job.terminal_status = "Failed"
+    bridge._runtime.recovery.terminal_attempt(job, "Failed", "Synthetic failure")
+    bridge._runtime.recovered = bridge._runtime.recovery.store.load_terminal_jobs()
+    engine = qt_main.create_engine(bridge)
+    try:
+        window = engine.rootObjects()[0]
+        window.setProperty("width", 1100)
+        window.setProperty("height", 740)
+        assert bridge.openRunIssues(job.run_id)
+        for _ in range(20):
+            QTest.qWait(20)
+            browser = window.findChild(QObject, "libraryFolderBrowser")
+            panel = window.findChild(QObject, "libraryIssueInspector")
+            assert 0 < panel.height() < window.height()
+            assert 0 < browser.height() <= window.height()
+            point = panel.mapToItem(window.contentItem(), 0, 0)
+            assert 500 < point.x() < window.width()
+            assert 50 < point.y() < window.height()
+        toggle = window.findChild(QObject, "libraryIssueRetrySettingsHeading")
+        toggle.activated.emit()
+        app.processEvents()
+        toggle.activated.emit()
+        QTest.qWait(100)
+        assert panel.height() < window.height()
+    finally:
+        for window in engine.rootObjects():
+            window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+@pytest.mark.parametrize("label", ["Skip this link", "Stop batch"])
+def test_qt_short_tooltip_single_line_and_clamped_edges(tmp_path, monkeypatch, label):
+    from PySide6.QtQml import QQmlContext, QQmlEngine
+    from PySide6.QtQuick import QQuickItem
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    bridge = qt_main.Bridge(None)
+    bridge._timer.stop()
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    context = QQmlContext(QQmlEngine.contextForObject(window))
+    anchor = QQuickItem(window.contentItem())
+    anchor.setWidth(30)
+    anchor.setHeight(30)
+    component = QQmlComponent(
+        engine,
+        QUrl.fromLocalFile(str(Path(qt_main.__file__).parent / "LiquidToolTip.qml")),
+    )
+    tooltip = component.createWithInitialProperties(
+        {"parent": anchor, "singleLine": True, "text": label}, context
+    )
+    try:
+        assert tooltip is not None, component.errors()
+        for width in (960, 1280):
+            window.setProperty("width", width)
+            for x in (0, window.width() - 30):
+                anchor.setX(x)
+                anchor.setY(window.height() - 30)
+                tooltip.open()
+                app.processEvents()
+                text = tooltip.findChild(QObject, "liquidTooltipLabel")
+                assert text.property("lineCount") == 1
+                assert not text.property("truncated")
+                left = anchor.x() + tooltip.property("x")
+                assert left >= 11
+                assert left + tooltip.property("width") <= window.width() - 11
+                assert (
+                    anchor.y() + tooltip.property("y") + tooltip.property("height")
+                    <= window.height() - 11
+                )
+                tooltip.close()
+    finally:
+        tooltip.deleteLater()
+        anchor.deleteLater()
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+def test_watch_recently_added_and_see_all_preserve_history_recency(tmp_path):
+    # Newest entry has a late playlist position and title; neither may reorder
+    # the global recent rail. A new audio variant still prefers video playback.
+    newer_audio = saved(tmp_path, "Zulu", "MP3")
+    older_video = saved(tmp_path, "Zulu", "MP4")
+    middle = saved(tmp_path, "Alpha", "MP4")
+    for row in (newer_audio, older_video):
+        row["playlist_index"] = 9
+    middle["playlist_index"] = 1
+    records = [newer_audio, middle, older_video]
+    for route in ("home", "videos"):
+        scene = watch_scene(records, route)
+        assert [row["title"] for row in scene["videos"]] == ["Zulu", "Alpha"]
+        assert scene["videos"][0]["index"] == 2
+    home = watch_scene(records, "home")
+    playlist = home["playlists"][0]
+    group = watch_scene(
+        records, "group", group_key=playlist["key"], group_kind="playlist"
+    )
+    assert [row["title"] for row in group["videos"]] == ["Alpha", "Zulu"]
+
+
+@pytest.mark.parametrize("outcome_kind", ["success", "failure", "skipped"])
+def test_batch_current_metadata_and_whole_batch_progress(
+    tmp_path, monkeypatch, outcome_kind
+):
+    from yt_downloader.app import DownloadWorkerCore
+    from yt_downloader.models import DownloadOutcome
+    from yt_downloader.qt_quick.runtime import _WorkerEventQueue
+    from yt_downloader.ui_events import job_info_event
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    qt_app()
+    bridge = qt_main.Bridge(None)
+    runtime = bridge._runtime
+    job = make_job(tmp_path)
+    job.batch_mode = True
+    job.urls = ["https://example.com/one", "https://example.com/two"]
+    job.url = job.urls[0]
+    runtime.recovery.begin(job, [])
+    runtime.active_job = job
+    runtime._reset_active_feedback(job)
+    monkeypatch.setattr(
+        bridge._artwork, "request", lambda info, *args: info.get("thumbnail", "")
+    )
+    worker = DownloadWorkerCore()
+    worker.events = _WorkerEventQueue(runtime.events, job)
+    worker.cancel_requested = False
+    monkeypatch.setattr(worker, "_emit_job_log", lambda *args: None)
+    observed = []
+    children = []
+
+    def child_download(child, **kwargs):
+        runtime.poll()
+        assert job.preview_info == {}  # Old thumbnail/title retired at boundary.
+        index = job.urls.index(child.url)
+        info = {
+            "title": f"Video {index + 1}",
+            "thumbnail": f"https://example.com/{index}.jpg",
+        }
+        if children:
+            worker.events.put(
+                job_info_event("job_metadata", children[-1], {"title": "Stale child"})
+            )
+            runtime.poll()
+            assert job.preview_info == {}
+        children.append(child)
+        worker.events.put(job_info_event("job_metadata", child, info))
+        worker.events.put(("progress", 50))
+        runtime.poll()
+        assert job.preview_info["title"] == info["title"]
+        assert job.preview_info["thumbnail"] == info["thumbnail"]
+        observed.append(runtime.active_progress)
+        # Audio/video phases must not move the overall indicator backward.
+        worker.events.put(("progress", 0))
+        runtime.poll()
+        assert runtime.active_progress == observed[-1]
+        return DownloadOutcome(**{outcome_kind + "_count": 1})
+
+    monkeypatch.setattr(worker, "_download_worker_single", child_download)
+    try:
+        worker._coordinate_download_batch(job, job.urls)
+        runtime.poll()
+        assert observed == [25, 75]
+        assert runtime.active_progress == 100
+        assert bridge.runDeck["records"][0]["title"] == "Video 2"
+        assert bridge.runDeck["records"][0]["artwork"] == "https://example.com/1.jpg"
+    finally:
+        runtime.active_job = None
+        bridge.close()
+
+
+def test_forge_retry_chooses_settings_without_starting_download(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    bridge = qt_main.Bridge(None)
+    job = make_job(tmp_path)
+    job.terminal_status = "Failed"
+    bridge._runtime.recovered = [job]
+    bridge.selectRunRecord("terminal:" + job.run_id)
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    bridge._window = window
+    try:
+        window.findChild(QObject, "forgeFailedRetry").activated.emit()
+        QTest.qWait(300)
+        popup = window.findChild(QObject, "forgeRetryPopup")
+        assert popup.property("opened")
+        assert popup.property("preferAbove")
+        assert bridge._runtime.active_job is None
+        window.findChild(QObject, "forgeRetryChangeSettings").activated.emit()
+        app.processEvents()
+        QTest.qWait(50)
+        assert bridge.selection == "Library"
+        assert bridge._issue_run_id == job.run_id
+        assert window.findChild(QObject, "libraryIssueRetrySettingsHeading").property(
+            "expanded"
+        )
+        assert bridge._runtime.active_job is None
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+@pytest.mark.parametrize("has_list_path", [False, True])
+def test_paused_forge_run_has_resume_and_retains_batch(
+    tmp_path, monkeypatch, has_list_path
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    qt_app()
+    bridge = qt_main.Bridge(None)
+    job = make_job(tmp_path)
+    job.urls = [job.url, "https://example.com/remaining"]
+    job.completed_batch_items = 1
+    job.batch_mode = True
+    job.batch_list_path = str(tmp_path / "original-list.txt") if has_list_path else ""
+    if has_list_path:
+        Path(job.batch_list_path).write_text("\n".join(job.urls))
+    bridge._runtime.recovery.terminal_attempt(job, "Paused", "Paused on exit")
+    bridge._runtime.recovered = bridge._runtime.recovery.store.load_terminal_jobs()
+    monkeypatch.setattr(
+        bridge._runtime,
+        "_make_worker",
+        lambda job: setattr(bridge._runtime, "active_job", job),
+    )
+    bridge.selectRunRecord("terminal:" + job.run_id)
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        button = window.findChild(QObject, "forgeFailedRetry")
+        QTest.qWait(50)
+        assert button.property("label") == "Resume"
+        assert (
+            window.findChild(QObject, "forgeDownloadButton").property("label")
+            == "Resume"
+        )
+        assert window.findChild(QObject, "forgeLoadListButton").property("selected")
+        assert window.findChild(QObject, "forgeUrlInput").property("text") == (
+            job.batch_list_path or bridge._runtime.recovered[0].url
+        )
+        assert bridge.runDeck["records"][0]["status"] == "Paused"
+        assert bridge.runDeck["records"][0]["title"] == "Batch List"
+        assert bridge.runDeck["records"][0]["progress"] == 50
+        deck = window.findChild(QObject, "forgeRunDeck")
+        placeholder = visual_item(deck, "runDeckPlaceholder_0")
+        assert placeholder is not None
+        assert placeholder.property("visible")
+        assert placeholder.property("source").toString().endswith("brand/icon-180.png")
+        popup = window.findChild(QObject, "allRunsPopup")
+        popup.open()
+        QTest.qWait(50)
+        popup_placeholder = visual_item(window.contentItem(), "allRunsPlaceholder")
+        assert popup_placeholder is not None
+        assert popup_placeholder.property("visible")
+        popup.close()
+        window.findChild(QObject, "forgeUrlInput").setProperty("text", "")
+        assert not bridge.composerResume
+        assert not bridge.batchLoaded
+        assert (
+            window.findChild(QObject, "forgeDownloadButton").property("label")
+            == "Download"
+        )
+        assert bridge._runtime.recovered[0].terminal_status == "Paused"
+        bridge.selectRunRecord("terminal:" + job.run_id)
+        button.activated.emit()
+        assert bridge._runtime.active_job is not None
+        assert bridge._runtime.active_job.urls[-1] == job.urls[-1]
+        assert len(bridge._runtime.active_job.urls) == 2
+        assert bridge._runtime.active_job.completed_batch_items == 1
+        assert not window.findChild(QObject, "forgeRetryPopup").property("opened")
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+def test_paused_batch_and_exported_child_both_remain_in_deck_after_resume(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    qt_app()
+    bridge = qt_main.Bridge(None)
+    job = make_job(tmp_path)
+    job.batch_mode = True
+    job.urls = [job.url, "https://example.com/two"]
+    job.completed_batch_items = 1
+    item = saved(tmp_path, "Already completed", "MP4")
+    item["vodforge_run_id"] = job.run_id
+    bridge._runtime.history = [item]
+    bridge._runtime.recovery.terminal_attempt(job, "Paused", "Closed")
+    bridge._runtime.recovered = bridge._runtime.recovery.store.load_terminal_jobs()
+    monkeypatch.setattr(
+        bridge._runtime,
+        "_make_worker",
+        lambda job: setattr(bridge._runtime, "active_job", job),
+    )
+    try:
+        records = bridge.runDeck["records"]
+        assert records[0]["status"] == "Paused"
+        assert any(row["title"] == "Already completed" for row in records)
+        assert bridge.openRunIssues(job.run_id)
+        assert bridge.retryTerminal(job.run_id)
+        assert any(
+            row["title"] == "Already completed" for row in bridge.runDeck["records"]
+        )
+        bridge._runtime._finish("partial", "One URL failed; completed files retained")
+        assert any(row["status"] == "Partial" for row in bridge.runDeck["records"])
+        assert any(
+            row["title"] == "Already completed" for row in bridge.runDeck["records"]
+        )
+    finally:
+        bridge.close()
+
+
+@pytest.mark.parametrize("admitted", [False, True])
+def test_missing_list_clears_only_unsubmitted_composer(tmp_path, monkeypatch, admitted):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    qt_app()
+    bridge = qt_main.Bridge(None)
+    bridge._timer.stop()
+    path = tmp_path / "list.txt"
+    urls = ["https://example.com/one", "https://example.com/two"]
+    path.write_text("\n".join(urls))
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        bridge.loadBatchUrl(QUrl.fromLocalFile(str(path)))
+        if admitted:
+            monkeypatch.setattr(
+                bridge._runtime,
+                "_make_worker",
+                lambda job: setattr(bridge._runtime, "active_job", job),
+            )
+            assert bridge.submit(str(path), "MP4")
+            job = bridge._runtime.active_job
+            assert job.urls == urls
+        path.unlink()
+        bridge._batch_path_checked_at = 0
+        bridge._pump()
+        field = window.findChild(QObject, "forgeUrlInput")
+        loaded = window.findChild(QObject, "forgeLoadListButton")
+        if admitted:
+            # Admission already clears the draft; losing its file cannot stop it.
+            assert "Batch list missing" not in bridge.status
+            assert bridge._runtime.active_job is job
+            assert job.urls == urls
+            bridge._runtime._closing = True
+            bridge._runtime._finish("stopped", "Closing")
+            bridge.restorePausedComposer()
+            assert bridge.composerResume and bridge.batchLoaded
+            assert field.property("text") == str(path)
+        else:
+            assert not bridge.batchLoaded and not loaded.property("selected")
+            assert loaded.property("label") == "Load list"
+            assert field.property("text") == ""
+            notice = window.findChild(QObject, "operationNotice")
+            assert (
+                notice.property("message")
+                == "Batch list missing. Choose the list again by clicking Load list."
+            )
+            assert bridge._runtime.active_job is None
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+@pytest.mark.parametrize("status", ["Paused", "Partial"])
+@pytest.mark.parametrize("batch", [False, True])
+def test_issue_resume_ignores_edited_draft_and_keeps_saved_settings(
+    tmp_path, monkeypatch, status, batch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    qt_app()
+    bridge = qt_main.Bridge(None)
+    bridge._timer.stop()
+    job = make_job(tmp_path)
+    job.batch_mode = batch
+    if batch:
+        job.urls = [job.url, "https://example.com/two"]
+        job.completed_batch_items = 1
+        job.batch_list_path = str(tmp_path / "missing-after-admission.txt")
+    bridge._runtime.recovery.terminal_attempt(job, status, "Interrupted")
+    bridge._runtime.recovered = bridge._runtime.recovery.store.load_terminal_jobs()
+    saved_job = bridge._runtime.recovered[0]
+    monkeypatch.setattr(
+        bridge._runtime,
+        "_make_worker",
+        lambda resumed: setattr(bridge._runtime, "active_job", resumed),
+    )
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        QTest.qWait(30)  # Complete startup restoration before selecting Issues.
+        assert bridge.openRunIssues(job.run_id)
+        QTest.qWait(30)
+        button = window.findChild(QObject, "libraryIssueDownload")
+        assert button.property("label") == ("Resume" if status == "Paused" else "Retry")
+        assert button.property("enabled")
+        bridge.setIssueRetrySetting("output_type", "MP3")
+        bridge.setIssueRetrySetting("export_mode", "Manual Override")
+        bridge.setIssueRetrySetting("quality", "360p")
+        bridge.setIssueManualValue("manual_crf", "not a number")
+        bridge._issue_settings["output_dir"] = str(tmp_path / "missing-draft-folder")
+        # Neither global settings nor an invalid edited retry draft may block or
+        # redirect Resume. The admitted snapshot owns its saved configuration.
+        bridge._settings_writable = False
+        button.activated.emit()
+        resumed = bridge._runtime.active_job
+        assert resumed is not None
+        assert resumed.output_dir == job.output_dir
+        assert resumed.output_type == job.output_type
+        assert resumed.export_mode == job.export_mode
+        assert resumed.quality_label == job.quality_label
+        assert resumed.manual_settings == job.manual_settings
+        assert resumed.urls == saved_job.urls
+        assert resumed.batch_mode == batch
+        # A paused run resumes its unfinished suffix; a terminal partial batch
+        # retries the list with its saved settings, including failed earlier URLs.
+        assert resumed.completed_batch_items == (
+            saved_job.completed_batch_items if status == "Paused" else 0
+        )
+        assert resumed.retry_of_run_id == job.run_id
+        assert bridge.selection == "Library"
+    finally:
         window.close()
         engine.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)

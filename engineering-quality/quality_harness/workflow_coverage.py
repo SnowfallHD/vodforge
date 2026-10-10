@@ -795,7 +795,8 @@ FEATURE_CATALOG = (
     },
     {
         "id": "dismiss_run",
-        "call": "dismissTerminal",
+        "call": "requestRunRemoval",
+        "aliases": ["requestInspectorLibraryRemoval"],
         "precondition": "selected terminal run",
     },
     {
@@ -1003,7 +1004,7 @@ def modeled_path(
             )
         issue_calls = {"downloadSelectedIssue", "requestMissingFileRelink"}
         if inspector_entry and feature["id"] == "dismiss_run":
-            issue_calls.add("dismissTerminal")
+            issue_calls.update({"requestRunRemoval", "requestInspectorLibraryRemoval"})
         if (
             not same_context
             and any(call.rsplit(".", 1)[-1] in issue_calls for call in site["calls"])

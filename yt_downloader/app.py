@@ -5364,6 +5364,8 @@ class DownloadWorkerCore:
         outcome = DownloadOutcome()
         failures: list[tuple[str, str]] = []
         for index, url in enumerate(urls, start=1):
+            if index <= job.completed_batch_items:
+                continue
             if self.cancel_requested:
                 return _DownloadBatchResult(
                     outcome=outcome,
@@ -5372,6 +5374,24 @@ class DownloadWorkerCore:
                 )
             item_url, forced_single_video = prepare_batch_item_url(url)
             item_single_video_only = job.single_video_only or forced_single_video
+            child = replace(
+                job,
+                url=item_url,
+                urls=[item_url],
+                single_video_only=item_single_video_only,
+            )
+            self.events.put(
+                (
+                    "batch_item",
+                    {
+                        "job": job,
+                        "child": child,
+                        "index": index,
+                        "total": len(urls),
+                        "finished": False,
+                    },
+                )
+            )
             self.events.put(("status", f"Batch URL {index} of {len(urls)} — starting"))
             self._emit_job_log(job, f"Batch URL {index} of {len(urls)}: {item_url}")
             write_diagnostic(
@@ -5379,12 +5399,7 @@ class DownloadWorkerCore:
             )
             try:
                 item_outcome = self._download_worker_single(
-                    replace(
-                        job,
-                        url=item_url,
-                        urls=[item_url],
-                        single_video_only=item_single_video_only,
-                    ),
+                    child,
                     emit_done=False,
                     re_raise=True,
                 )
@@ -5433,10 +5448,30 @@ class DownloadWorkerCore:
                     job,
                     f"WARNING: Batch URL {index} failed; continuing. Failure report: {BATCH_FAILURE_REPORT_PATH}",
                 )
+            self.events.put(
+                (
+                    "batch_item",
+                    {
+                        "job": job,
+                        "child": child,
+                        "index": index,
+                        "total": len(urls),
+                        "finished": True,
+                    },
+                )
+            )
         return _DownloadBatchResult(outcome=outcome, failures=tuple(failures))
 
     def _download_worker(self, job: DownloadJob) -> None:
         urls = [url.strip() for url in (job.urls or [job.url]) if url.strip()]
+        if len(urls) > 1 and job.completed_batch_items == len(urls):
+            self.events.put(
+                (
+                    "done",
+                    "All batch URLs were already processed before VODForge closed.",
+                )
+            )
+            return
         if len(urls) <= 1:
             single_url = urls[0] if urls else job.url
             single_video_only = job.single_video_only
@@ -17742,6 +17777,22 @@ def _smoke_ytdlp_stack() -> tuple[str, str, tuple[str, ...]]:
     return ytdlp_version, ejs_version, tuple(verified_resources)
 
 
+def _smoke_impersonation_targets() -> tuple[str, ...]:
+    """Prove the bundled TLS backend loads and exposes real browser targets."""
+    module = load_yt_dlp()
+    if module is None:
+        raise RuntimeError("yt-dlp unavailable")
+    with module.YoutubeDL({"quiet": True}) as downloader:
+        targets = tuple(
+            str(target)
+            for target, handler in downloader._get_available_impersonate_targets()
+            if handler == "curl_cffi"
+        )
+    if not targets:
+        raise RuntimeError("curl_cffi exposes no impersonation targets")
+    return targets
+
+
 def runtime_smoke(*, require_libvlc: bool = True) -> int:
     """Verify packaged dependencies without opening the GUI or fetching media."""
     try:
@@ -17803,6 +17854,13 @@ def runtime_smoke(*, require_libvlc: bool = True) -> int:
             f"yt-dlp={ytdlp_version} yt-dlp-ejs={ejs_version} "
             f"solver_resources={','.join(solver_resources)}"
         )
+    try:
+        targets = _smoke_impersonation_targets()
+    except Exception as exc:  # noqa: BLE001 - packaged capability probe reports missing native dependencies
+        _runtime_smoke_output(f"impersonation=failed error={type(exc).__name__}: {exc}")
+        failures.append("impersonation")
+    else:
+        _runtime_smoke_output(f"impersonation=curl_cffi targets={len(targets)}")
     _runtime_smoke_output(f"diagnostics={DIAGNOSTICS_LOG_PATH}")
     if failures:
         _runtime_smoke_output(

@@ -115,15 +115,17 @@ def test_missing_queue_source_is_retained_without_losing_valid_queue(tmp_path):
     _legacy_queue(path, [bad, good])
     owner = RunRecoveryOwner(path)
     terminal, queued = owner.startup_recovery()
-    assert [job.run_id for job in terminal] == [bad.run_id]
-    assert [job.run_id for job in queued] == [good.run_id]
+    assert [job.run_id for job in terminal] == [bad.run_id, good.run_id]
+    assert [job.run_id for job in queued] == []
     payload = json.loads(path.read_text())
     assert payload["recovered_failures"][0]["job"] == _legacy_job(bad)
-    assert payload["queued_jobs"] == [_legacy_job(good)]
+    assert payload["queued_jobs"] == []
+    assert terminal[1].terminal_status == "Paused"
+    assert terminal[1].url == deserialize_download_job(_legacy_job(good)).url
     # Cold restart retains the same history and no executable missing-source job.
     terminal2, queued2 = RunRecoveryOwner(path).startup_recovery()
-    assert [job.run_id for job in terminal2] == [bad.run_id]
-    assert [job.run_id for job in queued2] == [good.run_id]
+    assert [job.run_id for job in terminal2] == [bad.run_id, good.run_id]
+    assert [job.run_id for job in queued2] == []
 
 
 @pytest.mark.parametrize("prior_missing_source", [False, True])

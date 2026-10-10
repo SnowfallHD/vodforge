@@ -5,6 +5,25 @@ import VODForge.Models 1.0
 
 Item {
     id: scene
+    component RailLink: AbstractButton {
+        signal activated()
+        text: "> See All"
+        implicitWidth: contentItem.implicitWidth + 8
+        implicitHeight: 32
+        hoverEnabled: true
+        focusPolicy: Qt.StrongFocus
+        Accessible.name: text
+        onClicked: activated()
+        contentItem: Text {
+            text: parent.text
+            color: theme.text
+            opacity: !parent.enabled ? 0.35 : parent.hovered ? 0.55 : 0.85
+            font.pixelSize: 14
+            verticalAlignment: Text.AlignVCenter
+            Behavior on opacity { NumberAnimation { duration: 120 } }
+        }
+        background: Item {}
+    }
     property var appBridge
     property var projection: ({route: "home", query: "", groupKind: "", groupTitle: "",
         groupSubtitle: "", groupDescription: "", groupCountLabel: "", groupFirstOwner: "",
@@ -347,16 +366,14 @@ Item {
                         visible: scene.route === "home"
                         width: parent.width
                         height: 39
-                        Text { text: modelData.title; color: theme.text; font.pixelSize: 23; font.bold: true; Layout.fillWidth: true }
-                        StoneButton {
+                        Text { text: modelData.title; color: theme.text; font.pixelSize: 23; font.bold: true }
+                        RailLink {
                             objectName: "watchHomeSeeAll_" + modelData.route
                             visible: scene.route === "home"
-                            label: "See All"
-                            size: "inline"
-                            Layout.preferredWidth: 86
                             enabled: section.items.length > 0
                             onActivated: scene.appBridge.navigateWatch(modelData.route)
                         }
+                        Item { Layout.fillWidth: true }
                     }
                     ScrollView {
                         id: homeRail
@@ -476,8 +493,9 @@ Item {
                 RowLayout {
                     width: parent.width
                     height: 39
-                    Text { text: "Collections"; color: theme.text; font.pixelSize: 23; font.bold: true; Layout.fillWidth: true }
-                    StoneButton { label: "See All"; size: "inline"; Layout.preferredWidth: 86; onActivated: scene.appBridge.navigateWatch("collections") }
+                    Text { text: "Collections"; color: theme.text; font.pixelSize: 23; font.bold: true }
+                    RailLink { objectName: "watchHomeSeeAll_collections"; onActivated: scene.appBridge.navigateWatch("collections") }
+                    Item { Layout.fillWidth: true }
                 }
                 Flow {
                     width: parent.width
@@ -500,16 +518,14 @@ Item {
                 visible: (scene.route === "home" && !scene.emptyHome) || scene.route === "group"
                 width: parent.width
                 height: 42
-                Text { text: scene.route === "home" ? "Recently Added" : scene.route === "group" ? "Saved media" : "Videos"; color: theme.text; font.pixelSize: 23; font.bold: true; Layout.fillWidth: true }
-                StoneButton {
+                Text { text: scene.route === "home" ? "Recently Added" : scene.route === "group" ? "Saved media" : "Videos"; color: theme.text; font.pixelSize: 23; font.bold: true }
+                RailLink {
                     objectName: "watchHomeSeeAll_videos"
                     visible: scene.route === "home"
-                    label: "See All"
-                    size: "inline"
-                    Layout.preferredWidth: 86
                     enabled: scene.videos.length > 0
                     onActivated: scene.appBridge.navigateWatch("videos")
                 }
+                Item { Layout.fillWidth: true }
             }
             Flow {
                 id: mediaFlow

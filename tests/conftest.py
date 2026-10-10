@@ -1,6 +1,18 @@
 import gc
+import os
+import sys
+from pathlib import Path
 
 import pytest
+
+
+def pytest_configure():
+    # Windows offscreen Qt does not discover the native font directory itself.
+    # Use installed fonts so geometry checks measure Segoe UI, not fallback boxes.
+    if sys.platform == "win32":
+        fonts = Path(os.environ.get("SystemRoot", "C:/Windows")) / "Fonts"
+        if fonts.is_dir():
+            os.environ.setdefault("QT_QPA_FONTDIR", str(fonts))
 
 
 @pytest.fixture(autouse=True)

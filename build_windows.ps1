@@ -166,6 +166,7 @@ python -m PyInstaller `
   --windowed `
   --name "VODForge" `
   --collect-all yt_dlp `
+  --collect-all curl_cffi `
   @iconArgs `
   @versionFile `
   @addData `

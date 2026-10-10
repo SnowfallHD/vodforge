@@ -21,10 +21,12 @@ def scene(tmp_path, monkeypatch):
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
     app = qt_app()
     bridge = qt_main.Bridge(None)
+    bridge._timer.stop()
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
     bridge._window = window
     window.resize(1100, 800)
+    app.processEvents()  # Complete deferred startup before seeding test owners.
     try:
         yield app, bridge, window
     finally:
@@ -77,31 +79,67 @@ def test_saved_inspector_open_location_uses_selected_file_parent(
     assert [Path(location) for location in opened] == [tmp_path]
 
 
-def test_saved_inspector_remove_requires_popup_and_keeps_files(scene, tmp_path):
+def test_saved_inspector_remove_reviews_and_trashes_only_selected_file(
+    scene, tmp_path, monkeypatch
+):
+    from yt_downloader import archive_file_operations as ops
+    from yt_downloader.qt_quick import library_files
+
     app, bridge, window = scene
-    select_saved(bridge, tmp_path)
-    app.processEvents()
-    before = {p: p.read_bytes() for p in tmp_path.glob("*.mp4")}
+    rows = []
+    for name in ("First", "Second"):
+        folder = tmp_path / name
+        folder.mkdir()
+        (folder / f"{name}.mp4").write_bytes(b"fixture media")
+        rows.append(saved(folder, name, "MP4"))
+    bridge._runtime.history = rows
+    save_history(bridge._runtime.history_path, rows)
+    bridge._runtime.history = load_history(bridge._runtime.history_path)
+    bridge.select("Library")
+    bridge.navigateLibraryFolders("all")
+    row = next(r for r in bridge.libraryFolders["components"] if r["kind"] == "media")
+    assert bridge.selectLibraryFolderComponent(row["key"])
+    owner = bridge.inspectorRecoveryActions["savedOwner"]
+    selected = Path(bridge._saved_item_for_owner(owner)["vodforge_output_path"])
+    before = {p: p.read_bytes() for p in tmp_path.rglob("*.mp4")}
     history = bridge._runtime.history_path.read_bytes()
-    popup = window.findChild(QObject, "libraryRemovalConfirmation")
-    window.findChild(QObject, "libraryInspectorRemoveCard").activated.emit()
-    app.processEvents()
-    assert popup.property("visible")
-    assert bridge._runtime.history_path.read_bytes() == history
-    text = [child.property("text") for child in popup.findChildren(QObject)]
-    assert "The media file and folder stay on your computer." in text
-    button(popup, "Cancel").activated.emit()
-    app.processEvents()
-    assert bridge._pending_library_removal is None
-    assert bridge._runtime.history_path.read_bytes() == history
-    window.findChild(QObject, "libraryInspectorRemoveCard").activated.emit()
-    app.processEvents()
-    button(popup, "Remove card").activated.emit()
-    app.processEvents()
-    assert len(bridge._runtime.history) == 1
+    trash = tmp_path / "synthetic-trash"
+    trash.mkdir()
+
+    def fake_trash(path):
+        target = trash / path.name
+        path.rename(target)
+        return str(target)
+
+    monkeypatch.setattr(library_files, "system_trash_available", lambda: True)
+    monkeypatch.setattr(
+        library_files,
+        "delete_files",
+        lambda *a, **k: ops.delete_files(*a, **k, trash=fake_trash),
+    )
+    popup = window.findChild(QObject, "libraryFileActionPopup")
+    for confirm in (False, True):
+        window.findChild(QObject, "libraryInspectorRemoveCard").activated.emit()
+        bridge._files.worker.join(timeout=10)
+        bridge._pump()
+        app.processEvents()
+        assert popup.property("visible")
+        assert bridge.fileActionEligible, bridge.fileActionStatus
+        assert bridge._runtime.history_path.read_bytes() == history
+        assert {p: p.read_bytes() for p in before} == before
+        if not confirm:
+            popup.findChild(QObject, "fileActionDismissButton").activated.emit()
+            app.processEvents()
+            assert not popup.property("visible")
+        else:
+            assert bridge.confirmFileAction()
+            bridge._files.worker.join(timeout=10)
+            bridge._pump()
+    assert bridge._files.phase == "done", bridge.fileActionStatus
     assert len(load_history(bridge._runtime.history_path)) == 1
-    assert {p: p.read_bytes() for p in before} == before
-    assert not popup.property("visible")
+    assert not selected.exists()
+    assert (trash / selected.name).read_bytes() == before[selected]
+    assert all(p.read_bytes() == data for p, data in before.items() if p != selected)
 
 
 def test_stale_inspector_key_cannot_open_or_request_removal(
@@ -116,7 +154,7 @@ def test_stale_inspector_key_cannot_open_or_request_removal(
     monkeypatch.setattr(
         qt_main.QDesktopServices, "openUrl", lambda url: opened.append(url) or True
     )
-    requested = QSignalSpy(bridge.libraryRemovalRequested)
+    requested = QSignalSpy(bridge.fileActionRequested)
     assert not bridge.openInspectorLocation(old_key)
     assert not bridge.requestInspectorLibraryRemoval(old_key)
     assert not opened
@@ -131,6 +169,9 @@ def test_unavailable_selected_location_does_not_launch_file_explorer(
     _, bridge, _ = scene
     folder = tmp_path / "disposable-media"
     folder.mkdir()
+    # This test removes its fixture to simulate an external disappearance;
+    # prevent asynchronous artwork reads from racing that Windows unlink.
+    bridge._artwork.close()
     select_saved(bridge, folder, ("Missing fixture",))
     key = bridge.inspectorRecoveryActions["selectionKey"]
     (folder / "Missing fixture.mp4").unlink()
@@ -145,20 +186,31 @@ def test_unavailable_selected_location_does_not_launch_file_explorer(
     assert len(bridge._runtime.history) == 1
 
 
-def test_changed_record_rejects_pending_removal_confirmation(scene, tmp_path):
+def test_changed_record_rejects_pending_removal_confirmation(
+    scene, tmp_path, monkeypatch
+):
+    from yt_downloader.qt_quick import library_files
+
     _, bridge, _ = scene
-    select_saved(bridge, tmp_path)
+    select_saved(bridge, tmp_path, ("First",))
+    bridge._runtime.history = load_history(bridge._runtime.history_path)
+    monkeypatch.setattr(library_files, "system_trash_available", lambda: True)
     key = bridge.inspectorRecoveryActions["selectionKey"]
     assert bridge.requestInspectorLibraryRemoval(key)
+    bridge._files.worker.join(timeout=10)
+    bridge._pump()
+    assert bridge.fileActionEligible
     owner = bridge.inspectorRecoveryActions["savedOwner"]
     record = bridge._saved_item_for_owner(owner)
     record["title"] = "Changed since confirmation"
-    assert not bridge.confirmLibraryRemoval()
-    assert len(bridge._runtime.history) == 2
-    assert len(list(tmp_path.glob("*.mp4"))) == 2
+    assert not bridge.confirmFileAction()
+    assert len(bridge._runtime.history) == 1
+    assert len(list(tmp_path.glob("*.mp4"))) == 1
 
 
-@pytest.mark.parametrize("status", ["Failed", "Stopped", "Skipped"])
+@pytest.mark.parametrize(
+    "status", ["Failed", "Stopped", "Skipped", "Paused", "Partial"]
+)
 def test_issue_inspector_dismisses_terminal_only_and_keeps_saved_state(
     scene, tmp_path, monkeypatch, status
 ):
@@ -197,10 +249,18 @@ def test_issue_inspector_dismisses_terminal_only_and_keeps_saved_state(
     assert not bridge.dismissTerminal(queued.run_id)
     window.findChild(QObject, "libraryInspectorDismissRun").activated.emit()
     app.processEvents()
-    assert bridge._runtime.recovered == []
-    assert bridge._runtime.recovery.store.load_terminal_jobs() == []
+    assert len(bridge._runtime.recovered) == 1
     assert bridge._runtime.active_job is active
     assert bridge._runtime.queued == [queued]
+    bridge._runtime.active_job = None
+    bridge._runtime.queued = []
+    window.findChild(QObject, "libraryInspectorDismissRun").activated.emit()
+    app.processEvents()
+    assert window.findChild(QObject, "libraryFileActionPopup").property("visible")
+    assert len(bridge._runtime.recovered) == 1
+    assert bridge.confirmFileAction()
+    assert bridge._runtime.recovered == []
+    assert bridge._runtime.recovery.store.load_terminal_jobs() == []
     assert not bridge.dismissTerminal(failed.run_id)
     assert media.read_bytes() == b"retained media"
     assert bridge._runtime.history_path.read_bytes() == history
@@ -289,16 +349,20 @@ def test_denied_location_preserves_exact_owner_recovery_actions(
     if owner_kind == "saved":
         control = window.findChild(QObject, "libraryInspectorRemoveCard")
         assert control.property("visible")
-        requested = QSignalSpy(bridge.libraryRemovalRequested)
+        requested = QSignalSpy(bridge.fileActionRequested)
         control.activated.emit()
         assert requested.count() == 1
-        assert bridge._pending_library_removal is not None
+        assert bridge._files.action == "delete"
+        bridge._files.worker.join(timeout=10)
+        bridge._pump()
     else:
         control = window.findChild(QObject, "libraryInspectorDismissRun")
         assert control.property("visible")
         control.activated.emit()
-        assert bridge._runtime.recovered == []
-        assert bridge._runtime.recovery.store.load_terminal_jobs() == []
+        assert len(bridge._runtime.recovered) == 1
+        assert len(bridge._runtime.recovery.store.load_terminal_jobs()) == 1
+        bridge.cancelRunRemovalReview()
+        assert bridge._remove_run_request is None
     assert media.read_bytes() == original_media
     if history is not None:
         assert bridge._runtime.history_path.read_bytes() == history
