@@ -27,7 +27,11 @@ def _pytest_commands(
         (
             "pytest",
             _tool_command(
-                python, "pytest", "-q", *(f"--ignore={path}" for path in relative)
+                python,
+                "pytest",
+                "-q",
+                "tests",
+                *(f"--ignore={path}" for path in relative),
             ),
             300,
         ),

@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from quality_harness.duplicate_interaction import CASES, history_path
 from quality_harness.interaction_coverage import interaction_coverage
+from quality_harness.observation_fixtures import relocate_observation
 
 FIXTURE = json.loads(Path(__file__).with_name("duplicate_observation.json").read_text())
 GLOBAL = [
@@ -136,13 +137,9 @@ def materialize(tmp_path):
     root.mkdir()
     folder = root / "duplicate-artifact"
     folder.mkdir()
-    a = json.loads(
-        json.dumps(FIXTURE["raw"]).replace(FIXTURE["old_case_root"], str(root))
-    )
+    a = relocate_observation(FIXTURE["raw"], FIXTURE["old_case_root"], root)
     for case, observed in FIXTURE["workers"].items():
-        w = json.loads(
-            json.dumps(observed).replace(FIXTURE["old_case_root"], str(root))
-        )
+        w = relocate_observation(observed, FIXTURE["old_case_root"], root)
         p = root / case
         p.mkdir()
         ref = save(p / "pipeline-result.json", w)

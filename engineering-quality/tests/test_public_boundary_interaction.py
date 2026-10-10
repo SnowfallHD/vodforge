@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from quality_harness.interaction_coverage import interaction_coverage
+from quality_harness.observation_fixtures import relocate_observation
 
 FIXTURE = json.loads(Path(__file__).with_name("public_observation.json").read_text())
 CONTROLS = [
@@ -69,7 +70,7 @@ def save(p, a):
 
 def materialize(root):
     root.mkdir(parents=True, exist_ok=True)
-    a = json.loads(json.dumps(FIXTURE["raw"]).replace(FIXTURE["old_root"], str(root)))
+    a = relocate_observation(FIXTURE["raw"], FIXTURE["old_root"], root)
     ref = save(root / "observation.json", a)
     return dict(
         FIXTURE["scenario"], raw_result=ref["path"], raw_result_sha256=ref["sha256"]

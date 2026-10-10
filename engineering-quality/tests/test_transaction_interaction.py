@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from quality_harness.interaction_coverage import interaction_coverage
+from quality_harness.observation_fixtures import relocate_observation
 
 FIXTURES = json.loads(
     Path(__file__).with_name("transaction_observations.json").read_text()
@@ -340,10 +341,14 @@ def materialize(tmp_path, example):
     folder = root / example["folder"]
     folder.mkdir()
     old = example["case_root"]
-    raw = json.loads(json.dumps(example["raw"]).replace(old, str(root)))
+    raw = relocate_observation(example["raw"], old, root)
+    if "restart" in example["scenario"]["id"]:
+        # The observed command must bind to the relocated native argv.
+        before = raw["snapshots"][1]
+        before["child_command"] = " ".join(raw["snapshots"][0]["child_argv"])
     if "workers" in raw:
         for label, value in example["workers"].items():
-            worker = json.loads(json.dumps(value).replace(old, str(root)))
+            worker = relocate_observation(value, old, root)
             worker_folder = root / worker["case_id"]
             worker_folder.mkdir()
             raw["workers"][label] = save(worker_folder / "pipeline-result.json", worker)

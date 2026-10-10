@@ -317,6 +317,9 @@ def test_static_pytest_partition_covers_all_qt_modules() -> None:
         path.relative_to(root).as_posix()
         for path in (root / "tests").glob("test_qt_*.py")
     }
+    # Explicit roots avoid rediscovering extracted candidate bundles or rerunning
+    # harness cases already covered by the separate pytest_harness group.
+    assert groups["pytest"][4] == "tests"
     ignored = {
         arg.removeprefix("--ignore=")
         for arg in groups["pytest"]

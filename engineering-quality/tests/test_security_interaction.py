@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from quality_harness.interaction_coverage import interaction_coverage
+from quality_harness.observation_fixtures import relocate_observation
 
 FIXTURES = json.loads(
     Path(__file__).with_name("security_observations.json").read_text()
@@ -204,9 +205,7 @@ def mutate(s, a, name):
 def materialize(tmp_path, example):
     folder = tmp_path / "cases" / example["folder"]
     folder.mkdir(parents=True)
-    a = json.loads(
-        json.dumps(example["raw"]).replace(example["old_run_root"], str(tmp_path))
-    )
+    a = relocate_observation(example["raw"], example["old_run_root"], tmp_path)
     ref = save(folder / "observation.json", a)
     return (
         dict(

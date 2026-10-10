@@ -237,6 +237,7 @@ def test_windows_job_keeps_orphan_child_and_cleanup_preserves_unrelated_process(
         assert child_pid in {r["pid"] for r in windows.owned_windows_survivors(launch)}
         receipt = windows.terminate_owned_windows(owned, launch, 10)
         assert receipt["verified_owned"] and receipt["survivors_after"] == []
+        assert receipt["process_exit_verified"] and receipt["error"] is None
         assert sentinel.poll() is None
         assert not psutil.pid_exists(child_pid)
     finally:
@@ -244,3 +245,96 @@ def test_windows_job_keeps_orphan_child_and_cleanup_preserves_unrelated_process(
         windows.close_owned_windows_job(launch)
         sentinel.kill()
         sentinel.wait(timeout=10)
+
+
+@pytest.mark.parametrize("signalled", [True, False])
+def test_cleanup_requires_owned_process_signal_even_after_job_is_empty(
+    monkeypatch, signalled
+):
+    calls = []
+
+    class API:
+        def open_member(self, job, pid):
+            calls.append(("pin", job, pid))
+            return "child-handle"
+
+        def terminate(self, job):
+            calls.append(("terminate", job))
+
+        def wait_process(self, handle, timeout):
+            calls.append(("wait", handle))
+            return signalled
+
+        def close(self, handle):
+            calls.append(("close", handle))
+
+    class Process:
+        def wait(self, timeout):
+            calls.append(("root-wait",))
+
+    process = Process()
+
+    class Job:
+        token = "owned"
+        api = API()
+        handle = "job-handle"
+
+        def members(self):
+            return []
+
+    job = Job()
+    job.process = process
+    monkeypatch.setitem(windows._JOBS, 123, job)
+    observations = iter([[{"pid": 456}], []])
+    monkeypatch.setattr(
+        windows, "owned_windows_survivors", lambda _: next(observations)
+    )
+    receipt = windows.terminate_owned_windows(
+        process, {"pid": 123, "windows_job_token": "owned"}, 1
+    )
+    assert receipt["process_exit_verified"] is signalled
+    assert (receipt["error"] is None) is signalled
+    assert calls == [
+        ("pin", "job-handle", 456),
+        ("terminate", "job-handle"),
+        ("wait", "child-handle"),
+        ("root-wait",),
+        ("close", "child-handle"),
+    ]
+
+
+def test_cleanup_closes_pinned_member_handles_when_later_member_cannot_be_verified(
+    monkeypatch,
+):
+    calls = []
+
+    class API:
+        def open_member(self, job, pid):
+            if pid == 2:
+                raise PermissionError("Cannot verify the second member")
+            return "first-handle"
+
+        def close(self, handle):
+            calls.append(handle)
+
+        def terminate(self, job):
+            raise AssertionError("Unverified cleanup must not terminate")
+
+    process = object()
+
+    class Job:
+        token = "owned"
+        api = API()
+        handle = "job-handle"
+
+    job = Job()
+    job.process = process
+    monkeypatch.setitem(windows._JOBS, 123, job)
+    monkeypatch.setattr(
+        windows, "owned_windows_survivors", lambda _: [{"pid": 1}, {"pid": 2}]
+    )
+    with pytest.raises(PermissionError):
+        windows.terminate_owned_windows(
+            process, {"pid": 123, "windows_job_token": "owned"}, 1
+        )
+    assert calls == ["first-handle"]

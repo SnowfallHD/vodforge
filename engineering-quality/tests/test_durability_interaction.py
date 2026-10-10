@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from quality_harness.interaction_coverage import interaction_coverage
+from quality_harness.observation_fixtures import relocate_observation
 
 FIXTURES = json.loads(
     Path(__file__).with_name("durability_observations.json").read_text()
@@ -211,11 +212,12 @@ def mutate(s, a, name, folder):
 def materialize(tmp_path, f):
     folder = tmp_path / f["folder"]
     folder.mkdir()
-    a = json.loads(json.dumps(f["raw"]).replace(f["old_root"], str(folder)))
+    a = relocate_observation(f["raw"], f["old_root"], folder)
     for rel, text in f["constituents"].items():
         p = folder / rel
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(text)
+        # Preserve retained constituent hashes across Windows text I/O.
+        p.write_text(text, encoding="utf-8", newline="\n")
     ref = save(folder / "observation.json", a)
     return (
         dict(f["scenario"], raw_result=ref["path"], raw_result_sha256=ref["sha256"]),

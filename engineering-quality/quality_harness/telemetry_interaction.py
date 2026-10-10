@@ -107,7 +107,7 @@ def _backend(raw, root, check):
     if isinstance(report, dict):
         suites = report.get("testResults", [])
         cases = [
-            str(Path(s["name"]).relative_to(before["site"]["root"]))
+            Path(s["name"]).relative_to(before["site"]["root"]).as_posix()
             + "::"
             + c["fullName"]
             for s in suites

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from quality_harness.interaction_coverage import interaction_coverage
+from quality_harness.observation_fixtures import relocate_observation
 
 FIXTURES = json.loads(
     Path(__file__).with_name("source_suite_observations.json").read_text()
@@ -174,7 +175,10 @@ def mutate(a, name, folder):
 def materialize(tmp_path, example):
     folder = tmp_path / example["folder"]
     folder.mkdir()
-    a = json.loads(json.dumps(example["raw"]).replace(example["old_root"], str(folder)))
+    a = relocate_observation(example["raw"], example["old_root"], folder)
+    source_root = a["trace"][0]["source"]["root"]
+    native_source = Path(source_root).resolve()
+    a = relocate_observation(a, source_root, native_source)
     for key in ("command", "binding", "junit"):
         value = example["constituents"][key]
         p = (
@@ -188,17 +192,19 @@ def materialize(tmp_path, example):
             )
         )
         if key == "junit":
-            p.write_text(value.replace(example["old_root"], str(folder)))
-        else:
             p.write_text(
-                json.dumps(
-                    json.loads(
-                        json.dumps(value).replace(example["old_root"], str(folder))
-                    ),
-                    indent=2,
-                )
-                + "\n"
+                value.replace(example["old_root"], str(folder)), encoding="utf-8"
             )
+        else:
+            value = relocate_observation(value, example["old_root"], folder)
+            value = relocate_observation(value, source_root, native_source)
+            if key == "command":
+                command_root = a["trace"][0]["source"]["root"]
+                count = len(a["selectors"])
+                value["command"][4 : 4 + count] = [
+                    str(Path(command_root) / selector) for selector in a["selectors"]
+                ]
+            p.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
         a[key] = {"path": str(p), "sha256": sha(p)}
         if key == "command":
             a["trace"][1]["command_result"] = json.loads(p.read_text())

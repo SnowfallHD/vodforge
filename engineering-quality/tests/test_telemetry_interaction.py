@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from quality_harness.interaction_coverage import interaction_coverage
+from quality_harness.observation_fixtures import relocate_observation
 
 FIXTURES = json.loads(
     Path(__file__).with_name("telemetry_observations.json").read_text()
@@ -106,11 +107,19 @@ def controls(s):
 
 def materialize(tmp_path, f):
     tmp_path.mkdir(parents=True, exist_ok=True)
-    a = json.loads(json.dumps(f["raw"]).replace(f["old_root"], str(tmp_path)))
+    a = relocate_observation(f["raw"], f["old_root"], tmp_path)
+    site = a.get("trace", [{}])[0].get("site", {})
+    site_root = site.get("root")
+    native_site = Path(site_root).resolve() if site_root else None
+    if native_site is not None:
+        a = relocate_observation(a, site_root, native_site)
     for rel, text in f["constituents"].items():
         p = tmp_path / rel
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(text.replace(f["old_root"], str(tmp_path)))
+        value = relocate_observation(json.loads(text), f["old_root"], tmp_path)
+        if native_site is not None:
+            value = relocate_observation(value, site_root, native_site)
+        p.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
 
     def rebind(v):
         if isinstance(v, dict):

@@ -146,6 +146,9 @@ class _JobAPI:
                 W.BOOL,
             ),
             ("TerminateJobObject", [W.HANDLE, W.UINT], W.BOOL),
+            ("OpenProcess", [W.DWORD, W.BOOL, W.DWORD], W.HANDLE),
+            ("IsProcessInJob", [W.HANDLE, W.HANDLE, C.POINTER(W.BOOL)], W.BOOL),
+            ("WaitForSingleObject", [W.HANDLE, W.DWORD], W.DWORD),
             ("CloseHandle", [W.HANDLE], W.BOOL),
             ("OpenThread", [W.DWORD, W.BOOL, W.DWORD], W.HANDLE),
             ("ResumeThread", [W.HANDLE], W.DWORD),
@@ -237,6 +240,34 @@ class _JobAPI:
             if C.get_last_error() != 234:  # ERROR_MORE_DATA
                 self.require(False)
         raise RuntimeError("QA job membership exceeded the bounded query size")
+
+    def open_member(self, job_handle, pid):
+        from ctypes import wintypes as W
+
+        # Pin the OS object before terminating it; a reused PID is never authority.
+        handle = self.dll.OpenProcess(0x100000 | 0x1000, False, pid)
+        if not handle:
+            if C.get_last_error() == 87 and pid not in self.members(job_handle):
+                return None  # The enumerated member has already exited.
+            self.require(False)
+        try:
+            member = W.BOOL()
+            self.require(self.dll.IsProcessInJob(handle, job_handle, C.byref(member)))
+            if not member.value and not self.wait_process(handle, 0):
+                raise RuntimeError("Process handle is not an owned Windows job member")
+        except Exception:
+            self.close(handle)
+            raise
+        return handle
+
+    def wait_process(self, handle, timeout):
+        milliseconds = min(0xFFFFFFFE, max(0, int(timeout * 1000)))
+        result = self.dll.WaitForSingleObject(handle, milliseconds)
+        if result == 0:  # WAIT_OBJECT_0: this exact process has exited.
+            return True
+        if result == 258:  # WAIT_TIMEOUT
+            return False
+        self.require(False)
 
     def terminate(self, handle):
         self.require(self.dll.TerminateJobObject(handle, 1))
@@ -334,19 +365,36 @@ def terminate_owned_windows(process, launch, timeout):
             "Windows cleanup process handle does not belong to the launch"
         )
     before = owned_windows_survivors(launch)
-    if before:
-        job.api.terminate(job.handle)
     deadline = time.monotonic() + timeout
-    while job.members() and time.monotonic() < deadline:
-        time.sleep(0.05)
-    after = owned_windows_survivors(launch)
-    process.wait(timeout=1)
+    handles = []
+    try:
+        for row in before:
+            handle = job.api.open_member(job.handle, row["pid"])
+            if handle is not None:
+                handles.append(handle)
+        if before:
+            job.api.terminate(job.handle)
+        exited = True
+        for handle in handles:
+            exited = (
+                job.api.wait_process(handle, max(0, deadline - time.monotonic()))
+                and exited
+            )
+        while job.members() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        after = owned_windows_survivors(launch)
+        process.wait(timeout=1)
+    finally:
+        for handle in handles:
+            job.api.close(handle)
+    verified_exit = exited and not after
     return {
         "attempted": bool(before),
         "verified_owned": True,
+        "process_exit_verified": verified_exit,
         "survivors_before": before,
         "survivors_after": after,
-        "error": None if not after else "owned Windows job did not exit",
+        "error": None if verified_exit else "owned Windows job did not exit",
     }
 
 
