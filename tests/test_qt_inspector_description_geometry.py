@@ -82,3 +82,99 @@ def test_description_viewport_fits_after_recovery_controls(
         bridge.close()
         engine.deleteLater()
         app.processEvents()
+
+
+@pytest.mark.parametrize("mode", ["folders", "all"])
+@pytest.mark.parametrize("width,height", [(1100, 740), (1100, 800), (2400, 740)])
+def test_first_selected_description_tracks_live_table_geometry(
+    tmp_path, monkeypatch, mode, width, height
+):
+    """Measure the table independently after navigation and a later resize."""
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtTest import QTest
+
+    from tests.test_qt_scene_port import polish_scene
+
+    for key in ("HOME", "LOCALAPPDATA", "XDG_DATA_HOME", "TMPDIR"):
+        monkeypatch.setenv(key, str(tmp_path / key))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    output = tmp_path / "Downloads"
+    folder = output / "Channel" / "videos - no playlist" / "Owned video"
+    folder.mkdir(parents=True)
+    path = folder / "media.mp4"
+    path.write_bytes(b"Visual fixture; no decoding or export claim")
+    record = saved(folder, "Long selected title with Unicode 日本語 🚀 " * 8, "MP4")
+    record["vodforge_output_path"] = str(path)
+    record["vodforge_retry_job"] = {"output_dir": str(output)}
+    record["description"] = "First selected description remains readable. " * 40
+    app = qt_app()
+    bridge = qt_main.Bridge(None)
+    bridge._timer.stop()
+    bridge._runtime.history = [record]
+    bridge.setOutputPath(str(output))
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+
+    def settle_listing():
+        for _ in range(300):
+            QTest.qWait(10)
+            bridge._pump()
+            if not bridge._folder_listing_pending:
+                assert not bridge._folder_listing_error
+                return
+        pytest.fail("Owned folder listing did not settle")
+
+    def assert_visible_description():
+        for _ in range(5):
+            app.processEvents()
+            polish_scene(window.contentItem())
+        inspector = window.findChild(QObject, "libraryFolderInspector")
+        table = window.findChild(QObject, "libraryFolderViewport")
+        scroll = window.findChild(QObject, "libraryFolderDescriptionScroll")
+        footer = window.findChild(QObject, "libraryInspectorActionFooter")
+        expected = table.mapToItem(inspector, QPointF(0, table.height())).y()
+        assert inspector.property("targetPanelBottom") == pytest.approx(expected, abs=1)
+        assert scroll.isVisible() and scroll.height() >= 120
+        assert footer.mapToItem(
+            inspector, QPointF(0, footer.height())
+        ).y() == pytest.approx(expected, abs=1)
+        assert scroll.mapToItem(inspector, QPointF(0, scroll.height())).y() <= (
+            footer.mapToItem(inspector, QPointF()).y() - inspector.property("spacing")
+        )
+        assert (
+            window.findChild(QObject, "libraryFolderDescriptionText").property("text")
+            == record["description"]
+        )
+
+    try:
+        window.resize(width, height)
+        QTest.qWait(20)
+        bridge.select("Library")
+        bridge.navigateLibraryFolders(mode)
+        if mode == "folders":
+            settle_listing()
+            for _ in range(3):
+                row = next(
+                    row
+                    for row in bridge.libraryFolders["components"]
+                    if row["kind"] == "folder"
+                )
+                assert bridge.openLibraryFolderComponent(row["key"])
+                settle_listing()
+        row = next(
+            row for row in bridge.libraryFolders["components"] if row["kind"] == "media"
+        )
+        assert bridge.selectLibraryFolderComponent(row["key"])
+        app.processEvents()
+        window.findChild(QObject, "libraryFolderDescriptionTab").activated.emit()
+        assert_visible_description()
+        window.resize(width + 100, height + 120)
+        QTest.qWait(20)
+        assert_visible_description()
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+        app.processEvents()

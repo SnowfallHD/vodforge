@@ -3158,3 +3158,34 @@ resume without the source list, retained completed-file hashes and independent
 media decode.
 
 Batch resume also checkpoints the existing DownloadOutcome beside its processed-URL cursor. The adversarial regression retains earlier failed, skipped and optional-sidecar outcomes through durable reload and Resume, and covers interruption after all URLs were processed but before the terminal event. Fresh retry resets the aggregate. Counts are bounded and malformed saved values are rejected; older records without counts remain readable.
+
+
+### First folder inspector geometry learning — 2026-10-10
+
+The signed e614d20 macOS candidate's first My Files description had a five-pixel
+viewport despite unused space below its action footer. Source reproduction found
+the table's actual bottom at 694 pixels while the inspector retained 334 pixels.
+Calling `mapToItem` inside a QML binding did not subscribe to the item and ancestor
+position changes during layout settlement. The LibraryFolders render owner now
+passes its tracked sibling/child coordinates to the existing inspector. No bridge,
+history, download, or process-lifecycle responsibility changes.
+
+Earlier recovery geometry tests mostly opened All media and checked the panel's
+own target or a weak positive height; they did not navigate the first nested
+folder and independently compare its rendered table and footer. The new six-case
+regression in `test_qt_inspector_description_geometry.py` covers first folder and
+All media selection at normal, tall, and wide sizes, followed by another resize.
+It measures the table independently, requires a readable description viewport,
+and checks the footer alignment and separation from the description. The prior
+source fails the matching first-folder probe before any runtime change; native
+failed screenshot and geometry receipts are preserved with the release attempt.
+
+The broader invariant is that geometry passed across render owners must track
+the underlying layout properties; a computed coordinate alone is not a reactive
+dependency. Existing inspector ownership and test-process partition stay intact.
+The focused inspector/path suite passes 14 cases; the two existing LiquidToolTip
+edge/resize cases also pass after auditing other mapped-coordinate consumers.
+The isolated source-native My Files journey now has a 271-pixel description
+viewport and both its footer and independently measured table end at 634 pixels.
+Source/native checks do not qualify a rebuilt signed package or close the
+remaining telemetry and interaction release rows.

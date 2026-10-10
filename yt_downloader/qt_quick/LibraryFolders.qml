@@ -87,6 +87,7 @@ Item {
         }
         Rectangle { Layout.fillHeight: true; Layout.preferredWidth: 1; color: theme.border }
         ColumnLayout {
+            id: contentColumn
             objectName: "libraryFolderContentColumn"
             Layout.minimumWidth: 0
             Layout.fillWidth: true
@@ -351,7 +352,9 @@ Item {
             Layout.preferredWidth: visible ? browser.inspectorColumnWidth : 0
             Layout.maximumWidth: Layout.preferredWidth
             Layout.fillHeight: true
-            targetPanelBottom: viewport.mapToItem(selectedInspector, 0, viewport.height).y
+            // mapToItem does not bind to position changes of the mapped items.
+            // Track their actual sibling/child positions through layout settlement.
+            targetPanelBottom: contentColumn.y + viewport.y + viewport.height - selectedInspector.y
             appBridge: browser.appBridge
         }
     }
