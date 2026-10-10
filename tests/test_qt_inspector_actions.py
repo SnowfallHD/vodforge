@@ -300,6 +300,11 @@ def test_inspector_full_path_is_preserved_in_bounded_panel(scene, tmp_path, widt
 def test_denied_location_preserves_exact_owner_recovery_actions(
     scene, tmp_path, monkeypatch, failure, owner_kind
 ):
+    from yt_downloader.qt_quick import library_files
+
+    # This case checks owner preservation and the review handoff. Trash support
+    # is an independent prerequisite, covered by the unavailable-backend tests.
+    monkeypatch.setattr(library_files, "system_trash_available", lambda: True)
     app, bridge, window = scene
     folder = tmp_path / "denied-media-folder"
     folder.mkdir()
