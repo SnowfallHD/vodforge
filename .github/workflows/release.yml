@@ -156,8 +156,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install build dependencies
         run: |
-          if ! brew install python@3.13 python-tk@3.13 ffmpeg deno; then
-            for formula in python@3.13 python-tk@3.13 ffmpeg deno; do
+          if ! brew install python@3.13 ffmpeg deno; then
+            for formula in python@3.13 ffmpeg deno; do
               brew list --versions "$formula" >/dev/null
             done
           fi

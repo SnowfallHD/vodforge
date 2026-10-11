@@ -1131,3 +1131,21 @@ attempt lacked Pillow and was invalid; retained; valid venv prior failure retain
 No GUI created. This is the first incremental source commit, not full retirement:
 legacy files/tests, entry/build defaults, Tk-only dependencies and workflow paths
 still require inventoried removal or functional migration. Do not call complete.
+
+## Oct 11 — Qt retirement branch: ordinary Qt entry/build defaults
+
+main.py now starts the existing Qt application; qt_main.py remains an explicit
+Qt alias. Both platform build scripts require/default to qt, include QML/Qt
+Multimedia and exclude tkinter/PIL.ImageTk/vlc. Removed Tk presence prerequisite
+and unreachable legacy libVLC bundling branch. macOS dependency installation and
+release workflow no longer request python-tk or libVLC; ordinary macOS runtime
+probe uses neutral service and Qt dependency scope. README/stale entry comments
+updated. This changes future source/build paths only; no build or frozen artifact
+mutation. Prior shared-service worker/data behavior remains unchanged.
+
+Exact ordinary/explicit entry imports with Tk unavailable1pass. Bash syntax
+passes. Windows PowerShell parser reports0errors via existing authorized SSH,
+parsing source only (no build/app execution). First encoded parser command exceeded
+Windows argument limit before parsing; stdin transport passed, no remote files
+created. Ruff/diff pass. Legacy app/widget source and obsolete test/workflow paths
+still remain pending inventory/removal; full retirement is not complete yet.

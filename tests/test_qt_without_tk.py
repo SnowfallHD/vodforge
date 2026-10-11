@@ -15,6 +15,8 @@ def refuse_tk(name, *args, **kwargs):
     return original_import(name, *args, **kwargs)
 builtins.__import__ = refuse_tk
 import yt_downloader.qt_quick.main
+import main
+import qt_main
 assert 'tkinter' not in sys.modules
 assert 'yt_downloader.app' not in sys.modules
 """

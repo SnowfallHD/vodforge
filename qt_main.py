@@ -1,4 +1,4 @@
-"""Qt Quick application entrypoint for isolated package qualification."""
+"""Explicit Qt application entry point."""
 
 from yt_downloader.qt_quick.main import main
 

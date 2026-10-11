@@ -13,9 +13,8 @@ if ! command -v brew >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "Installing the macOS Python/Tk runtime, FFmpeg, Deno, and libVLC..."
-brew install python@3.13 python-tk@3.13 ffmpeg deno
-./install_vlc_macos.sh
+echo "Installing the macOS Python/Qt runtime, FFmpeg and Deno..."
+brew install python@3.13 ffmpeg deno
 
 python_bin="$(brew --prefix python@3.13)/bin/python3.13"
 if [[ ! -x "$python_bin" ]]; then
@@ -23,7 +22,6 @@ if [[ ! -x "$python_bin" ]]; then
   exit 1
 fi
 
-"$python_bin" -c 'import tkinter; print(f"Tk {tkinter.TkVersion} ready")'
 "$python_bin" -m venv .venv
 .venv/bin/python -m pip install --upgrade pip
 .venv/bin/python -m pip install -r requirements-dev.txt

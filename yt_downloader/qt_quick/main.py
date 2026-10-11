@@ -1,4 +1,4 @@
-"""Qt Quick application under port; release entrypoint remains the Tk app."""
+"""VODForge Qt Quick application and existing state owners."""
 
 from __future__ import annotations
 

@@ -19,15 +19,11 @@ if [[ -z "$python_bin" && -x "/opt/homebrew/opt/python@3.13/bin/python3.13" ]]; 
   python_bin="/opt/homebrew/opt/python@3.13/bin/python3.13"
 fi
 if [[ -z "$python_bin" ]]; then
-  echo "Python 3.13 with Tk was not found. Run ./install_macos_dependencies.sh first."
+  echo "Python 3.13 was not found. Run ./install_macos_dependencies.sh first."
   exit 1
 fi
 
-if ! "$python_bin" -c 'import tkinter' >/dev/null 2>&1; then
-  echo "The selected Python does not include Tk: $python_bin"
-  echo "Run ./install_macos_dependencies.sh or set VODFORGE_PYTHON to a Tk-enabled Python 3.11+."
-  exit 1
-fi
+
 
 if [[ "$python_bin" != ".venv/bin/python" ]]; then
   "$python_bin" -m venv .venv
@@ -211,22 +207,16 @@ fi
   QT_QUICK_CONTROLS_STYLE=Basic QT_QUICK_BACKEND=software "$python_bin" -m pytest -q tests/test_qt_scene_port.py
 )
 
-ui_mode="${VODFORGE_UI:-tk}"
-entrypoint="main.py"
-qt_args=()
-if [[ "$ui_mode" == "qt" ]]; then
-  entrypoint="qt_main.py"
-  qt_args=(
-    --hidden-import PySide6.QtMultimedia
-    --hidden-import PySide6.QtQuickControls2
-  )
-  for qml_file in yt_downloader/qt_quick/*.qml; do
-    qt_args+=(--add-data "$qml_file:yt_downloader/qt_quick")
-  done
-elif [[ "$ui_mode" != "tk" ]]; then
-  echo "VODFORGE_UI must be tk or qt."
+ui_mode="${VODFORGE_UI:-qt}"
+if [[ "$ui_mode" != "qt" ]]; then
+  echo "VODFORGE_UI must be qt."
   exit 1
 fi
+entrypoint="main.py"
+qt_args=(--hidden-import PySide6.QtMultimedia --hidden-import PySide6.QtQuickControls2)
+for qml_file in yt_downloader/qt_quick/*.qml; do
+  qt_args+=(--add-data "$qml_file:yt_downloader/qt_quick")
+done
 
 build_version="${VODFORGE_BUILD_VERSION:-0.1.0-dev}"
 if [[ ! "$build_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
@@ -263,41 +253,7 @@ if [[ -z "$ffmpeg" || -z "$ffprobe" || -z "$deno" ]]; then
   echo "Run ./install_macos_dependencies.sh first."
   exit 1
 fi
-vlc_args=(--exclude-module vlc)
-if [[ "$ui_mode" == "tk" ]]; then
-  vlc_version="3.0.23"
-  vlc_root="${VODFORGE_VLC_RUNTIME:-}"
-  if [[ -z "$vlc_root" && -f "vendor/vlc/VODFORGE_VLC_VERSION" ]]; then
-    vlc_root="vendor/vlc"
-  fi
-  vlc_root="${vlc_root:-/Applications/VLC.app/Contents/MacOS}"
-  vlc_library="$vlc_root/lib/libvlc.dylib"
-  vlc_core="$vlc_root/lib/libvlccore.dylib"
-  vlc_plugins="$vlc_root/plugins"
-  if [[ ! -f "$vlc_library" || ! -f "$vlc_core" || ! -d "$vlc_plugins" ]]; then
-    echo "A complete libVLC runtime was not found at $vlc_root."
-    echo "Install the VLC cask or set VODFORGE_VLC_RUNTIME."
-    exit 1
-  fi
-  if [[ -f "$vlc_root/VODFORGE_VLC_VERSION" ]]; then
-    resolved_vlc_version="$(<"$vlc_root/VODFORGE_VLC_VERSION")"
-  elif [[ -f "$vlc_root/../Info.plist" ]]; then
-    resolved_vlc_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$vlc_root/../Info.plist")"
-  else
-    resolved_vlc_version=""
-  fi
-  if [[ "$resolved_vlc_version" != "$vlc_version" ]]; then
-    echo "The macOS libVLC runtime must be pinned to $vlc_version; found ${resolved_vlc_version:-unknown}."
-    echo "Run ./install_vlc_macos.sh or set VODFORGE_VLC_RUNTIME to the pinned runtime."
-    exit 1
-  fi
-  vlc_args=(
-    --add-binary "$vlc_library:vlc/lib"
-    --add-binary "$vlc_core:vlc/lib"
-    --add-data "$vlc_plugins:vlc/plugins"
-    --hidden-import vlc
-  )
-fi
+vlc_args=(--exclude-module vlc --exclude-module tkinter --exclude-module PIL.ImageTk)
 
 "$python_bin" -m PyInstaller \
   --noconfirm \

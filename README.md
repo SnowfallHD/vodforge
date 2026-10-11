@@ -118,12 +118,12 @@ The macOS release is a normal `VODForge.app`; its bundled runtime is inside the 
 ## Run from source
 
 You need Python 3.11 or newer. The current interface uses PySide6 / Qt Quick.
-`qt_main.py` launches it explicitly. The retained `main.py` Tk entrypoint supports
-older release workflows; it does not render the screenshots above.
+`main.py` is the maintained Qt entry point; `qt_main.py` provides the same explicit
+Qt entry. Both platform build scripts package Qt by default.
 
 ### macOS
 
-Homebrew is used to install a Tk-enabled Python, FFmpeg, and Deno. The application is a native Python/Qt desktop app; it does not require Electron.
+Homebrew is used to install Python, FFmpeg, and Deno. The application is a native Python/Qt desktop app; it does not require Electron.
 
 ```bash
 git clone https://github.com/SnowfallHD/vodforge.git
@@ -352,8 +352,7 @@ To package an unsigned ZIP for internal testing:
 ```
 
 The Qt build bundles FFmpeg, ffprobe, Deno, and Qt Multimedia playback dependencies.
-The retained Tk build bundles libVLC. Neither requires an external player or shell
-`PATH` configuration for packaged playback. Public distribution still requires an Apple Developer ID signature and notarization; the build scripts do not claim or perform those steps.
+It does not require an external player or shell `PATH` configuration for packaged playback. Public distribution still requires an Apple Developer ID signature and notarization; the build scripts do not claim or perform those steps.
 
 ## Release workflow
 
