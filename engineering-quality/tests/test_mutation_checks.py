@@ -53,6 +53,7 @@ def test_missing_or_invalid_mutation_report_cannot_pass(tmp_path):
 
 def test_bounded_history_mutants_reach_current_production_source():
     from pathlib import Path
+
     from quality_harness.mutation import MUTANTS
 
     source = (

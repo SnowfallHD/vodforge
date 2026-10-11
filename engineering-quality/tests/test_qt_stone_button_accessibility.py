@@ -18,7 +18,7 @@ from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtTest import QTest
 
 from tests.test_run_identity import make_job
-from yt_downloader.qt_quick.main import Bridge, SHOWCASE_ID, create_engine
+from yt_downloader.qt_quick.main import SHOWCASE_ID, Bridge, create_engine
 
 
 def accessible_descendants(root):

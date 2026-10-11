@@ -411,3 +411,52 @@ public-no-video-before.log,public-no-video-after.log,
 public-boundary-reassessment.json}. This closes only the bounded public generic
 source refusal/cleanup gap, never provider support, successful public decoding,
 complete DEEP profile, native usability or public release eligibility.
+
+
+## 2026-10-11 — Exact-candidate evidence composition and four domain oracles
+
+Added strictly linked profile composition. Original scenario objects, commits,
+raw receipts and their failures remain immutable. All constituents require full
+before/after source identities; product, dependency, packaging and workflow
+inputs must exactly match the frozen 5e581d0 candidate. Only qualification/prose
+changes may differ. Missing manifests, wrong candidates, source changes, absent
+scenarios, duplicate selection, altered raw bytes and rewritten statuses refuse
+adoption. This does not relabel a commit or qualify changed runtime bytes.
+
+Three explicitly bounded source domains now capture admission/execution/final
+source authority and independently evaluate complete required commands, JUnit
+case outcomes, actual imports, collected Qt case rosters, twelve real local
+diagnostic producers, delivery order and persisted payload equality. Sequential
+command durations must fit the observed phase. Documented native/platform opt-in
+exclusions remain visible and prove no interaction; unexpected skips and all-
+skipped suites fail. Targeted Qt groups still require every case to execute.
+These source domains have explicit contextual-UX nonapplicability and cannot
+substitute for packaged/native acceptance.
+
+The fourth oracle reevaluates exact packaged candidate/archive/bundle bytes,
+ordered attested native events, decodable frames, hash-bound pipeline logs,
+session time bounds, normal exits, media probe processes/payloads, restart bytes
+and staging/owned-process cleanup. Seven contextual UX dimensions remain
+required and bind to reviewed native frames; a separately hashed review may be
+linked to the original journey hash, session nonce and candidate without editing
+the original receipt. Raw pass flags do not satisfy these observations.
+
+Validation: 196 focused evaluator/gate/import/native-report controls passed in
+5.34 seconds; the final temporal assertion then passed all 50 aggregate controls
+in 0.99 seconds. The temporal assertion initially rejected two synthetic positive
+fixtures whose 1-second phase could not contain twelve 0.1-second commands. Only
+those clearly synthetic fixture intervals were corrected; the impossible-time
+negative remains. Earlier tests also exposed and closed reversed diagnostic
+delivery ordering and timestamp-normalization mismatches. Ruff checks pass for
+all harness sources/tests, formatting passes for 157 files, and diff whitespace
+checks pass. Two preexisting harness import-order findings were corrected.
+
+Evidence retained under task/release-completion-20261010:
+harness-domains-final.{log,xml}, aggregate-timing-final.{log,xml},
+aggregate-timing-corrected.{log,xml}, packaged-final-controls.{log,xml}.
+Synthetic controls prove evaluator behavior only. No native full journey, D1
+matrix or public release is claimed here. The prior 54 successful observations
+and archived original failures remain unchanged. Signed application files were
+not rebuilt or changed. Remaining acceptance is the missing source aggregate
+observations and exact signed Mac/Windows telemetry journeys/readbacks, followed
+by the unchanged fail-closed publication gate.

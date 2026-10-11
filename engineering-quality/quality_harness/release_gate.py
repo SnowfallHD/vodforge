@@ -867,7 +867,11 @@ def _candidate_source_checks(
         repository = result.get("repository")
         repository = repository if isinstance(repository, Mapping) else {}
         observed = repository.get("commit")
-        if not expected_commit or not observed:
+        if "source_binding" in result:
+            from .receipt_composition import verify_composition
+
+            status = "passed" if verify_composition(result, candidate) else "failed"
+        elif not expected_commit or not observed:
             status: GateStatus = "unproven"
         else:
             status = "passed" if observed == expected_commit else "failed"

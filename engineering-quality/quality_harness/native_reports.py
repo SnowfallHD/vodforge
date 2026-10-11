@@ -19,6 +19,7 @@ _INDEX_NAMES = {
     "native-source-after.json",
     "native.xml",
     "native-command.json",
+    "native-collection.json",
 }
 
 
@@ -189,3 +190,11 @@ def pytest_sessionstart(session):
             raise pytest.UsageError(
                 f"Native evidence imported {name} outside expected root: {actual}"
             )
+
+
+def pytest_collection_finish(session):
+    destination = os.environ.get("VODFORGE_NATIVE_EVIDENCE_DIR")
+    if destination:
+        (Path(destination) / "native-collection.json").write_text(
+            json.dumps({"nodeids": [item.nodeid for item in session.items]}, indent=2)
+        )

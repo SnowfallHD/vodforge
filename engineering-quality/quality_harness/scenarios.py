@@ -3081,6 +3081,14 @@ def packaged_e2e_placeholder(
     imported = dict(scenario)
     imported["artifacts"] = [*list(imported.get("artifacts") or []), str(e2e_result)]
     imported.setdefault("metrics", {})["receipt_valid"] = True
+    imported["raw_result"] = str(e2e_result)
+    imported["raw_result_sha256"] = sha256_file(e2e_result)
+    review_path = e2e_result.parent / "contextual-usability-review.json"
+    if review_path.is_file():
+        imported["contextual_review_ref"] = {
+            "path": str(review_path),
+            "sha256": sha256_file(review_path),
+        }
     return imported, list(payload.get("findings") or [])
 
 

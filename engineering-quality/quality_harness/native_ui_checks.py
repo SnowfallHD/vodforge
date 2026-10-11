@@ -24,45 +24,52 @@ def complete_native_report(path):
     )
 
 
+QT_COMPONENT_TESTS = [
+    "tests/test_qt_artwork_image.py",
+    "tests/test_qt_metadata_preview.py",
+    "tests/test_qt_previews.py",
+    "tests/test_qt_interaction_invariants.py",
+    "tests/test_qt_terminal_item_events.py",
+    "tests/test_qt_relink.py",
+    "tests/test_qt_output_config.py",
+    "tests/test_qt_settings_theme.py",
+    "tests/test_qt_presentation_diagnostics.py",
+]
+# Keep recent user-reported Qt regressions in a separate process. They
+# exercise component/event ownership; offscreen execution is not native
+# pointer timing, displayed pixels or packaged application acceptance.
+QT_REPORTED_REGRESSIONS = [
+    "tests/test_qt_inspector_description_geometry.py",
+    "tests/test_qt_folder_columns_responsive.py",
+    "tests/test_qt_composer_custom_options.py",
+    "tests/test_qt_composer_feedback.py",
+    "tests/test_qt_all_runs_hover_seam.py",
+    "tests/test_qt_output_path_layout.py",
+    "tests/test_qt_run_deck_responsive_labels.py",
+    "tests/test_qt_recovery_draft_retirement.py",
+    "tests/test_qt_retry_recovery_membership.py",
+    "tests/test_qt_move_dialog_content_fit.py",
+    "tests/test_qt_move_root_notice.py",
+    "tests/test_qt_inspector_recovery_details.py",
+    "tests/test_qt_worker_control_context.py",
+    "tests/test_qt_scroll_lifecycle.py",
+    "tests/test_qt_vertical_scroll_chain.py",
+    "tests/test_qt_artwork_continuity.py",
+    "tests/test_qt_player_resize_continuity.py",
+]
+QT_SELECTOR_GROUPS = {
+    "scene": ["tests/test_qt_scene_port.py"],
+    "components": QT_COMPONENT_TESTS,
+    "reported-regressions": QT_REPORTED_REGRESSIONS,
+}
+
+
 def native_surface_contract(repo_root, output_dir, *, profile="normal", ui="tk"):
     if ui not in {"tk", "qt"}:
         raise ValueError(f"Unsupported native UI renderer: {ui}")
     output_dir.mkdir(parents=True, exist_ok=True)
     report = output_dir / "native.xml"
     report.unlink(missing_ok=True)
-    qt_component_tests = [
-        "tests/test_qt_artwork_image.py",
-        "tests/test_qt_metadata_preview.py",
-        "tests/test_qt_previews.py",
-        "tests/test_qt_interaction_invariants.py",
-        "tests/test_qt_terminal_item_events.py",
-        "tests/test_qt_relink.py",
-        "tests/test_qt_output_config.py",
-        "tests/test_qt_settings_theme.py",
-        "tests/test_qt_presentation_diagnostics.py",
-    ]
-    # Keep recent user-reported Qt regressions in a separate process. They
-    # exercise component/event ownership; offscreen execution is not native
-    # pointer timing, displayed pixels or packaged application acceptance.
-    qt_reported_regressions = [
-        "tests/test_qt_inspector_description_geometry.py",
-        "tests/test_qt_folder_columns_responsive.py",
-        "tests/test_qt_composer_custom_options.py",
-        "tests/test_qt_composer_feedback.py",
-        "tests/test_qt_all_runs_hover_seam.py",
-        "tests/test_qt_output_path_layout.py",
-        "tests/test_qt_run_deck_responsive_labels.py",
-        "tests/test_qt_recovery_draft_retirement.py",
-        "tests/test_qt_retry_recovery_membership.py",
-        "tests/test_qt_move_dialog_content_fit.py",
-        "tests/test_qt_move_root_notice.py",
-        "tests/test_qt_inspector_recovery_details.py",
-        "tests/test_qt_worker_control_context.py",
-        "tests/test_qt_scroll_lifecycle.py",
-        "tests/test_qt_vertical_scroll_chain.py",
-        "tests/test_qt_artwork_continuity.py",
-        "tests/test_qt_player_resize_continuity.py",
-    ]
     tk_tests = [
         "tests/test_choice_popover_lifecycle.py",
         "tests/test_native_interaction_readiness.py",
@@ -155,13 +162,18 @@ def native_surface_contract(repo_root, output_dir, *, profile="normal", ui="tk")
         "VODFORGE_DISABLE_TELEMETRY": "1",
     }
     if ui == "qt":
+        from .aggregate_observation import AggregateObservation, ref
+
+        observation = AggregateObservation(
+            "unit_static.native_surface_contract", output_dir, repo_root
+        )
         # QGuiApplication and native worker state are process-wide. Keep every
         # required Qt test, but give the scene and component groups separate
         # processes and evidence directories.
         groups = (
             ("scene", ["tests/test_qt_scene_port.py"]),
-            ("components", qt_component_tests),
-            ("reported-regressions", qt_reported_regressions),
+            ("components", QT_COMPONENT_TESTS),
+            ("reported-regressions", QT_REPORTED_REGRESSIONS),
         )
         group_results = []
         for name, tests in groups:
@@ -195,7 +207,7 @@ def native_surface_contract(repo_root, output_dir, *, profile="normal", ui="tk")
             result.returncode == 0 and complete_native_report(group_report)
             for _name, _group_dir, group_report, result in group_results
         )
-        return (
+        outcome = (
             {
                 "id": "unit_static.native_surface_contract",
                 "evidence_tier": "unit_static",
@@ -255,6 +267,25 @@ def native_surface_contract(repo_root, output_dir, *, profile="normal", ui="tk")
             },
             [],
         )
+        groups = {
+            name: {
+                key: ref(directory / filename)
+                for key, filename in {
+                    "command": "native-command.json",
+                    "junit": "native.xml",
+                    "collection": "native-collection.json",
+                    "source_before": "native-source-before.json",
+                    "source_after": "native-source-after.json",
+                    "imports": "native-imports.json",
+                }.items()
+                if (directory / filename).is_file()
+            }
+            for name, directory, _report, _result in group_results
+        }
+        observation.finish(
+            outcome[0], renderer="qt", native_window_observed=False, groups=groups
+        )
+        return outcome
     result = run_command(
         native_pytest_command(
             [

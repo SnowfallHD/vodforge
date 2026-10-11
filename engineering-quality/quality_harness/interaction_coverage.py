@@ -10,10 +10,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from .aggregate_interaction import AGGREGATE_CONTRACTS, evaluate_aggregate
 from .component_interaction import COMPONENT_CONTRACTS, evaluate_component
 from .duplicate_interaction import DUPLICATE_CONTRACTS, evaluate_duplicate
 from .durability_interaction import DURABILITY_CONTRACTS, evaluate_durability
 from .lifecycle_interaction import COMPOSITE_CONTRACTS, evaluate_lifecycle
+from .packaged_interaction import evaluate_packaged_interaction
 from .pipeline_interaction import CONTRACTS, evaluate_pipeline
 from .public_boundary_interaction import PUBLIC_CONTRACTS, evaluate_public_boundary
 from .security_interaction import SECURITY_CONTRACTS, evaluate_security
@@ -55,6 +57,14 @@ def _usability_review(
             "applicability": "not_applicable",
             "reason": static_reason,
             "dimensions": {},
+        }
+    if scenario_id in AGGREGATE_CONTRACTS and evidence_tier == "unit_static":
+        return {
+            "status": "not_applicable",
+            "applicability": "not_applicable",
+            "reason": "Explicitly reviewed source-suite, offscreen Qt or loopback Worker/D1 scope only. These observations certify admission, actual process outcomes and stable source; they make no displayed-window, physical input or packaged product UX claim.",
+            "dimensions": dict.fromkeys(_USABILITY_DIMENSIONS, "not_applicable"),
+            "reviewer": "bounded aggregate source/offscreen scope review v1",
         }
     if scenario_id in TELEMETRY_CONTRACTS and evidence_tier == "unit_static":
         return {
@@ -160,6 +170,20 @@ def interaction_coverage(scenario: Mapping[str, Any]) -> dict[str, Any]:
             "phase_review": {},
             "usability_review": _usability_review(scenario_id, reason),
         }
+    if (
+        scenario_id == "packaged_app_e2e.full_journey"
+        and scenario.get("evidence_tier") == "packaged_app_e2e"
+    ):
+        return evaluate_packaged_interaction(scenario)
+    if (
+        scenario_id in AGGREGATE_CONTRACTS
+        and scenario.get("evidence_tier") == "unit_static"
+    ):
+        coverage = evaluate_aggregate(scenario)
+        coverage["usability_review"] = _usability_review(
+            scenario_id, None, scenario.get("evidence_tier")
+        )
+        return coverage
     if (
         scenario_id in TELEMETRY_CONTRACTS
         and scenario.get("evidence_tier") == "unit_static"

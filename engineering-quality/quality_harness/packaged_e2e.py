@@ -403,6 +403,22 @@ def _parse_observed_at(value: Any) -> datetime | None:
     return parsed if parsed.tzinfo is not None else None
 
 
+def pipeline_stage_receipts(diagnostics: str, activity: str) -> dict[str, bool]:
+    """Recompute stage evidence from actual diagnostic/activity bytes."""
+    return {
+        "yt_dlp_or_download": (
+            "download and yt-dlp post-processing elapsed_seconds=" in diagnostics
+            or ("selected format " in activity and ": downloading" in activity)
+        ),
+        "ffmpeg_transcode": "transcode elapsed_seconds=" in diagnostics
+        or "transcoded staged VODForge output" in activity,
+        "ffprobe_validation": "artifact validation elapsed_seconds=" in diagnostics
+        or ": validated " in activity,
+        "atomic_commit": "atomic output commit elapsed_seconds=" in diagnostics
+        or " before atomic commit" in activity,
+    }
+
+
 def _validate_driver_trace(
     events_payload: dict[str, Any],
     *,
@@ -1980,18 +1996,7 @@ def run_packaged_e2e_session(
     for path in sorted(session_dir.glob("diagnostics-*.log")):
         archived_diagnostics.append(path.read_text(encoding="utf-8", errors="replace"))
     all_diagnostics = "\n".join([*archived_diagnostics, diagnostics])
-    stage_receipts = {
-        "yt_dlp_or_download": (
-            "download and yt-dlp post-processing elapsed_seconds=" in all_diagnostics
-            or ("selected format " in activity and ": downloading" in activity)
-        ),
-        "ffmpeg_transcode": "transcode elapsed_seconds=" in all_diagnostics
-        or "transcoded staged VODForge output" in activity,
-        "ffprobe_validation": "artifact validation elapsed_seconds=" in all_diagnostics
-        or ": validated " in activity,
-        "atomic_commit": "atomic output commit elapsed_seconds=" in all_diagnostics
-        or " before atomic commit" in activity,
-    }
+    stage_receipts = pipeline_stage_receipts(all_diagnostics, activity)
     staging_residue = [
         str(path)
         for path in (home / "Downloads").rglob("*")
@@ -2198,10 +2203,27 @@ def run_packaged_e2e_session(
         "history_persistence": history_persistence,
         "diagnostics_path": str(diagnostic_path),
         "activity_path": str(activity_path),
+        "pipeline_observation_refs": [
+            {"path": str(path), "sha256": sha256_file(path), "kind": kind}
+            for kind, paths in (
+                (
+                    "diagnostics",
+                    [diagnostic_path, *sorted(session_dir.glob("diagnostics-*.log"))],
+                ),
+                ("activity", [activity_path]),
+            )
+            for path in paths
+            if path.is_file()
+        ],
         "resource_metrics": resources,
         "scenario": scenario,
         "findings": findings,
     }
+    if candidate_path is not None:
+        payload["candidate_receipt_ref"] = {
+            "path": str(candidate_path),
+            "sha256": sha256_file(candidate_path),
+        }
     json_dump(session_dir / "e2e-result.json", payload)
     (session_dir / "summary.md").write_text(
         "# Packaged VODForge E2E\n\n"

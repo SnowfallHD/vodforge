@@ -62,6 +62,11 @@ def run_static_suite(
     repo_root: Path, case_dir: Path, *, deep: bool = False
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     case_dir.mkdir(parents=True, exist_ok=True)
+    from .aggregate_observation import AggregateObservation, ref, save
+
+    observation = AggregateObservation(
+        "unit_static.repository_suite", case_dir, repo_root
+    )
     python = sys.executable
     commands: list[tuple[str, list[str], float]] = _pytest_commands(
         repo_root, python
@@ -165,6 +170,8 @@ def run_static_suite(
         else:
             test_environment[key] = str(original_value)
     for name, command, timeout in commands:
+        if name.startswith("pytest"):
+            command = [*command, "--junitxml=" + str(case_dir / (name + ".xml"))]
         command_environment = test_environment if name.startswith("pytest") else None
         if name.startswith("pytest_qt_"):
             command_environment = {**test_environment, "QT_QUICK_BACKEND": "software"}
@@ -172,6 +179,7 @@ def run_static_suite(
             command, cwd=repo_root, timeout=timeout, env=command_environment
         )
         outputs[name] = result.as_dict()
+        save(case_dir / (name + ".command.json"), outputs[name])
         (case_dir / f"{name}.stdout.txt").write_text(result.stdout, encoding="utf-8")
         (case_dir / f"{name}.stderr.txt").write_text(result.stderr, encoding="utf-8")
 
@@ -374,4 +382,20 @@ def run_static_suite(
         "artifacts": [str(case_dir)],
         "error": None,
     }
+    observation.finish(
+        scenario,
+        commands={name: ref(case_dir / (name + ".command.json")) for name in outputs},
+        logs={
+            name: {
+                stream: ref(case_dir / (name + "." + stream + ".txt"))
+                for stream in ("stdout", "stderr")
+            }
+            for name in outputs
+        },
+        junit={
+            name: ref(case_dir / (name + ".xml"))
+            for name in outputs
+            if name.startswith("pytest") and (case_dir / (name + ".xml")).is_file()
+        },
+    )
     return scenario, findings

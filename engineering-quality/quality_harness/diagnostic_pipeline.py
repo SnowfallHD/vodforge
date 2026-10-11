@@ -136,6 +136,13 @@ def pipeline(repo: Path, site: Path, destination: Path, *, cases=None):
     install_telemetry_guard()
     destination.mkdir(parents=True, exist_ok=True)
     assert_feature_vocabulary(site)
+    import time
+
+    observed_start = time.monotonic()
+    save(
+        destination / "aggregate-trace-before.json",
+        {"phase": "before_suite", "elapsed_seconds": 0.0},
+    )
     before = {"desktop": source_snapshot(repo), "backend": source_snapshot(site)}
     save(destination / "source-before.json", before)
     script = Path(__file__).with_name("telemetry_worker.mjs")
@@ -505,6 +512,19 @@ def pipeline(repo: Path, site: Path, destination: Path, *, cases=None):
                 assert before == after, "Source changed during diagnostic pipeline"
                 save(destination / "source-after.json", after)
                 save(
+                    destination / "aggregate-trace-after.json",
+                    [
+                        {
+                            "phase": "suite_returned",
+                            "elapsed_seconds": time.monotonic() - observed_start,
+                        },
+                        {
+                            "phase": "authority_reobserved",
+                            "elapsed_seconds": time.monotonic() - observed_start,
+                        },
+                    ],
+                )
+                save(
                     destination / "receipt.json",
                     {
                         "passed": True,
@@ -643,7 +663,7 @@ def diagnostic_surface_contract(repo_root: Path, output_dir: Path, *, ui: str = 
         and data.get("passed") is True
         and data.get("case_count") == expected_cases
     )
-    return receipt(
+    outcome = receipt(
         "unit_static.telemetry_presentation_contract",
         passed,
         [
@@ -657,3 +677,35 @@ def diagnostic_surface_contract(repo_root: Path, output_dir: Path, *, ui: str = 
         ],
         [report, log, output_dir / "persisted-diagnostic-rows.json"],
     )
+
+    from .aggregate_interaction import AGGREGATE_CONTRACTS, SOURCE_SCOPE
+    from .aggregate_observation import ref, save
+
+    if ui == "qt" and (output_dir / "aggregate-trace-after.json").is_file():
+        raw = {
+            "scenario_id": "unit_static.telemetry_presentation_contract",
+            "contract": AGGREGATE_CONTRACTS[
+                "unit_static.telemetry_presentation_contract"
+            ],
+            "scope": SOURCE_SCOPE,
+            "trace": [
+                json.loads((output_dir / "aggregate-trace-before.json").read_text()),
+                *json.loads((output_dir / "aggregate-trace-after.json").read_text()),
+            ],
+            **{
+                key: ref(output_dir / filename)
+                for key, filename in {
+                    "source_before": "source-before.json",
+                    "source_after": "source-after.json",
+                    "mapping": "scenario-mapping.json",
+                    "delivered": "delivered-events.json",
+                    "stored": "persisted-diagnostic-rows.json",
+                }.items()
+            },
+        }
+        raw_path = output_dir / "aggregate-observation.json"
+        save(raw_path, raw)
+        outcome[0].update(
+            raw_result=str(raw_path), raw_result_sha256=ref(raw_path)["sha256"]
+        )
+    return outcome
