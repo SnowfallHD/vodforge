@@ -651,6 +651,11 @@ def evaluate_packaged_e2e_receipt(
 ) -> list[dict[str, Any]]:
     """Require the complete packaged journey and its independent receipts."""
 
+    from .native_composition import FORMAT, release_checks
+
+    if packaged_e2e.get("format") == FORMAT:
+        return release_checks(packaged_e2e)
+
     scenario = packaged_e2e.get("scenario")
     scenario = scenario if isinstance(scenario, Mapping) else {}
     metrics = scenario.get("metrics")
@@ -808,6 +813,25 @@ def evaluate_packaged_e2e_receipt(
 def evaluate_candidate_binding(
     candidate: Mapping[str, Any], packaged_e2e: Mapping[str, Any]
 ) -> list[dict[str, Any]]:
+    from .native_composition import FORMAT, verify_native_composition
+
+    if packaged_e2e.get("format") == FORMAT:
+        if not verify_native_composition(packaged_e2e, candidate):
+            return [
+                _check(
+                    "packaged_e2e.candidate_binding",
+                    label="Composed native candidate binding",
+                    status="failed",
+                    required=True,
+                    evidence=["Composition revalidation failed"],
+                )
+            ]
+        from .receipt_composition import read_bound
+
+        return evaluate_candidate_binding(
+            candidate, read_bound(packaged_e2e["constituents"][0]["receipt"])
+        )
+
     binding = packaged_e2e.get("candidate_binding")
     archive = candidate.get("immutable_archive")
     artifact = candidate.get("artifact")

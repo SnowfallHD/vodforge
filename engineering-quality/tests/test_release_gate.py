@@ -403,9 +403,13 @@ def test_packaged_receipt_requires_independent_pipeline_and_provenance_receipts(
 
 
 def test_legacy_success_receipt_keeps_debt_visible_but_blocks_temporal_gaps() -> None:
+    from test_telemetry_release import candidate as telemetry_candidate
     from test_telemetry_release import telemetry_fixture
 
     candidate = _candidate()
+    # The unrelated telemetry layer must carry its current producer binding,
+    # so this fixture continues to isolate temporal interaction/usability gaps.
+    candidate["source"].update(telemetry_candidate()["source"])
     fast = {
         **_engineering_result("normal"),
         "scenarios": [

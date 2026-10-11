@@ -3436,3 +3436,38 @@ source/renderer rejection and actual legacy owner emissions; native Qt Done and
 manifest evidence independently establish this instance. The retained prior gate
 probe fails solely for unreachable try_it. These representative boundaries do not
 prove all feature vocabularies, interleavings, or a complete native release journey.
+
+### Read-only continuation planning
+
+Before repeating packaged UI work, use `packaged-e2e --resume <session.json>
+--candidate <same frozen receipt> --profile <original profile>
+--telemetry <original mode> --plan-only`. This verifies the retained candidate,
+artifact and trace and prints the covered observations, exact remainder and next
+observation. It does not archive/rewrite receipts, read a QA access key, bind a
+fixture or launch an app. Port/process readiness remains untested. The output is
+planning evidence, never release acceptance or authorization to relabel an older
+candidate's proof. Independent Update/Repair and unchanged-source behavior
+receipts still need scoped reconciliation rather than another blanket journey.
+
+### Native receipt composition
+
+`native-compose --candidate <frozen receipt> --platform macos|windows
+--selection <JSON references> --output <new JSON>` revalidates immutable native
+constituents. Each constituent names `receipt`, `session` and `trace` as absolute
+path/SHA256 references, optional selected `actions`, and original `snapshots`.
+Exactly matching candidate/source/archive/tree and platform are required.
+Independent presentation actions may compose. Export progression, queue/cancel
+handoff and restart must remain complete within one original session; partial
+chains are reported, never stitched across installations. Every original wrapper
+keeps its actual status. Changed frames, wrong owners, forced/unclean exits,
+staging and incompatible consent identities reject composition.
+
+A release aggregate must also designate exactly one constituent `core: true` with
+independent media/pipeline/history/cleanup evidence. The existing release evaluator
+accepts only recomputed complete native coverage and that independent core; it
+does not supply missing restart/worker predicates. This native scope does not
+replace the separate preview-D1 release contract. Optional `updater_refs` retain
+bounded helper transactions separately from main installation counts/privacy.
+Original paged snapshots retain their offsets, ranges, counts and event identities;
+missing rowid boundaries remain explicitly unproven and cannot become synthesized
+complete/privacy checkpoints. Run the read-only plan before assigning more UI work.

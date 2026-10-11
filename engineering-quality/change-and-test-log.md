@@ -865,3 +865,197 @@ preview-only with actual zero installation/client/event baseline and explicit UI
 opt-in, serving exact5854619 archive via guarded loopback feed. First feed bind
 was sandbox-denied before start; separate authorized feed now running. No OS
 permissions or signature rules changed. Current Windows main17/36 remains alive.
+
+## Oct 11 21:00 UTC — exact Mac Update/Repair and reconnect binding blocker
+
+Harness-only correction committed459f578;140 focused checks and Ruff/format/diff
+passed; runtime/candidate5854619 unchanged and no rebuild. Exact Mac native Update
+and Repair original helper receipts both report relaunched, repairfalse/true and
+executableb0fa25357b0fd30299e77788b385952abad7aa89ec4885670721e7b8d094d668.
+Same isolated preview installationbec1e027-2189-4c49-8cb0-6c453d977c3b has exactly
+one0.2.2→0.2.6 transition, explicit Later, controlled503 check failure and linked
+repair_completed attempt55318635-e862-4969-98f3-e9f9de2dd2c7. All four history,
+media, metadata and thumbnail hashes preserved across both transactions; final
+independent media decode exits0. Bounded pass is
+`build/recovery-20261011/native-update-repair-proof.json`; original generic baseline
+wrapper remains failed/incomplete. Signed QA0.2.2 is not public compatibility proof.
+
+After20:53 reconnect callback, actual shell works,44percent charging on AC/82GiBfree
+at20:55. Original main Mac process7574 already normally exited0 with24/36; retained
+profile remains resumable. Repaired helper app12930 is live, exact archive/executable
+and preview-only attestation bound by Quartz window786 and its actual screenshot.
+CUA instead returns plain VODForge/29 ordinary runs, different geometry/content,
+even after exact-path rebinding and JS reset; macOS window-ID selection unsupported.
+No clicks/keys sent to that mismatched UI. Actual local process enumeration finds
+only QA12930 and its child12931, so the native-control surface mismatch is unresolved;
+do not infer it is the current executor desktop. Clean final repair shutdown not
+claimed. Terminal screenshot/attestation receipt remains authoritative bounded data.
+
+Windows authorized SSH and guarded native controller remain working. Six actual
+native preset exports complete; durable history has validated Everyday, Streaming,
+Editing, Sharing, CTV and Custom profiles. Custom is CBR10000k/AAC320k/medium CPU,
+not NVIDIA acceptance. Maintained observation18 recorded at
+`windows-fresh/111-presets-record.json`; actual PID48376 remains alive with
+approximately21:43UTC deadline. Remaining ordered19–36 and full feature vocabulary,
+NVIDIA, Windows Update/Repair, restart/privacy and complete D1 gates remain open.
+Latest scoped production SELECT for both main QA IDs plus the updater QA ID is
+zero installations/clients/events, writes0 in production-three-cohorts-2107-raw.json.
+No publication, production mutation, everyday app replacement or obsolete-object
+deletion. Checkpoint preserves actual live ownership and native-control blocker.
+
+The2107/2110 suffixes on the newest readback/checkpoint files are labels, not
+observation timestamps; actual tool clock at checkpoint completion was21:00:26UTC.
+Use embedded recorded_at/updated_at and tool results for time provenance.
+
+## Oct 11 21:26 UTC — Windows continuation and updater baseline
+
+Windows main added actual six-preset, native queue removal/Skip, local validation
+failure/Stop, organization and bounded player controls; ordered22/36. Native
+organization owner readback has category Recovery QA, qa-recovery tag, fictional
+private note and edited noncanonical description. Initial wrong-file history
+readback was empty; canonical library-annotations.json readback verifies actual
+owner run373aea9ced3449a5a520d37c8dfdabea. Source sentinel item unchanged.
+167 newly read preview rows after8226 through8462 join prior151 to318 unique events,
+all SELECT writes0; not events_complete. Earlier rows were not reread.
+
+Preserved failures: unstarted invalid URL-list fixture corrected before launch;
+category151 occlusion guard refused, fresh152 screenshot and unchanged guarded153
+succeeded; hidden back10 and already-retired floating target refused. Escape from
+fullscreen returned directly inline. Initial same-byte media rename was denied by
+Windows because player retained an open handle; no bytes moved. Subsequent176
+Play was ordinary existing-file playback, not missing-file proof;177/178 targets
+were absent/refused. No missing-media observation recorded yet.
+
+Main Windows normal Alt-F4 receipt179 reports exit0 at21:23:49. Partial maintained
+wrapper completed21:24:13:22/36 ordered, artifact/provenance passed,12media probes,
+zero staging,zero owned survivors; missing23–36 remain, original failed status kept.
+Temp/profileE:\SystemCache\Temp\Coop\vfq-7z_z88p5 remains for maintained continuation.
+E:19.71GiB is below20GiB extraction reserve; no new extraction on E. C:75GiB allowed
+separate retained signed public0.2.5 archive preparation at
+C:\Users\Coop\AppData\Local\Temp\VODForgeQA-update-5854619-20261011.
+Expected executable0AA2E2DD.../valid Authenticode/version0.2.5 verified, source archive
+EE179E09... retained. Existing bounded updater worker copied with only scope/hash
+substitutions and PowerShell syntax check; long encoded upload refused before write,
+readback confirmed none staged, authorized SCP succeeded. Ordinary registration,
+shortcuts and27ordinary data file hashes backed up by existing preserve workflow.
+Loopback feed59609 advertises exact585 installer923bcb4f...; no install yet.
+Baseline PID50560 now preview-only, IID2eb1d877-ac4b-4e7a-a840-032b0c86e5bf, actual
+unknown0rows before native Share analytics. Actual updater/native proof still pending.
+
+Mac exact-PID focus succeeds and confirms12930 already foreground, but CUA still
+returns unrelated plain29-run window. Exact-path bind, reset and supported focus
+have not restored controller target; no click/key sent to mismatched window.
+Mac main paused24/36; repaired helper app12930 remains alive. Power57percent charging.
+No new runtime/build/test rerun/publication/deletion/production mutation.
+
+## Oct 11 21:30 UTC — user-requested model handoff and audit pause
+
+User requested immediate pause of test/harness expansion for a change-impact audit,
+then end this turn so the parent can resume on GPT-6.1 Sol medium. Current model
+identifier is not exposed to this session; no model identity claim. No new tests,
+builds, publication or deletion for this handoff. Canonical checkpoint saved with
+prior checkpoint preserved and local model-handoff-checkpoint.json copy.
+Windows main remains normally closed exit0 at22/36. Separate public0.2.5 updater
+baseline import006 failed a clipboard operation; no successful import claimed.
+Normal close007 reports closed=true/exit_code0; receipt retains initial
+process_exited=false field, so no independent zero-survivor claim for that baseline.
+No Windows update/Repair installer was executed. Mac repaired QA12930 and child12931
+remain alive because CUA is bound to the wrong window; no unsafe input sent.
+Loopback feed helpers may remain. Power61% charging on AC. Next work is factual
+shipped0.2.5-to5854619 change-impact audit, not another full journey or new test run.
+
+## Oct 11 — change-impact audit and read-only continuation planning
+
+User requested an actual impact audit before more QA, then authorized demonstrated
+harness corrections. Read the retained signed public Windows0.2.5 bundle revision:
+850e19e6699c7bbd047d6be43851309bfe7d53fb. Candidate5854619 has eight product
+commits/28 app files since that baseline;585 itself only fixes a test fake.
+Audit/source inventory saved under build/recovery-20261011/change-impact-audit.md
+and change-impact-source-inventory.json. The redesign already shipped in0.2.5.
+New behavior is interrupted-run/batch recovery, six focused follow-ups and18 Qt
+observation callbacks. Existing scoped behavior/build/signature passes remain
+valid; audit distinguishes remaining risk from profile/port/test/control failures.
+Windows updater baseline50560 independently absent on read-only SSH process query.
+No new native journey, product build, production mutation or deletion for audit.
+
+Demonstrated harness usability defect: inspecting resumability through the prior
+loader archives continuation evidence, and normal runner requires launch access
+before exposing retained coverage. Added --plan-only using the same source/archive,
+artifact, owner-clean-exit and trace guards, returning before preservation/mutation.
+It reports retained observations and only the remainder, original receipt hashes,
+next observation and explicit not-release-acceptance/not-launch-readiness limits.
+It neither combines older sources nor waives any existing release requirement.
+Four new controls exercise unchanged original bytes/no archive and fail-closed
+changed candidate/invalid trace/live owner;12 affected existing loader controls
+remain passing (16 total,0.25s). Ruff/format/diff pass. Actual retained Mac24/36
+read-only plan succeeds with12 missing; all six original receipt/log SHA and
+mtime_ns identical before/after. Receipt:mac-read-only-continuation-plan.json.
+No product input changed; no signed rebuild needed. Full release evaluator's
+cross-receipt composition remains unresolved; do not hide this limitation.
+
+## Oct 11 — scoped native receipt composition and owned QA closure
+
+User authorized fixing the demonstrated whole-wrapper reuse defect after the
+impact audit. Added native-compose with immutable receipt/session/trace references,
+exact candidate/source/archive/tree/platform, live-recorded executable/attestation
+ownership, original frame SHA, owned process time interval, clean exits and
+staging guards. Independent presentation scope composes; export, queue/cancel
+and restart chains stay within an original session. Consent/readback identities
+stay per cohort. Original failed wrappers and raw files retain status/bytes/time.
+The release evaluator recognizes recomputed aggregate native coverage and still
+requires a designated independently qualified core pipeline/media/restart/cleanup
+receipt. It does not mark either current partial dataset release eligible. Separate
+full preview-D1 checks remain required; no thresholds or source bindings waived.
+
+Actual Mac composition revalidates24 observations plus separate original helper
+Update/Repair transactions. Helpers/attestations/frames/durable hashes are reread
+by their original SHA; updater IID is never merged into main counts/privacy and
+original clean-exit/public-baseline limits remain visible. Mac349-event/54-action
+inventory retains watermark8228, but original pages omit rowid/query bounds;
+watermark binding remains unproven, no complete/privacy checkpoint invented.
+Actual Genesis evaluator accepts22 observations with three original receipt SHA
+and mtime unchanged. Its first import lacked checkout root; original refusal kept.
+A repeated archive verification exceeded SSH45s: no result/process survived, no
+native QA launched. Successor reuses the original hash-bound successful frozen
+candidate receipt rather than repeating signature/archive checks. Consent files
+were originally retained on Mac; byte-identical copies were supplied separately.
+The installed C:\Python313 runtime lacked psutil, exposed by an unnecessary
+telemetry-module import for two target constants. Moved those unchanged constants
+to a tiny shared harness-only telemetry_target module; no dependency installed.
+Actual Windows paged inventory reassembles318 events/30 pairs through8462 with
+original offset/total/range checks; rowid boundary remains unproven.
+
+Focused composition/rejection controls39pass. Existing release-gate module had
+12pass/1fail; the failure reproduced using pre-composition HEAD gate code because
+its synthetic candidate omitted the earlier announcement producer manifest.
+Adding the existing telemetry fixture's binding preserves its temporal/debt
+assertions; only that case reran and passes. Two affected target-isolation contracts
+pass.54 focused passes total across these nonrepeated runs, not a broad suite.
+Ruff/format/diff pass. Earlier16 continuation-plan controls remain valid.
+Evidence:build/recovery-20261011/{native-composition-final.log,
+native-composition-release-gate-compat.log,
+native-composition-preexisting-gate-failure-control.log,
+native-composition-gate-fixture-corrected.log,composition-target-contracts.log,
+mac-native-composition-result.json,windows-native-composition-result.json,
+windows-composed-page-inventory.json,composition-final-actual-revalidation.json}.
+The actual Mac aggregate still fails the release gate on its missing native scopes.
+
+Mac12930 normal Command-Q dispatched only after exact create-time/executable SHA,
+original attestation SHA, Quartz786/PID/title and AX foreground guards. Initial
+keyword-only API misuse refused with0dispatches and is preserved. Root gone;
+child12931 remained as an orphan. Bounded read found a second native application
+from the same QA executable with plain VODForge window787 (also Window819),
+not merely an external-controller hypothesis. Exact PID/create-time/source checks
+then requested normal NSRunningApplication termination. Follow-up ps finds neither
+PID. No exit0 claim without an owned wait handle; separate normal-close receipts
+are successors, original updater proof limits/status/hash are not edited. No CUA
+input or unrelated app action. The ambiguous same-path instances are local evidence;
+which CUA instance was chosen remains unproved. Future input must use exact owner/
+nonce-window guards. A new ordinary-profile hash comparison has no current matching
+baseline here, so ordinary-profile immutability is not newly claimed by this closure.
+Mac feed session87216 closed with KeyboardInterrupt130; verified Windows private
+feed task/process removed, no ordinary installer/profile/registration change.
+Power74% charging. No app rebuild, broad journey, D1 request/write, publication,
+obsolete-object deletion, new credentials or access change. Smallest remaining
+work is linked receipt/readback closure, missing changed recovery/UI evidence,
+queue/restart/privacy scopes and final updater linkage; do not replay24/22 prefixes.

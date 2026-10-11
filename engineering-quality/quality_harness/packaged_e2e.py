@@ -1590,7 +1590,9 @@ def _continuation_restart_baseline(
     )
 
 
-def _load_resumable_session(path: Path, args: argparse.Namespace) -> dict[str, Any]:
+def _load_resumable_session(
+    path: Path, args: argparse.Namespace, *, preserve: bool = True
+) -> dict[str, Any]:
     """Resume evidence, never adopt a live process or replace an earlier receipt."""
     from .candidate_artifact import load_and_verify_candidate
 
@@ -1679,6 +1681,8 @@ def _load_resumable_session(path: Path, args: argparse.Namespace) -> dict[str, A
     if not validation["structural_valid"]:
         raise ValueError("Resume prior evidence has invalid provenance or screenshots")
     _continuation_fixture_port(session)
+    if not preserve:
+        return session
     # Preserve the failed/partial wrapper and its exact trace before appending.
     archive = directory / f"continuation-{len(launches)}"
     originals: dict[str, bytes] = {}
@@ -1717,9 +1721,50 @@ def _load_resumable_session(path: Path, args: argparse.Namespace) -> dict[str, A
     return session
 
 
+def continuation_plan(args: argparse.Namespace) -> dict[str, Any]:
+    """Inspect retained candidate-bound coverage without archiving or launching.
+
+    This is a continuation plan, never release acceptance or cross-candidate
+    substitution. Original partial/failed receipts retain their actual status.
+    """
+    if args.resume is None:
+        raise ValueError("A continuation plan requires --resume")
+    session = _load_resumable_session(args.resume, args, preserve=False)
+    directory = Path(session["session_dir"])
+    trace = json.loads((directory / "driver-events.json").read_text(encoding="utf-8"))
+    validation = _validate_driver_trace(
+        trace,
+        profile=args.profile,
+        session_dir=directory,
+        session_nonce=session["session_nonce"],
+        launches=session["launches"],
+        continuations=session.get("continuations"),
+    )
+    remaining = validation["missing_events"]
+    return {
+        "kind": "candidate_bound_continuation_plan",
+        "release_acceptance": False,
+        "candidate_binding": session["candidate_binding"],
+        "session": str(args.resume.resolve()),
+        "original_receipts": [
+            {"path": str(directory / name), "sha256": sha256_file(directory / name)}
+            for name in ("session.json", "e2e-result.json", "driver-events.json")
+        ],
+        "retained_observations": validation["observed_required_order"],
+        "remaining_observations": remaining,
+        "next_observation": remaining[0] if remaining else None,
+        "fixture_port": _continuation_fixture_port(session),
+        "launch_readiness": "not checked; no process, fixture or telemetry access started",
+        "limits": "Same candidate/profile only. Independent updater or older-source receipts require separate reconciliation; missing observations remain required.",
+    }
+
+
 def run_packaged_e2e_session(
     args: argparse.Namespace, *, repo_root: Path, harness_root: Path
 ) -> int:
+    if getattr(args, "plan_only", False):
+        print(json.dumps(continuation_plan(args), indent=2))
+        return 0
     if sys.platform not in {"darwin", "win32"}:
         print(
             "[e2e] packaged E2E requires macOS or Windows; no headless result is substituted",

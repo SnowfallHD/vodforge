@@ -107,6 +107,18 @@ def _parser() -> argparse.ArgumentParser:
         help="Continue a finalized incomplete session with its same frozen candidate and isolated profile",
     )
     e2e.add_argument("--timeout", type=int, default=600)
+    e2e.add_argument(
+        "--plan-only",
+        action="store_true",
+        help="Verify retained --resume coverage and report only its remainder; no archive, launch or telemetry access",
+    )
+    native = subparsers.add_parser(
+        "native-compose", help="Compose bounded native coverage from immutable receipts"
+    )
+    native.add_argument("--candidate", type=Path, required=True)
+    native.add_argument("--platform", choices=("macos", "windows"), required=True)
+    native.add_argument("--selection", type=Path, required=True)
+    native.add_argument("--output", type=Path, required=True)
     candidate = subparsers.add_parser(
         "candidate", help="Freeze and attest one immutable candidate ZIP"
     )
@@ -652,6 +664,10 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(snapshot_command(args))
     if args.command == "release-receipt":
         raise SystemExit(run_release_receipt_gate(args))
+    if args.command == "native-compose":
+        from .native_composition import compose_command
+
+        raise SystemExit(compose_command(args))
     if args.command == "packaged-e2e":
         from .packaged_e2e import run_packaged_e2e_session
 

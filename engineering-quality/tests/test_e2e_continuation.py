@@ -104,6 +104,46 @@ def test_continuation_keeps_original_failed_receipt_and_trace(tmp_path, monkeypa
         assert (directory / "continuation-1" / name).read_bytes() == content
 
 
+def test_read_only_plan_retains_bounded_coverage_without_archiving(
+    tmp_path, monkeypatch
+):
+    directory, session, _, validation, args = fixture(tmp_path, monkeypatch)
+    validation.update(
+        observed_required_order=["app_opened", "run_completed"],
+        missing_events=["restart_requested", "restart_observed"],
+    )
+    args.resume = directory / "session.json"
+    args.resume.write_text(json.dumps(session))
+    before = {p.name: p.read_bytes() for p in directory.iterdir()}
+    plan = packaged_e2e.continuation_plan(args)
+    assert plan["retained_observations"] == ["app_opened", "run_completed"]
+    assert plan["remaining_observations"] == ["restart_requested", "restart_observed"]
+    assert plan["next_observation"] == "restart_requested"
+    assert plan["release_acceptance"] is False
+    assert len(plan["original_receipts"]) == 3
+    assert {p.name: p.read_bytes() for p in directory.iterdir()} == before
+    assert not (directory / "continuation-1").exists()
+
+
+@pytest.mark.parametrize("invalid", ["candidate", "trace", "live"])
+def test_read_only_plan_refuses_changed_candidate_or_unverified_trace(
+    tmp_path, monkeypatch, invalid
+):
+    directory, session, candidate, validation, args = fixture(tmp_path, monkeypatch)
+    if invalid == "candidate":
+        candidate["readback_verification"]["archive_sha256"] = "changed"
+    elif invalid == "trace":
+        validation["structural_valid"] = False
+    else:
+        session["current_launch"] = {"pid": 123}
+    args.resume = directory / "session.json"
+    args.resume.write_text(json.dumps(session))
+    before = {p.name: p.read_bytes() for p in directory.iterdir()}
+    with pytest.raises(ValueError):
+        packaged_e2e.continuation_plan(args)
+    assert {p.name: p.read_bytes() for p in directory.iterdir()} == before
+
+
 @pytest.mark.parametrize("key", [None, "", "short", "G" * 64])
 def test_refused_preview_launch_does_not_archive_or_rewrite_continuation(
     tmp_path, monkeypatch, key
