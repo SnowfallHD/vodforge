@@ -157,3 +157,40 @@ The popup-repair CI38101705123 currently has both Mac jobs and Ubuntu3.11 passed
 both Windows and Ubuntu3.13 remain running. Focused25 cases and lint/format retain
 their passes. Full telemetry consent/update and formal release-receipt gaps remain
 explicit; failed wrappers are not promoted or backfilled. No public release.
+
+
+## Oct 11 02:04 UTC — Windows CI and private Intel access failure
+
+Tests38101705123 finished with five platform jobs passed, including Windows
+Python3.13 and its updater fault cases. Windows Python3.11 failed only
+`test_pending_artwork_retains_only_the_same_owner[False-False]` at the probe's
+unchanged12s subprocess deadline;695 other component cases passed,9 skipped.
+The failure lacks the child output and does not establish a product rendering
+assertion or a startup/cleanup cause. Original log remains retained. Focused
+reproduction uses an isolated Python3.11 environment in the existing Genesis
+QA tree, with the unchanged test/provider source; no new checkout.
+[Original Windows failure](/Users/coop/Documents/Codex/2026-10-09/task/release-completion-20261010/tests-8e7314d-windows311-failed.log).
+
+Native Intel workflow38103306042 failed at private-draft download before any
+candidate launch. Its read-only Actions token cannot see the draft. Original
+failure remains retained and is not a product startup result. A proposed
+job-only contents:write permission with disabled persisted checkout credentials
+was blocked by automatic approval review as repository write authority beyond
+recognized explicit approval. No rejected change was applied; mainfb33f79
+remains clean/pushed. The explicit approval question is pending. No workaround
+for the rejected permission boundary is used. All telemetry and Update/Repair
+evidence limits recorded above remain open. No public release.
+
+The exact original Windows artwork case passes in the isolated Genesis
+Python3.11.0 environment at7.30s overall/6.23s call, with the unchanged12s
+deadline. This does not establish the original CI cause (CI uses3.11.9).
+The test now records bounded stage timings and an8s faulthandler snapshot into
+a child log included on timeout/failure, instead of losing output in the
+Windows subprocess communication failure. Existing rendering assertions and
+12s deadline are unchanged. Four current cases pass in10.08s; the existing
+clear-before-ready negative control still fails at the same-owner pending
+assertion with its child diagnostics retained. Ruff/format/AST/YAML/diff pass.
+The focused manual read-only Windows workflow runs these four cases and the
+previously skipped3.11 scene/updater partitions; it does not repeat the passed
+repository/component partitions or other OS jobs. Its CI result remains pending.
+No runtime or signed archive changed.

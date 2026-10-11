@@ -16,41 +16,61 @@ from PIL import Image
 def test_pending_artwork_retains_only_the_same_owner(tmp_path, change_owner, resize):
     Image.new("RGB", (320, 180), (200, 50, 50)).save(tmp_path / "red.png")
     Image.new("RGB", (320, 180), (50, 50, 200)).save(tmp_path / "blue.png")
-    result = subprocess.run(
-        [
-            sys.executable,
-            __file__,
-            "--probe",
-            str(tmp_path),
-            str(int(change_owner)),
-            str(int(resize)),
-        ],
-        env={
-            **os.environ,
-            "HOME": str(tmp_path),
-            "LOCALAPPDATA": str(tmp_path),
-            "QT_QPA_PLATFORM": "offscreen",
-            "QT_QUICK_BACKEND": "software",
-            "QT_QUICK_CONTROLS_STYLE": "Basic",
-            "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
-        },
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=12,
+    log_path = tmp_path / "probe.log"
+    try:
+        with log_path.open("w", encoding="utf-8") as log:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    __file__,
+                    "--probe",
+                    str(tmp_path),
+                    str(int(change_owner)),
+                    str(int(resize)),
+                ],
+                env={
+                    **os.environ,
+                    "HOME": str(tmp_path),
+                    "LOCALAPPDATA": str(tmp_path),
+                    "QT_QPA_PLATFORM": "offscreen",
+                    "QT_QUICK_BACKEND": "software",
+                    "QT_QUICK_CONTROLS_STYLE": "Basic",
+                    "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
+                },
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                text=True,
+                check=False,
+                timeout=12,
+            )
+    except subprocess.TimeoutExpired:
+        pytest.fail(
+            "Artwork probe exceeded the unchanged 12s deadline.\n"
+            + log_path.read_text(encoding="utf-8", errors="replace")
+        )
+    assert result.returncode == 0, log_path.read_text(
+        encoding="utf-8", errors="replace"
     )
-    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def probe(root: Path, change_owner: bool, resize: bool):
     import time
     from urllib.parse import parse_qs, urlencode
 
+    started = time.monotonic()
+
+    def checkpoint(stage):
+        print(f"{time.monotonic() - started:.3f}s: {stage}", flush=True)
+
+    checkpoint("before Qt imports")
+
     from PySide6.QtCore import QEventLoop, QMetaObject, QTimer, QUrl
     from PySide6.QtGui import QGuiApplication
     from PySide6.QtQuick import QQuickView
 
     from yt_downloader.qt_quick.artwork import ThumbnailReductionProvider
+
+    checkpoint("imports complete")
 
     class DelayedProvider(ThumbnailReductionProvider):
         def requestImage(self, identifier, size, requested_size):
@@ -73,6 +93,7 @@ def probe(root: Path, change_owner: bool, resize: bool):
                 urlencode(params, doseq=True), size, requested_size
             )
 
+    checkpoint("before application creation")
     app = QGuiApplication([])
     view = QQuickView()
     view.engine().addImageProvider("vodforge-thumbnails", DelayedProvider())
@@ -113,16 +134,19 @@ Rectangle {{ id:frame; width:120;height:72;color:"#202020"
  Timer {{ id:trigger; interval:0; onTriggered: {{ {"frame.width=140; frame.height=84;" if resize else ""} art.{"source" if change_owner else "adoptedSource"}="{delayed}" }} }}
  function startPending() {{ trigger.start() }}
 }}''')
+    checkpoint("before QML load")
     view.setSource(QUrl.fromLocalFile(str(qml)))
     assert not view.errors()
     view.show()
     settle(600)
     before = view.grabWindow()
+    checkpoint("initial frame captured")
     assert before.pixelColor(60, 36).red() == 200
     QMetaObject.invokeMethod(view.rootObject(), "startPending")
     settle(50)
     pending = view.grabWindow()
     pending.save(str(root / "pending.png"))
+    checkpoint("pending frame captured")
     pixel = pending.pixelColor(pending.width() // 2, pending.height() // 2)
     if change_owner:
         assert pixel.red() != 200, "old owner remains visible during replacement load"
@@ -144,14 +168,24 @@ Rectangle {{ id:frame; width:120;height:72;color:"#202020"
             break
         if time.monotonic() >= deadline:
             break
+    checkpoint("final frame captured")
     final.save(str(root / "final.png"))
     assert (
         final.pixelColor(final.width() // 2, final.height() // 2).blue()
         == expected_blue
     )
+    checkpoint("before view close")
     view.close()
     app.quit()
+    checkpoint("probe finished")
 
 
 if __name__ == "__main__":
-    probe(Path(sys.argv[2]), bool(int(sys.argv[3])), bool(int(sys.argv[4])))
+    import faulthandler
+
+    faulthandler.enable()
+    faulthandler.dump_traceback_later(8, repeat=False)
+    try:
+        probe(Path(sys.argv[2]), bool(int(sys.argv[3])), bool(int(sys.argv[4])))
+    finally:
+        faulthandler.cancel_dump_traceback_later()
