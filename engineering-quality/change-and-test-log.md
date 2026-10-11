@@ -1074,3 +1074,36 @@ mismatch, retains shown and true Try it configurations, with140 retained passes.
 No need to fabricate Try it on Done or rebuild unchanged candidate5854619.
 Parent supplied actual original user release authorization dated2026-10-10T22:09;
 publication remains conditional on genuine final readiness, with missing gates open.
+
+## Oct 11 — separate optional UX review from release acceptance
+
+User authorized retaining useful checks and retiring unfinished scoring that
+obstructs release (22:17:37 UTC). Targeted source search found no click-distance
+calculator or screen-distance score consumed by release_gate; this does not
+prove no adjacent mapping document exists. The actual related blocker was every
+scenario's seven-dimension usability enrollment (orientation/navigation, action
+hierarchy, progressive disclosure, visual hierarchy, sparse/busy content,
+feedback, accessibility). Made only these `.usability.*` reviews nonrequired;
+original status/evidence remain visible and explicitly labelled optional.
+Interaction/temporal assertions remain required, as do scenario results, native
+package provenance/media, updater/data preservation, telemetry and privacy.
+Aggregate counts were already reporting-only, not the publication decision.
+
+Two focused positive/negative controls prove failed/unproven UX mapping cannot
+block a required pass and cannot mask an actual HTTP404-cleanup interaction
+failure. Both pass. Legacy fixture still blocks missing temporal assertions and
+now excludes optional UX from blockers (one pass). Three existing required-
+evidence/privacy/package-provenance controls pass. Six unique affected checks;
+Ruff/format/diff pass. Initial two new tests incorrectly expected an optional-only
+checkset to pass; gate correctly says unproven when no required checks exist.
+Corrected tests include a required pass; original failed test log preserved.
+No product files, candidate bytes, source test matrix, telemetry completeness
+policy, or safety thresholds changed. No rebuild/publication/deletion.
+
+Charging-only assertion is in ignored recovery resume-mac.py, not an explicit
+user hold: `assert 'AC Power' in power and ' charging;' in power, power`.
+Successive bounded reads remain82% with AC/discharging and7h20–8h estimated
+battery time. Earlier user concern was10% discharging and heavy work, not a
+permanent charging-only native QA requirement. Bounded native checks can use
+current high stable charge; heavy work remains excluded by original no-build
+scope. Do not alter space or explicit low-battery safeguards.

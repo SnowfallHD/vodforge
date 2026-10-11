@@ -402,13 +402,48 @@ def test_packaged_receipt_requires_independent_pipeline_and_provenance_receipts(
     )
 
 
+@pytest.mark.parametrize("review_status", ["unproven", "failed"])
+def test_optional_ux_review_cannot_block_or_hide_behavior_failure(
+    monkeypatch: pytest.MonkeyPatch, review_status: str
+) -> None:
+    from quality_harness import interaction_coverage as coverage_module
+
+    def coverage(scenario):
+        return {
+            "status": "failed"
+            if scenario["id"] == "reliability.http_404_cleanup"
+            else "passed",
+            "reason": "Actual behavioral outcome",
+            "usability_review": {
+                "status": review_status,
+                "reason": "Unfinished UX mapping",
+            },
+        }
+
+    monkeypatch.setattr(coverage_module, "interaction_coverage", coverage)
+    checks = evaluate_engineering_result(
+        _engineering_result("normal"), profile="normal"
+    )
+    ux = [item for item in checks if ".usability." in item["id"]]
+    assert ux and all(item["required"] is False for item in ux)
+    assert all(item["status"] == review_status for item in ux)
+    assert gate_outcome([*ux, {"required": True, "status": "passed"}]) == "passed"
+    behavior = next(
+        item
+        for item in checks
+        if item["id"] == "normal.interaction.reliability.http_404_cleanup"
+    )
+    assert behavior["required"] is True and behavior["status"] == "failed"
+    assert gate_outcome(checks) == "failed"
+
+
 def test_legacy_success_receipt_keeps_debt_visible_but_blocks_temporal_gaps() -> None:
     from test_telemetry_release import candidate as telemetry_candidate
     from test_telemetry_release import telemetry_fixture
 
     candidate = _candidate()
     # The unrelated telemetry layer must carry its current producer binding,
-    # so this fixture continues to isolate temporal interaction/usability gaps.
+    # so this fixture continues to isolate temporal interaction gaps.
     candidate["source"].update(telemetry_candidate()["source"])
     fast = {
         **_engineering_result("normal"),
@@ -443,8 +478,8 @@ def test_legacy_success_receipt_keeps_debt_visible_but_blocks_temporal_gaps() ->
     assert {item["status"] for item in receipt["known_debt"]} == {"failed"}
     blockers = receipt["summary"]["blocking_check_ids"]
     assert any(".interaction." in item for item in blockers)
-    assert any(".usability." in item for item in blockers)
-    assert all(".interaction." in item or ".usability." in item for item in blockers)
+    assert not any(".usability." in item for item in blockers)
+    assert all(".interaction." in item for item in blockers)
     schema = json.loads(
         (
             Path(__file__).parents[1] / "schemas" / "release-receipt.schema.json"

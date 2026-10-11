@@ -442,14 +442,17 @@ def evaluate_engineering_result(
             )
         )
         usability = coverage["usability_review"]
+        # UX mapping is a diagnostic review, not customer-behavior evidence.
+        # Keep its actual status visible without requiring enrollment or a
+        # completeness score to ship. Interaction assertions above stay required.
         checks.append(
             _check(
                 f"{prefix}.usability.{scenario_id}",
-                label=f"Usability evidence: {scenario_id}",
+                label=f"Optional usability review: {scenario_id}",
                 status="passed"
                 if usability["status"] == "not_applicable"
                 else usability["status"],
-                required=True,
+                required=False,
                 evidence=[usability["reason"]],
             )
         )

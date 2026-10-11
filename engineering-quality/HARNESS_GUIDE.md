@@ -2066,3 +2066,15 @@ bound to the overlay's exact native window ID and cross-checked against owned
 on-screen windows. Fullscreen alone did not cover this floating-host lifecycle;
 this addition is OS-injected source-native evidence, not physical PiP usability or
 all-platform/package acceptance.
+
+### Optional UX review and release acceptance
+
+Usability enrollment/mapping is retained as diagnostic analysis. Its original
+failed or unproven status remains visible in `.usability.*` release receipt rows,
+with `required: false`; it cannot obstruct publication. This includes unfinished
+navigation/hierarchy/clarity review and is not evidence that UX defects passed.
+Behavioral interaction assertions, required scenarios, packaged media/provenance,
+update/data preservation and consent/privacy checks remain required. Reported
+counts and aggregate metrics do not determine publication. No click-distance
+calculator was found in the inspected release evaluator; do not describe that
+unfinished idea as a proven gate dependency.
