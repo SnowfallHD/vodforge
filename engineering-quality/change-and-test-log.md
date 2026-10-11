@@ -587,3 +587,23 @@ Runtime changed: one consolidated signed successor is required. Existing
 behavior passes and original native evidence remain preserved; new source-tier
 passes do not qualify signed native/preview-D1 evidence. Mac foreground and
 production D1 were untouched.0.2.6 remains unpublished.
+
+
+## Oct 11 — orientation fixture compatibility in the consolidated build
+
+Consolidated build38123807665 stopped before producing the Mac archive on the
+existing manual-orientation test; both Mac CI jobs38123792159 found the same
+failure (724 other Qt component checks passed in each). The test replaced the
+real QtAnalyticsSession with SimpleNamespace(settled=False) and omitted its
+existing optional telemetry member, now observed by the Help instrumentation.
+The actual owner always initializes telemetry, including disabled mode.
+
+The test fake now includes telemetry=None. Its consent/modal assertions remain
+unchanged; no product/runtime file changed. All23 orientation checks pass in the
+focused module; Ruff/format/diff pass. Original failed CI and build logs are
+retained under task/release-completion-20261010/build-ed66244-macos-arm64-failed.log
+and ci-ed66244-macos{311,313}-failed.log; local proof is
+qt-orientation-fixture-after.{log,xml}. Build continuation is justified by this
+actual pre-packaging fixture failure, not by rechecking proven behavior. Native
+Windows source has advanced in its existing checkout; no successor native input,
+production D1 write, Mac foreground change or public release occurred.

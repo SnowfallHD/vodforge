@@ -96,7 +96,7 @@ def test_manual_reopen_keeps_seen_receipt_and_never_duplicates_a_modal(bridge):
 def test_manual_orientation_waits_for_consent_and_support_modal(bridge):
     analytics = bridge._analytics
     try:
-        bridge._analytics = SimpleNamespace(settled=False)
+        bridge._analytics = SimpleNamespace(settled=False, telemetry=None)
         assert not bridge.openWhatsNew()
     finally:
         bridge._analytics = analytics
