@@ -322,3 +322,55 @@ work is exact release-evidence closure, draft asset/source replacement, removal
 of temporaryQA archive, publication/public-byte/updater verification and website
 manifest sync (website currently0.2.5).
 [Prepared files](/Users/coop/Documents/Codex/2026-10-09/task/release-completion-20261010/prepared-release-5e581d0/preparation-receipt.json).
+
+## Oct 11 03:30 UTC — final Mac preview delivery completed; formal release dependency remains
+
+Exact signed/notarized/stapled5e581d0 ARM archive7cd6df185c49c98648feb8a5a2d8fbee6982724b12c095111cc3b31f930b7d13
+passes43 bounded checks in a fresh isolated profile. Unknown-consent preview rows
+are0; actual native Share analytics creates one installation/client and one
+app_opened. Normal same-version reopen adds the second app_opened, advances
+last_seen and preserves installation/created/first-launch/version, with no
+client_update. One actual native MP4 export delivers linked run_started,
+media_exported,run_completed and processing-stage observations. Independent
+probe and full decode pass (24.033s media, SHA2270c3db1c6736d4e831e17b3c365a31571deb3c79ea529274605f7cf310c30b).
+
+Actual native analytics withdrawal, denied restart/navigation, and explicitly
+disabled fourth launch retain identical complete scalar installation/client/
+event projections. Disabled UI visibly says Usage analytics is disabled for
+this session. All4 original launches exit0; no owned survivors/staging, archive
+integrity retained and prior sessions unchanged. Preview has24 unique schema-v2
+events; operation revision and all425 current bounded dimension fields validate
+through5 original100-row SQL pages. Production readback has0 installation/client/
+event rows for this Mac IID4d98dd07-53a3-4bbe-9179-dc17e0df48e3 and the retained
+final Windows QA IID4fb91fc1-621e-486c-9a40-db8dfed42cba.
+
+Limit: wide D1 JSON-string columns and the first200-row dimension response were
+tool-truncated and rejected. Original readbacks retained. Historical privacy
+comparison excludes truncated dimension strings; it does not claim full payload
+or credential-secret equality. Separate current complete field pages validate
+dimensions. Task relative-profile launch was correctly disabled/refused and
+owned cleanup retained. Foreground/argument refusals sent no input; original
+first refusal is in tool transcript because task filename allocation collided,
+then allocator corrected. No layout/playback/move/installer test was repeated.
+
+[Original bounded assessment](/Users/coop/Documents/Codex/2026-10-09/task/release-completion-20261010/mac-final-5e581d0-preview-delivery-attempt2/bounded-preview-assessment.json).
+
+No live operation is waiting. The concrete remaining publication dependency is
+the unchanged mandatory release gate, not a Mac delivery transport failure or a
+Windows sign-in requirement. RELEASE_GATE.md requires full FAST/NORMAL/DEEP,
+interaction enrollment, exact final packaged receipts and both telemetry gates.
+telemetry_release.py requires one complete final36-event journey per platform,
+all215 feature/action pairs and a genuine same-identity old→new transition.
+Current final QA readbacks cover7/215 Mac and20/215 Windows pairs; those counts
+are scoped to those identities and do not invalidate historical bounded passes.
+Original source wrappers remain failed/incomplete, and the current gate cannot
+compose their independently passed partitions. Completing specifically missing
+required observations or implementing/validating a reviewed linked-receipt
+adoption policy is still necessary; no gate, source binding, original status or
+trace was rewritten. Existing user authorization to release remains in force.
+
+[Concrete dependency](/Users/coop/Documents/Codex/2026-10-09/task/release-completion-20261010/mac-final-5e581d0-preview-delivery-attempt2/telemetry-evidence-dependency.json).
+Four signed files/checksums/notes remain prepared. Private draft/old assets/QA
+asset unchanged and unpublished; website still0.2.5. Once eligible, replace
+draft assets/source, remove QA archive, publish, verify public bytes/update feed
+and synchronize website. No new runtime feature, checkout or worktree.
