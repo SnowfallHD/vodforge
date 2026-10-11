@@ -240,3 +240,47 @@ permission read-only, and disable saved checkout credentials. No publication or
 other write step is added. Source/archive/hash/startup20s/native architecture
 checks remain unchanged. Native qualification on the existing signed archive
 will be recorded separately; this permission change is not a passing startup.
+
+## Oct 11 02:48 UTC — Intel native observer and Windows retention completion
+
+Focused native Intel CI38106036141 successfully read the private draft and
+verified the exact signed/notarized5e581d0 archive. Native x86_64 startup attested
+in8.03s under the unchanged20s guard; the immediate single Quartz query returned
+no owned onscreen windows and qualification FAILED. Cause is not established;
+this is missing native visibility evidence, not a proven app startup failure.
+Original6-file artifact/log preserved, forced cleanup left no owned survivors.
+The observer now waits only until started+20s, independently requiring the exact
+owner, layer0 and positive bounds; it records every sample and rechecks live
+launch identity. It adds no new deadline, synthetic window or artifact change.
+Eight focused cases pass, including delayed publication, wrong owner, invalid
+geometry, expired original deadline, query finishing late and exited owner.
+Ruff passes; initial format failure is corrected. Successor CI remains pending.
+[Original Intel outcome](/Users/coop/Documents/Codex/2026-10-09/task/release-completion-20261010/native-intel-ci-attempt2/startup-result.json).
+
+Real Windows native public0.2.5→signed final0.2.6 Update and actual Repair both
+return original helper statusrelaunched/installerexit0/data-preservedtrue and
+exact final executable/signature. All13 media/sidecar files, including six real
+media across standard playlist nests and the separately moved loose import,
+and3 history/annotations/journal hashes match all4 before/after snapshots.
+Actual updated/repaired Library shows All Media6. Fresh helper session nonces
+are bound from original startup attestations after PID/path/hash/creation-time
+checks; initial ad-hoc stale-nonce refusals remain failed, not app crashes.
+Normal close exits0. Feed/descendants/task are gone; ordinary0.2.3 binary,27 data
+file hashes, registration and shortcuts restored. Preview readback has linked
+Update handoff/relaunched and Repair handoff/relaunched/repair_completed, one
+installation/client and unchanged first-launch identity. Production has0 rows
+for the QA IID. This is bounded native transaction proof, not a completed
+36-event wrapper or formal release-gate pass.
+
+Ad-hoc preparation originally omitted existing telemetry-off/handoff flags,
+launching public baseline once in session0. Exact unplanned process was stopped;
+only43 ordinary activity-log bytes changed, original prefix/hash verified and
+restored. Production ordinary IID first launch remains August27/last seenOct5,
+with0 events since this setup. Original setup and administrator-ACL refusal
+retained. Downloads-only snapshot originally found5 of6 media; separate loose
+folder added without moving or fabricating files. First binding helper collided
+with automatic PowerShell Matches; original failure retained, task-only variable
+renamed. One D1 full dataset response was column-truncated; it is retained but
+not used as complete evidence. Supplemental structured columns preserve all33
+actual updater/startup events without truncation. No runtime or signed archive
+changed; no public release.

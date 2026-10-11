@@ -11,7 +11,9 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(REPO), str(REPO / "engineering-quality")]
@@ -28,6 +30,44 @@ from quality_harness.packaged_e2e import (
     _launch_and_attest,
 )
 from quality_harness.util import json_dump, sha256_file, utc_now
+
+
+def wait_for_native_window(
+    *,
+    pid: int,
+    deadline: float,
+    sample: Callable[[], list[dict[str, Any]]],
+    alive: Callable[[], bool],
+    observations: list[dict[str, Any]],
+    now: Callable[[], float] = time.monotonic,
+    pause: Callable[[float], None] = time.sleep,
+) -> list[dict[str, Any]]:
+    """Observe visibility within the existing launch deadline, never a new one."""
+    while now() < deadline:
+        if not alive():
+            raise RuntimeError(
+                "Owned candidate exited before native window observation"
+            )
+        windows = sample()
+        observed_at = now()
+        owned = [
+            window
+            for window in windows
+            if window["owner_pid"] == pid
+            and window["layer"] == 0
+            and window["bounds"]["Width"] > 0
+            and window["bounds"]["Height"] > 0
+        ]
+        observations.append(
+            {"seconds_remaining": deadline - observed_at, "owned_windows": owned}
+        )
+        if observed_at < deadline and owned:
+            return owned
+        pause(min(0.1, max(0.0, deadline - now())))
+    raise RuntimeError(
+        "Attested process has no independently observed onscreen native window "
+        "within the original 20-second startup guard"
+    )
 
 
 def main() -> None:
@@ -129,31 +169,38 @@ def main() -> None:
         import AppKit
         import Quartz
 
-        windows = Quartz.CGWindowListCopyWindowInfo(
-            Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID
-        )
-        owned_windows = [
-            {
-                "window_id": int(window.get(Quartz.kCGWindowNumber, 0)),
-                "owner_pid": int(window.get(Quartz.kCGWindowOwnerPID, 0)),
-                "title": str(window.get(Quartz.kCGWindowName, "") or ""),
-                "bounds": {
-                    key: float(window.get(Quartz.kCGWindowBounds, {}).get(key, 0))
-                    for key in ("X", "Y", "Width", "Height")
-                },
-            }
-            for window in windows or []
-            if int(window.get(Quartz.kCGWindowOwnerPID, 0)) == launch["pid"]
-            and int(window.get(Quartz.kCGWindowLayer, -1)) == 0
-        ]
-        json_dump(output / "native-window-observation.json", owned_windows)
-        if not any(
-            window["bounds"]["Width"] > 0 and window["bounds"]["Height"] > 0
-            for window in owned_windows
-        ):
-            raise RuntimeError(
-                "Attested process has no independently observed onscreen native window"
+        def native_windows() -> list[dict[str, Any]]:
+            windows = Quartz.CGWindowListCopyWindowInfo(
+                Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID
             )
+            return [
+                {
+                    "window_id": int(window.get(Quartz.kCGWindowNumber, 0)),
+                    "owner_pid": int(window.get(Quartz.kCGWindowOwnerPID, 0)),
+                    "layer": int(window.get(Quartz.kCGWindowLayer, -1)),
+                    "title": str(window.get(Quartz.kCGWindowName, "") or ""),
+                    "bounds": {
+                        key: float(window.get(Quartz.kCGWindowBounds, {}).get(key, 0))
+                        for key in ("X", "Y", "Width", "Height")
+                    },
+                }
+                for window in windows or []
+            ]
+
+        observations: list[dict[str, Any]] = []
+        try:
+            owned_windows = wait_for_native_window(
+                pid=launch["pid"],
+                deadline=started + 20,
+                sample=native_windows,
+                alive=lambda: process.poll() is None,
+                observations=observations,
+            )
+        finally:
+            json_dump(output / "native-window-observation.json", observations)
+        if not verify_live_launch(launch)["verified"]:
+            raise RuntimeError("Owned launch changed during native observation")
+        result["native_window_observed_seconds"] = time.monotonic() - started
         result["native_onscreen_window_count"] = len(owned_windows)
         application = (
             AppKit.NSRunningApplication.runningApplicationWithProcessIdentifier_(
