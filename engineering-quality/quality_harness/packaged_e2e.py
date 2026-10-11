@@ -151,7 +151,11 @@ def _codesign_value(output: str, key: str) -> str | None:
 
 
 def _artifact_receipt(
-    artifact: Path, repo_root: Path, *, artifact_policy: str = "release"
+    artifact: Path,
+    repo_root: Path,
+    *,
+    artifact_policy: str = "release",
+    expected_source_commit: str | None = None,
 ) -> dict[str, Any]:
     if artifact_policy not in {"development", "release"}:
         raise ValueError(f"unsupported artifact policy: {artifact_policy}")
@@ -159,7 +163,12 @@ def _artifact_receipt(
     if sys.platform == "win32":
         from .windows_e2e_platform import windows_artifact_receipt
 
-        return windows_artifact_receipt(artifact, repo_root, artifact_policy)
+        return windows_artifact_receipt(
+            artifact,
+            repo_root,
+            artifact_policy,
+            expected_source_commit=expected_source_commit,
+        )
     executable = artifact / "Contents" / "MacOS" / "VODForge"
     ffmpeg = artifact / "Contents" / "Frameworks" / "ffmpeg"
     ffprobe = artifact / "Contents" / "Frameworks" / "ffprobe"
@@ -1647,6 +1656,8 @@ def _load_resumable_session(path: Path, args: argparse.Namespace) -> dict[str, A
         or candidate["candidate_id"] != binding.get("candidate_id")
         or readback.get("archive_sha256") != binding.get("archive_sha256")
         or readback.get("bundle_tree_sha256") != binding.get("bundle_tree_sha256")
+        or not isinstance(binding.get("source_commit"), str)
+        or candidate.get("source", {}).get("commit") != binding.get("source_commit")
     ):
         raise ValueError("Resume candidate differs from the original candidate")
     artifact = Path(binding["artifact_path"])
@@ -1670,7 +1681,7 @@ def _load_resumable_session(path: Path, args: argparse.Namespace) -> dict[str, A
     _continuation_fixture_port(session)
     # Preserve the failed/partial wrapper and its exact trace before appending.
     archive = directory / f"continuation-{len(launches)}"
-    archive.mkdir(exist_ok=False)
+    originals: dict[str, bytes] = {}
     for name in (
         "session.json",
         "e2e-result.json",
@@ -1680,8 +1691,27 @@ def _load_resumable_session(path: Path, args: argparse.Namespace) -> dict[str, A
         "app.stderr.log",
     ):
         source = directory / name
+        if source.is_symlink() or (source.exists() and not source.is_file()):
+            raise ValueError("retained continuation source is not a regular file")
         if source.is_file():
-            (archive / name).write_bytes(source.read_bytes())
+            originals[name] = source.read_bytes()
+    if archive.is_symlink() or (archive.exists() and not archive.is_dir()):
+        raise ValueError("retained continuation archive is not a real directory")
+    if archive.exists():
+        # A refused preflight may already have preserved these originals.
+        # Reuse only their exact names and bytes; never replace a prior archive.
+        entries = list(archive.iterdir())
+        if {entry.name for entry in entries} != set(originals) or any(
+            entry.is_symlink()
+            or not entry.is_file()
+            or entry.read_bytes() != originals[entry.name]
+            for entry in entries
+        ):
+            raise ValueError("retained continuation originals have changed")
+    else:
+        archive.mkdir(exist_ok=False)
+        for name, data in originals.items():
+            (archive / name).write_bytes(data)
     session["continuation_receipt"] = str(archive / "e2e-result.json")
     session["continuation_receipt_sha256"] = sha256_file(archive / "e2e-result.json")
     return session
@@ -1766,7 +1796,16 @@ def run_packaged_e2e_session(
     fixtures = workspace / "fixtures"
     for path in (home, tmp, fixtures, home / "Downloads", session_dir / "ui"):
         path.mkdir(parents=True, exist_ok=True)
-    receipt = _artifact_receipt(artifact, repo_root, artifact_policy=artifact_policy)
+    receipt = _artifact_receipt(
+        artifact,
+        repo_root,
+        artifact_policy=artifact_policy,
+        expected_source_commit=(
+            candidate_binding.get("source_commit")
+            if candidate_binding.get("verified") is True
+            else None
+        ),
+    )
     if candidate_binding.get("verified") is True and (
         candidate_binding.get("bundle_tree_sha256")
         != receipt.get("bundle_tree", {}).get("sha256")

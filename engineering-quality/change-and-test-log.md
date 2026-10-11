@@ -656,3 +656,42 @@ remains unapproved and untouched. No public0.2.6 release or production write.
 Native continuation itself is still pending; Mac reports AC Power but13percent
 and discharging, and the charger clarification is pending. Original Mac/Windows
 QA profiles, partial wrappers and process-clean exits remain preserved.
+
+
+
+## Oct 11 — frozen-candidate Windows continuation preflight
+
+The first actual Windows continuation attempt exited before app launch.
+Authenticode, publisher, timestamp and version checks passed; the inspector
+rejected only because it compared frozen product5854619 to harness-onlya91f0a6.
+Original preflight failure, failed launcher and zero-process readback are retained
+under task/release-completion-20261010/windows-observations-ed66244/.
+
+The maintained native runner now supplies only its verified frozen source binding.
+Windows inspection requires embedded revision equality to that binding, Git
+ancestry, and no committed, staged, dirty or untracked product/build input changes
+outside engineering-quality. Direct archive inspection still requires current
+HEAD; no candidate is relabeled, resigned, rebuilt or made from changed source.
+Authenticode, runnable dependencies and exact frozen archive/executable/tree
+checks remain unchanged. Resuming additionally matches the frozen source receipt.
+
+The refused preflight preserved continuation-1 before stopping. A retry may reuse
+it only when every original filename and byte matches, all entries and sources
+are regular non-symlink files, and no extra object exists. It never overwrites an
+archive or edits prior screenshots/traces/results. The before control fails with
+FileExistsError; positive controls preserve all bytes and modification times.
+
+100 focused continuation, artifact and existing provenance controls pass; the
+actual Windows-kernel process test is correctly skipped on Mac and its prior
+native pass remains intact. Two additional original-source-binding negative
+controls pass. Real temporary Git fixtures reject product/build changes, dirty
+or untracked inputs, foreign ancestry and invalid signed identity. Initial
+platform-fake and sandbox loopback failures remain preserved separately; the
+corrected focused run is continuation-preflight-tests-final.log. Lint, format and
+diff checks pass. This patch contains only harness/tests/evidence-log changes.
+
+Native continuation remains pending, not qualified by unit controls. Original
+Windows session stays finalized, current_launch null, driver_ready false and
+zero app/harness processes at13:29Z. Mac reports AC Power but11percent discharging;
+heavy local work remains paused awaiting charger confirmation. The106-object
+second cleanup set remains unapproved and untouched.0.2.6 remains unpublished.

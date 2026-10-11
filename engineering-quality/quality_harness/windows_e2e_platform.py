@@ -20,8 +20,68 @@ from typing import Any
 from .util import run_command, sha256_file
 
 
+def _build_source_verification(
+    revision: str, repo_root: Path, expected_source_commit: str | None
+) -> dict[str, Any]:
+    """Bind a frozen revision without accepting changed product/build inputs."""
+    head = run_command(["git", "rev-parse", "HEAD"], cwd=repo_root, timeout=15)
+    commit = head.stdout.strip()
+    expected = commit if expected_source_commit is None else expected_source_commit
+    identity = (
+        head.returncode == 0
+        and bool(re.fullmatch(r"[a-f0-9]{40}", revision))
+        and bool(re.fullmatch(r"[a-f0-9]{40}", expected))
+        and revision == expected
+    )
+    checks = {"head": head.as_dict()}
+    unchanged = revision == commit and identity
+    if expected_source_commit is not None and identity:
+        commands = {
+            "ancestor": ["git", "merge-base", "--is-ancestor", expected, "HEAD"],
+            "product_diff": [
+                "git",
+                "diff",
+                "--name-only",
+                expected,
+                "--",
+                ".",
+                ":(exclude)engineering-quality",
+            ],
+            "product_status": [
+                "git",
+                "status",
+                "--porcelain",
+                "--untracked-files=normal",
+                "--",
+                ".",
+                ":(exclude)engineering-quality",
+            ],
+        }
+        results = {
+            name: run_command(argv, cwd=repo_root, timeout=15)
+            for name, argv in commands.items()
+        }
+        checks.update({name: result.as_dict() for name, result in results.items()})
+        unchanged = all(result.returncode == 0 for result in results.values()) and all(
+            not results[name].stdout.strip()
+            for name in ("product_diff", "product_status")
+        )
+    return {
+        "expected_source_commit": expected,
+        "harness_commit": commit,
+        "frozen_source_binding": expected_source_commit is not None,
+        "unchanged_product_inputs": unchanged,
+        "checks": checks,
+        "verified": identity and unchanged,
+    }
+
+
 def windows_artifact_receipt(
-    artifact: Path, repo_root: Path, policy: str
+    artifact: Path,
+    repo_root: Path,
+    policy: str,
+    *,
+    expected_source_commit: str | None = None,
 ) -> dict[str, Any]:
     from .e2e_provenance import bundle_tree_receipt
 
@@ -65,9 +125,6 @@ def windows_artifact_receipt(
     facts = json.loads(check.stdout) if check.returncode == 0 else {}
     version = version_path.read_text(encoding="utf-8").strip()
     revision = revision_path.read_text(encoding="utf-8").strip()
-    commit = run_command(
-        ["git", "rev-parse", "HEAD"], cwd=repo_root, timeout=15
-    ).stdout.strip()
     publisher = 'O="Kryden Ventures, LLC"' in str(facts.get("subject") or "")
     signature = (
         facts.get("status") == "Valid" and facts.get("timestamp") is True and publisher
@@ -76,9 +133,10 @@ def windows_artifact_receipt(
     consistent = facts.get("version") == bundle_version and bool(
         re.fullmatch(r"\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?", version)
     )
-    revision_verified = (
-        bool(re.fullmatch(r"[a-f0-9]{40}", revision)) and revision == commit
+    source_verification = _build_source_verification(
+        revision, repo_root, expected_source_commit
     )
+    revision_verified = source_verification["verified"]
     probe = run_command(
         [str(dependencies["ffprobe"]), "-version"], cwd=repo_root, timeout=30
     )
@@ -101,6 +159,7 @@ def windows_artifact_receipt(
         "runtime_version_sha256": sha256_file(version_path),
         "build_revision": revision,
         "build_revision_verified": revision_verified,
+        "build_source_verification": source_verification,
         "version_consistent": consistent,
         "identity_verified": signature,
         "release_identity_verified": signature,

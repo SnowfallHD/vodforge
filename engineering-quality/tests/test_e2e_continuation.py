@@ -24,6 +24,7 @@ def fixture(tmp_path, monkeypatch):
         "candidate_binding": {
             "verified": True,
             "candidate_id": "frozen",
+            "source_commit": "a" * 40,
             "archive_sha256": "zip",
             "bundle_tree_sha256": "tree",
             "artifact_path": str(artifact),
@@ -32,6 +33,7 @@ def fixture(tmp_path, monkeypatch):
     }
     candidate = {
         "candidate_id": "frozen",
+        "source": {"commit": "a" * 40},
         "readback_verification": {
             "verified": True,
             "archive_sha256": "zip",
