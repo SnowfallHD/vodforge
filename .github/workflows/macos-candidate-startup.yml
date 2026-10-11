@@ -1,0 +1,71 @@
+name: Qualify existing Intel Mac candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing private draft containing the candidate
+        required: true
+        default: v0.2.6
+      asset_name:
+        description: Unique draft QA asset, never a published release replacement
+        required: true
+      archive_sha256:
+        description: Frozen candidate archive SHA256
+        required: true
+      executable_sha256:
+        description: Frozen candidate executable SHA256
+        required: true
+      bundle_tree_sha256:
+        description: Frozen candidate bundle tree SHA256
+        required: true
+      source_commit:
+        description: Original runtime source bound to the frozen archive
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  native-intel-startup:
+    runs-on: macos-15-intel
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install bounded qualification dependencies
+        run: python -m pip install 'psutil>=7,<8' 'jsonschema>=4.25,<5' 'pyobjc-framework-Quartz>=11,<13'
+      - name: Download only from the existing private draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          ASSET_NAME: ${{ inputs.asset_name }}
+        run: |
+          test "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = true
+          mkdir "$RUNNER_TEMP/vf-native-input"
+          gh release download "$RELEASE_TAG" --pattern "$ASSET_NAME" --dir "$RUNNER_TEMP/vf-native-input"
+      - name: Qualify unchanged signed bytes with the standard startup guard
+        env:
+          ASSET_NAME: ${{ inputs.asset_name }}
+          ARCHIVE_SHA256: ${{ inputs.archive_sha256 }}
+          EXECUTABLE_SHA256: ${{ inputs.executable_sha256 }}
+          BUNDLE_TREE_SHA256: ${{ inputs.bundle_tree_sha256 }}
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+        run: |
+          python engineering-quality/runners/macos-native-startup.py \
+            --archive "$RUNNER_TEMP/vf-native-input/$ASSET_NAME" \
+            --sha256 "$ARCHIVE_SHA256" \
+            --executable-sha256 "$EXECUTABLE_SHA256" \
+            --bundle-tree-sha256 "$BUNDLE_TREE_SHA256" \
+            --source-commit "$SOURCE_COMMIT" \
+            --output-dir "$RUNNER_TEMP/vf-native-result"
+      - name: Preserve the original qualification outcome
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-intel-startup
+          path: ${{ runner.temp }}/vf-native-result
+          if-no-files-found: warn

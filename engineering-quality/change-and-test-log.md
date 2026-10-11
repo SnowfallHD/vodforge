@@ -112,3 +112,48 @@ at the second destination and their old paths are absent. Third move, hash/sibli
 assessment, and affected open-Detail selection acceptance are still in progress.
 No failed generic journey has been promoted or backfilled. Full release evidence
 reconciliation and remaining native Watch layout observations remain open.
+
+
+## Oct 11 01:53 UTC — final native move/rendering scope and Intel qualification
+
+The signed5e581d0 Windows candidate completed three real native five-item
+multiselect moves, including two canonical playlist exports. All9 owned-file
+hashes remained unchanged; both intermediate owned paths disappeared, complete
+playlist nests survived all three moves, and an unrelated foreign-folder sibling
+remained intact. [21-check assessment](/Users/coop/Documents/Codex/2026-10-09/task/release-completion-20261010/windows-final-5e581d0/standard-nest-multi-move-assessment.json).
+A loose import then moved twice through a foreign nested location from its open
+Detail: only its video moved, its open selection and saved note survived both
+moves, and unrelated source/nested siblings remained unchanged.
+[12-check affected acceptance](/Users/coop/Documents/Codex/2026-10-09/task/release-completion-20261010/windows-final-5e581d0/loose-selection-native-assessment.json).
+Windows exited normally0 with no owned candidate processes or workers surviving.
+
+The notarized ARM5e581d0 wide player shows More to Watch at right and Recently
+Added below. Eleven passive native frame samples around one guarded Library tab
+click show rendered content throughout the sampled transition; this is not a
+subframe-flash or physical-trackpad claim.
+[Bounded assessment](/Users/coop/Documents/Codex/2026-10-09/task/release-completion-20261010/mac-final-5e581d0-arm64-layout-attempt3/bounded-watch-tab-assessment.json).
+Distinct four-owner artwork was observed in Library, Watch rail and Watch See All
+grid, with13 checks passing and normal exit0/no survivors. Those four records are
+explicit synthetic rendering fixtures with real media copies; they cannot count
+as successful downloads or telemetry coverage.
+[Artwork assessment](/Users/coop/Documents/Codex/2026-10-09/task/release-completion-20261010/mac-final-5e581d0-controlled-artwork/channel-artwork-assessment.json).
+Both fresh Mac QA installation IDs have zero production installation/client/event
+rows. The read-only query reports zero writes; QA first-launch/cloud confirmations
+remainfalse. [D1 isolation](/Users/coop/Documents/Codex/2026-10-09/task/release-completion-20261010/mac-new-qa-production-d1-isolation.json).
+
+Exact notarized Intel5e581d0 failed the unchanged20s startup-attestation guard on
+this ARM Mac through Rosetta. Original failure remains FAILED; no owned process
+survived and no installation ID was persisted. Prior32.427s plugin diagnostic and
+7.71s debug-plugin diagnostic are diagnostics only, not qualification.
+A focused manual CI workflow now qualifies existing signed bytes on macos-15-intel
+without rebuilding or rerunning export/regression suites. It verifies frozen
+archive/executable/tree hashes, release signature/notarization/Gatekeeper, actual
+native architecture, the existing20s launch guard, an independent onscreen owned
+window and normal exit/no survivors. All telemetry is disabled. The existing
+private draft receives a uniquely named QA archive, without replacing old assets
+or publishing. Qualification is pending. No runtime source changed.
+
+The popup-repair CI38101705123 currently has both Mac jobs and Ubuntu3.11 passed;
+both Windows and Ubuntu3.13 remain running. Focused25 cases and lint/format retain
+their passes. Full telemetry consent/update and formal release-receipt gaps remain
+explicit; failed wrappers are not promoted or backfilled. No public release.
