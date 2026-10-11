@@ -529,3 +529,23 @@ native-applicability-before.{log,xml}, native-applicability-gate-final.{log,xml}
 and native-applicability-gate-corrected.{log,xml}. Signed files are unchanged;
 0.2.6 remains unpublished. No Mac foreground/input changes during the user's
 live Kryden test. Current Windows owned app is26336, titleVFQ-da1dd493cdb9-L2.
+
+
+## Oct 11 07:20 UTC — original Windows deadline finalized the session
+
+Read-only guard diagnosis supersedes the last-known live PID26336 note above.
+Original Windows wrapper finalized at07:12:31 after the two-hour overall deadline:
+L1 exited normally0 and its bounded restart/Description proof remains passed;
+L2 is timed_out, harness_forced_terminationtrue, exit1, unexpected_process_exitfalse
+and zero owned survivors. The attempted new organization action125 was refused
+before dispatch because driver_readyfalse/session_finalized; no media annotation
+was changed and no additional native telemetry coverage is claimed. Original
+session/e2e JSONs are preserved at windows-full-final-5e581d0/
+session-final-after-deadline.json and e2e-result-original-finalized.json.
+
+The compact native matrix and current continuation checkpoint are under task/
+release-completion-20261010/final-gate-inputs-current/native-remaining-matrix.md
+and task/release-completion-20261010/checkpoint-current.json. Twenty-seven legacy
+producer mappings remain required pending source-owner review; none was waived
+by absence of a Qt literal. No Mac foreground/input was changed during the user's
+live Kryden work. No release publication, runtime changes or candidate rebuild.
