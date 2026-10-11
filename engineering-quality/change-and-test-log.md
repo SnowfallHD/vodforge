@@ -607,3 +607,52 @@ qt-orientation-fixture-after.{log,xml}. Build continuation is justified by this
 actual pre-packaging fixture failure, not by rechecking proven behavior. Native
 Windows source has advanced in its existing checkout; no successor native input,
 production D1 write, Mac foreground change or public release occurred.
+
+
+## Oct 11 — battery-pause continuation and Intel finalization
+
+Existing Intel Apple submission df4bdc91-7342-4011-aea0-1274662083da was
+Accepted after the battery pause. Its app CDHash matches the original accepted
+Apple ticket. No resigning, resubmission or rebuild occurred. Strict/deep
+signature, stapler validation, Gatekeeper and isolated telemetry-disabled runtime
+smoke pass. Final archive SHA256:
+66694068b3f8ce15f757c96fa76f3af4c0e1fd3355100a1ec18cab858a73bfc4.
+Frozen original clean5854619 candidate:
+engineering-quality/candidates/mac-5854619-x64/20261011T125821Z-9715e7e3/candidate-artifact.json.
+ARM and Windows candidate identities and all earlier behavior passes stay intact.
+
+The original maintained continuation rejects the actual retained Mac vfq temp
+root because it requires an obsolete .runs parent. Its unchanged original files
+and failure are retained in task/release-completion-20261010/
+short-workspace-resume-before.json. The real short-workspace producer regression
+fails before; 15 ownership/evidence negative controls pass before.
+The harness now accepts only the exact retained workspace receipt, canonical
+non-symlink root and unchanged state layout, candidate, prior clean process exits,
+trace provenance and screenshots. Legacy .runs sessions keep their prior guard.
+
+A verified pause also must not advance the formal journey phase. The original
+validator rejects 28 actual-shaped continuation observations solely because it
+hardcodes process ordinals. The successor derives phase reuse only from ordered
+retained continuation wrappers with exact hashes, unchanged prior launch records
+and observation prefixes, and recursively valid prior provenance. Actual process
+ordinals, PID/create time, window identity/token, executable/tree hashes, ordered
+screenshots and disabled-telemetry attestation remain required. A fifth process
+without a retained continuation remains rejected; no prior observation is
+rewritten or duplicated. Incomplete pre-export state is not adopted as the
+post-export restart baseline. Fixture continuation binds the original loopback
+port and refuses an occupied port instead of changing saved URLs.
+
+118 focused continuation/receipt/short-workspace checks pass, including changed
+receipt hashes, launch/trace prefixes, nonce, live/failed/remaining processes,
+phase, consent, symlinks and foreign/colliding fixture origins. Initial test
+fixture/API and lint failures are preserved. Source changes are harness/tests
+only; frozen product bytes remain5854619 and no new build is required.
+Evidence: task/release-completion-20261010/continuation-tests-final-with-origin.log,
+continuation-phases-before.json, signed-5854619/signing-result-x64.json,
+signed-5854619/x64-notary-info-after-pause.json and candidate-freeze-x64.json.
+
+No second cleanup proposal object was changed. The exact 106-object cleanup set
+remains unapproved and untouched. No public0.2.6 release or production write.
+Native continuation itself is still pending; Mac reports AC Power but13percent
+and discharging, and the charger clarification is pending. Original Mac/Windows
+QA profiles, partial wrappers and process-clean exits remain preserved.

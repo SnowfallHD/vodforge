@@ -84,7 +84,12 @@ class FaultState:
 
 
 class FixtureHTTPServer:
-    def __init__(self, fixture_dir: Path, *, slow_chunk_delay: float = 0.02) -> None:
+    def __init__(
+        self, fixture_dir: Path, *, slow_chunk_delay: float = 0.02, listen_port: int = 0
+    ) -> None:
+        if type(listen_port) is not int or not 0 <= listen_port <= 65535:
+            raise ValueError("listen_port must be an integer between 0 and 65535")
+        self.listen_port = listen_port
         if not 0 <= slow_chunk_delay <= 1:
             raise ValueError("slow_chunk_delay must be between 0 and 1 second")
         self.fixture_dir = fixture_dir
@@ -480,7 +485,7 @@ class FixtureHTTPServer:
                 except (BrokenPipeError, ConnectionResetError, OSError):
                     return
 
-        self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self._server = ThreadingHTTPServer(("127.0.0.1", self.listen_port), Handler)
         self._server.daemon_threads = True
         with state.lock:
             state.origin = self.base_url

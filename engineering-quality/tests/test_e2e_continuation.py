@@ -16,6 +16,7 @@ def fixture(tmp_path, monkeypatch):
         "e2e_profile": "telemetry",
         "telemetry_mode": "preview",
         "session_nonce": "original",
+        "input_url": "http://127.0.0.1:31337/slow/page/library-description-stress",
         "current_launch": None,
         "driver_ready": False,
         "launches": [{"verified": True, "returncode": 0}],

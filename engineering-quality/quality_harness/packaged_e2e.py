@@ -17,6 +17,7 @@ from itertools import pairwise
 from pathlib import Path
 from types import TracebackType
 from typing import Any, Self
+from urllib.parse import urlsplit
 
 from yt_downloader.quality_e2e import (
     QUALITY_E2E_LIBRARY_BOTTOM_ALIGNMENT_TOLERANCE_PX,
@@ -419,6 +420,96 @@ def pipeline_stage_receipts(diagnostics: str, activity: str) -> dict[str, bool]:
     }
 
 
+def _continuation_launch_phases(
+    continuations: list[dict[str, Any]] | None,
+    *,
+    session_dir: Path,
+    session_nonce: str | None,
+    profile: str,
+    launches: list[dict[str, Any]],
+    events_payload: dict[str, Any],
+) -> tuple[dict[int, int], list[str]]:
+    phases = {
+        int(item.get("launch_sequence") or 0): index + 1
+        for index, item in enumerate(launches)
+    }
+    if not continuations:
+        return phases, []
+    counts: set[int] = set()
+    try:
+        if not isinstance(continuations, list):
+            raise TypeError("continuations must be an ordered list")
+        previous_count = 0
+        for entry in continuations:
+            count = entry["prior_launch_count"]
+            if type(count) is not int or not previous_count < count < len(launches):
+                raise ValueError("continuation launch counts are not ordered")
+            archive = session_dir / f"continuation-{count}"
+            receipt_path = archive / "e2e-result.json"
+            files = [
+                receipt_path,
+                archive / "session.json",
+                archive / "driver-events.json",
+            ]
+            if archive.is_symlink() or any(
+                p.is_symlink() or not p.is_file() for p in files
+            ):
+                raise ValueError(
+                    "continuation originals are not regular retained files"
+                )
+            if entry["prior_receipt"] != str(receipt_path.resolve()) or entry[
+                "prior_receipt_sha256"
+            ] != sha256_file(receipt_path):
+                raise ValueError("continuation original receipt identity changed")
+            prior = json.loads(files[1].read_text(encoding="utf-8"))
+            trace = json.loads(files[2].read_text(encoding="utf-8"))
+            if (
+                prior.get("session_nonce") != session_nonce
+                or prior.get("e2e_profile") != profile
+                or prior.get("current_launch")
+                or prior.get("driver_ready")
+                or prior.get("launches") != launches[:count]
+                or any(
+                    item.get("verified") is not True
+                    or item.get("returncode") != 0
+                    or item.get("group_survivors_after_exit")
+                    for item in prior["launches"]
+                )
+            ):
+                raise ValueError(
+                    "continuation prior process identity or clean exit changed"
+                )
+            prior_events = trace.get("events")
+            if (
+                not isinstance(prior_events, list)
+                or events_payload.get("events", [])[: len(prior_events)] != prior_events
+            ):
+                raise ValueError("continuation prior observations changed")
+            validation = _validate_driver_trace(
+                trace,
+                profile=profile,
+                session_dir=session_dir,
+                session_nonce=session_nonce,
+                launches=prior["launches"],
+                continuations=prior.get("continuations"),
+            )
+            if not validation["structural_valid"]:
+                raise ValueError("continuation prior provenance is invalid")
+            counts.add(count)
+            previous_count = count
+        phase = 1
+        for index, item in enumerate(launches):
+            sequence = item.get("launch_sequence")
+            if type(sequence) is not int or sequence != index + 1:
+                raise ValueError("continuation launch sequence changed")
+            if index and index not in counts:
+                phase += 1
+            phases[sequence] = phase
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        return phases, [str(exc)]
+    return phases, []
+
+
 def _validate_driver_trace(
     events_payload: dict[str, Any],
     *,
@@ -426,6 +517,7 @@ def _validate_driver_trace(
     session_dir: Path,
     session_nonce: str | None = None,
     launches: list[dict[str, Any]] | None = None,
+    continuations: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     required_order = _required_ui_event_order(profile)
     required = set(required_order)
@@ -462,6 +554,14 @@ def _validate_driver_trace(
         int(item.get("launch_sequence") or 0): item for item in (launches or [])
     }
     provenance_required = session_nonce is not None and launches is not None
+    launch_phases, invalid_continuations = _continuation_launch_phases(
+        continuations,
+        session_dir=session_dir,
+        session_nonce=session_nonce,
+        profile=profile,
+        launches=launches or [],
+        events_payload=events_payload,
+    )
     invalid_provenance_events: list[str] = []
     provenance_receipts: list[dict[str, Any]] = []
     for event in named_events:
@@ -473,6 +573,16 @@ def _validate_driver_trace(
             "consent_denied_observed": 3,
             "telemetry_disabled_observed": 4,
         }.get(name, 1)
+        phase_sequences = [
+            sequence
+            for sequence, phase in launch_phases.items()
+            if phase == expected_sequence
+        ]
+        observed_sequence = event.get("launch_sequence")
+        if observed_sequence in phase_sequences:
+            expected_sequence = observed_sequence
+        elif phase_sequences:
+            expected_sequence = phase_sequences[0]
         launch = launch_by_sequence.get(expected_sequence)
         errors: list[str] = []
         if launch is None:
@@ -595,6 +705,7 @@ def _validate_driver_trace(
         and timestamps_monotonic
         and not invalid_screenshot_events
         and not invalid_provenance_events
+        and not invalid_continuations
     )
     return {
         "valid": structural_valid and not missing_events,
@@ -611,6 +722,7 @@ def _validate_driver_trace(
         "screenshot_receipts": screenshot_receipts,
         "provenance_required": provenance_required,
         "invalid_provenance_events": invalid_provenance_events,
+        "invalid_continuations": invalid_continuations,
         "provenance_receipts": provenance_receipts,
     }
 
@@ -1434,6 +1546,41 @@ def _launch_and_attest(
     return process, stdout_handle, stderr_handle, launch, environment
 
 
+def _continuation_fixture_port(session: dict[str, Any] | None) -> int:
+    if session is None:
+        return 0
+    parsed = urlsplit(str(session.get("input_url") or ""))
+    if (
+        parsed.scheme != "http"
+        or parsed.hostname != "127.0.0.1"
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or parsed.path != SLOW_LIBRARY_DESCRIPTION_STRESS_ROUTE
+        or parsed.port is None
+        or parsed.port == 0
+    ):
+        raise ValueError("Resume requires its original loopback fixture origin")
+    return parsed.port
+
+
+def _continuation_restart_baseline(
+    launches: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    # A battery pause before exports finish is not the journey's history baseline.
+    # Preserve the original baseline only after an actual requested restart.
+    return next(
+        (
+            before.get("pre_restart_state")
+            for before, after in pairwise(launches)
+            if after.get("reason") == "driver_requested_restart"
+            and before.get("pre_restart_state")
+        ),
+        None,
+    )
+
+
 def _load_resumable_session(path: Path, args: argparse.Namespace) -> dict[str, Any]:
     """Resume evidence, never adopt a live process or replace an earlier receipt."""
     from .candidate_artifact import load_and_verify_candidate
@@ -1462,8 +1609,34 @@ def _load_resumable_session(path: Path, args: argparse.Namespace) -> dict[str, A
         raise ValueError("Resume requires verified clean exits for every prior launch")
     paths = session["state_paths"]
     root = Path(paths["isolation_root"])
-    if root.parent.name != ".runs" or paths != _isolated_state_paths(root):
+    if (
+        not root.is_absolute()
+        or root.is_symlink()
+        or not root.is_dir()
+        or root != root.resolve()
+        or paths != _isolated_state_paths(root)
+    ):
         raise ValueError("Resume requires the original isolated state layout")
+    if root.parent.name != ".runs":
+        # Current workspaces use a short private temp root. Its retained receipt
+        # must identify that exact root; a directory name alone is not ownership.
+        workspace_receipt = directory / "workspace.json"
+        try:
+            if workspace_receipt.is_symlink() or not workspace_receipt.is_file():
+                raise ValueError("Resume workspace receipt is not a regular file")
+            workspace = json.loads(workspace_receipt.read_text(encoding="utf-8"))
+            owned = (
+                root.name.startswith("vfq-")
+                and isinstance(workspace, dict)
+                and workspace.get("run_root") == str(root)
+                and workspace.get("retained_for_evidence") is True
+                and isinstance(workspace.get("run_id"), str)
+                and bool(workspace["run_id"])
+            )
+        except (OSError, ValueError) as exc:
+            raise ValueError("Resume requires its retained workspace receipt") from exc
+        if not owned:
+            raise ValueError("Resume workspace receipt does not identify its root")
     binding = session.get("candidate_binding") or {}
     if args.candidate is None or binding.get("verified") is not True:
         raise ValueError("Resume requires a frozen verified candidate")
@@ -1490,9 +1663,11 @@ def _load_resumable_session(path: Path, args: argparse.Namespace) -> dict[str, A
         session_dir=directory,
         session_nonce=session["session_nonce"],
         launches=launches,
+        continuations=session.get("continuations"),
     )
     if not validation["structural_valid"]:
         raise ValueError("Resume prior evidence has invalid provenance or screenshots")
+    _continuation_fixture_port(session)
     # Preserve the failed/partial wrapper and its exact trace before appending.
     archive = directory / f"continuation-{len(launches)}"
     archive.mkdir(exist_ok=False)
@@ -1659,11 +1834,15 @@ def run_packaged_e2e_session(
     started = time.monotonic()
     sampler = ResourceSampler(workspace).start()
     launches: list[dict[str, Any]] = list(resumed["launches"]) if resumed else []
-    restart_baseline = _persisted_state_snapshot(home) if resumed else None
+    restart_baseline = _continuation_restart_baseline(launches)
     timed_out = False
     with (
         _OwnedLaunchRegistry(sampler) as owned_registry,
-        FixtureHTTPServer(fixtures, slow_chunk_delay=0.25) as server,
+        FixtureHTTPServer(
+            fixtures,
+            slow_chunk_delay=0.25,
+            listen_port=_continuation_fixture_port(resumed),
+        ) as server,
     ):
         required_ui_events = _required_ui_events(args.profile)
         journey = [
@@ -1932,6 +2111,7 @@ def run_packaged_e2e_session(
         session_dir=session_dir,
         session_nonce=session_nonce,
         launches=launches,
+        continuations=session.get("continuations"),
     )
     library_description_visibility = _library_description_visibility_receipt(
         state_paths=state_paths,
