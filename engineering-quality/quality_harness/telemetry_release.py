@@ -483,8 +483,36 @@ def release_checks(receipts, candidate):
                 errors.append("Telemetry source does not match release candidate")
             journey = data.get("packaged_e2e", {})
             binding = journey.get("candidate_binding", {})
+            composed_native = False
+            if data.get("native_composition") is not None:
+                from .native_composition import release_checks as native_checks
+
+                composition = data["native_composition"]
+                if not isinstance(composition, dict):
+                    composition = {}
+                composition_binding = composition.get("candidate_binding", {})
+                scoped = (
+                    composition.get("platform") == platform
+                    and composition_binding.get("source_commit")
+                    == candidate.get("source", {}).get("commit")
+                    and composition_binding.get("source_manifest_sha256")
+                    == candidate.get("source", {}).get("manifest_sha256")
+                    and composition_binding.get("archive_sha256")
+                    == binding.get("archive_sha256")
+                )
+                evaluated = native_checks(composition) if scoped else []
+                composed_native = bool(evaluated) and all(
+                    check["status"] == "passed" for check in evaluated
+                )
+                if not composed_native:
+                    errors.append(
+                        "Native composition scope or independent qualification failed"
+                    )
             if (
-                journey.get("scenario", {}).get("status") != "passed"
+                (
+                    journey.get("scenario", {}).get("status") != "passed"
+                    and not composed_native
+                )
                 or binding.get("verified") is not True
                 or binding.get("artifact_policy") != "release"
                 or not binding.get("archive_sha256")
@@ -497,7 +525,7 @@ def release_checks(receipts, candidate):
             from .packaged_e2e import TELEMETRY_UI_EVENT_ORDER
 
             trace = journey.get("driver_trace", {}).get("events", [])
-            if (
+            if not composed_native and (
                 not set(TELEMETRY_UI_EVENT_ORDER)
                 <= {event.get("event") for event in trace}
                 or journey.get("driver_trace_validation", {}).get("valid") is not True

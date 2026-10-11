@@ -527,3 +527,41 @@ def test_qualified_aggregate_can_use_core_without_rewriting_original_status(
     assert checks[0]["metrics"]["original_statuses"] == ["failed"]
     assert Path(row["receipt"]["path"]).read_bytes() == before
     assert json.loads(before)["scenario"]["status"] == "failed"
+
+
+@pytest.mark.parametrize("defect", [None, "archive", "privacy", "malformed"])
+def test_preview_gate_consumes_qualified_native_aggregate_without_waiving_d1(
+    tmp_path, monkeypatch, defect
+):
+    from quality_harness import native_composition, telemetry_release
+    from test_telemetry_release import (
+        candidate as telemetry_candidate,
+    )
+    from test_telemetry_release import (
+        telemetry_fixture,
+    )
+
+    candidate = telemetry_candidate()
+    data = telemetry_fixture(candidate, "macos")
+    data["packaged_e2e"]["scenario"]["status"] = "failed"
+    data["packaged_e2e"]["driver_trace_validation"]["valid"] = False
+    data["native_composition"] = {
+        "platform": "macos",
+        "candidate_binding": {
+            "source_commit": candidate["source"]["commit"],
+            "source_manifest_sha256": candidate["source"]["manifest_sha256"],
+            "archive_sha256": candidate["immutable_archive"]["sha256"],
+        },
+    }
+    if defect == "archive":
+        data["native_composition"]["candidate_binding"]["archive_sha256"] = "other"
+    elif defect == "privacy":
+        data["snapshots"]["denied"]["clients"] = 2
+    elif defect == "malformed":
+        data["native_composition"] = True
+    monkeypatch.setattr(
+        native_composition, "release_checks", lambda d: [{"status": "passed"}]
+    )
+    checks = telemetry_release.release_checks([data], candidate)
+    mac = next(c for c in checks if "macos" in c["id"])
+    assert mac["status"] == ("passed" if defect is None else "failed")

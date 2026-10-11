@@ -1059,3 +1059,18 @@ Power74% charging. No app rebuild, broad journey, D1 request/write, publication,
 obsolete-object deletion, new credentials or access change. Smallest remaining
 work is linked receipt/readback closure, missing changed recovery/UI evidence,
 queue/restart/privacy scopes and final updater linkage; do not replay24/22 prefixes.
+
+Preview receipt integration now accepts the independently recomputed native
+aggregate for only its native UI/full-journey predicate. Existing main-installation
+D1 count, consent, event-schema, watermark/snapshot and update-transition checks
+remain required; no events or identities are merged. Four focused adapter cases
+pass: qualified native composition, archive mismatch, real denied-data mutation
+and malformed composition. Only affected adapter cases reran after the added
+malformed-input guard.58 unique focused passes across composition/gate/target/
+adapter scopes; no broad run. Corrected a test-only import order finding; final
+Ruff/format/diff pass. Later user reply "fix the event then" addresses the earlier
+announcement question; candidate-bound correction459f578 already resolves that
+mismatch, retains shown and true Try it configurations, with140 retained passes.
+No need to fabricate Try it on Done or rebuild unchanged candidate5854619.
+Parent supplied actual original user release authorization dated2026-10-10T22:09;
+publication remains conditional on genuine final readiness, with missing gates open.
