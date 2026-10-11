@@ -46,7 +46,7 @@ from yt_downloader.export_planning import EXPORT_MODES
 from yt_downloader.history import history_archive_owner
 from yt_downloader.library_annotations import LibraryAnnotation, LibraryAnnotationsError
 from yt_downloader.library_artwork_source import ArtworkAsset
-from yt_downloader.models import ExportMode
+from yt_downloader.models import ExportMode, OutputType
 from yt_downloader.playback_backend import PlaybackSnapshot
 from yt_downloader.playback_progress import PlaybackProgressOwner, WatchedProgress
 from yt_downloader.playback_progress_binding import PlaybackProgressBinding
@@ -7364,6 +7364,61 @@ def test_issue_resume_ignores_edited_draft_and_keeps_saved_settings(
         )
         assert resumed.retry_of_run_id == job.run_id
         assert bridge.selection == "Library"
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+@pytest.mark.parametrize(
+    ("saved_format", "composer_format", "expected_hint"),
+    [
+        (OutputType.MP4, "MP3", "VOD-ready MP4 / H.264 video / AAC audio"),
+        (OutputType.MP3, "MP4", "Audio-only MP3 / best YouTube audio source"),
+        (OutputType.ORIGINAL, "MP4", "Original audio / No re-encoding"),
+    ],
+)
+def test_resumed_forge_format_hint_uses_saved_job(
+    tmp_path, monkeypatch, saved_format, composer_format, expected_hint
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    qt_app()
+    bridge = qt_main.Bridge(None)
+    bridge._timer.stop()
+    job = make_job(tmp_path)
+    job.output_type = saved_format
+    bridge._runtime.recovery.terminal_attempt(job, "Paused", "Interrupted")
+    bridge._runtime.recovered = bridge._runtime.recovery.store.load_terminal_jobs()
+    monkeypatch.setattr(
+        bridge._runtime,
+        "_make_worker",
+        lambda resumed: setattr(bridge._runtime, "active_job", resumed),
+    )
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        QTest.qWait(30)
+        bridge.setOutputFormat(composer_format)
+        assert bridge.retryTerminal(job.run_id)
+        resumed = bridge._runtime.active_job
+        assert resumed is not None and resumed.output_type == saved_format
+        assert bridge.selectRunRecord("active:" + resumed.run_id)
+        QTest.qWait(30)
+        assert bridge.forgeSelection["type"] == saved_format.value
+        hints = [
+            item
+            for item in window.findChildren(QObject)
+            if isinstance(item.property("text"), str)
+            and item.property("text").startswith(
+                ("VOD-ready MP4 /", "Audio-only MP3 /", "Original audio /")
+            )
+        ]
+        assert len(hints) == 1
+        assert hints[0].property("visible")
+        assert hints[0].property("text") == expected_hint
     finally:
         window.close()
         engine.deleteLater()

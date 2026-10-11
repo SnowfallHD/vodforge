@@ -45,3 +45,28 @@ Unknown historical checks remain unknown. Remaining native interrupted single /
 batch resume and multiselect standard-nest observations must be checked against
 existing receipts before any work is assigned. Formal sequence gaps are not
 evidence that an already passing behavior needs to run again.
+
+## Oct 11 resumed-run format hint correction
+
+Native Windows single Resume completed after a normal active quit/restart and
+composer detachment/MP3/destination edits. The admitted job and actual independently
+probed H.264/AAC export retained its saved MP4/Everyday/1080p/original destination;
+the new composer destination stayed empty.
+[Bounded native assessment](/Users/coop/Documents/Codex/2026-10-09/task/release-completion-20261010/windows-resume-1a4bf99/single-resume-assessment.json).
+
+That native run exposed one stale format hint: Main.qml read the pending composer
+format while the selected active job used its saved format. It now reads the
+existing forgeDisplayType projection. Actual paused-job recovery plus changed
+composer and Resume regressions fail all3 before, pass all3 after; the4 adjacent
+saved-settings recovery cases also pass (7 total). Ruff/format/diff checks pass.
+[Before](/Users/coop/Documents/Codex/2026-10-09/task/release-completion-20261010/resume-format-hint-before.log),
+[after](/Users/coop/Documents/Codex/2026-10-09/task/release-completion-20261010/resume-format-hint-after.log).
+Only this displayed format hint changed. No download, worker, journal, export,
+move, updater or telemetry behavior changed; retain their prior valid passes.
+The successor package must bind the changed QML bytes. Native abrupt batch
+recovery and multiselect standard nests remain open. No public release.
+
+Move selection/annotation correction is committed and pushed as139579b. Its
+35 focused passes and original4 negative controls remain valid; successor
+artifacts-only Build38097117973 is still running. Windows job passed; Mac
+jobs are pending. Existing Apple ARM submission remains In Progress at00:23UTC.

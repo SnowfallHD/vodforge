@@ -1508,8 +1508,8 @@ Window {
                           window.selectedForgeRun.kind === "terminal" ? window.selectedForgeRun.status + " / Retry is available" :
                           window.selectedForgeRun.kind === "queued" ? "Queued / Waiting for the current run" :
                           window.showingForgePreview ? "Metadata only / No media is being downloaded" :
-                          window.outputFormat === "MP4" ? "VOD-ready MP4 / H.264 video / AAC audio" :
-                          window.outputFormat === "MP3" ? "Audio-only MP3 / best YouTube audio source" :
+                          window.forgeDisplayType === "MP4" ? "VOD-ready MP4 / H.264 video / AAC audio" :
+                          window.forgeDisplayType === "MP3" ? "Audio-only MP3 / best YouTube audio source" :
                           "Original audio / No re-encoding"
                     color: theme.muted; font.pixelSize: 14
                     elide: Text.ElideRight
