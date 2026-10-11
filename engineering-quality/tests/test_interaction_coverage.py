@@ -147,7 +147,8 @@ def test_report_shows_functional_temporal_and_usability_results_together():
         for line in rendered.splitlines()
         if line.startswith("| unit_static.native_surface_contract |")
     )
-    assert "| passed | unproven | unproven (required) |" in row
+    assert "| passed | unproven | not_applicable (not_applicable) |" in row
+    assert "source admission, execution and stable authority" in row
     assert "before / during / after" in rendered
     assert "](</tmp/QA%20evidence/native-evidence.json>)" in rendered
     assert "](</tmp/QA%20evidence/control%20%5Bpressed%5D.png>)" in rendered

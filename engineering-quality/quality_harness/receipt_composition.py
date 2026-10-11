@@ -18,11 +18,23 @@ from .source_identity import validate_manifest
 FORMAT = "vodforge-profile-composition-v1"
 
 
-def _qualification_only(name):
+# Reviewed dispatch-only receipts: download existing candidates and observe them.
+# A name match alone must never exempt a changed build or publication workflow.
+QA_WORKFLOW_HASHES = {
+    ".github/workflows/macos-candidate-startup.yml": "d78d8d8214936605e6f1804a9b88a10058c77724aea3e442d4ef65d466cbcad9",
+    ".github/workflows/windows-remaining-checks.yml": "41c7d3120c0835d154a6f09cf3ec5daf5fde876a8ce8ad8c8ccf7e22a8bf4b43",
+}
+
+
+def _qualification_only(name, entry):
     path = PurePosixPath(name)
     return (
         path.parts[0] in {"tests", "engineering-quality", "docs"}
         or path.suffix == ".md"
+        or (
+            name in QA_WORKFLOW_HASHES
+            and entry == {"kind": "file", "sha256": QA_WORKFLOW_HASHES[name]}
+        )
     )
 
 
@@ -31,7 +43,9 @@ def runtime_inputs(manifest):
         manifest, manifest.get("sha256")
     ):
         raise ValueError("Missing or invalid complete source manifest")
-    files = {k: v for k, v in manifest["files"].items() if not _qualification_only(k)}
+    files = {
+        k: v for k, v in manifest["files"].items() if not _qualification_only(k, v)
+    }
     if not any(k.startswith("yt_downloader/") for k in files):
         raise ValueError("No product source in source manifest")
     if any(v.get("kind") == "missing" for v in files.values()):

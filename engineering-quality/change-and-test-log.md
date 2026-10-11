@@ -460,3 +460,30 @@ and archived original failures remain unchanged. Signed application files were
 not rebuilt or changed. Remaining acceptance is the missing source aggregate
 observations and exact signed Mac/Windows telemetry journeys/readbacks, followed
 by the unchanged fail-closed publication gate.
+
+
+## Source qualification recovery — 2026-10-11
+
+The e97f5e6 three-domain run retained its complete stable source manifests and
+original failures under task/release-completion-20261010/source-domain-observations-e97f5e6.
+The offscreen native-surface aggregate passes and will not be repeated. The repository
+aggregate failed one stale report assertion that still demanded contextual UX for the
+explicit source-only native-surface domain; the assertion now verifies that narrow
+nonapplicability, while unknown owners retain their separate unproven tests. No timing
+or command-success threshold changed.
+
+The local diagnostic Worker exited before ready because Homebrew Node25 referenced
+missing libsimdjson.29.dylib. The original loader error is retained at
+task/release-completion-20261010/diagnostic-worker-startup-reproduction.json.
+Installed Node24.21.0 runs successfully and will be selected in this test's PATH.
+The harness now retains the actual pre-ready exit and delivered count instead of
+trying an uninitialized snapshot callback; a real Python subprocess exiting7 proves
+the original error is preserved, with no invented D1 success.
+
+Exact-candidate composition now recognizes only the reviewed SHA256 bytes of the two
+dispatch-only QA observation workflows. Changed bytes, symlinks, missing files and
+build/runtime inputs still refuse adoption. These workflows download existing
+candidates and cannot rebuild or publish them. All52 focused recovery controls pass
+in1.96seconds; Ruff, five-file format checks and diff whitespace pass. Only the two
+failed source domains require successor observations. Signed runtime5e581d0 and all
+publication bytes remain unchanged; release is still unpublished.

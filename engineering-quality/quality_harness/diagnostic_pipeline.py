@@ -177,14 +177,18 @@ def pipeline(repo: Path, site: Path, destination: Path, *, cases=None):
             stderr=errors,
             text=True,
         )
+        worker_ready = False
+
+        def snapshot():
+            process.stdin.write('{"op":"snapshot"}\n')
+            process.stdin.flush()
+            return _read_line(process)
+
         try:
             url = _read_line(process)["url"]
             assert urlsplit(url).hostname == "127.0.0.1"
 
-            def snapshot():
-                process.stdin.write('{"op":"snapshot"}\n')
-                process.stdin.flush()
-                return _read_line(process)
+            worker_ready = True
 
             with (
                 patch.object(transport, "ENDPOINT", url + "api/telemetry/v2/"),
@@ -572,7 +576,19 @@ def pipeline(repo: Path, site: Path, destination: Path, *, cases=None):
             traceback.print_exc(file=errors)
             save(destination / "partial-delivered-events.json", delivered)
             try:
-                save(destination / "failed-readback.json", snapshot())
+                if worker_ready:
+                    save(destination / "failed-readback.json", snapshot())
+                else:
+                    errors.flush()
+                    save(
+                        destination / "worker-startup-failure.json",
+                        {
+                            "worker_ready": False,
+                            "returncode": process.poll(),
+                            "stderr_path": str(destination / "worker.stderr.txt"),
+                            "delivered_events": len(delivered),
+                        },
+                    )
             except Exception:  # noqa: BLE001 - preserve the original failed assertion
                 traceback.print_exc(file=errors)
             raise

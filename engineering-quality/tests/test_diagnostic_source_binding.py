@@ -113,3 +113,43 @@ def test_real_git_root_inventory_handles_nul_delimited_tracked_and_untracked_pat
     assert result["inventory"] == "git"
     assert set(result["files"]) == {"tracked source.py", "untracked source.py"}
     assert result["base_commit"]
+
+
+def test_worker_exit_before_ready_preserves_original_failure(tmp_path, monkeypatch):
+    import json
+    import sys
+    from pathlib import Path
+
+    from quality_harness import diagnostic_pipeline
+
+    root = Path(diagnostic_pipeline.__file__).resolve().parents[2]
+    site = tmp_path / "site"
+    site.mkdir()
+    (site / "worker.js").write_text("test source")
+    monkeypatch.setattr(
+        diagnostic_pipeline, "assert_feature_vocabulary", lambda _: None
+    )
+    real_popen = subprocess.Popen
+
+    def early_exit(_args, **kwargs):
+        if _args[0] != "node":
+            return real_popen(_args, **kwargs)
+        return real_popen(
+            [
+                sys.executable,
+                "-c",
+                "import sys; print('startup sentinel', file=sys.stderr); sys.exit(7)",
+            ],
+            **kwargs,
+        )
+
+    monkeypatch.setattr(diagnostic_pipeline.subprocess, "Popen", early_exit)
+    destination = tmp_path / "result"
+    with pytest.raises(RuntimeError, match="Local telemetry Worker exited"):
+        diagnostic_pipeline.pipeline(root, site, destination)
+    failure = json.loads((destination / "worker-startup-failure.json").read_text())
+    assert failure["worker_ready"] is False
+    assert failure["returncode"] == 7 and failure["delivered_events"] == 0
+    errors = (destination / "worker.stderr.txt").read_text()
+    assert "startup sentinel" in errors and "UnboundLocalError" not in errors
+    assert not (destination / "diagnostic-result.json").exists()

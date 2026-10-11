@@ -188,3 +188,39 @@ def test_missing_or_malformed_identity_refuses_composition(evidence, control):
         original["repository"]["commit"] = "z" * 40
     with pytest.raises(ValueError):
         compose_profile(candidate, "normal", [save()])
+
+
+@pytest.mark.parametrize(
+    "owner",
+    [
+        ".github/workflows/macos-candidate-startup.yml",
+        ".github/workflows/windows-remaining-checks.yml",
+    ],
+)
+@pytest.mark.parametrize("control", ["reviewed", "changed", "symlink", "missing"])
+def test_dispatch_only_workflows_require_exact_reviewed_bytes(evidence, owner, control):
+    from quality_harness.receipt_composition import QA_WORKFLOW_HASHES
+
+    candidate, original, save = evidence
+    files = original["repository"]["source_manifest"]["files"]
+    entry = {"kind": "file", "sha256": QA_WORKFLOW_HASHES[owner]}
+    if control == "changed":
+        entry["sha256"] = "c" * 64
+    elif control == "symlink":
+        entry["kind"] = "symlink"
+    elif control == "missing":
+        entry = {"kind": "missing"}
+    files[owner] = entry
+    observed = manifest(files)
+    original["repository"].update(
+        source_manifest=observed,
+        source_manifest_sha256=observed["sha256"],
+        source_manifest_after_sha256=observed["sha256"],
+    )
+    if control == "reviewed":
+        assert verify_composition(
+            compose_profile(candidate, "normal", [save()]), candidate
+        )
+    else:
+        with pytest.raises(ValueError):
+            compose_profile(candidate, "normal", [save()])
