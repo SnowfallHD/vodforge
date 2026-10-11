@@ -70,3 +70,45 @@ Move selection/annotation correction is committed and pushed as139579b. Its
 35 focused passes and original4 negative controls remain valid; successor
 artifacts-only Build38097117973 is still running. Windows job passed; Mac
 jobs are pending. Existing Apple ARM submission remains In Progress at00:23UTC.
+
+
+## Oct 11 01:28 UTC — successor artifacts and popup test setup
+
+Runtime source 5e581d06cbc00084926a0435e30eb51521ac2f9b is pushed. Build38098493152
+passed all three platforms with artifacts_only; nothing was published. Both Mac
+archives are now Developer ID signed, notarized, stapled and Gatekeeper accepted.
+The ARM candidate passed the unchanged normal startup guard. Intel native startup
+remains open. Their source bindings remain 5e581d0 after this test-only change.
+
+Tests38098316279 passed five jobs and failed Windows/Python3.13 in the popup matrix:
+the profile trigger was absent after the initial resize/click; 695 component tests
+passed, 9 skipped and 1 failed. The exact isolated failed case passed on
+Desktop-Genesis/Python3.13.1. No deterministic product failure was reproduced.
+A local resize diagnostic showed pre-polish pointer bounds differing from the
+settled layout. The test now waits80ms for the initial resize layout before its
+first pointer gesture and reports actual popup/label state instead of StopIteration.
+The controlled deferred-polish attempt passed in both conditions; it is not a
+negative control or proof of the CI root cause. All25 focused popup cases pass,
+plus Ruff/format/diff. Exact successor Windows CI remains required.
+[Original failure](/Users/coop/Documents/Codex/2026-10-09/task/release-completion-20261010/tests-5e581d0-windows313-failed.log),
+[focused pass](/Users/coop/Documents/Codex/2026-10-09/task/release-completion-20261010/popup-layout-focused.log).
+This change touches tests and this log only; do not rebuild unchanged runtime
+archives or repeat unrelated behavioral passes.
+
+The native interrupted single and abrupt batch resume checks now pass within
+recorded scope. The batch recovered after an actual process kill, retained the
+first completed MP3 hash, resumed the remaining source using saved settings and
+destination despite composer changes and the missing original list, and completed
+with independently decoded MP3 output. Normal exit0 left no owned children.
+[Batch assessment](/Users/coop/Documents/Codex/2026-10-09/task/release-completion-20261010/windows-resume-1a4bf99/batch-abrupt-resume-assessment.json).
+This is process interruption evidence, not a physical power-cut experiment.
+Read-only production D1 found zero installation/client/product-event rows for the
+fresh QA installation ID; actual consent and first-launch cloud confirmations are
+false. [Isolation](/Users/coop/Documents/Codex/2026-10-09/task/release-completion-20261010/windows-resume-1a4bf99/production-isolation-after-resume.json).
+
+Five real saved media items, including two playlist exports, have been moved
+through the native current-account Windows picker twice. All9 owned files exist
+at the second destination and their old paths are absent. Third move, hash/sibling
+assessment, and affected open-Detail selection acceptance are still in progress.
+No failed generic journey has been promoted or backfilled. Full release evidence
+reconciliation and remaining native Watch layout observations remain open.

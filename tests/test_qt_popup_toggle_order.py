@@ -232,6 +232,9 @@ def test_dropdown_matrix_repeated_pointer_and_keyboard(tmp_path, monkeypatch, me
     )
     try:
         window.resize(1600, 1000)
+        # Resize schedules a Qt Quick layout pass. Deliver the first pointer
+        # gesture only after that pass, using the control's displayed bounds.
+        QTest.qWait(80)
         settings = menu in ("quality", "output", "subtitles", "theme", "help")
         if settings:
             click(window, window.findChild(QObject, "headerSettingsButton"))
@@ -291,11 +294,24 @@ def test_dropdown_matrix_repeated_pointer_and_keyboard(tmp_path, monkeypatch, me
                 "sort": "Newest first",
                 "format": "MP4  ▾",
             }[menu]
-            trigger = next(
+            matches = [
                 item
                 for item in _visual_descendants(window.contentItem())
                 if item.isVisible() and item.property("label") == label
-            )
+            ]
+            assert len(matches) == 1, {
+                "menu": menu,
+                "expected_label": label,
+                "local_conversion_visible": window.findChild(
+                    QObject, "localConversionPopup"
+                ).property("visible"),
+                "visible_labels": [
+                    item.property("label")
+                    for item in _visual_descendants(window.contentItem())
+                    if item.isVisible() and item.property("label") is not None
+                ],
+            }
+            trigger = matches[0]
         assert trigger is not None and trigger.isVisible()
         if settings and menu != "help":
             body = window.findChild(QObject, "settingsBodyViewport")
