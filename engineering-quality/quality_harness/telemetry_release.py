@@ -181,6 +181,23 @@ def validate_journey(data: dict[str, Any]) -> list[str]:
         if feature != "announcement" or SHOWCASE_MODE != "none"
         for action in actions
     }
+    # controls_fallback belongs to the legacy Tk embedded Mac overlay. Its
+    # owner returns before installation on Windows, and the Qt presentation
+    # slot cannot emit it. Keep the complete shared vocabulary, but require this
+    # action only where its actual owner can run. Unknown/unverified Mac launch
+    # renderers retain the stricter requirement; a caller-supplied UI hint is
+    # never sufficient to remove it.
+    launches = data.get("packaged_e2e", {}).get("launches", [])
+    if data.get("platform") == "windows" or (
+        data.get("platform") == "macos"
+        and launches
+        and all(
+            launch.get("verified") is True
+            and launch.get("attestation", {}).get("renderer") == "qt"
+            for launch in launches
+        )
+    ):
+        required_actions.discard(("player", "controls_fallback"))
     if SHOWCASE_MODE == "none" and any(
         feature == "announcement" for feature, _ in observed_actions
     ):

@@ -487,3 +487,45 @@ candidates and cannot rebuild or publish them. All52 focused recovery controls p
 in1.96seconds; Ruff, five-file format checks and diff whitespace pass. Only the two
 failed source domains require successor observations. Signed runtime5e581d0 and all
 publication bytes remain unchanged; release is still unpublished.
+
+
+## Oct 11 07:14 UTC — Windows restart passed; native applicability corrected
+
+Windows exact signed5e581d0 normal quit/relaunch passes8 bounded checks: all19
+history/output hashes remain identical, no staging, normal first exit, attested
+same-artifact second launch, preview-only isolation and full Description geometry
+before/after. Actual UI receipts108–124 retain the observations; no download or
+move was repeated. Current same-version D1 continuity independently passes8
+checks, using expected two app-open events from actual L1/L2 launches rather than
+observed database totals. Privacy reuse recomputes18 bounded checks and verifies
+all49 original Mac hashes; original cohorts, partial dimension limits and failed
+full wrappers remain unchanged.
+
+The release evaluator required player/controls_fallback on both platforms even
+though its sole emitter is the legacy Tk Mac overlay: the owner returns before
+creation on Windows and Qt's presentation slot does not admit it. The vocabulary
+is unchanged. The evaluator omits only this demonstrably inapplicable action for
+Windows and verified Qt Mac launches; unknown/unverified/mixed Mac renderers
+retain the requirement. All other missing actions, event counts, privacy,
+version-transition, artifact provenance and ordered native gates still fail
+closed. Original applicability controls fail3/10 before; corrected telemetry and
+release-gate controls pass55/55, including real owner behavior on both platforms.
+An initial test fake lacked its dispatch callback; that failed receipt is retained
+separately and the fake alone was corrected. Ruff/format/diff checks pass.
+
+Read-only remaining matrix verifies215 tracked Python/QML product files byte for
+byte against frozen5e581d0. Retained final-candidate native cohorts show24 applicable
+pairs on Mac and41 on Windows;190 and173 native readbacks remain unproven. Counts
+are a planning union across original cohorts, not a fabricated same-installation
+full acceptance. One pair is inapplicable per platform. Twenty-seven legacy-only
+literal candidates remain required pending actual owner/call-path review; string
+absence never waives them. Existing bounded behavior passes remain closed.
+
+Evidence: task/release-completion-20261010/final-gate-inputs-current/
+native-remaining-matrix.{json,md}, native-telemetry-applicability-audit.json,
+retained-privacy-reuse-assessment.json; windows-full-final-5e581d0/
+restart-persistence-assessment.json and same-version-reopen-assessment.json;
+native-applicability-before.{log,xml}, native-applicability-gate-final.{log,xml}
+and native-applicability-gate-corrected.{log,xml}. Signed files are unchanged;
+0.2.6 remains unpublished. No Mac foreground/input changes during the user's
+live Kryden test. Current Windows owned app is26336, titleVFQ-da1dd493cdb9-L2.

@@ -425,3 +425,91 @@ def test_enabled_release_requires_announcement_observations(monkeypatch):
     events = data["snapshots"]["events_complete"]["events"]
     events[:] = [event for event in events if event.get("feature") != "announcement"]
     assert any("Missing feature/action" in error for error in validate_journey(data))
+
+
+def without_action(data, feature, action):
+    for name in ("events_complete", "denied", "disabled"):
+        data["snapshots"][name]["events"] = [
+            event
+            for event in data["snapshots"][name]["events"]
+            if (event.get("feature"), event.get("action")) != (feature, action)
+        ]
+    data["expected_event_counts"]["feature_used"] -= 1
+
+
+@pytest.mark.parametrize(
+    "platform,renderers,required",
+    [
+        ("windows", ["qt", "qt"], False),
+        ("windows", ["tk", "tk"], False),
+        ("macos", ["qt", "qt"], False),
+        ("macos", ["tk", "tk"], True),
+        ("macos", ["qt", "tk"], True),
+        ("macos", [None, None], True),
+        ("macos", ["unknown", "unknown"], True),
+    ],
+)
+def test_native_fallback_requirement_matches_platform_and_attested_renderer(
+    platform, renderers, required
+):
+    data = telemetry_fixture(candidate(), platform)
+    for launch, renderer in zip(data["packaged_e2e"]["launches"], renderers):
+        if renderer is not None:
+            launch["attestation"]["renderer"] = renderer
+    without_action(data, "player", "controls_fallback")
+    errors = validate_journey(data)
+    assert bool(errors) is required
+    if required:
+        assert any("('player', 'controls_fallback')" in error for error in errors)
+
+
+def test_unverified_renderer_cannot_remove_macos_fallback_requirement():
+    data = telemetry_fixture(candidate())
+    for launch in data["packaged_e2e"]["launches"]:
+        launch["attestation"]["renderer"] = "qt"
+    data["packaged_e2e"]["launches"][0]["verified"] = False
+    without_action(data, "player", "controls_fallback")
+    assert any(
+        "('player', 'controls_fallback')" in error for error in validate_journey(data)
+    )
+
+
+@pytest.mark.parametrize("platform", ["macos", "windows"])
+def test_applicable_player_action_still_blocks_release(platform):
+    data = telemetry_fixture(candidate(), platform)
+    for launch in data["packaged_e2e"]["launches"]:
+        launch["attestation"]["renderer"] = "qt"
+    without_action(data, "player", "controls_fallback")
+    without_action(data, "player", "fit")
+    assert any("('player', 'fit')" in error for error in validate_journey(data))
+
+
+@pytest.mark.parametrize(
+    "platform, expected", [("win32", []), ("darwin", ["controls_fallback"])]
+)
+def test_real_legacy_overlay_owner_only_emits_fallback_on_macos(
+    monkeypatch, platform, expected
+):
+    import sys
+    from types import ModuleType, SimpleNamespace
+    from unittest.mock import Mock
+
+    from yt_downloader.player_presentation_ui import PlayerPresentationMixin
+
+    overlay = ModuleType("yt_downloader.platforms.macos.player_overlay")
+    overlay.MacOSPlayerOverlay = Mock(
+        side_effect=RuntimeError("controlled overlay refusal")
+    )
+    monkeypatch.setitem(sys.modules, overlay.__name__, overlay)
+    monkeypatch.setattr("yt_downloader.player_presentation_ui.sys.platform", platform)
+    observed = []
+    owner = SimpleNamespace(
+        embedded=True,
+        _surface_owner=object(),
+        _dispatch_overlay_action=Mock(),
+        _on_feature=observed.append,
+        transport=SimpleNamespace(grid=Mock()),
+    )
+    PlayerPresentationMixin._install_native_controls(owner)
+    assert observed == expected
+    assert overlay.MacOSPlayerOverlay.call_count == (1 if platform == "darwin" else 0)
