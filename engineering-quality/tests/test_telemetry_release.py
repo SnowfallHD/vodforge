@@ -7,8 +7,14 @@ from quality_harness.telemetry_release import (
     PREVIEW_DATABASE_ID,
     PREVIEW_WORKER,
     release_checks,
-    validate_journey,
 )
+from quality_harness.telemetry_release import (
+    validate_journey as validate_unbound_journey,
+)
+
+
+def validate_journey(data):
+    return validate_unbound_journey(data, candidate=candidate())
 
 
 def telemetry_fixture(candidate, platform="macos"):
@@ -69,6 +75,11 @@ def telemetry_fixture(candidate, platform="macos"):
         for feature, actions in FEATURE_ACTIONS.items()
         if feature != "announcement" or telemetry_release.SHOWCASE_MODE != "none"
         for action in actions
+        if not (
+            feature == "announcement"
+            and action == "try_it"
+            and telemetry_release.SHOWCASE_MODE == "whats-new"
+        )
     ]
     first_attempt = str(uuid.uuid4())
     retry_attempt = str(uuid.uuid4())
@@ -180,6 +191,7 @@ def telemetry_fixture(candidate, platform="macos"):
                 {
                     "verified": True,
                     "attestation": {
+                        "renderer": "qt",
                         "telemetry_preview": True,
                         "telemetry_production": False,
                     },
@@ -202,7 +214,30 @@ def telemetry_fixture(candidate, platform="macos"):
 
 
 def candidate():
-    return {"source": {"commit": "a" * 40}, "immutable_archive": {"sha256": "b" * 64}}
+    import hashlib
+    import json
+
+    from quality_harness import telemetry_release
+
+    files = {
+        name: {
+            "kind": "file",
+            "sha256": hashlib.sha256(
+                (telemetry_release.ANNOUNCEMENT_SOURCE_ROOT / name).read_bytes()
+            ).hexdigest(),
+        }
+        for name in telemetry_release.ANNOUNCEMENT_SOURCE_FILES
+    }
+    manifest = {"format": "vodforge-source-files-v1", "files": files}
+    digest = hashlib.sha256(
+        json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    manifest["sha256"] = digest
+    return {
+        "source": {"commit": "a" * 40, "manifest": manifest, "manifest_sha256": digest},
+        "verification": {"verified": True},
+        "immutable_archive": {"sha256": "b" * 64},
+    }
 
 
 def test_valid_preview_readbacks():
@@ -456,6 +491,8 @@ def test_native_fallback_requirement_matches_platform_and_attested_renderer(
     for launch, renderer in zip(data["packaged_e2e"]["launches"], renderers):
         if renderer is not None:
             launch["attestation"]["renderer"] = renderer
+        else:
+            launch["attestation"].pop("renderer", None)
     without_action(data, "player", "controls_fallback")
     errors = validate_journey(data)
     assert bool(errors) is required
@@ -568,3 +605,188 @@ def test_qt_shared_and_supported_actions_remain_required(platform, pair):
     without_action(data, "player", "controls_fallback")
     without_action(data, *pair)
     assert any(repr(pair) in error for error in validate_journey(data))
+
+
+def editorial_candidate(tmp_path, monkeypatch, mode, keys):
+    """Synthetic candidate source, never a packaged/native evidence fixture."""
+    import shutil
+
+    from quality_harness import telemetry_release as module
+
+    for name in module.ANNOUNCEMENT_SOURCE_FILES:
+        target = tmp_path / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(module.ANNOUNCEMENT_SOURCE_ROOT / name, target)
+    catalog = ",".join(f"FeatureHighlight({key!r})" for key in keys)
+    if catalog:
+        catalog += ","
+    (tmp_path / module.ANNOUNCEMENT_SOURCE_FILES[0]).write_text(
+        f"SHOWCASE_MODE={mode!r}\nSHOWCASE_ID='synthetic'\n"
+        f"HIGHLIGHTS=({catalog})\nDID_YOU_KNOW_HIGHLIGHTS=({catalog})\n"
+    )
+    monkeypatch.setattr(module, "ANNOUNCEMENT_SOURCE_ROOT", tmp_path)
+    return candidate()
+
+
+@pytest.mark.parametrize(
+    "mode,keys,actions",
+    [
+        ("whats-new", ["design", "custom-output"], {"shown"}),
+        ("whats-new", ["output-settings", "design"], {"shown"}),
+        ("whats-new", ["output-settings"], {"shown", "try_it"}),
+        ("did-you-know", ["youtube-access-tip"], {"shown", "try_it"}),
+        ("none", [], set()),
+    ],
+)
+def test_bound_editorial_action_semantics_and_rejections(
+    tmp_path, monkeypatch, mode, keys, actions
+):
+    from collections import Counter
+
+    from quality_harness.telemetry_release import candidate_announcement_actions
+
+    c = editorial_candidate(tmp_path, monkeypatch, mode, keys)
+    data = telemetry_fixture(c)
+    assert candidate_announcement_actions(c, data) == actions
+
+    def observed(pairs):
+        changed = deepcopy(data)
+        events = changed["snapshots"]["events_complete"]["events"]
+        events[:] = [e for e in events if e.get("feature") != "announcement"]
+        events.extend(
+            {
+                "event_id": "editorial-" + action,
+                "event_name": "feature_used",
+                "feature": "announcement",
+                "action": action,
+                "schema_version": 2,
+                "dimensions": "{}",
+            }
+            for action in pairs
+        )
+        for name in ("denied", "disabled"):
+            changed["snapshots"][name]["events"] = deepcopy(events)
+        changed["expected_event_counts"] = dict(
+            Counter(e["event_name"] for e in events)
+        )
+        return validate_unbound_journey(changed, candidate=c)
+
+    assert observed(actions) == []
+    for action in actions:
+        assert any(
+            repr(("announcement", action)) in e for e in observed(actions - {action})
+        )
+    for action in {"shown", "try_it", "done"} - actions:
+        assert (
+            "Announcement event is unreachable in the bound candidate configuration"
+            in observed(actions | {action})
+        )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "source_bytes",
+        "manifest_digest",
+        "missing_producer",
+        "candidate_unverified",
+        "different_commit",
+        "unverified_launch",
+        "unknown_renderer",
+        "mixed_renderer",
+        "missing_candidate",
+    ],
+)
+def test_announcement_exclusion_cannot_be_supplied_without_source_binding(mutation):
+    from quality_harness import telemetry_release as module
+
+    c = candidate()
+    data = telemetry_fixture(c)  # Exact current catalog: shown, no Try it.
+    if mutation == "source_bytes":
+        c["source"]["manifest"]["files"][module.ANNOUNCEMENT_SOURCE_FILES[0]][
+            "sha256"
+        ] = "0" * 64
+    elif mutation == "manifest_digest":
+        c["source"]["manifest_sha256"] = "0" * 64
+    elif mutation == "missing_producer":
+        del c["source"]["manifest"]["files"][module.ANNOUNCEMENT_SOURCE_FILES[1]]
+    if mutation in {"source_bytes", "missing_producer"}:
+        import hashlib
+        import json
+
+        manifest = c["source"]["manifest"]
+        payload = {k: v for k, v in manifest.items() if k != "sha256"}
+        digest = hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        manifest["sha256"] = digest
+        c["source"]["manifest_sha256"] = digest
+    if mutation == "candidate_unverified":
+        c["verification"]["verified"] = False
+    elif mutation == "different_commit":
+        c["source"]["commit"] = "c" * 40
+    elif mutation == "unverified_launch":
+        data["packaged_e2e"]["launches"][0]["verified"] = False
+    elif mutation in {"unknown_renderer", "mixed_renderer"}:
+        data["packaged_e2e"]["launches"][0]["attestation"]["renderer"] = (
+            "future" if mutation == "unknown_renderer" else "tk"
+        )
+    elif mutation == "missing_candidate":
+        c = None
+    # A receipt cannot opt itself out or relabel Done as a separate action.
+    data["announcement_actions"] = ["shown"]
+    errors = validate_unbound_journey(data, candidate=c)
+    assert any("('announcement', 'try_it')" in e for e in errors)
+    if c is not None:
+        assert any("Announcement" in e for e in errors)
+
+
+@pytest.mark.parametrize(
+    "mode,keys", [("future", ["design"]), ("whats-new", []), ("did-you-know", [])]
+)
+def test_unknown_or_empty_editorial_configuration_fails_closed(
+    tmp_path, monkeypatch, mode, keys
+):
+    c = editorial_candidate(tmp_path, monkeypatch, mode, keys)
+    assert validate_unbound_journey(telemetry_fixture(c), candidate=c)
+
+
+@pytest.mark.parametrize(
+    "mode,keys,try_it",
+    [
+        ("whats-new", ["design", "custom-output"], False),
+        ("whats-new", ["output-settings"], True),
+        ("did-you-know", ["tip"], True),
+    ],
+)
+def test_actual_legacy_editorial_owner_distinguishes_done_and_try_it(
+    monkeypatch, mode, keys, try_it
+):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from yt_downloader.whats_new import FeatureHighlight, NativePreview, WhatsNewOwner
+
+    panel = Mock()
+    monkeypatch.setattr("yt_downloader.whats_new_ui.WhatsNewPanel", panel)
+    observed, opened = [], []
+    owner = WhatsNewOwner(
+        None,
+        SimpleNamespace(get=lambda: "", set=lambda _: None),
+        lambda: True,
+        mode=mode,
+        highlights=tuple(
+            FeatureHighlight(key, key, key, NativePreview.OUTPUT_SETTINGS)
+            for key in keys
+        ),
+        on_feature=observed.append,
+        open_settings=lambda: opened.append(True),
+    )
+    owner.show()
+    assert observed == ["shown"]
+    finish = panel.call_args.kwargs["on_finish"]
+    assert bool(finish) is try_it
+    if finish:
+        finish()
+    assert observed == (["shown", "try_it"] if try_it else ["shown"])
+    assert opened == ([True] if try_it else [])

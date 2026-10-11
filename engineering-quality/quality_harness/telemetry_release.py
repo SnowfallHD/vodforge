@@ -6,6 +6,8 @@ success simulation lives here. Snapshots are taken alongside the real UI driver.
 
 from __future__ import annotations
 
+import ast
+import hashlib
 import json
 import subprocess
 import uuid
@@ -34,6 +36,88 @@ from yt_downloader.telemetry_features import (
 from yt_downloader.whats_new import SHOWCASE_MODE
 
 EVENTS = PRODUCT_EVENT_NAMES
+
+ANNOUNCEMENT_SOURCE_ROOT = Path(__file__).resolve().parents[2]
+ANNOUNCEMENT_SOURCE_FILES = (
+    "yt_downloader/whats_new.py",
+    "yt_downloader/qt_quick/main.py",
+    "yt_downloader/qt_quick/EditorialPopup.qml",
+    "yt_downloader/whats_new_ui.py",
+    "yt_downloader/telemetry_features.py",
+)
+
+
+def candidate_announcement_actions(candidate, data) -> set[str]:
+    """Read editorial applicability only from manifest-bound producer source."""
+    from .source_identity import validate_manifest
+
+    source = candidate.get("source", {})
+    manifest = source.get("manifest", {})
+    binding = data.get("packaged_e2e", {}).get("candidate_binding", {})
+    launches = data.get("packaged_e2e", {}).get("launches", [])
+    renderers = {launch.get("attestation", {}).get("renderer") for launch in launches}
+    if (
+        candidate.get("verification", {}).get("verified") is not True
+        or source.get("commit") != data.get("source_commit")
+        or not validate_manifest(manifest, source.get("manifest_sha256", ""))
+        or binding.get("verified") is not True
+        or binding.get("artifact_policy") != "release"
+        or not binding.get("archive_sha256")
+        or not launches
+        or any(launch.get("verified") is not True for launch in launches)
+        or len(renderers) != 1
+        or not renderers <= {"qt", "tk"}
+    ):
+        raise ValueError(
+            "Announcement applicability requires verified candidate source and renderer"
+        )
+    contents = {}
+    for name in ANNOUNCEMENT_SOURCE_FILES:
+        path = ANNOUNCEMENT_SOURCE_ROOT / name
+        entry = manifest["files"].get(name, {})
+        if path.is_symlink() or entry.get("kind") != "file":
+            raise ValueError("Announcement producer source is not a bound regular file")
+        raw = path.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != entry.get("sha256"):
+            raise ValueError("Announcement producer source differs from candidate")
+        contents[name] = raw.decode("utf-8")
+    tree = ast.parse(contents[ANNOUNCEMENT_SOURCE_FILES[0]])
+    values = {
+        target.id: node.value
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+    mode = ast.literal_eval(values["SHOWCASE_MODE"])
+    if mode == "none":
+        return set()
+    if mode not in {"whats-new", "did-you-know"}:
+        raise ValueError("Unknown candidate announcement mode")
+    if not ast.literal_eval(values["SHOWCASE_ID"]):
+        raise ValueError("Enabled candidate announcement has no showcase identity")
+    catalog = values[
+        "DID_YOU_KNOW_HIGHLIGHTS" if mode == "did-you-know" else "HIGHLIGHTS"
+    ]
+    if not isinstance(catalog, ast.Tuple) or not catalog.elts:
+        raise ValueError("Unsupported or empty candidate announcement catalog")
+    keys = []
+    for slide in catalog.elts:
+        if (
+            not isinstance(slide, ast.Call)
+            or not isinstance(slide.func, ast.Name)
+            or slide.func.id != "FeatureHighlight"
+            or not slide.args
+        ):
+            raise ValueError("Unsupported candidate announcement slide")
+        keys.append(ast.literal_eval(slide.args[0]))
+    # Both the Qt finish label and legacy settings_action use this predicate.
+    return (
+        {"shown", "try_it"}
+        if mode == "did-you-know" or keys == ["output-settings"]
+        else {"shown"}
+    )
+
 
 # These describe distinct Tk behavior, not names for vaguely similar Qt actions:
 # synchronous popup return, original tags/thumbnail URL copying, focusing an
@@ -106,7 +190,7 @@ def read_preview_snapshot(site: Path, install_id: str) -> dict[str, Any]:
     }
 
 
-def validate_journey(data: dict[str, Any]) -> list[str]:
+def validate_journey(data: dict[str, Any], *, candidate=None) -> list[str]:
     """Recompute assertions from readbacks; never trust a supplied passed flag."""
     errors: list[str] = []
     snapshots = data.get("snapshots", {})
@@ -198,6 +282,34 @@ def validate_journey(data: dict[str, Any]) -> list[str]:
         if feature != "announcement" or SHOWCASE_MODE != "none"
         for action in actions
     }
+    if candidate is not None:
+        try:
+            announcement_actions = candidate_announcement_actions(candidate, data)
+        except (
+            KeyError,
+            OSError,
+            UnicodeError,
+            TypeError,
+            ValueError,
+            SyntaxError,
+        ) as error:
+            errors.append(str(error))
+            # Failure to prove applicability never removes a vocabulary action.
+            required_actions.update(
+                ("announcement", a) for a in FEATURE_ACTIONS["announcement"]
+            )
+        else:
+            required_actions.difference_update(
+                ("announcement", a) for a in FEATURE_ACTIONS["announcement"]
+            )
+            required_actions.update(("announcement", a) for a in announcement_actions)
+            if any(
+                feature == "announcement" and action not in announcement_actions
+                for feature, action in observed_actions
+            ):
+                errors.append(
+                    "Announcement event is unreachable in the bound candidate configuration"
+                )
     # Applicability comes from verified launch attestations and actual producer
     # semantics. Unknown, unverified and mixed renderers keep the full vocabulary.
     launches = data.get("packaged_e2e", {}).get("launches", [])
@@ -366,7 +478,7 @@ def release_checks(receipts, candidate):
             errors.append("Exactly one preview journey receipt required")
         else:
             data = matching[0]
-            errors.extend(validate_journey(data))
+            errors.extend(validate_journey(data, candidate=candidate))
             if data.get("source_commit") != candidate.get("source", {}).get("commit"):
                 errors.append("Telemetry source does not match release candidate")
             journey = data.get("packaged_e2e", {})

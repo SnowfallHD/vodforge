@@ -3417,3 +3417,22 @@ Windows failure is retained outside the checkout. Existing scope tests missed
 this because a timed join was treated as completion rather than checked. This
 is test synchronization only, without a runtime timeout or move-owner change;
 it does not substitute for native move confirmation or process stress.
+
+### Configuration-dependent action applicability — 2026-10-11
+
+The exact signed5854619 What's New tour ended Done, while the telemetry harness
+required Try it for every non-silent mode. Existing gate fixtures synthesized all
+vocabulary actions and only removed an entire feature, so they missed per-action
+reachability. Existing Qt owner coverage selected Did You Know rather than the
+shipped multi-slide configuration. The invariant is broader than announcements:
+required action coverage must come from the verified shipping producer/configuration,
+never from absence in observed rows or a receipt's self-declared exemption list.
+
+The bounded harness correction binds editorial configuration and producer/UI source
+to candidate manifest hashes, retains shown and genuinely reachable Try it, rejects
+impossible actions and fails closed for unsupported or unbound configurations.
+Focused tests cover normal and special catalogs, silent and unknown modes,
+source/renderer rejection and actual legacy owner emissions; native Qt Done and
+manifest evidence independently establish this instance. The retained prior gate
+probe fails solely for unreachable try_it. These representative boundaries do not
+prove all feature vocabularies, interleavings, or a complete native release journey.

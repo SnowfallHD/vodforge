@@ -695,3 +695,173 @@ Windows session stays finalized, current_launch null, driver_ready false and
 zero app/harness processes at13:29Z. Mac reports AC Power but11percent discharging;
 heavy local work remains paused awaiting charger confirmation. The106-object
 second cleanup set remains unapproved and untouched.0.2.6 remains unpublished.
+
+
+## Oct 11 19:40 UTC — connected-host recovery: retained native environment blocked
+
+Recovered actual shell, Mac CUA inventory and existing authorized Genesis SSH
+access on canonical clean harness30ff582. SSH's initial sandbox socket refusal
+was resolved with authorized execution; COOPS-PC\coop responds. No credentials,
+access configuration or desktop permissions changed. Mac power improved from
+10percent charging to12percent charging on AC; actual free space is83.54GiB.
+No build, signing pass or valid test was repeated; the106 proposed cleanup objects
+remain untouched.
+
+Both maintained retained-session continuations failed before app launch. Mac
+refuses its original isolated layout because protected temp root
+`/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-9r8eqfae`
+is absent, including the profile and extracted candidate. Its saved inventory
+contains hashes only; task preservation directories contain other source-run
+roots, with no matching backup identified. No continuation directory was created
+and no original receipt was rewritten or profile manufactured. The cause of the
+missing directory is unknown; do not attribute it to cleanup or reboot without
+further evidence.
+
+Windows continuation-2 passes into fixture server setup but fails WinError10013
+binding its retained127.0.0.1:63186 origin. Read-only netsh confirms63186 now lies
+inside excluded TCP range63170–63269, with no listener. All original preflight
+receipt hashes remain unchanged. Its original FAILED launch log and exit1
+completion remain preserved. The first process diagnostic self-matched its own
+cmd/PowerShell command text; the corrected executable-scoped query confirms no
+owned app/Python harness. Its completed one-shot scheduled task remained Ready
+and was removed after checking exit1 and nonrunning state; cleanup readback has
+no remaining task. An intermediate diagnostic command had a shell quoting error
+and did not execute. No port/reservation,
+firewall or saved URL was changed.
+
+Evidence: `build/recovery-20261011/recovery-status.json`,
+`mac-continuation-launch.log`, `windows-continuation-2-launch-original.log`,
+`windows-recovery-diagnostic.log`, `windows-owned-processes-final.json`,
+`windows-completed-task-cleanup.json`.
+Candidate5854619 and all earlier bounded passes retain their identity. Recovery
+requires an intact original Mac workspace and an available original Windows
+origin, or separately authorized fresh cohorts with explicit evidence limits.
+Full native/preview-D1 and strict release gates remain incomplete;0.2.6 was not
+published, production data was untouched, and no QA application remains open.
+
+## Oct 11 20:04 UTC — authorized separate fresh cohorts executing
+
+Parent explicitly authorized fresh cohorts after the preserved retained-environment
+failures above. Reused frozen5854619 archives and harness30ff582 without rebuilding
+or rerunning unaffected tests. Fresh Mac `mac-recovery-5854619-20261011` PID7574
+has14/36 ordered native observations through real local MP4 conversion; network
+MP4/MP3/Original-audio completed and actual playback observed. Windows
+`E:\VODForgeQA\incoming\recovery-5854619-20261011` PID48376 has7/36 through
+Library; first real MP4 completed, Description inspection active. Ordinary new
+fixture ports50147/60795 bound without access/network changes. These new cohorts
+do not repair, replace or relabel previous failed receipts.
+
+Both new preview identities have actual zero-row unknown baselines followed by
+one installation, one credential and one exact5854619 app_opened after native
+opt-in; raw readbacks and snapshots retained in `build/recovery-20261011/` and
+new cohort directories. Scoped production SELECT for both identities returned
+zero installation/client/event rows, zero writes. An unnecessary account-list
+connector request was rejected by automatic review; direct scoped D1 reads
+succeeded without broader account access. CLI snapshot transport failed before
+creating a snapshot; connector raw readbacks are retained as actual provenance.
+Mac ordered player_features attempt was refused out of order and retained;
+no event was backfilled. Current power22percent charging on AC,84GiBfree.
+Native journeys/coverage remain in progress, not release acceptance. Updated
+checkpoint preserves preceding blocked snapshot. No publication or cleanup.
+
+## Oct 11 20:21 UTC — fresh native progress and announcement coverage blocker
+
+Mac cohort reached23/36 maintained observations through real missing-media relink;
+Windows reached14/36 through local MP4 conversion. Mac six preset exports complete,
+queue removal/actual source skip and local failure/Stop observed. CPU fixtures are
+bounded; power25percent charging. Native screenshots/driver traces retain actual
+outcomes; these counts are not full feature-vocabulary or release acceptance.
+
+The exact Mac package's eight-slide What's New tour ends with Done, observed in
+`mac-recovery-5854619-20261011/029-029-announcement-final-done-only.png`.
+Current unchanged product source `editorialFinishLabel` permits Try it only for
+`did-you-know` or one `output-settings` slide; actual SHOWCASE_MODE is `whats-new`
+and HIGHLIGHTS has eight slides. EditorialPopup passes true only for literal Try
+it; `dismissEditorial` emits announcement/try_it only for true. The maintained
+release evaluator nevertheless requires both announcement actions whenever mode
+is not none. This is a concrete native reachability/gate mismatch requiring
+resolution before release. No runtime/configuration/gate changes or false event
+were made. Prior update evidence is not relabeled as new5854619 delivery.
+
+Mac query-suffixed custom fixture ID `normal?preset=custom-1` was correctly refused
+by missing-media redownload's safe ID syntax; the real moved file successfully
+relinked with identical SHA256. That observation proves relink only, not redownload.
+The fixture move and hashes are `build/recovery-20261011/mac-missing-media-fixture.json`.
+A larger connector response was internally truncated and is preserved as partial;
+its events must not be treated as a complete snapshot. Small scoped count readback
+succeeded; final datasets require bounded pagination. Production writes remain0.
+
+## Oct 11 20:36 UTC — concrete announcement applicability analysis
+
+Delegated follow-up requested evidence/recommendation before correction. Exact
+candidate source hashes for five relevant producer/UI/vocabulary files match the
+frozen manifest (`build/recovery-20261011/announcement-source-binding.json`).
+Written TELEMETRY_RELEASE_GATE requirement279 says Try it when enabled for the
+candidate. Both Qt and legacy owners expose it only for Did You Know or one
+output-settings slide; frozen5854619 has eight What's New slides and native Done.
+No legitimate profile/fixture switch enables the other compiled configuration.
+This proves a harness applicability mismatch, not missing product telemetry.
+
+Read-only synthetic gate probe uses existing fixture and removes only try_it,
+updating its count/privacy copies: baseline accepts; resulting sole rejection is
+missing announcement/try_it. Native records are not fabricated from that probe.
+Existing enabled-mode test synthesizes all vocabulary actions and removes the
+whole announcement feature, missing per-action reachability. Existing Qt owner
+coverage monkeypatches Did You Know rather than the shipped configuration.
+Concrete proposal and bounded rejection/negative-control matrix are in
+`build/recovery-20261011/announcement-correction-analysis.md`. No implementation,
+gate bypass, product edit or rebuild. Recommendation is a source-bound harness
+applicability correction retaining shown, required Try it modes, impossible-action
+rejections and every unrelated gate. Parent asked for analysis first.
+
+Mac24/36 through bounded announcement/guidance/appearance observation; receipt
+explicitly excludes try_it. Bounded D1 pages preserve349Mac/151Windows unique rows
+through rowids8228/8226, all SELECT writes0; assembled snapshots are watermark
+progress, not events_complete or a passed journey. Windows original retry fixture
+64799 had no listener and is now excluded64743–64842; both connection-refused
+attempts remain. Same-port recovery bind failed10013 without access changes.
+Separate loopback18089 attached SSH fixture produced six actual503 responses;
+native Retry Same settings after source-ready is now being checked. No Windows
+reservation/firewall change. Power32percent charging,84GiBfree at20:27.
+
+At20:37 Windows actual stable-fixture Retry completes and maintained observation16
+is recorded (`windows-fresh/076-stable-retry-complete-record.json`); earlier
+connection-refused and six503 attempts preserved. Both native cohorts remain
+alive for the requested bounded-path decision (Mac7574,Windows48376); first-launch
+QA deadlines approximately21:42/21:43UTC. Checkpoint contains session IDs and next
+ordered actions; do not allow timeout or invent missing observations. Latest
+scoped production read for both new IDs is0installations/0clients/0events and0writes
+(`production-new-cohorts-2037-raw.json`). Power36percent charging. Remaining full
+native/D1/Update/Repair/privacy gates still open;0.2.6 unpublished.
+
+## Oct 11 20:47 UTC — authorized bounded announcement harness correction
+
+Applied only harness/docs/tests after delegated authorization. Applicability reads
+canonical editorial AST without executing candidate source and verifies five
+producer/UI/vocabulary files against the frozen candidate manifest, candidate
+source identity and verified known renderer. Done remains distinct; shown remains
+required for enabled modes, true Try it modes retain their action, impossible
+announcement events fail, and missing/changed/unverified evidence grants no
+exclusion. Full release checks pass the actual candidate into this evaluator.
+No runtime files, enum, event producers or signed artifacts changed.
+
+Focused affected suite140passes (`announcement-harness-final.log`), including20
+new bounded configuration/binding/real-owner cases; earlier120case intermediate
+pass and140casefirstmatrix pass retained. Final test edit specifically strengthened
+valid-manifest/wrong-file and missing-producer rejections, justifying the final
+rerun. Ruff/format/diff pass after import-only formatting. Earlier native Done,
+source hashes and sole-error prior gate probe retained. Exact5854619 manifest plus
+actual Mac launch returns only shown in `announcement-exact-candidate-decision.json`;
+this is applicability proof, not a passed native/full-release receipt. Bug-class
+learning and why previous vocabulary-generated fixtures missed reachability are
+in README and TELEMETRY_RELEASE_GATE.
+
+Mac main QA was normally closed for separate updater work because maintained
+launcher forbids another VODForge process. Original partial wrapper retained:
+24/36 ordered, process provenance/artifact integrity passed,12independently readable
+media, PID7574exit0/no survivors. Its original temp root/profile remains intact.
+New separate signed QA0.2.2 baseline (not public compatibility proof) PID12341 is
+preview-only with actual zero installation/client/event baseline and explicit UI
+opt-in, serving exact5854619 archive via guarded loopback feed. First feed bind
+was sandbox-denied before start; separate authorized feed now running. No OS
+permissions or signature rules changed. Current Windows main17/36 remains alive.

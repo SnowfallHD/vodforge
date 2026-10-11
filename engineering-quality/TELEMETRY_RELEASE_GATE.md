@@ -435,3 +435,17 @@ detached helper and verified relaunch/Repair. Preserve helper attempt UUID
 correlation; permission at check origin and handoff must both allow collection.
 Zero-delay launch scheduling is distinct from HTTP completion latency. Existing
 signed artifact and native outcome gates remain unchanged.
+
+### Candidate-bound announcement actions
+
+Announcement vocabulary is not a claim that every editorial configuration exposes
+every action. Require `shown` for a verified enabled showcase. Require `try_it`
+for Did You Know or a single `output-settings` slide, the configurations in which
+both maintained owners expose that distinct action. An ordinary multi-slide
+What's New ends with Done; Done must never be relabeled or emitted as Try it.
+The verifier reads mode and slide keys from source matched to the frozen candidate
+manifest, including the relevant producer/UI files, with a verified known renderer.
+Missing, changed, unknown or unverified source/producer evidence grants no exclusion.
+Unexpected actions in the bound configuration fail; silent mode still rejects all
+announcement events. All other feature, count, privacy, identity and native gates
+remain required. Source fixtures for future modes do not qualify the current package.
