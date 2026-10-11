@@ -370,7 +370,47 @@ Item {
                             y: 17
                             width: parent.width - 34
                             spacing: 11
-                            Text { text: modelData.title; color: theme.text; font.pixelSize: 20 }
+                            Row {
+                                width: parent.width
+                                spacing: 8
+                                Text {
+                                    width: parent.width - (sourceCopyButton.visible ? sourceCopyButton.width + 8 : 0)
+                                    text: modelData.title; color: theme.text; font.pixelSize: 20
+                                }
+                                StoneButton {
+                                    id: sourceCopyButton
+                                    objectName: "librarySourceCopyMenuButton"
+                                    visible: factsPanel.section === "source"
+                                    label: "⋯"; size: "inline"; width: 32; height: 32
+                                    onActivated: sourceCopyMenu.open()
+                                }
+                                AnchoredPopup {
+                                    id: sourceCopyMenu
+                                    anchorItem: sourceCopyButton
+                                    alignRight: true
+                                    width: 250
+                                    contentItem: Column {
+                                        spacing: 4
+                                        Repeater {
+                                            model: [
+                                                {field: "source_description", label: "Copy original description"},
+                                                {field: "source_tags", label: "Copy source tags"},
+                                                {field: "thumbnail_url", label: "Copy thumbnail URL"}
+                                            ]
+                                            StoneButton {
+                                                required property var modelData
+                                                width: parent.width
+                                                label: modelData.label
+                                                enabled: !!((detail.item.sourceCopy || {})[modelData.field])
+                                                onActivated: {
+                                                    detail.appBridge.copyLibraryText(detail.item.owner, modelData.field)
+                                                    sourceCopyMenu.close()
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                             Rectangle { width: parent.width; height: 1; color: theme.border }
                             Column {
                                 width: parent.width

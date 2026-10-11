@@ -330,7 +330,7 @@ def test_no_guard_does_not_refresh_any403(tmp_path, monkeypatch):
 
 
 def test_worker_refresh_keeps_same_session_and_bounded_analysis(tmp_path, monkeypatch):
-    from tests.test_metadata_helpers import (
+    from tests.worker_fixtures import (
         _worker_test_app,
         _worker_test_export_plan,
         _worker_test_job,

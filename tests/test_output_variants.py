@@ -5,7 +5,8 @@ from dataclasses import replace
 import pytest
 
 from tests.test_run_identity import make_job
-from yt_downloader.app import package_downloaded_media_from_staging
+from yt_downloader.download_service import package_downloaded_media_from_staging
+
 from yt_downloader.models import Mp3ExportSettings, OutputType
 from yt_downloader.run_identity import annotate_job_metadata
 
@@ -90,7 +91,8 @@ def test_same_settings_keep_a_stable_folder_and_preserve_collision(tmp_path):
 def test_original_extensions_keep_the_same_requested_variant(tmp_path, kind, extension):
     job = replace(make_job(tmp_path), output_type=kind)
     info = annotate_job_metadata(job, {"id": "audio", "title": "Audio"})
-    from yt_downloader.app import resolved_video_output_target
+    from yt_downloader.download_service import resolved_video_output_target
+
 
     directory, _ = resolved_video_output_target(tmp_path, info, extension)
     other, _ = resolved_video_output_target(
@@ -115,7 +117,8 @@ def test_variant_namespace_uses_effective_settings_not_only_display_label(tmp_pa
 
 
 def test_shortened_paths_preserve_variant_and_item_identity(tmp_path):
-    from yt_downloader.app import resolved_video_output_target
+    from yt_downloader.download_service import resolved_video_output_target
+
     from yt_downloader.run_identity import job_output_variant
 
     job = make_job(tmp_path)
@@ -138,7 +141,8 @@ def test_shortened_paths_preserve_variant_and_item_identity(tmp_path):
 
 
 def test_provider_cannot_inject_variant_path(tmp_path):
-    from yt_downloader.app import video_output_dir
+    from yt_downloader.download_service import video_output_dir
+
 
     base = {"id": "abc", "title": "Video"}
     assert video_output_dir(
@@ -178,7 +182,7 @@ def test_parallel_variant_commits_do_not_mix_or_overwrite(tmp_path):
 def test_legacy_reuse_is_bound_to_exact_saved_attempt_and_path(monkeypatch, tmp_path):
     import queue
 
-    from yt_downloader import app as module
+    from yt_downloader import download_service as module
     from yt_downloader.export_planning import build_mp3_export_plan
     from yt_downloader.history import history_output_path, upsert_history
 
@@ -213,7 +217,7 @@ def test_legacy_reuse_is_bound_to_exact_saved_attempt_and_path(monkeypatch, tmp_
     record.pop("vodforge_output_variant")
     history = upsert_history([], record, legacy)
     assert history_output_path(history[0]) == file
-    app = module.DownloaderApp.__new__(module.DownloaderApp)
+    app = module.DownloadWorkerCore.__new__(module.DownloadWorkerCore)
     app.events = queue.Queue()
     app.download_history = history
     app._find_ffprobe = lambda: "ffprobe"
@@ -280,13 +284,14 @@ def test_mp3_variant_label_accepts_saved_string_audio_choices(
 def test_observed_intent_relation_requires_actual_source_evidence(tmp_path):
     from types import SimpleNamespace
 
-    from yt_downloader.app import DownloaderApp
+    from yt_downloader.download_service import DownloadWorkerCore
+
 
     job = make_job(tmp_path)
     info = {"id": "abc123", "webpage_url": job.url}
     old = annotate_job_metadata(job, info)
     app = SimpleNamespace(download_history=[old])
-    relation = DownloaderApp._observed_intent_relation
+    relation = DownloadWorkerCore._observed_intent_relation
     assert relation(app, job, old) == "same_intent"
     changed = replace(job, quality_label="720p HD")
     assert (
@@ -321,12 +326,13 @@ def test_observed_intent_relation_requires_actual_source_evidence(tmp_path):
 def test_intent_observation_malformed_evidence_is_unknown(tmp_path, history):
     from types import SimpleNamespace
 
-    from yt_downloader.app import DownloaderApp
+    from yt_downloader.download_service import DownloadWorkerCore
+
 
     job = make_job(tmp_path)
     info = annotate_job_metadata(job, {"id": "abc123", "webpage_url": job.url})
     assert (
-        DownloaderApp._observed_intent_relation(
+        DownloadWorkerCore._observed_intent_relation(
             SimpleNamespace(download_history=history), job, info
         )
         == "unknown"
@@ -336,16 +342,17 @@ def test_intent_observation_malformed_evidence_is_unknown(tmp_path, history):
 def test_intent_observation_distinguishes_absent_and_empty_history(tmp_path):
     from types import SimpleNamespace
 
-    from yt_downloader.app import DownloaderApp
+    from yt_downloader.download_service import DownloadWorkerCore
+
 
     job = make_job(tmp_path)
     info = {"id": "abc123", "webpage_url": job.url}
     assert (
-        DownloaderApp._observed_intent_relation(SimpleNamespace(), job, info)
+        DownloadWorkerCore._observed_intent_relation(SimpleNamespace(), job, info)
         == "unknown"
     )
     assert (
-        DownloaderApp._observed_intent_relation(
+        DownloadWorkerCore._observed_intent_relation(
             SimpleNamespace(download_history=[]), job, info
         )
         == "first_observed"

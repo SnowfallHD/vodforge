@@ -9,7 +9,8 @@ from dataclasses import replace
 import pytest
 from quality_harness.fixtures import find_ffmpeg, find_ffprobe
 
-from yt_downloader.app import build_vod_ffmpeg_command, validate_output_artifact
+from yt_downloader.download_service import build_vod_ffmpeg_command, validate_output_artifact
+
 from yt_downloader.export_planning import QUALITY_PRESETS
 from yt_downloader.models import ExportMode, ExportPlan, OutputType
 

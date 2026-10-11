@@ -14,8 +14,8 @@ from .util import sha256_file
 def batch_failure_report_reset_probe(
     case_dir: Path,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    import yt_downloader.app as app_module
-    from yt_downloader.app import (
+    import yt_downloader.download_service as app_module
+    from yt_downloader.download_service import (
         DownloaderApp,
         DownloadJob,
         DownloadOutcome,

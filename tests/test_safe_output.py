@@ -6,7 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from yt_downloader.app import package_downloaded_media_from_staging
+from yt_downloader.download_service import package_downloaded_media_from_staging
+
 from yt_downloader.safe_output import UnsafeOutputPathError, is_symlink_or_reparse
 
 

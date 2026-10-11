@@ -12,7 +12,7 @@ from quality_harness.release_gate import evaluate_engineering_result
 def observation():
     return {
         "case_id": "reliability-http-404",
-        "pipeline_entrypoint": "yt_downloader.app.DownloadWorkerCore._download_worker_single",
+        "pipeline_entrypoint": "yt_downloader.download_service.DownloadWorkerCore._download_worker_single",
         "job": {
             "run_id": "http-run",
             "url": "http://127.0.0.1:12345/status/404",
@@ -260,7 +260,7 @@ def test_fixture_state_retains_timed_route_and_independent_snapshots(monkeypatch
 def test_preflight_refusal_never_records_worker_dispatch(tmp_path, monkeypatch):
     from quality_harness import pipeline
 
-    import yt_downloader.app as production
+    import yt_downloader.download_service as production
 
     worker_called = []
     app = SimpleNamespace(

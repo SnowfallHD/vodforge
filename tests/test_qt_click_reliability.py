@@ -206,7 +206,7 @@ def _descendants(item):
 def test_primary_action_and_selected_tab_are_visibly_distinct(tmp_path, monkeypatch):
     from PySide6.QtGui import QColor
 
-    from yt_downloader.ui_theme import THEME
+    from yt_downloader.product_theme import THEME
 
     _app, bridge, engine, window = _launch(tmp_path, monkeypatch, [])
     try:
@@ -315,7 +315,7 @@ def test_run_without_saved_output_keeps_status_text_and_no_next_actions(
 
 
 def test_primary_face_preserves_original_contour_in_every_state():
-    from yt_downloader.ui_chrome import action_button_image
+    from yt_downloader.visual_chrome import action_button_image
 
     for state in ("normal", "hover", "pressed", "disabled", "focus"):
         for density in (1, 2):

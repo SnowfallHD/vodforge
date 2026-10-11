@@ -12,7 +12,7 @@ def activity_log_failure_receipt_probe(
     case_dir: Path,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Prove optional durable Activity failures are visible, bounded, and recoverable."""
-    from yt_downloader import app
+    from yt_downloader import download_service as app
 
     case_dir.mkdir(parents=True, exist_ok=True)
     first_bad_target = case_dir / "first-private-canary"

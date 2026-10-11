@@ -8,7 +8,7 @@ import subprocess
 import pytest
 from quality_harness.fixtures import find_ffmpeg, find_ffprobe
 
-from yt_downloader import app as app_module
+from yt_downloader import download_service as app_module
 from yt_downloader.export_planning import EXPORT_MODES, export_mode_from_display_name
 from yt_downloader.models import (
     DownloadJob,
@@ -132,7 +132,7 @@ def test_preset_commits_and_reuses_real_valid_media(
         app_module, "load_yt_dlp", lambda: SimpleNamespace(YoutubeDL=Provider)
     )
     monkeypatch.setattr(app_module, "write_diagnostic", lambda *_args: None)
-    application = app_module.DownloaderApp.__new__(app_module.DownloaderApp)
+    application = app_module.DownloadWorkerCore.__new__(app_module.DownloadWorkerCore)
     application.events = queue.Queue()
     # Historical invalid rows must not make optional observations or reuse
     # ownership lookup interfere with actual transcode/validation/commit.
@@ -269,7 +269,8 @@ def test_preset_commits_and_reuses_real_valid_media(
 def test_quality_presets_have_measurable_size_and_detail_tradeoffs(source, tmp_path):
     import re
 
-    from yt_downloader.app import build_vod_ffmpeg_command
+    from yt_downloader.download_service import build_vod_ffmpeg_command
+
     from yt_downloader.export_planning import build_auto_export_plan
 
     path, ffmpeg, _ffprobe = source

@@ -51,7 +51,7 @@ def _finding(
 def path_and_subprocess_probe(
     case_dir: Path, repo_root: Path
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    from yt_downloader.app import (
+    from yt_downloader.download_service import (
         build_vod_ffmpeg_command,
         resolved_video_output_target,
     )
@@ -188,7 +188,7 @@ def path_and_subprocess_probe(
 def symlink_and_temp_probe(
     case_dir: Path,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    from yt_downloader.app import (
+    from yt_downloader.download_service import (
         create_staging_dir,
         package_downloaded_media_from_staging,
     )
@@ -370,7 +370,7 @@ def fresh_output_contract_probe(
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     from dataclasses import replace
 
-    from yt_downloader.app import (
+    from yt_downloader.download_service import (
         AudioExportPlan,
         ExportMode,
         ExportPlan,
@@ -864,7 +864,7 @@ def fresh_output_contract_probe(
 def url_secret_persistence_probe(
     case_dir: Path,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    import yt_downloader.app as app_module
+    import yt_downloader.download_service as app_module
     from yt_downloader.history import sanitize_history_record
 
     case_dir.mkdir(parents=True, exist_ok=True)

@@ -34,8 +34,8 @@ def test_no_formats_does_not_guess_age_or_missing_runtime():
 def test_provider_no_formats_keeps_machine_cause_out_of_visible_worker_events(
     monkeypatch, tmp_path
 ):
-    import yt_downloader.app as app_module
-    from tests.test_metadata_helpers import _worker_test_app, _worker_test_job
+    import yt_downloader.download_service as app_module
+    from tests.worker_fixtures import _worker_test_app, _worker_test_job
 
     diagnostics = []
     monkeypatch.setattr(app_module, "load_yt_dlp", lambda: object())
@@ -253,7 +253,8 @@ def test_real_audio_selection_failure_keeps_cause_and_correct_media_kind():
 def test_path_budget_error_preserves_approved_message_and_folder_action(wrapped):
     from types import SimpleNamespace
 
-    from yt_downloader.app import OutputPathBudgetError, _DownloadItemExecutionError
+    from yt_downloader.download_service import OutputPathBudgetError, _DownloadItemExecutionError
+
 
     error = OutputPathBudgetError()
     presented = download_error_message(
@@ -266,7 +267,8 @@ def test_path_budget_error_preserves_approved_message_and_folder_action(wrapped)
 
 
 def test_path_budget_recovery_is_typed_not_provider_text():
-    from yt_downloader.app import OutputPathBudgetError
+    from yt_downloader.download_service import OutputPathBudgetError
+
 
     assert not hasattr(
         download_error_message(OutputPathBudgetError.user_message), "action"

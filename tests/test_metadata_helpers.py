@@ -1,4 +1,3 @@
-import inspect
 import json
 import os
 import queue
@@ -9,39 +8,33 @@ import time
 from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
-from types import SimpleNamespace
 from typing import ClassVar
 
 import pytest
 from PIL import Image
 
-import yt_downloader.app as app_module
-from yt_downloader.app import (
+import yt_downloader.download_service as app_module
+from yt_downloader.cookie_inputs import cookie_inputs_for_source
+from yt_downloader.download_service import (
     AUDIO_BITRATE,
     AUDIO_SAMPLE_RATE,
     DEFAULT_IGNORE_PLAYLISTS,
-    EXPORT_MODES,
     QUALITY_OPTIONS,
     RUNTIME_SMOKE_PROBE_TIMEOUT_SECONDS,
     AudioExportPlan,
-    CookieSource,
-    DownloaderApp,
     DownloadJob,
     DownloadOutcome,
+    DownloadWorkerCore,
     ExportMode,
     ExportPlan,
     ManualAudioCodec,
-    ManualExportSettings,
-    Mp3ExportSettings,
     OutputType,
-    accumulated_row_scroll,
     append_batch_failure_report,
     apply_manual_export_settings,
     apply_playlist_context,
     apply_youtube_runtime_options,
     apply_ytdlp_cookie_options,
     best_thumbnail_for_download,
-    bounded_window_size,
     build_auto_export_plan,
     build_description_display_text,
     build_encoding_summary_display,
@@ -61,59 +54,37 @@ from yt_downloader.app import (
     clean_single_video_url,
     cleanup_legacy_encode_sidecars,
     compact_video_metadata,
-    configure_windows_app_identity,
-    cookie_inputs_for_source,
     create_staging_dir,
     diagnostics_dir,
     download_bounded_url_bytes,
     download_job_display_title,
-    ellipsize_wrapped_text,
     embed_custom_mp3_cover_art,
     existing_cached_thumbnail_path,
     existing_output_candidate_dirs,
-    export_mode_description,
     export_mode_display_name,
-    export_mode_from_display_name,
     find_valid_existing_output,
     flatten_alpha_image,
-    focus_hero_thumbnail_visible,
     focus_icon_color_variant,
-    focus_layout_mode,
-    focus_library_horizontal_padding,
-    focus_library_layout_mode,
-    focus_library_vertical_layout_mode,
     focus_metadata_profile_text,
-    focus_run_deck_capacity,
-    focus_wheel_pixels,
     format_duration,
     format_ytdlp_user_error,
-    initial_window_geometry,
-    is_metadata_preview,
     iter_video_infos,
     legacy_cached_thumbnail_path,
-    library_thumbnail_size,
     load_yt_dlp,
-    measured_wrapped_line_count,
     metadata_indices_for_output_type,
     metadata_output_type,
-    metadata_run_key,
     output_artifact_matches_plan,
     package_downloaded_media_from_staging,
     parse_url_list_text,
-    pixel_scroll_target,
-    pixel_table_visible_row_window,
     platform_font_families,
     playlist_context_from_extraction,
     playlist_folder_name,
-    pointer_inside_widget_bounds,
     prepare_batch_item_url,
     prepare_custom_cover_art,
     preview_output_summary_display,
     process_download_from_preflight,
     render_monochrome_icon,
-    resized_table_column_width,
     resolved_video_output_target,
-    responsive_table_stretch_indices,
     retry_url_for_item,
     rounded_contain_image,
     rounded_cover_image,
@@ -122,17 +93,13 @@ from yt_downloader.app import (
     run_ffprobe_json,
     runtime_executable_candidates,
     runtime_version_command,
-    runtime_window_icon_asset,
     save_cached_thumbnail_image,
     save_custom_cached_thumbnail_image,
     save_thumbnail_image,
-    selected_overview_line_budget,
     single_video_url_requires_video_id_error,
     staging_output_template,
-    stretched_table_column_widths,
     summary_label_color,
     terminate_and_reap_process,
-    thumbnail_size_within,
     transcode_temp_paths,
     transcode_to_vod_streaming_settings,
     validate_output_artifact,
@@ -141,15 +108,25 @@ from yt_downloader.app import (
     video_list_row_values,
     video_output_dir,
     write_compact_video_metadata,
-    youtube_thumbnail_size,
     youtube_url_playlist_id,
     youtube_url_video_id,
     ytdlp_ffmpeg_location,
+)
+from yt_downloader.export_planning import (
+    EXPORT_MODES,
+    export_mode_description,
+    export_mode_from_display_name,
 )
 from yt_downloader.history import (
     history_output_dir,
     sanitize_history_record,
     upsert_history,
+)
+from yt_downloader.library_state import is_metadata_preview
+from yt_downloader.models import CookieSource, ManualExportSettings, Mp3ExportSettings
+from yt_downloader.platform_services import (
+    configure_windows_app_identity,
+    runtime_window_icon_asset,
 )
 from yt_downloader.safe_output import (
     UnsafeOutputPathError,
@@ -157,7 +134,28 @@ from yt_downloader.safe_output import (
 )
 from yt_downloader.ui_layout import (
     FOCUS_LIBRARY_SELECTED_DETAILS_HEIGHT,
+    accumulated_row_scroll,
+    bounded_window_size,
+    ellipsize_wrapped_text,
+    focus_hero_thumbnail_visible,
+    focus_layout_mode,
+    focus_library_horizontal_padding,
+    focus_library_layout_mode,
+    focus_library_vertical_layout_mode,
+    focus_run_deck_capacity,
+    focus_wheel_pixels,
+    initial_window_geometry,
+    library_thumbnail_size,
+    measured_wrapped_line_count,
+    pixel_scroll_target,
+    pixel_table_visible_row_window,
+    resized_table_column_width,
+    responsive_table_stretch_indices,
     selected_description_max_height,
+    selected_overview_line_budget,
+    stretched_table_column_widths,
+    thumbnail_size_within,
+    youtube_thumbnail_size,
 )
 
 
@@ -443,26 +441,6 @@ def test_activity_log_close_failure_still_clears_cached_handle(
     assert app_module._ACTIVITY_LOG_HANDLE_PATH is None
 
 
-def test_live_activity_remains_visible_when_durable_sink_is_unavailable(
-    monkeypatch,
-    tmp_path: Path,
-):
-    bad_target = tmp_path / "activity.log"
-    bad_target.mkdir()
-    visible_lines: list[str] = []
-    dummy = type("ActivityView", (), {})()
-    dummy.log = object()
-    dummy._persist_activity = True
-    dummy._append_log_widget = lambda _widget, line: visible_lines.append(line)
-    monkeypatch.setattr(app_module, "ACTIVITY_LOG_PATH", bad_target)
-    monkeypatch.setattr(app_module, "write_diagnostic", lambda _message: None)
-    monkeypatch.setattr(app_module, "_ACTIVITY_LOG_FAILURE_REPORTED", False)
-
-    app_module.DownloaderApp._append_log(dummy, "visible current-session line")
-
-    assert visible_lines == ["visible current-session line"]
-
-
 def test_platform_fonts_use_macos_and_windows_system_families():
     assert platform_font_families("darwin") == ("Helvetica Neue", "Menlo")
     assert platform_font_families("win32") == ("Segoe UI", "Cascadia Mono")
@@ -540,184 +518,6 @@ def test_unresolved_run_titles_never_expose_the_raw_source_url(tmp_path: Path):
     assert download_job_display_title(job) == "Resolved title"
 
 
-def test_focus_run_records_use_one_active_run_authority_without_preview_duplicate(
-    tmp_path: Path,
-):
-    class Value:
-        def __init__(self, value):
-            self.value = value
-
-        def get(self):
-            return self.value
-
-    active_info = {
-        "id": "active-id",
-        "title": "Current title",
-        "vodforge_output_type": "MP4",
-    }
-    active_job = DownloadJob(
-        url="https://www.youtube.com/watch?v=active-id",
-        output_dir=tmp_path,
-        output_type=OutputType.MP4,
-        quality_label="1080p Full HD",
-        export_mode=ExportMode.AUTO_CBR,
-        manual_settings=ManualExportSettings(),
-        mp3_settings=Mp3ExportSettings(),
-        single_video_only=True,
-        use_nvenc=False,
-        embed_thumbnail=False,
-        write_thumbnail=False,
-        embed_metadata=False,
-        write_info_json=False,
-        tags=[],
-        preview_info=dict(active_info),
-        metadata_keys={metadata_run_key(active_info)},
-    )
-    app = DownloaderApp.__new__(DownloaderApp)
-    app._focus_preview_runs = None
-    app._focus_active_override = False
-    app.active_job = active_job
-    app.worker = None
-    app.pending_jobs = []
-    app._terminal_jobs = []
-    app.metadata_items = [
-        active_info,
-        {
-            "id": "older",
-            "title": "Older preview",
-            "vodforge_output_type": "MP4",
-            "vodforge_preview_complete": True,
-        },
-    ]
-    app.url_var = Value("")
-    app.focus_active_title_var = Value("stale previous title")
-    app.focus_active_detail_var = Value("Current creator")
-    app.status_var = Value("Downloading")
-    app.progress_var = Value(54)
-
-    records = app._focus_run_records()
-
-    assert [(record["kind"], record["title"]) for record in records] == [
-        ("active", "Current title"),
-        ("preview", "Older preview"),
-    ]
-    assert all(record["title"] != active_job.url for record in records)
-
-
-def test_failed_run_replaces_its_ephemeral_metadata_card(tmp_path: Path):
-    class Value:
-        def __init__(self, value):
-            self.value = value
-
-        def get(self):
-            return self.value
-
-    failed_info = {
-        "id": "failed-id",
-        "title": "Resolved failure",
-        "vodforge_output_type": "MP4",
-    }
-    failed_job = DownloadJob(
-        url="https://youtu.be/failed-id",
-        output_dir=tmp_path,
-        output_type=OutputType.MP4,
-        quality_label="1080p Full HD",
-        export_mode=ExportMode.AUTO_CBR,
-        manual_settings=ManualExportSettings(),
-        mp3_settings=Mp3ExportSettings(),
-        single_video_only=True,
-        use_nvenc=False,
-        embed_thumbnail=False,
-        write_thumbnail=False,
-        embed_metadata=False,
-        write_info_json=False,
-        tags=[],
-        preview_info=dict(failed_info),
-        metadata_keys={metadata_run_key(failed_info)},
-        terminal_status="Failed",
-        terminal_message="No output produced",
-    )
-    app = DownloaderApp.__new__(DownloaderApp)
-    app._focus_preview_runs = None
-    app._focus_active_override = False
-    app.active_job = None
-    app.worker = None
-    app.pending_jobs = []
-    app._terminal_jobs = [failed_job]
-    app.metadata_items = [failed_info]
-    app.url_var = Value("")
-
-    records = app._focus_run_records()
-
-    assert len(records) == 1
-    assert records[0]["kind"] == "failed"
-    assert records[0]["title"] == "Resolved failure"
-    assert records[0]["job"] is failed_job
-
-
-def test_failed_run_retry_creates_a_fresh_run_identity_with_current_settings(
-    tmp_path: Path,
-):
-    failed_job = DownloadJob(
-        url="https://youtu.be/retry-id",
-        output_dir=tmp_path,
-        output_type=OutputType.MP3,
-        quality_label="Best available up to 4K",
-        export_mode=ExportMode.AUTO_CBR,
-        manual_settings=ManualExportSettings(),
-        mp3_settings=Mp3ExportSettings(bitrate_kbps=320),
-        single_video_only=True,
-        use_nvenc=False,
-        embed_thumbnail=False,
-        write_thumbnail=False,
-        embed_metadata=False,
-        write_info_json=False,
-        tags=["producer"],
-        preview_info={
-            "id": "retry-id",
-            "title": "Retry me",
-            "vodforge_output_type": "MP3",
-        },
-        metadata_keys={("retry-id", "MP3")},
-        terminal_status="Failed",
-        terminal_message="Temporary failure",
-    )
-    app = DownloaderApp.__new__(DownloaderApp)
-    app._terminal_jobs = [failed_job]
-    app.active_job = None
-    app.worker = None
-    app._append_log = lambda _line: None
-    launched: list[DownloadJob] = []
-    app._launch_download_job = lambda job, **_kwargs: launched.append(job) or True
-
-    app._selected_output_type = lambda: OutputType.ORIGINAL
-    app.single_video_only_var = SimpleNamespace(get=lambda: True)
-    current = replace(
-        failed_job,
-        output_type=OutputType.ORIGINAL,
-        use_cookies=True,
-        cookie_browser="chrome",
-        output_dir=tmp_path / "new",
-        tags=["current"],
-    )
-    app._build_download_job_from_current_settings = lambda *_args, **_kwargs: current
-    app._retry_terminal_job(failed_job)
-
-    assert app._terminal_jobs == []
-    assert len(launched) == 1
-    retry_job = launched[0]
-    assert retry_job.run_id != failed_job.run_id
-    assert retry_job.url == failed_job.url
-    assert retry_job.output_type == OutputType.ORIGINAL
-    assert retry_job.cookie_browser == "chrome"
-    assert retry_job.use_cookies is True
-    assert retry_job.output_dir == tmp_path / "new"
-    assert retry_job.mp3_settings.bitrate_kbps == 320
-    assert retry_job.tags == ["current"]
-    assert retry_job.metadata_keys == set()
-    assert retry_job.terminal_status is None
-
-
 def test_focus_layout_collapses_before_live_details_are_clipped():
     assert focus_layout_mode(1180, 780) == "wide"
     assert focus_layout_mode(1000, 720) == "balanced"
@@ -733,58 +533,6 @@ def test_fraction_addressed_pixel_scroll_uses_the_visible_viewport_ratio():
     assert target == pytest.approx(0.0765957447)
     assert pixel_scroll_target(0.9, 1.0, 47, 36) == pytest.approx(0.9)
     assert pixel_scroll_target(0.0, 1.0, 47, 36) == 0.0
-
-
-def test_tooltip_hit_testing_uses_exact_visible_widget_bounds():
-    class WidgetBounds:
-        def __init__(self, left, top, width, height, *, mapped=True):
-            self.left = left
-            self.top = top
-            self.width = width
-            self.height = height
-            self.mapped = mapped
-
-        def winfo_ismapped(self):
-            return self.mapped
-
-        def winfo_rootx(self):
-            return self.left
-
-        def winfo_rooty(self):
-            return self.top
-
-        def winfo_width(self):
-            return self.width
-
-        def winfo_height(self):
-            return self.height
-
-    public = WidgetBounds(100, 50, 48, 24)
-    cookies = WidgetBounds(148, 50, 76, 24)
-    hidden_browser = WidgetBounds(224, 50, 64, 24, mapped=False)
-
-    targets = (public, cookies, hidden_browser)
-    assert pointer_inside_widget_bounds(targets, 100, 50)
-    assert pointer_inside_widget_bounds(targets, 223, 73)
-    assert not pointer_inside_widget_bounds(targets, 224, 60)
-    assert not pointer_inside_widget_bounds(targets, 120, 74)
-
-
-def test_tooltips_share_one_delayed_pointer_verified_window_controller():
-    tooltip_source = inspect.getsource(app_module.ToolTip)
-    controller_source = inspect.getsource(app_module._TooltipController)
-    selector_source = inspect.getsource(app_module.SegmentedSelector)
-
-    assert "_vodforge_tooltip_controller" in tooltip_source
-    assert "targets_provider" in tooltip_source
-    assert 'target.bind("<ButtonPress>"' in tooltip_source
-    assert "TOOLTIP_DELAY_MS" in controller_source
-    assert "TOOLTIP_POINTER_POLL_MS" in controller_source
-    assert "not tooltip.contains_pointer()" in controller_source
-    assert "def _destroy_tip" in controller_source
-    assert "self._cancel_pointer_poll()" in controller_source
-    assert "def tooltip_targets" in selector_source
-    assert "tuple(self._labels.values())" in selector_source
 
 
 def test_focus_library_layout_protects_selected_item_at_medium_widths():
@@ -1231,73 +979,6 @@ def test_monochrome_icon_renderer_preserves_hard_centers_and_antialiased_edges()
     assert rendered.getpixel((0, 0))[3] == 0
 
 
-def test_accepted_run_resets_source_field_and_batch_state_for_the_next_send():
-    class Variable:
-        def __init__(self, value):
-            self.value = value
-
-        def get(self):
-            return self.value
-
-        def set(self, value):
-            self.value = value
-
-    class Entry:
-        focused = False
-
-        def focus_set(self):
-            self.focused = True
-
-    app = object.__new__(DownloaderApp)
-    app.batch_urls = ["https://example.test/one", "https://example.test/two"]
-    app.url_list_file_var = Variable("two URLs loaded")
-    app.url_var = Variable("https://example.test/one")
-    app.focus_url_entry = Entry()
-
-    DownloaderApp._reset_source_input_after_send(app)
-
-    assert app.batch_urls == []
-    assert app.url_list_file_var.get() == "No URL list loaded"
-    assert app.url_var.get() == ""
-    assert app.focus_url_entry.focused is True
-
-
-def test_library_actions_feedback_keeps_one_fixed_button_width():
-    class ButtonProbe:
-        def __init__(self):
-            self.calls = []
-
-        def configure(self, **kwargs):
-            self.calls.append(kwargs)
-
-    app = object.__new__(DownloaderApp)
-    app.focus_library_menu_button = ButtonProbe()
-    app._focus_library_action_feedback_after_id = None
-    scheduled = {}
-    app.after_cancel = lambda _after_id: None
-
-    def schedule(delay, callback):
-        scheduled["delay"] = delay
-        scheduled["callback"] = callback
-        return "feedback-1"
-
-    app.after = schedule
-
-    DownloaderApp._run_library_copy_action(app, lambda: True)
-
-    assert app.focus_library_menu_button.calls == [{"text": "Copied", "width": 7}]
-    assert scheduled["delay"] == 900
-    assert app._focus_library_action_feedback_after_id == "feedback-1"
-
-    scheduled["callback"]()
-    assert app.focus_library_menu_button.calls[-1] == {"text": "Actions", "width": 7}
-    assert app._focus_library_action_feedback_after_id is None
-
-    calls_before = list(app.focus_library_menu_button.calls)
-    DownloaderApp._run_library_copy_action(app, lambda: False)
-    assert app.focus_library_menu_button.calls == calls_before
-
-
 def test_windows_app_identity_is_a_noop_on_other_platforms():
     assert configure_windows_app_identity("darwin") is False
     assert configure_windows_app_identity("linux") is False
@@ -1446,7 +1127,7 @@ def test_optional_imageio_ffmpeg_failure_emits_a_secret_free_receipt(monkeypatch
     )
     monkeypatch.setattr(app_module, "write_diagnostic", receipts.append)
 
-    assert DownloaderApp._find_ffmpeg() is None
+    assert DownloadWorkerCore._find_ffmpeg() is None
     assert receipts == [
         "optional imageio FFmpeg fallback unavailable: RuntimeError",
     ]
@@ -2640,42 +2321,6 @@ def test_save_thumbnail_image_writes_single_thumbnail_jpeg(monkeypatch, tmp_path
     assert sorted(p.name for p in tmp_path.iterdir()) == ["thumbnail.jpeg"]
     with Image.open(path) as image:
         assert image.format == "JPEG"
-
-
-def test_run_thumbnail_conversion_failure_uses_persisted_artwork_with_safe_receipt(
-    monkeypatch,
-    tmp_path: Path,
-):
-    persisted = tmp_path / "persisted-thumbnail.png"
-    Image.new("RGB", (4, 4), "red").save(persisted)
-    secret = "https://user:password@example.invalid/art?token=canary#fragment"
-    receipts: list[str] = []
-
-    class BrokenInMemoryImage:
-        def convert(self, _mode):
-            raise RuntimeError(f"private path /tmp/canary; source={secret}")
-
-    app = DownloaderApp.__new__(DownloaderApp)
-    monkeypatch.setattr(app_module, "write_diagnostic", receipts.append)
-
-    result = app._focus_thumbnail_source_for_record(
-        {
-            "preview_thumbnail_image": BrokenInMemoryImage(),
-            "preview_thumbnail_path": str(persisted),
-        }
-    )
-
-    assert result is not None
-    assert result.mode == "RGBA"
-    assert result.getpixel((0, 0)) == (255, 0, 0, 255)
-    assert receipts == [
-        (
-            "in-memory run thumbnail conversion failed: RuntimeError; "
-            "trying persisted artwork"
-        ),
-    ]
-    assert "canary" not in receipts[0]
-    assert "password" not in receipts[0]
 
 
 def test_thumbnail_download_rejects_non_http_and_oversized_responses(monkeypatch):
@@ -4529,7 +4174,7 @@ def test_transcode_uses_short_backend_temp_names_to_preserve_user_facing_title(
         seen["kwargs"] = kwargs
         return FakePopen(command, **kwargs)
 
-    monkeypatch.setattr("yt_downloader.app.subprocess.Popen", fake_popen)
+    monkeypatch.setattr("yt_downloader.download_service.subprocess.Popen", fake_popen)
 
     transcode_to_vod_streaming_settings(source, "ffmpeg", duration_seconds=1.0)
 
@@ -4845,150 +4490,6 @@ def test_tracked_ytdlp_operation_restores_popen_alias_imported_mid_operation():
         sys.modules.pop(synthetic_name, None)
 
 
-def test_application_close_cancels_work_reaps_owned_child_then_destroys():
-    class Process:
-        returncode = None
-
-        def poll(self):
-            return self.returncode
-
-        def terminate(self):
-            self.returncode = -15
-
-        def wait(self, *, timeout):
-            assert timeout == app_module.PROCESS_TERMINATE_TIMEOUT_SECONDS
-            return self.returncode
-
-        def kill(self):
-            self.returncode = -9
-
-    class Value:
-        def __init__(self):
-            self.value = ""
-
-        def set(self, value):
-            self.value = value
-
-    class Button:
-        def config(self, **_kwargs):
-            return None
-
-    process = Process()
-    app_module.register_active_child_process(process)
-    app = DownloaderApp.__new__(DownloaderApp)
-    app._closing = False
-    app._close_terminator = None
-    app.cancel_requested = False
-    app.pending_jobs = [object()]
-    app.worker = None
-    app.status_var = Value()
-    app.download_button = Button()
-    app.cancel_button = Button()
-    app.skip_video_button = Button()
-    app.skip_url_button = Button()
-    callbacks: list[object] = []
-    destroyed: list[bool] = []
-    app.after = lambda _delay, callback: callbacks.append(callback)
-    app.destroy = lambda: destroyed.append(True)
-
-    app._request_application_close()
-    app._close_terminator.join(timeout=2)
-    callbacks.pop(0)()
-
-    assert app.cancel_requested is True
-    assert len(app.pending_jobs) == 1
-    assert process.poll() == -15
-    assert destroyed == [True]
-    with app_module._ACTIVE_CHILD_PROCESS_LOCK:
-        assert process not in app_module._ACTIVE_CHILD_PROCESSES
-
-
-def test_application_close_deadline_destroys_window_without_claiming_cleanup(
-    monkeypatch,
-):
-    class AliveWorker:
-        def is_alive(self):
-            return True
-
-    messages: list[str] = []
-    destroyed: list[bool] = []
-    app = DownloaderApp.__new__(DownloaderApp)
-    app.worker = AliveWorker()
-    app._close_terminator = None
-    app._close_deadline = 0.0
-    app.destroy = lambda: destroyed.append(True)
-    monkeypatch.setattr(app_module, "write_diagnostic", messages.append)
-    monkeypatch.setattr(
-        app_module, "terminate_all_active_child_processes", lambda **_kwargs: None
-    )
-
-    app._finish_application_close_when_idle()
-
-    assert destroyed == [True]
-    assert any("cleanup could not be confirmed" in message for message in messages)
-
-
-def test_close_time_worker_error_is_logged_without_modal_or_new_queue_work(monkeypatch):
-    app = DownloaderApp.__new__(DownloaderApp)
-    app._closing = True
-    app.events = queue.Queue()
-    app.events.put(("error", "Download cancelled by user"))
-    logged: list[str] = []
-    scheduled: list[object] = []
-    app._append_log = logged.append
-    app.after = lambda _delay, callback: scheduled.append(callback)
-    monkeypatch.setattr(
-        app_module.messagebox,
-        "showerror",
-        lambda *_args, **_kwargs: pytest.fail(
-            "close-time errors must not open a modal"
-        ),
-    )
-
-    app._pump_events()
-
-    assert logged == ["ERROR during application close: Download cancelled by user"]
-    assert len(scheduled) == 1
-
-
-def test_close_time_metadata_and_update_errors_do_not_open_modals(monkeypatch):
-    app = DownloaderApp.__new__(DownloaderApp)
-    app._closing = True
-    app.events = queue.Queue()
-    app.events.put(("metadata_error", "provider unavailable"))
-    app.events.put(("update_check_error", "release host unavailable"))
-    logged: list[str] = []
-    diagnostics: list[str] = []
-    scheduled: list[object] = []
-    app._append_log = logged.append
-    app.after = lambda _delay, callback: scheduled.append(callback)
-    monkeypatch.setattr(app_module, "write_diagnostic", diagnostics.append)
-    monkeypatch.setattr(
-        app_module.messagebox,
-        "showerror",
-        lambda *_args, **_kwargs: pytest.fail(
-            "close-time metadata errors must not open a modal"
-        ),
-    )
-    monkeypatch.setattr(
-        app_module.messagebox,
-        "showinfo",
-        lambda *_args, **_kwargs: pytest.fail(
-            "close-time update errors must not open a modal"
-        ),
-    )
-
-    app._pump_events()
-
-    assert logged == [
-        "Metadata preview ended during application close: provider unavailable"
-    ]
-    assert diagnostics == [
-        "update check ended during application close: release host unavailable"
-    ]
-    assert len(scheduled) == 1
-
-
 def test_transcode_cancellation_is_checked_while_ffmpeg_is_quiet(
     monkeypatch, tmp_path: Path
 ):
@@ -5207,7 +4708,7 @@ def test_ffprobe_json_uses_unicode_safe_decoding(monkeypatch, tmp_path: Path):
 
         return Result()
 
-    monkeypatch.setattr("yt_downloader.app.subprocess.run", fake_run)
+    monkeypatch.setattr("yt_downloader.download_service.subprocess.run", fake_run)
 
     data = run_ffprobe_json("ffprobe", video)
 
@@ -5877,7 +5378,7 @@ def test_transcode_rejects_nonzero_ffmpeg_exit_even_when_output_reaches_near_end
 
     progress: list[float] = []
     replacements: list[tuple[Path, Path]] = []
-    monkeypatch.setattr("yt_downloader.app.subprocess.Popen", FakePopen)
+    monkeypatch.setattr("yt_downloader.download_service.subprocess.Popen", FakePopen)
     monkeypatch.setattr(
         app_module.os,
         "replace",
@@ -5914,12 +5415,12 @@ def test_transcode_rejects_nonzero_output_when_temp_duration_is_incomplete(
         def wait(self):
             return 1
 
-    monkeypatch.setattr("yt_downloader.app.subprocess.Popen", FakePopen)
+    monkeypatch.setattr("yt_downloader.download_service.subprocess.Popen", FakePopen)
     monkeypatch.setattr(
-        "yt_downloader.app._ffprobe_for_ffmpeg", lambda _ffmpeg: "ffprobe"
+        "yt_downloader.download_service._ffprobe_for_ffmpeg", lambda _ffmpeg: "ffprobe"
     )
     monkeypatch.setattr(
-        "yt_downloader.app.run_ffprobe_json",
+        "yt_downloader.download_service.run_ffprobe_json",
         lambda _ffprobe, _path: {
             "format": {"duration": "5.0"},
             "streams": [{"codec_type": "video"}],
@@ -5991,8 +5492,8 @@ def test_append_batch_failure_report_sanitizes_url_and_repeated_error_url(
     assert "user:pass" not in text
 
 
-def _worker_test_app() -> DownloaderApp:
-    app = DownloaderApp.__new__(DownloaderApp)
+def _worker_test_app() -> DownloadWorkerCore:
+    app = DownloadWorkerCore.__new__(DownloadWorkerCore)
     app.events = queue.Queue()
     app.cancel_requested = False
     app.skip_video_requested = False
@@ -6387,7 +5888,7 @@ def test_batch_worker_continues_after_failed_url_and_writes_failure_report(
     report = tmp_path / "batch-url-failures.txt"
     report.write_text("STALE FAILURE FROM AN EARLIER RUN\n", encoding="utf-8")
     monkeypatch.setattr(app_module, "BATCH_FAILURE_REPORT_PATH", report)
-    app = DownloaderApp.__new__(DownloaderApp)
+    app = DownloadWorkerCore.__new__(DownloadWorkerCore)
     app.events = queue.Queue()
     app.cancel_requested = False
     app._active_progress_context = None
@@ -6455,7 +5956,7 @@ def test_batch_worker_aborts_before_media_when_failure_report_cannot_reset(
         return original_unlink(path, *args, **kwargs)
 
     monkeypatch.setattr(Path, "unlink", deny_report_unlink)
-    app = DownloaderApp.__new__(DownloaderApp)
+    app = DownloadWorkerCore.__new__(DownloadWorkerCore)
     app.events = queue.Queue()
     app.cancel_requested = False
     app._active_progress_context = None
@@ -6496,7 +5997,7 @@ def test_batch_worker_never_reports_completion_when_every_url_fails(
 ):
     report = tmp_path / "batch-url-failures.txt"
     monkeypatch.setattr(app_module, "BATCH_FAILURE_REPORT_PATH", report)
-    app = DownloaderApp.__new__(DownloaderApp)
+    app = DownloadWorkerCore.__new__(DownloadWorkerCore)
     app.events = queue.Queue()
     app.cancel_requested = False
     app._active_progress_context = None
@@ -6541,7 +6042,7 @@ def test_batch_cancellation_reports_stopped_or_partial_truthfully(
     monkeypatch.setattr(
         app_module, "BATCH_FAILURE_REPORT_PATH", tmp_path / "batch-url-failures.txt"
     )
-    app = DownloaderApp.__new__(DownloaderApp)
+    app = DownloadWorkerCore.__new__(DownloadWorkerCore)
     app.events = queue.Queue()
     app.cancel_requested = False
     app._active_progress_context = None
@@ -6675,7 +6176,7 @@ def test_missing_ffmpeg_reports_the_actual_export_plan_without_downloading(
         YoutubeDL = FakeYoutubeDL
 
     monkeypatch.setattr(app_module, "load_yt_dlp", lambda: FakeYtDlp)
-    app = DownloaderApp.__new__(DownloaderApp)
+    app = DownloadWorkerCore.__new__(DownloadWorkerCore)
     app.events = queue.Queue()
     app.cancel_requested = False
     app.skip_video_requested = False
@@ -6826,7 +6327,7 @@ def test_default_single_video_pipeline_downloads_once_then_reuses_valid_output(
         return probe
 
     monkeypatch.setattr(app_module, "validate_output_artifact", validate_fresh_output)
-    app = DownloaderApp.__new__(DownloaderApp)
+    app = DownloadWorkerCore.__new__(DownloadWorkerCore)
     app.events = queue.Queue()
     app.cancel_requested = False
     app.skip_video_requested = False
@@ -7046,7 +6547,7 @@ def test_committed_media_sidecar_failures_preserve_history_and_media(
         write_info_json=True,
         tags=[],
     )
-    app = DownloaderApp.__new__(DownloaderApp)
+    app = DownloadWorkerCore.__new__(DownloadWorkerCore)
     app.events = queue.Queue()
     diagnostics: list[str] = []
     monkeypatch.setattr(
@@ -7196,7 +6697,7 @@ def test_ignore_playlists_worker_keeps_full_watch_url_playlist_route(
     monkeypatch.setattr(
         app_module, "validate_output_artifact", lambda *_args, **_kwargs: probe
     )
-    app = DownloaderApp.__new__(DownloaderApp)
+    app = DownloadWorkerCore.__new__(DownloadWorkerCore)
     app.events = queue.Queue()
     app.cancel_requested = False
     app.skip_video_requested = False
@@ -7245,7 +6746,7 @@ def test_ignore_playlists_worker_keeps_full_watch_url_playlist_route(
 def test_ytdlp_format_probes_use_the_per_run_staging_directory(
     monkeypatch, tmp_path: Path, output_type: OutputType
 ):
-    app = DownloaderApp.__new__(DownloaderApp)
+    app = DownloadWorkerCore.__new__(DownloadWorkerCore)
     app.events = queue.Queue()
     app._find_ffmpeg = lambda: "ffmpeg"
     app._find_deno = lambda: None
@@ -7330,8 +6831,8 @@ def test_ytdlp_options_keep_hook_progress_without_terminal_progress(
     monkeypatch, tmp_path: Path
 ):
     app = _worker_test_app()
-    monkeypatch.setattr(DownloaderApp, "_find_ffmpeg", staticmethod(lambda: None))
-    monkeypatch.setattr(DownloaderApp, "_find_deno", staticmethod(lambda: None))
+    monkeypatch.setattr(DownloadWorkerCore, "_find_ffmpeg", staticmethod(lambda: None))
+    monkeypatch.setattr(DownloadWorkerCore, "_find_deno", staticmethod(lambda: None))
 
     opts = app._build_ydl_options(
         _worker_test_job(tmp_path),
@@ -7342,7 +6843,7 @@ def test_ytdlp_options_keep_hook_progress_without_terminal_progress(
     assert opts["noprogress"] is True
     progress_hook = opts["progress_hooks"][0]
     assert progress_hook.__self__ is app
-    assert progress_hook.__func__ is DownloaderApp._progress_hook
+    assert progress_hook.__func__ is DownloadWorkerCore._progress_hook
 
 
 def test_delayed_playlist_analysis_keeps_the_skipped_items_inputs(
@@ -7410,7 +6911,7 @@ def test_delayed_playlist_analysis_keeps_the_skipped_items_inputs(
         delayed_blocking_step,
     )
     monkeypatch.setattr(app_module, "write_diagnostic", diagnostics.append)
-    app = DownloaderApp.__new__(DownloaderApp)
+    app = DownloadWorkerCore.__new__(DownloadWorkerCore)
     app.events = queue.Queue()
     app.cancel_requested = False
     app.skip_video_requested = False
@@ -7563,7 +7064,7 @@ def test_playlist_loads_cookie_source_once_and_reuses_memory_session(
             ],
         },
     )
-    app = DownloaderApp.__new__(DownloaderApp)
+    app = DownloadWorkerCore.__new__(DownloadWorkerCore)
     app.events = queue.Queue()
     app.cancel_requested = False
     app.skip_video_requested = False
@@ -7601,7 +7102,7 @@ def test_playlist_loads_cookie_source_once_and_reuses_memory_session(
 
 
 def test_progress_hook_coalesces_high_frequency_updates(monkeypatch):
-    app = DownloaderApp.__new__(DownloaderApp)
+    app = DownloadWorkerCore.__new__(DownloadWorkerCore)
     app.events = queue.Queue()
     app.cancel_requested = False
     app.skip_video_requested = False
@@ -7634,7 +7135,7 @@ def test_progress_hook_coalesces_high_frequency_updates(monkeypatch):
 def test_progress_hook_bounds_provider_eta_for_both_ui_owners(
     monkeypatch, eta, expected
 ):
-    app = DownloaderApp.__new__(DownloaderApp)
+    app = DownloadWorkerCore.__new__(DownloadWorkerCore)
     app.events = queue.Queue()
     app.cancel_requested = False
     app.skip_video_requested = False
@@ -7660,7 +7161,7 @@ def test_progress_hook_bounds_provider_eta_for_both_ui_owners(
 
 @pytest.mark.parametrize("speed", ["not-a-number", float("nan"), float("inf")])
 def test_progress_hook_tolerates_malformed_provider_numbers(monkeypatch, speed):
-    app = DownloaderApp.__new__(DownloaderApp)
+    app = DownloadWorkerCore.__new__(DownloadWorkerCore)
     app.events = queue.Queue()
     app.cancel_requested = False
     app.skip_video_requested = False
@@ -7683,53 +7184,6 @@ def test_progress_hook_tolerates_malformed_provider_numbers(monkeypatch, speed):
 
     events = list(app.events.queue)
     assert any(kind == "status" and "?/s" in payload for kind, payload in events)
-
-
-def test_queued_preview_worker_serializes_preview_fetches(tmp_path: Path):
-    app = DownloaderApp.__new__(DownloaderApp)
-    app.pending_jobs = []
-    app._queued_preview_requests = None
-    app._queued_preview_thread = None
-    active = 0
-    maximum_active = 0
-    completed = 0
-    lock = threading.Lock()
-
-    def fake_preview(_job):
-        nonlocal active, maximum_active, completed
-        with lock:
-            active += 1
-            maximum_active = max(maximum_active, active)
-        time.sleep(0.005)
-        with lock:
-            active -= 1
-            completed += 1
-
-    app._queue_preview_worker = fake_preview
-    for index in range(12):
-        job = DownloadJob(
-            url=f"https://www.youtube.com/watch?v={index}",
-            output_dir=tmp_path,
-            output_type=OutputType.MP4,
-            quality_label="1080p Full HD",
-            export_mode=ExportMode.AUTO_CBR,
-            manual_settings=ManualExportSettings(),
-            mp3_settings=Mp3ExportSettings(),
-            single_video_only=True,
-            use_nvenc=False,
-            embed_thumbnail=False,
-            write_thumbnail=False,
-            embed_metadata=False,
-            write_info_json=False,
-            tags=[],
-        )
-        app.pending_jobs.append(job)
-        app._enqueue_queue_preview(job)
-
-    app._queued_preview_requests.join()
-
-    assert completed == 12
-    assert maximum_active == 1
 
 
 def test_provider_coordinator_defers_preview_for_primary_intent():
@@ -7817,52 +7271,15 @@ def test_delayed_abandoned_primary_runner_waits_for_active_preview():
     assert primary_started.is_set()
 
 
-def test_queued_preview_request_cap_drops_only_optional_preview(tmp_path: Path):
-    app = DownloaderApp.__new__(DownloaderApp)
-    requests: queue.Queue[DownloadJob] = queue.Queue(maxsize=1)
-    existing = DownloadJob(
-        url="https://www.youtube.com/watch?v=existing",
-        output_dir=tmp_path,
-        output_type=OutputType.MP4,
-        quality_label="1080p Full HD",
-        export_mode=ExportMode.AUTO_CBR,
-        manual_settings=ManualExportSettings(),
-        mp3_settings=Mp3ExportSettings(),
-        single_video_only=True,
-        use_nvenc=False,
-        embed_thumbnail=False,
-        write_thumbnail=False,
-        embed_metadata=False,
-        write_info_json=False,
-        tags=[],
-    )
-    incoming = app_module.replace(
-        existing, url="https://www.youtube.com/watch?v=incoming"
-    )
-    requests.put(existing)
-    app._queued_preview_requests = requests
-
-    class AliveWorker:
-        def is_alive(self):
-            return True
-
-    app._queued_preview_thread = AliveWorker()
-
-    app._enqueue_queue_preview(incoming)
-
-    assert requests.qsize() == 1
-    assert requests.get_nowait() is existing
-
-
 def test_mp3_ytdlp_options_extract_audio_embed_cover_and_apply_producer_settings(
     monkeypatch, tmp_path: Path
 ):
-    app = DownloaderApp.__new__(DownloaderApp)
+    app = DownloadWorkerCore.__new__(DownloadWorkerCore)
     app.events = queue.Queue()
     monkeypatch.setattr(
-        DownloaderApp, "_find_ffmpeg", staticmethod(lambda: "/bundle/ffmpeg")
+        DownloadWorkerCore, "_find_ffmpeg", staticmethod(lambda: "/bundle/ffmpeg")
     )
-    monkeypatch.setattr(DownloaderApp, "_find_deno", staticmethod(lambda: None))
+    monkeypatch.setattr(DownloadWorkerCore, "_find_deno", staticmethod(lambda: None))
     job = DownloadJob(
         url="https://www.youtube.com/watch?v=beat",
         output_dir=tmp_path,
@@ -7916,12 +7333,12 @@ def test_mp3_ytdlp_options_extract_audio_embed_cover_and_apply_producer_settings
 def test_mp3_ytdlp_options_leave_no_cover_or_metadata_sidecars_when_disabled(
     monkeypatch, tmp_path: Path
 ):
-    app = DownloaderApp.__new__(DownloaderApp)
+    app = DownloadWorkerCore.__new__(DownloadWorkerCore)
     app.events = queue.Queue()
     monkeypatch.setattr(
-        DownloaderApp, "_find_ffmpeg", staticmethod(lambda: "/bundle/ffmpeg")
+        DownloadWorkerCore, "_find_ffmpeg", staticmethod(lambda: "/bundle/ffmpeg")
     )
-    monkeypatch.setattr(DownloaderApp, "_find_deno", staticmethod(lambda: None))
+    monkeypatch.setattr(DownloadWorkerCore, "_find_deno", staticmethod(lambda: None))
     job = DownloadJob(
         url="https://www.youtube.com/watch?v=beat",
         output_dir=tmp_path,
@@ -7955,12 +7372,12 @@ def test_mp3_ytdlp_options_leave_no_cover_or_metadata_sidecars_when_disabled(
 def test_mp3_ytdlp_options_do_not_fetch_youtube_art_when_custom_cover_is_selected(
     monkeypatch, tmp_path: Path
 ):
-    app = DownloaderApp.__new__(DownloaderApp)
+    app = DownloadWorkerCore.__new__(DownloadWorkerCore)
     app.events = queue.Queue()
     monkeypatch.setattr(
-        DownloaderApp, "_find_ffmpeg", staticmethod(lambda: "/bundle/ffmpeg")
+        DownloadWorkerCore, "_find_ffmpeg", staticmethod(lambda: "/bundle/ffmpeg")
     )
-    monkeypatch.setattr(DownloaderApp, "_find_deno", staticmethod(lambda: None))
+    monkeypatch.setattr(DownloadWorkerCore, "_find_deno", staticmethod(lambda: None))
     custom_cover = tmp_path / "artist-cover.png"
     Image.new("RGB", (600, 600), "purple").save(custom_cover)
     job = DownloadJob(
@@ -7996,12 +7413,12 @@ def test_mp3_ytdlp_options_do_not_fetch_youtube_art_when_custom_cover_is_selecte
 def test_mp4_separate_thumbnail_uses_policy_fetch_instead_of_ytdlp(
     monkeypatch, tmp_path: Path
 ):
-    app = DownloaderApp.__new__(DownloaderApp)
+    app = DownloadWorkerCore.__new__(DownloadWorkerCore)
     app.events = queue.Queue()
     monkeypatch.setattr(
-        DownloaderApp, "_find_ffmpeg", staticmethod(lambda: "/bundle/ffmpeg")
+        DownloadWorkerCore, "_find_ffmpeg", staticmethod(lambda: "/bundle/ffmpeg")
     )
-    monkeypatch.setattr(DownloaderApp, "_find_deno", staticmethod(lambda: None))
+    monkeypatch.setattr(DownloadWorkerCore, "_find_deno", staticmethod(lambda: None))
     job = DownloadJob(
         url="https://www.youtube.com/watch?v=beat",
         output_dir=tmp_path,

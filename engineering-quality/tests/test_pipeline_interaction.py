@@ -12,7 +12,7 @@ from quality_harness.release_gate import evaluate_engineering_result
 def observation():
     raw = {
         "case_id": "correctness-source-quality-360p",
-        "pipeline_entrypoint": "yt_downloader.app.DownloadWorkerCore._download_worker_single",
+        "pipeline_entrypoint": "yt_downloader.download_service.DownloadWorkerCore._download_worker_single",
         "before_worker": {"output_files": []},
         "job": {
             "run_id": "run-one",

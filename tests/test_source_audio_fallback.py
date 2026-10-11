@@ -4,7 +4,8 @@ from uuid import uuid4
 
 import pytest
 
-from yt_downloader.app import DownloadWorkerCore, _build_download_item_plan
+from yt_downloader.download_service import DownloadWorkerCore, _build_download_item_plan
+
 from yt_downloader.export_planning import build_auto_export_plan
 from yt_downloader.failure_diagnostics import SourceSelectionError, capture_failure
 from yt_downloader.models import ExportMode, ManualExportSettings, OutputType
@@ -180,7 +181,7 @@ def test_item_boundary_clears_stale_selection_before_unrelated_failure(monkeypat
     current = job()
     _build_download_item_plan(current, {"formats": [video(), audio()]}, max_height=1080)
     monkeypatch.setattr(
-        "yt_downloader.app.build_auto_export_plan",
+        "yt_downloader.download_service.build_auto_export_plan",
         lambda *_a, **_k: (_ for _ in ()).throw(
             RuntimeError("unrelated provider failure")
         ),

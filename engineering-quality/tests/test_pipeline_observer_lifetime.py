@@ -11,7 +11,7 @@ from quality_harness import pipeline
 def test_completed_worker_retires_control_observer(
     tmp_path, monkeypatch, blocked_predicate
 ):
-    import yt_downloader.app as production
+    import yt_downloader.download_service as production
 
     entered, release, terminated = (threading.Event() for _ in range(3))
 
@@ -85,7 +85,7 @@ def test_completed_worker_retires_control_observer(
 def test_control_dispatch_is_observed_during_worker_or_reports_observer_failure(
     tmp_path, monkeypatch, predicate_error
 ):
-    import yt_downloader.app as production
+    import yt_downloader.download_service as production
 
     dispatched = threading.Event()
 

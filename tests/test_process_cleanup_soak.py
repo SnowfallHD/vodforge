@@ -14,7 +14,7 @@ from pathlib import Path
 import psutil
 import pytest
 
-from yt_downloader import app as app_module
+from yt_downloader import download_service as app_module
 from yt_downloader.process_lifecycle import process_command
 from yt_downloader.run_state import ActiveRunStore, recover_interrupted_run
 

@@ -600,7 +600,7 @@ def test_player_back_restores_origin_and_mini_close_keeps_that_route(
 ):
     from PySide6.QtMultimedia import QMediaPlayer
 
-    from yt_downloader.app import history_archive_owner
+    from yt_downloader.history import history_archive_owner
 
     class Provider(QObject):
         # Keep provider timing independent from the navigation owner under test.

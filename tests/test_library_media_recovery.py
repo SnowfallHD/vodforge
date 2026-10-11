@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from yt_downloader.app import video_output_dir
+from yt_downloader.download_service import video_output_dir
 from yt_downloader.history import (
     RETRY_JOB_METADATA_KEY,
     history_identity,

@@ -26,7 +26,8 @@ HARNESS_ROOT = Path(__file__).resolve().parents[1]
 def test_staging_trace_observes_active_transaction_and_idle_root_cleanup(
     tmp_path: Path,
 ) -> None:
-    from yt_downloader.app import create_staging_dir
+    from yt_downloader.download_service import create_staging_dir
+
     from yt_downloader.safe_output import cleanup_private_staging_directory
 
     events = TracingQueue()
@@ -366,7 +367,8 @@ def test_generated_metadata_never_lexically_escapes_output_root(
     playlist: str,
     video_id: str,
 ) -> None:
-    from yt_downloader.app import resolved_video_output_target
+    from yt_downloader.download_service import resolved_video_output_target
+
 
     output_root = tmp_path / "output"
     info = {
@@ -398,7 +400,8 @@ def test_generated_metadata_never_lexically_escapes_output_root(
 def test_ffmpeg_builder_keeps_untrusted_path_as_one_argv_element(
     tmp_path: Path, payload: str
 ) -> None:
-    from yt_downloader.app import build_vod_ffmpeg_command
+    from yt_downloader.download_service import build_vod_ffmpeg_command
+
 
     source = tmp_path / payload.replace("\x00", "_")
     output = tmp_path / "output.mp4"

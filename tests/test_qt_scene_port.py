@@ -55,7 +55,7 @@ from yt_downloader.qt_quick.artwork import QtArtwork, thumbnail_path
 from yt_downloader.qt_quick.scene_projection import library_scene, watch_scene
 from yt_downloader.run_state import RunStateError
 from yt_downloader.support_diagnostics import FailureContext
-from yt_downloader.ui_theme import THEME
+from yt_downloader.product_theme import THEME
 from yt_downloader.whats_new import NativePreview
 
 _QT_TEST_APP: QGuiApplication | None = None

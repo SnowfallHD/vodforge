@@ -1,96 +1,99 @@
+"""Qt copy controls retain canonical ownership and private-content isolation."""
+
 from __future__ import annotations
 
 import json
-from types import SimpleNamespace
+from types import MethodType, SimpleNamespace
 
 import pytest
 
-from tests.test_history_diagnostics import make_app, payloads
-from yt_downloader.app import DownloaderApp
+from tests.test_product_telemetry import _permitted_installation
+from yt_downloader.history import history_archive_owner
+from yt_downloader.product_telemetry import ProductTelemetryOwner, _load_outbox
+from yt_downloader.qt_quick.main import Bridge, QGuiApplication
 
 pytestmark = pytest.mark.usefixtures("production_telemetry_contract")
 
 
-def copy_app(rows):
-    app = object.__new__(DownloaderApp)
-    app.metadata_items = rows
-    app.video_tree = SimpleNamespace(selection=lambda: ("0",))
-    app.status_var = SimpleNamespace(set=lambda value: None)
-    app.copied = ["unchanged"]
-    app.clipboard_clear = lambda: app.copied.clear()
-    app.clipboard_append = app.copied.append
-    app.pulled_tags_text = SimpleNamespace(
-        get=lambda *args: "Your tags: PRIVATE\nSource tags: provider"
+def copy_app(row, monkeypatch, telemetry=None):
+    owner = history_archive_owner(row)
+    copied = ["unchanged"]
+    clipboard = SimpleNamespace(
+        setText=lambda value: copied.__setitem__(slice(None), [value])
     )
-    app.description_text = SimpleNamespace(
-        get=lambda *args: "YOUR NOTE\nPRIVATE\n\nSource description"
+    monkeypatch.setattr(QGuiApplication, "clipboard", lambda: clipboard)
+    app = SimpleNamespace(
+        _library_detail_owner=owner,
+        _folder_inspector_owner="",
+        _playback_record=None,
+        _projected_library=lambda: [row],
+        _saved_item_for_owner=lambda requested: row if requested == owner else None,
+        statusChanged=SimpleNamespace(emit=lambda: None),
+        _analytics=SimpleNamespace(telemetry=telemetry),
+        copied=copied,
     )
-    app.last_thumbnail_url = "https://example.invalid/previous-private.jpg"
-    return app
+    app._record_update_feature = MethodType(Bridge._record_update_feature, app)
+    app.copyLibraryText = MethodType(Bridge.copyLibraryText, app)
+    app.copySavedYoutubeUrl = MethodType(Bridge.copySavedYoutubeUrl, app)
+    return app, owner
 
 
 @pytest.mark.parametrize(
-    "method,expected",
-    [
-        ("_copy_tags", "provider"),
-        ("_copy_description", "Source description"),
-    ],
+    "field,expected",
+    [("source_tags", "provider"), ("source_description", "Source description")],
 )
-def test_source_copy_uses_canonical_metadata_not_personal_display(method, expected):
-    app = copy_app(
-        [
-            {
-                "tags": ["provider"],
-                "description": "Source description",
-                "vodforge_user_tags": ["PRIVATE"],
-                "vodforge_user_note": "PRIVATE",
-            }
-        ]
+def test_source_copy_uses_canonical_metadata_not_personal_display(
+    monkeypatch, field, expected
+):
+    app, owner = copy_app(
+        {
+            "tags": ["provider"],
+            "description": "Source description",
+            "vodforge_user_tags": ["PRIVATE"],
+            "vodforge_user_note": "PRIVATE",
+        },
+        monkeypatch,
     )
-    assert getattr(app, method)()
+    assert app.copyLibraryText(owner, field)
     assert app.copied == [expected]
 
 
 @pytest.mark.parametrize(
-    "method,expected",
+    "field,expected",
     [
-        ("_copy_tags", "provider, second"),
-        ("_copy_description", "First line\nLast line"),
-        ("_copy_personal_tags", "PRIVATE, tag two"),
-        ("_copy_personal_note", "PRIVATE note\nsecond line"),
-        ("_copy_thumbnail_url", "https://example.invalid/source.jpg"),
+        ("source_tags", "provider, second"),
+        ("source_description", "First line\nLast line"),
+        ("tags", "PRIVATE, tag two"),
+        ("note", "PRIVATE note\nsecond line"),
+        ("thumbnail_url", "https://example.invalid/source.jpg"),
     ],
 )
-def test_copy_actions_honor_explicit_owner_snapshot(method, expected):
+def test_copy_actions_honor_explicit_owner_snapshot(monkeypatch, field, expected):
     original = {
+        "id": "original",
         "tags": ["provider", "second"],
         "description": "First line\nLast line",
         "vodforge_user_tags": ["PRIVATE", "tag two"],
         "vodforge_user_note": "PRIVATE note\nsecond line",
         "thumbnail": "https://example.invalid/source.jpg",
     }
-    app = copy_app([{"description": "Other owner"}])
-    assert getattr(app, method)(original)
+    app, owner = copy_app(original, monkeypatch)
+    unrelated = {"id": "other", "description": "Other owner"}
+    app._projected_library = lambda: [unrelated, original]
+    assert app.copyLibraryText(owner, field)
     assert app.copied == [expected]
-    assert app.metadata_items == [{"description": "Other owner"}]
+    assert unrelated == {"id": "other", "description": "Other owner"}
 
 
 @pytest.mark.parametrize(
-    "method",
-    [
-        "_copy_tags",
-        "_copy_description",
-        "_copy_personal_tags",
-        "_copy_personal_note",
-        "_copy_thumbnail_url",
-    ],
+    "field", ["source_tags", "source_description", "tags", "note", "thumbnail_url"]
 )
-def test_empty_owner_does_not_copy_display_placeholder_or_previous_owner(method):
-    app = copy_app([{}])
-    assert not getattr(app, method)()
-    assert app.copied == ["unchanged"]
-    app.video_tree.selection = lambda: ("invalid",)
-    assert not getattr(app, method)()
+def test_empty_owner_does_not_copy_display_placeholder_or_previous_owner(
+    monkeypatch, field
+):
+    app, owner = copy_app({}, monkeypatch)
+    assert not app.copyLibraryText(owner, field)
+    assert not app.copyLibraryText("invalid", field)
     assert app.copied == ["unchanged"]
 
 
@@ -98,30 +101,46 @@ def test_empty_owner_does_not_copy_display_placeholder_or_previous_owner(method)
 def test_actual_copy_controls_persist_only_bounded_telemetry(
     tmp_path, monkeypatch, consent
 ):
-    holder = make_app(tmp_path, monkeypatch, consent=consent)
-    app = copy_app(
-        [
-            {
-                "tags": ["PRIVATE source tag"],
-                "description": "PRIVATE source description",
-                "vodforge_user_tags": ["PRIVATE personal tag"],
-                "vodforge_user_note": "PRIVATE note",
-                "thumbnail": "https://example.invalid/PRIVATE.jpg",
-                "webpage_url": "https://www.youtube.com/watch?v=abcdefghijk",
-            }
-        ]
+    installation = tmp_path / "installation.json"
+    if consent:
+        _permitted_installation(installation)
+    monkeypatch.setattr(
+        "yt_downloader.product_telemetry.telemetry_collection_allowed", lambda: True
     )
-    app.product_telemetry = holder.product_telemetry
-    for method in (
-        "_copy_tags",
-        "_copy_description",
-        "_copy_personal_tags",
-        "_copy_personal_note",
-        "_copy_thumbnail_url",
-        "_copy_youtube_url",
-    ):
-        assert getattr(app, method)()
-    events = payloads(holder)
+    telemetry = ProductTelemetryOwner(
+        state_path=tmp_path / "events.json",
+        installation_state_path=installation,
+        app_version="0.2.3",
+        d1_recorder=lambda _: False,
+        heycatch_recorder=lambda *args, **kwargs: False,
+    )
+    app, owner = copy_app(
+        {
+            "tags": ["PRIVATE source tag"],
+            "description": "PRIVATE source description",
+            "vodforge_user_tags": ["PRIVATE personal tag"],
+            "vodforge_user_note": "PRIVATE note",
+            "thumbnail": "https://example.invalid/PRIVATE.jpg",
+            "webpage_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        },
+        monkeypatch,
+        telemetry,
+    )
+    try:
+        for field in (
+            "source_tags",
+            "source_description",
+            "tags",
+            "note",
+            "thumbnail_url",
+        ):
+            assert app.copyLibraryText(owner, field)
+        assert app.copySavedYoutubeUrl(owner)
+    finally:
+        telemetry.shutdown(2)
+    events = [
+        event.public_payload() for event in _load_outbox(tmp_path / "events.json")
+    ]
     assert {event["action"] for event in events} == (
         {
             "source_tags_copied",

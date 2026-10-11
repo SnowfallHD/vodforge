@@ -52,7 +52,8 @@ def test_optional_probe_failure_and_cancellation(tmp_path):
 
 
 def test_summary_labels_average():
-    from yt_downloader.app import _ffprobe_output_summary
+    from yt_downloader.download_service import _ffprobe_output_summary
+
 
     data = {
         "streams": [{"codec_type": "audio", "codec_name": "opus"}],

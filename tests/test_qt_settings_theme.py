@@ -9,7 +9,7 @@ from PySide6.QtQml import QQmlComponent
 
 from tests.test_qt_scene_port import qt_app
 from yt_downloader.qt_quick import main as qt_main
-from yt_downloader.ui_theme import THEME, THEME_NAMES
+from yt_downloader.product_theme import THEME, THEME_NAMES
 
 
 def contrast(first, second):

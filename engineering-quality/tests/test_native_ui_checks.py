@@ -223,7 +223,7 @@ def test_native_child_imports_ignore_inherited_path_and_cwd_contamination(
                 "-c",
                 (
                     "import json,yt_downloader.app,quality_harness.native_reports; "
-                    "print(json.dumps([yt_downloader.app.__file__,quality_harness.native_reports.__file__]))"
+                    "print(json.dumps([yt_downloader.download_service.__file__,quality_harness.native_reports.__file__]))"
                 ),
             ],
             cwd=kwargs["cwd"],

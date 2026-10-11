@@ -8,7 +8,7 @@ from PIL import Image
 
 from tests.test_product_telemetry import _permitted_installation
 from tests.test_state_authority import make_job
-from yt_downloader import app as app_module
+from yt_downloader import download_service as app_module
 from yt_downloader.product_telemetry import ProductTelemetryOwner, _load_outbox
 
 pytestmark = pytest.mark.usefixtures("production_telemetry_contract")
@@ -31,7 +31,7 @@ def sidecar_case(tmp_path, monkeypatch):
         d1_recorder=lambda _event: False,
         heycatch_recorder=lambda *_args, **_kwargs: False,
     )
-    app = app_module.DownloaderApp.__new__(app_module.DownloaderApp)
+    app = app_module.DownloadWorkerCore.__new__(app_module.DownloadWorkerCore)
     app.product_telemetry = owner
     app.events = queue.Queue()
     app.download_history = []

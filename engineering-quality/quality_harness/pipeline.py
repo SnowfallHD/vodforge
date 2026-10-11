@@ -58,7 +58,7 @@ def _jsonable(value: Any) -> Any:
 
 def configure_production_sandbox(run_root: Path) -> dict[str, str]:
     """Redirect production-local diagnostic state into this harness run."""
-    import yt_downloader.app as app_module
+    import yt_downloader.download_service as app_module
 
     diagnostics = run_root / "production-state" / "diagnostics"
     diagnostics.mkdir(parents=True, exist_ok=True)
@@ -79,7 +79,10 @@ def configure_production_sandbox(run_root: Path) -> dict[str, str]:
 
 def make_headless_app(events: TracingQueue) -> Any:
     """Construct only the state required by the real production worker seam."""
-    from yt_downloader.download_service import DownloadWorkerCore, ProviderNetworkCoordinator
+    from yt_downloader.download_service import (
+        DownloadWorkerCore,
+        ProviderNetworkCoordinator,
+    )
 
     app = DownloadWorkerCore()
     app.events = events
@@ -354,7 +357,7 @@ class HeadlessPipelineRunner:
         ffmpeg_override: str | None = None,
         fixture_state: Any = None,
     ) -> dict[str, Any]:
-        import yt_downloader.app as app_module
+        import yt_downloader.download_service as app_module
 
         case_dir = self.run_root / "cases" / case_id
         output_dir = output_dir or case_dir / "output"
@@ -592,7 +595,7 @@ class HeadlessPipelineRunner:
             "case_id": case_id,
             "observation_clock_origin_monotonic": events.started,
             "before_worker": before_worker,
-            "pipeline_entrypoint": "yt_downloader.app.DownloadWorkerCore._download_worker_single",
+            "pipeline_entrypoint": "yt_downloader.download_service.DownloadWorkerCore._download_worker_single",
             "job": {
                 "run_id": job.run_id,
                 "url": url,

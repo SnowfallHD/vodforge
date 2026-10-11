@@ -278,7 +278,7 @@ def test_live_disclosure_geometry_identity_and_lossless_log():
 )
 def test_worker_failure_cause_stays_in_private_diagnostics(monkeypatch, tmp_path):
     import yt_downloader.app as app_module
-    from tests.test_metadata_helpers import _worker_test_app, _worker_test_job
+    from tests.worker_fixtures import _worker_test_app, _worker_test_job
 
     monkeypatch.setattr(app_module, "load_yt_dlp", lambda: object())
     diagnostics = []

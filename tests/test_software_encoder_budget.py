@@ -2,14 +2,15 @@ from pathlib import Path
 
 import pytest
 
-from yt_downloader.app import build_vod_ffmpeg_command
+from yt_downloader.download_service import build_vod_ffmpeg_command
+
 
 
 @pytest.mark.parametrize(
     ("cores", "budget"), [(None, 1), (1, 1), (2, 1), (4, 2), (8, 4), (64, 4)]
 )
 def test_software_scopes_cpu_budget(monkeypatch, cores, budget):
-    monkeypatch.setattr("yt_downloader.app.os.cpu_count", lambda: cores)
+    monkeypatch.setattr("yt_downloader.download_service.os.cpu_count", lambda: cores)
     command = build_vod_ffmpeg_command("ffmpeg", Path("input"), Path("output"))
     input_at = command.index("-i")
     thread_positions = [i for i, value in enumerate(command) if value == "-threads:v:0"]

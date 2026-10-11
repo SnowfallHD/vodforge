@@ -1149,3 +1149,35 @@ parsing source only (no build/app execution). First encoded parser command excee
 Windows argument limit before parsing; stdin transport passed, no remote files
 created. Ruff/diff pass. Legacy app/widget source and obsolete test/workflow paths
 still remain pending inventory/removal; full retirement is not complete yet.
+
+## Oct 11 — Qt retirement: remove widget entry and migrate useful copy/service controls
+
+Replaced legacy app.py widget owner with Qt/non-GUI command dispatch; preserved
+artwork worker and debug-preflight commands. Shared worker test factories now live
+in tests/worker_fixtures instead of importing a mixed UI test module. Migrated
+metadata/helper consumers and neutral security/reliability/pipeline imports.
+Metadata303 service/data controls pass (299 first; four retained import-string
+failures corrected and pass). Fifteen old widget-specific metadata cases are
+retired against Qt owner controls; seven selected current Qt counterparts pass.
+They cover close/pending preferences, blocked artwork retirement/cache, stable
+run selection, retry settings and tooltip bounds. No wholesale mixed file removed.
+Remaining consumer collection initially found421cases plus old copy-fixture import
+failure; that copy module is now ported, not erased.
+
+Preserved source-tags/original-description/thumbnail-URL copy capabilities in Qt
+Source Details through an existing shared popup/control route. Existing personal
+copy controls retain their behavior. Neutral library_text reads canonical owner
+records, not display placeholders. Fourteen actual Qt handler controls pass,
+including unknown/empty owner, explicit owner identity and real private-outbox
+consent/no-private-content controls with injected transports. No real clipboard,
+production telemetry or GUI input. Offscreen existing copy/QML integration1pass
+(no native foreground); first compile rejected unsupported tooltipText property,
+removed it and retained original failure. Source/default command dispatch26pass
+with one old mixed fixture import failure; after neutral fixture extraction that
+case passes separately. No frozen artifact/build/release modification.
+
+Full Tk retirement remains in progress: remaining widget/mixin consumers, pure
+history/data equivalents, obsolete source/workflows and dependencies still need
+migration/removal. Inventory based only on direct class methods undercounts mixin
+consumers; don't treat its “pure” grouping as a proof. Current source is a separate
+successor change and is not packaged verification of5854619.

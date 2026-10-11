@@ -97,7 +97,7 @@ def test_qt_recovers_legacy_run_without_retry_url_and_saves_next_source(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
     """A damaged older journal stays visible without blocking a fresh URL."""
-    from tests.test_metadata_helpers import _worker_test_job
+    from tests.worker_fixtures import _worker_test_job
 
     state_path = tmp_path / "active-run.json"
     output_dir = tmp_path / "output"

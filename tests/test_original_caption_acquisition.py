@@ -2,11 +2,12 @@ from pathlib import Path
 
 import pytest
 
-from yt_downloader.app import (
+from yt_downloader.download_service import (
     apply_original_caption_options,
     build_vod_ffmpeg_command,
     original_caption_selection,
 )
+
 
 
 @pytest.mark.parametrize("manual", [True, False])
@@ -126,7 +127,8 @@ def test_real_mp4_caption_transcode_roundtrip(tmp_path):
 
 
 def test_caption_failure_does_not_claim_success():
-    from yt_downloader.app import require_original_caption_stream
+    from yt_downloader.download_service import require_original_caption_stream
+
 
     for probe in ({}, {"streams": [{"codec_type": "video"}, {"codec_type": "audio"}]}):
         with pytest.raises(RuntimeError, match="no output was committed"):
@@ -135,7 +137,8 @@ def test_caption_failure_does_not_claim_success():
 
 
 def test_closed_summary_has_no_provider_secrets():
-    from yt_downloader.app import compact_video_metadata, sanitized_caption_summary
+    from yt_downloader.download_service import compact_video_metadata, sanitized_caption_summary
+
 
     value = {
         "language": "ru",

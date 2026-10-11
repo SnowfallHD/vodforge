@@ -3,12 +3,13 @@ from dataclasses import replace
 import pytest
 
 from tests.test_run_identity import make_job
-from yt_downloader.app import (
+from yt_downloader.download_service import (
     _build_item_preflight_options,
     apply_original_caption_options,
     require_selected_subtitle_streams,
     sanitized_subtitle_tracks,
 )
+
 from yt_downloader.caption_languages import translated_subtitle_language
 from yt_downloader.models import OutputType
 from yt_downloader.run_identity import job_attempt_signature
@@ -146,7 +147,8 @@ def test_actual_two_track_roundtrip(tmp_path):
     import shutil
     import subprocess
 
-    from yt_downloader.app import build_vod_ffmpeg_command
+    from yt_downloader.download_service import build_vod_ffmpeg_command
+
 
     ffmpeg, ffprobe = shutil.which("ffmpeg"), shutil.which("ffprobe")
     if not ffmpeg or not ffprobe:
@@ -230,7 +232,8 @@ def test_installed_ytdlp_embedding_then_production_transcode(tmp_path):
     from yt_dlp import YoutubeDL
     from yt_dlp.postprocessor.ffmpeg import FFmpegEmbedSubtitlePP
 
-    from yt_downloader.app import build_vod_ffmpeg_command
+    from yt_downloader.download_service import build_vod_ffmpeg_command
+
 
     ffmpeg, ffprobe = shutil.which("ffmpeg"), shutil.which("ffprobe")
     if not ffmpeg or not ffprobe:

@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from tests.test_metadata_helpers import (
+from tests.worker_fixtures import (
     _worker_test_app,
     _worker_test_export_plan,
     _worker_test_job,

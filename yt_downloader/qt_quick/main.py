@@ -161,6 +161,7 @@ from yt_downloader.library_state import (
     persisted_run_deck_records,
     resolve_library_removal_plan,
 )
+from yt_downloader.library_text import COPY_ACTIONS, library_copy_text
 from yt_downloader.local_audio_video import (
     LOCAL_VIDEO_PROFILE_OPTIONS,
     LocalAudioVideoError,
@@ -2430,6 +2431,10 @@ class Bridge(QObject):
                 row.get("vodforge_user_description", row.get("description")) or ""
             ),
             "userDescription": "vodforge_user_description" in row,
+            "sourceCopy": {
+                field: bool(library_copy_text(row, field))
+                for field in ("source_description", "source_tags", "thumbnail_url")
+            },
             "note": str(row.get("vodforge_user_note") or ""),
             "location": str(history_output_path(row) or ""),
             "tags": [str(tag) for tag in row.get("vodforge_user_tags") or ()],
@@ -5114,7 +5119,7 @@ class Bridge(QObject):
     def copyLibraryText(
         self, owner: str, field: str, displayed_note: str | None = None
     ) -> bool:
-        if field not in {"description", "tags", "note"}:
+        if field not in COPY_ACTIONS:
             return False
         if displayed_note is not None and (
             field != "note" or len(displayed_note) > MAX_NOTE_CHARS
@@ -5139,18 +5144,7 @@ class Bridge(QObject):
         if len(rows) != 1:
             return False
         row = rows[0]
-        if field == "description":
-            value = str(
-                row.get("vodforge_user_description", row.get("description")) or ""
-            )
-        elif field == "tags":
-            value = ", ".join(str(tag) for tag in row.get("vodforge_user_tags") or ())
-        else:
-            value = (
-                displayed_note
-                if displayed_note is not None
-                else str(row.get("vodforge_user_note") or "")
-            )
+        value = library_copy_text(row, field, displayed_note)
         if not value:
             self._status = f"No {field} to copy."
             self.statusChanged.emit()
@@ -5163,11 +5157,7 @@ class Bridge(QObject):
         self.statusChanged.emit()
         self._record_update_feature(
             "library",
-            {
-                "description": "source_description_copied",
-                "tags": "personal_tags_copied",
-                "note": "personal_note_copied",
-            }[field],
+            COPY_ACTIONS[field],
         )
         return True
 
