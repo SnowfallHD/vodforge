@@ -194,3 +194,49 @@ The focused manual read-only Windows workflow runs these four cases and the
 previously skipped3.11 scene/updater partitions; it does not repeat the passed
 repository/component partitions or other OS jobs. Its CI result remains pending.
 No runtime or signed archive changed.
+
+## Oct 11 02:24 UTC — focused Windows CI and actual consent isolation
+
+Read-only focused CI38104047004 on177adee passed4 artwork cases with the
+unchanged12s subprocess deadline,207 scene cases/1skip and28 updater fault
+cases/4skip. Original CI38101705123 remains FAILED at one artwork timeout;
+five platform-job passes and695 other Windows3.11 component passes retain their
+scope. The original timeout has no established cause. Child stage logs and
+negative-control failure remain preserved. No runtime/signed archive changed;
+no passed unaffected suite was repeated.
+[Original focused CI log](/Users/coop/Documents/Codex/2026-10-09/task/release-completion-20261010/windows-ci-focused-177adee.log).
+
+Exact signed5e581d0 Windows native consent proof passes24 bounded checks.
+Actual Share analytics delivered2 startup/settings events to preview D1 only.
+Actual Settings toggle withdrawal survived restart as Off. The scoped preview
+installation/client/event dataset is identical after denied restart and after
+globally disabled launch; production has0 rows for that installation. All3
+attested launches normally exited0 with no owned survivors. Disabled-session
+privacy wording is visually observed in the original screenshot; that static
+Text is absent from the AX tree, so no AX-text assertion is claimed.
+[Consent assessment](/Users/coop/Documents/Codex/2026-10-09/task/release-completion-20261010/windows-consent-5e581d0/consent-isolation-assessment.json).
+
+Supplemental launch attempts1/3 failed before app launch at QA API arity/Windows
+UTF-8 reads; their original errors and native10 not-ready refusal remain intact.
+Automatic approval review rejected a recursive evidence-folder copy as possibly
+including credential state. Safer collection uses an explicit10-file allowlist
+of original launch/cleanup/errors, excluding profile/credential/key files.
+This is bounded consent proof, not a completed36-event journey or Update/Repair
+telemetry proof. The previous Windows Update/Repair profile had no completed
+media. A fresh bounded retention test stages the verified public0.2.5 installer
+and exact final0.2.6 installer, preserves ordinary registration/shortcuts/data
+before mutation, and uses the existing isolated profile's real completed media.
+Its transactions and final ordinary restoration remain pending. Intel native
+CI draft-token permission approval remains pending; no rejected permission
+change or public release occurred.
+
+## Oct 11 02:42 UTC — approved focused Intel draft access
+
+The user approved the exact pending focused QA permission on Oct11 02:41:15UTC,
+relayed with the original question and direct user reply by the parent task.
+The earlier automatic approval rejection remains preserved. Apply only job-level
+contents:write in the manual native Intel startup workflow, leave global token
+permission read-only, and disable saved checkout credentials. No publication or
+other write step is added. Source/archive/hash/startup20s/native architecture
+checks remain unchanged. Native qualification on the existing signed archive
+will be recorded separately; this permission change is not a passing startup.

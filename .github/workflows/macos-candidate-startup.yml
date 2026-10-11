@@ -30,8 +30,14 @@ jobs:
   native-intel-startup:
     runs-on: macos-15-intel
     timeout-minutes: 10
+    # GitHub draft visibility needs this scope. This job only views/downloads
+    # the existing draft; there is no contents or release mutation step.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
