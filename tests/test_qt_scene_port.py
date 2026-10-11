@@ -41,7 +41,7 @@ from PySide6.QtTest import QSignalSpy, QTest
 from tests.test_library_media_recovery import _job, _missing_record
 from tests.test_quality_e2e import _isolated_launch
 from tests.test_run_identity import make_job
-from yt_downloader.app import cached_thumbnail_path
+from yt_downloader.download_service import cached_thumbnail_path
 from yt_downloader.export_planning import EXPORT_MODES
 from yt_downloader.history import history_archive_owner
 from yt_downloader.library_annotations import LibraryAnnotation, LibraryAnnotationsError
@@ -6211,7 +6211,7 @@ def test_qt_path_budget_recovery_uses_existing_output_folder_choice(
 ):
     from PySide6.QtCore import QUrl
 
-    from yt_downloader.app import OutputPathBudgetError
+    from yt_downloader.download_service import OutputPathBudgetError
     from yt_downloader.download_error_presentation import download_error_message
 
     monkeypatch.setenv("HOME", str(tmp_path))
@@ -7031,7 +7031,7 @@ def test_watch_recently_added_and_see_all_preserve_history_recency(tmp_path):
 def test_batch_current_metadata_and_whole_batch_progress(
     tmp_path, monkeypatch, outcome_kind
 ):
-    from yt_downloader.app import DownloadWorkerCore
+    from yt_downloader.download_service import DownloadWorkerCore
     from yt_downloader.models import DownloadOutcome
     from yt_downloader.qt_quick.runtime import _WorkerEventQueue
     from yt_downloader.ui_events import job_info_event

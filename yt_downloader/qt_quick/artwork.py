@@ -18,7 +18,7 @@ from PySide6.QtCore import QSize, QUrl
 from PySide6.QtGui import QImage
 from PySide6.QtQuick import QQuickImageProvider
 
-from yt_downloader.app import (
+from yt_downloader.download_service import (
     THUMBNAIL_MAX_BYTES,
     best_thumbnail_for_download,
     cached_thumbnail_path,

@@ -237,7 +237,7 @@ def test_clean_quit_cancel_becomes_paused_but_explicit_stop_does_not(runtime, tm
 def test_batch_resume_worker_skips_durable_finished_prefix(
     runtime, tmp_path, monkeypatch
 ):
-    from yt_downloader.app import DownloadWorkerCore
+    from yt_downloader.download_service import DownloadWorkerCore
     from yt_downloader.models import DownloadOutcome
     from yt_downloader.qt_quick.runtime import _WorkerEventQueue
 

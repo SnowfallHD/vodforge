@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from yt_downloader.app import (
+from yt_downloader.download_service import (
     ProviderNetworkCoordinator,
     QueueLogger,
     fetch_metadata_preview,

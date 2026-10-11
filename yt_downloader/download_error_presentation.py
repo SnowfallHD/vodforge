@@ -39,7 +39,7 @@ class DownloadErrorMessage(str):
 
 def _output_path_budget_error(error: object) -> object | None:
     # Import lazily: app composes this presenter and owns the typed path error.
-    from .app import OutputPathBudgetError
+    from .download_service import OutputPathBudgetError
 
     seen: set[int] = set()
     pending = [error]

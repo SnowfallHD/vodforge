@@ -1107,3 +1107,27 @@ battery time. Earlier user concern was10% discharging and heavy work, not a
 permanent charging-only native QA requirement. Bounded native checks can use
 current high stable charge; heavy work remains excluded by original no-build
 scope. Do not alter space or explicit low-battery safeguards.
+
+## Oct 11 — Qt retirement branch: neutral service extraction
+
+Explicit user requested full Tk retirement and one checkout/ordinary branches.
+Created qt-retirement from47767dd in canonical checkout; frozen5854619 artifacts
+remain untouched and independent reviewer owns both GUI desktops. No build.
+Extracted shared worker/media/diagnostic helpers into download_service; neutral
+worker_events, product_theme, visual_chrome/materials, button_metrics and recovery
+prompt replace Qt imports of legacy app/UI modules. Qt worker, metadata, artwork
+and local conversion now use neutral owners; headless pipeline uses the same core.
+AST receipt records212 unchanged original top-level definitions (including the
+worker), with only debug_preflight/runtime_smoke tool-locator references changed
+from inherited DownloaderApp to DownloadWorkerCore. This is bounded provenance,
+not a universal behavior claim. Existing data formats and worker implementations
+are unchanged. Shared test imports migrated with their owner.
+
+Original blocked-import control fails at legacy app.py importing tkinter; after
+extraction actual Qt module loads with tkinter/PIL.ImageTk rejected, legacy app
+absent from sys.modules. Permanent subprocess import regression1pass. Existing
+metadata/batch-outcome/Qt-worker controls24pass in1.27s. Initial system-Python
+attempt lacked Pillow and was invalid; retained; valid venv prior failure retained.
+No GUI created. This is the first incremental source commit, not full retirement:
+legacy files/tests, entry/build defaults, Tk-only dependencies and workflow paths
+still require inventoried removal or functional migration. Do not call complete.

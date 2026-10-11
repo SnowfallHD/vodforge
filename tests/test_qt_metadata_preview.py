@@ -10,7 +10,7 @@ from typing import Any, Self
 
 from PySide6.QtGui import QGuiApplication
 
-from yt_downloader import app as app_module
+from yt_downloader import download_service as app_module
 from yt_downloader.models import OutputType
 from yt_downloader.qt_quick import main as qt_main
 from yt_downloader.qt_quick import metadata_preview as preview_module

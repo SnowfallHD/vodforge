@@ -12,22 +12,20 @@ from typing import Any
 
 import pytest
 
-from yt_downloader.app import DownloaderApp, DownloadWorkerCore
+from yt_downloader.download_service import DownloadWorkerCore
 from yt_downloader.history import load_history
 from yt_downloader.local_audio_video import LocalAudioVideoResult
 from yt_downloader.qt_quick import runtime as qt_runtime
 from yt_downloader.run_state import ActiveRunStore, deserialize_download_job
 
 
-def test_tk_qt_and_harness_share_the_non_widget_worker() -> None:
+def test_qt_and_pipeline_share_the_neutral_worker() -> None:
     from quality_harness.pipeline import TracingQueue, make_headless_app
 
     headless = make_headless_app(TracingQueue())
     assert isinstance(headless, DownloadWorkerCore)
-    assert not isinstance(headless, DownloaderApp)
-    assert issubclass(DownloaderApp, DownloadWorkerCore)
     assert (
-        DownloaderApp._download_worker_single
+        headless._download_worker_single.__func__
         is DownloadWorkerCore._download_worker_single
     )
 
@@ -473,7 +471,7 @@ def test_qt_batch_children_commit_separate_history_and_reject_stale_child(
 def test_qt_local_conversion_commits_into_the_durable_library(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    from yt_downloader import app as app_module
+    from yt_downloader import download_service as app_module
 
     history_path = tmp_path / "download-history.json"
     state_path = tmp_path / "active-run.json"

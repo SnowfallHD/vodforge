@@ -7,7 +7,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from yt_downloader.app import DownloadWorkerCore, write_diagnostic
+from yt_downloader.download_service import DownloadWorkerCore, write_diagnostic
 from yt_downloader.download_error_presentation import (
     download_error_message,
     technical_download_error,

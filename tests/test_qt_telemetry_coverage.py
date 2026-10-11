@@ -11,7 +11,7 @@ import pytest
 from tests.test_presentation_diagnostics import real_owner
 from tests.test_qt_scene_port import qt_app, saved
 from yt_downloader.analytics_consent import AnalyticsConsentOwner
-from yt_downloader.app import ProviderNetworkCoordinator
+from yt_downloader.download_service import ProviderNetworkCoordinator
 from yt_downloader.product_telemetry import _load_outbox
 from yt_downloader.qt_quick import main as qt_main
 from yt_downloader.qt_quick import metadata_preview as preview_module

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from yt_downloader.app import (
+from yt_downloader.download_service import (
     DownloadWorkerCore,
     ProviderNetworkCoordinator,
     retry_url_for_item,
@@ -848,7 +848,7 @@ class DownloadRuntime:
 
     def record_local_conversion(self, result: LocalAudioVideoResult) -> None:
         """Commit a completed local video through the same durable Library owner."""
-        from yt_downloader.app import save_custom_cached_thumbnail_image
+        from yt_downloader.download_service import save_custom_cached_thumbnail_image
 
         metadata = dict(result.history_metadata)
         try:

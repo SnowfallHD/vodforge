@@ -44,19 +44,6 @@ from PySide6.QtQuick import QQuickImageProvider, QQuickItem
 from PySide6.QtQuickControls2 import QQuickStyle
 
 from yt_downloader.analytics_consent import ANALYTICS_BENEFITS, ANALYTICS_DESCRIPTION
-from yt_downloader.app import (
-    DIAGNOSTICS_LOG_PATH,
-    DownloaderApp,
-    ProviderNetworkCoordinator,
-    append_activity_log,
-    canonical_youtube_url,
-    close_activity_log,
-    iter_video_infos,
-    load_activity_log_tail,
-    prepare_activity_log,
-    retry_url_for_item,
-    runtime_smoke,
-)
 from yt_downloader.archive_browser import (
     PAGE_SIZE,
     ArchiveBrowserModel,
@@ -72,6 +59,7 @@ from yt_downloader.archive_observations import (
 from yt_downloader.archive_paths import ArchivePath
 from yt_downloader.archive_relink import record_fingerprint
 from yt_downloader.archive_work import ArchiveWorkOwner
+from yt_downloader.button_metrics import BUTTON_METRICS
 from yt_downloader.caption_languages import (
     PROVIDER_SUBTITLE_LANGUAGES,
     translated_subtitle_language,
@@ -87,6 +75,19 @@ from yt_downloader.cloud_funnel import (
 )
 from yt_downloader.cookie_inputs import browser_cookie_value
 from yt_downloader.download_error_presentation import download_error_message
+from yt_downloader.download_service import (
+    DIAGNOSTICS_LOG_PATH,
+    DownloadWorkerCore,
+    ProviderNetworkCoordinator,
+    append_activity_log,
+    canonical_youtube_url,
+    close_activity_log,
+    iter_video_infos,
+    load_activity_log_tail,
+    prepare_activity_log,
+    retry_url_for_item,
+    runtime_smoke,
+)
 from yt_downloader.engagement_state import WELCOME_SLIDES, EngagementState
 from yt_downloader.export_inputs import (
     MP3_CHANNEL_OPTIONS,
@@ -136,7 +137,7 @@ from yt_downloader.library_media_recovery import (
     LibraryMediaRecoveryOwner,
     LibraryMediaRecoveryPlan,
 )
-from yt_downloader.library_media_recovery_ui import library_media_recovery_prompt
+from yt_downloader.library_media_recovery_prompt import library_media_recovery_prompt
 from yt_downloader.library_scene_facts import library_detail_facts
 from yt_downloader.library_search import (
     LIBRARY_ALL_CATEGORIES,
@@ -185,6 +186,17 @@ from yt_downloader.playback_progress import PlaybackProgressOwner
 from yt_downloader.playback_progress_binding import PlaybackProgressBinding
 from yt_downloader.player_related import player_related_plan
 from yt_downloader.product_telemetry import BoundProductOperation, product_output_kind
+from yt_downloader.product_theme import (
+    CUSTOM_THEME_NAME,
+    DEFAULT_THEME_NAME,
+    FONT_MONO_FAMILY,
+    FONT_UI_FAMILY,
+    THEME,
+    THEME_NAMES,
+    ThemeRenderOwner,
+    apply_theme_selection,
+    theme_motif,
+)
 from yt_downloader.qt_quick.analytics import QtAnalyticsSession
 from yt_downloader.qt_quick.artwork import QtArtwork, ThumbnailReductionProvider
 from yt_downloader.qt_quick.help_observations import QtHelpObservations
@@ -229,27 +241,15 @@ from yt_downloader.support_diagnostics import (
 )
 from yt_downloader.telemetry_features import settings_dimensions, time_bucket
 from yt_downloader.telemetry_policy import telemetry_site_origin
-from yt_downloader.ui_button_contract import BUTTON_METRICS
-from yt_downloader.ui_chrome import (
+from yt_downloader.updates import RELEASES_PAGE, record_update_telemetry_receipts
+from yt_downloader.url_list_inputs import parse_url_list_text
+from yt_downloader.version import __version__
+from yt_downloader.visual_chrome import (
     action_button_image,
     field_border_image,
     popup_shadow_image,
 )
-from yt_downloader.ui_materials import backdrop_pixels
-from yt_downloader.ui_theme import (
-    CUSTOM_THEME_NAME,
-    DEFAULT_THEME_NAME,
-    FONT_MONO_FAMILY,
-    FONT_UI_FAMILY,
-    THEME,
-    THEME_NAMES,
-    ThemeRenderOwner,
-    apply_theme_selection,
-    theme_motif,
-)
-from yt_downloader.updates import RELEASES_PAGE, record_update_telemetry_receipts
-from yt_downloader.url_list_inputs import parse_url_list_text
-from yt_downloader.version import __version__
+from yt_downloader.visual_materials import backdrop_pixels
 from yt_downloader.volume_storage import StorageCapacityOwner, format_storage_bytes
 from yt_downloader.watch_library import watch_media_kind
 from yt_downloader.watch_queue import QueueToken, WatchQueueOwner, queue_media_key
@@ -306,7 +306,7 @@ class Materials(QQuickImageProvider):
                     theme_motif(), THEME["bg"], THEME["accent"], (1920, 1200)
                 )
             elif parts[0] == "watch-welcome" and len(parts) == 1:
-                from yt_downloader.ui_chrome import watch_welcome_emblem
+                from yt_downloader.visual_chrome import watch_welcome_emblem
 
                 source = watch_welcome_emblem()
             elif parts[0] == "button" and (
@@ -587,8 +587,8 @@ class Bridge(QObject):
         self._playback_binding: PlaybackProgressBinding | None = None
         self._playback_path: Path | None = None
         self._playback_record: dict[str, Any] | None = None
-        self._previews = QtPreviewSession(DownloaderApp._find_ffmpeg())
-        self._subtitles = SubtitleSession(DownloaderApp._find_ffmpeg(), self)
+        self._previews = QtPreviewSession(DownloadWorkerCore._find_ffmpeg())
+        self._subtitles = SubtitleSession(DownloadWorkerCore._find_ffmpeg(), self)
         self._playback_position = 0.0
         self._playback_duration = 0.0
         self._playback_status: PlaybackStatus = "Ready"
@@ -7152,8 +7152,8 @@ class Bridge(QObject):
             cookie_source=self._cookie_source,
             cookie_file=self._cookie_file,
             cookie_browser=self._cookie_browser,
-            ffmpeg=DownloaderApp._find_ffmpeg(),
-            deno=DownloaderApp._find_deno(),
+            ffmpeg=DownloadWorkerCore._find_ffmpeg(),
+            deno=DownloadWorkerCore._find_deno(),
         ):
             self._set_status(self._metadata.message)
             return False

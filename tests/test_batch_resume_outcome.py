@@ -5,8 +5,8 @@ import queue
 import pytest
 
 from tests.test_run_identity import make_job
-from yt_downloader import app as app_module
-from yt_downloader.app import DownloadWorkerCore, _download_batch_terminal_event
+from yt_downloader import download_service as app_module
+from yt_downloader.download_service import DownloadWorkerCore, _download_batch_terminal_event
 from yt_downloader.models import DownloadOutcome
 from yt_downloader.run_state import deserialize_download_job, serialize_download_job
 

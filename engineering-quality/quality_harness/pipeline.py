@@ -79,7 +79,7 @@ def configure_production_sandbox(run_root: Path) -> dict[str, str]:
 
 def make_headless_app(events: TracingQueue) -> Any:
     """Construct only the state required by the real production worker seam."""
-    from yt_downloader.app import DownloadWorkerCore, ProviderNetworkCoordinator
+    from yt_downloader.download_service import DownloadWorkerCore, ProviderNetworkCoordinator
 
     app = DownloadWorkerCore()
     app.events = events
@@ -108,7 +108,7 @@ def build_job(
     single_video_only: bool = True,
     tags: list[str] | None = None,
 ) -> Any:
-    from yt_downloader.app import (
+    from yt_downloader.download_service import (
         DownloadJob,
         ExportMode,
         ManualExportSettings,
@@ -172,7 +172,7 @@ def _output_files(output_dir: Path) -> list[Path]:
 
 
 def _probe_outputs(paths: list[Path], ffprobe: str | None) -> list[dict[str, Any]]:
-    from yt_downloader.app import run_ffprobe_json
+    from yt_downloader.download_service import run_ffprobe_json
 
     probed: list[dict[str, Any]] = []
     for path in paths:
