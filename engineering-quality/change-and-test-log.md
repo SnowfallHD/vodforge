@@ -374,3 +374,32 @@ Four signed files/checksums/notes remain prepared. Private draft/old assets/QA
 asset unchanged and unpublished; website still0.2.5. Once eligible, replace
 draft assets/source, remove QA archive, publish, verify public bytes/update feed
 and synchronize website. No new runtime feature, checkout or worktree.
+
+
+## Public-source refusal evaluator — 2026-10-11
+
+The one previously absent DEEP public-W3C boundary probe now has retained raw
+observations in the task's persistent evidence-workspaces directory. The first
+launch refused because the configured workspace parent did not exist; its log
+is preserved. The actual second worker run refused source selection with
+no_video_stream / unsupported_format, no selectable video/audio formats, no
+transfer, no published output or staging, and no owned survivors. Functional
+acceptance passed, but the original interaction evaluator failed because its
+bounded cause allowlist recognized network/extractor errors only. That original
+failed interaction receipt remains unchanged.
+
+The existing public-boundary evaluator now also recognizes this narrowly typed
+first-party export_planning refusal. It still requires exact ordered ownership,
+analysis stage, a positive format count, zero video/audio formats, clean files,
+retired observer/children, and all previous refusal assertions. No runtime or
+release gate changed. The new positive case failed before; 15 malformed cause
+variants fail closed after. The existing public-boundary controls and new cases
+pass together: 63 tests. Ruff, formatting and diff checks pass. The same original
+raw bytes independently reevaluate to 11 passing assertions; no worker rerun or
+original status/source rewriting was needed.
+
+Evidence: task/release-completion-20261010/{gate-missing-public-boundary-attempt2,
+public-no-video-before.log,public-no-video-after.log,
+public-boundary-reassessment.json}. This closes only the bounded public generic
+source refusal/cleanup gap, never provider support, successful public decoding,
+complete DEEP profile, native usability or public release eligibility.

@@ -13,6 +13,42 @@ PUBLIC_CONTRACTS = {
 URL = "https://media.w3.org/2010/05/sintel/trailer.mp4"
 
 
+def _bounded_failure_cause(diagnostic):
+    network_failure = diagnostic.get("error_type") in {
+        "ExtractorError",
+        "HTTPError",
+        "DownloadError",
+        "SSLError",
+        "TimeoutError",
+        "ConnectionError",
+        "URLError",
+        "OSError",
+    } and diagnostic.get("reason") in {
+        "unknown",
+        "source_unavailable",
+        "network_error",
+        "tls_failure",
+        "timeout",
+        "authentication_required",
+    }
+    no_video = (
+        diagnostic.get("failure_code") == "no_video_stream"
+        and diagnostic.get("reason") == "unsupported_format"
+        and diagnostic.get("error_type") is None
+        and diagnostic.get("source_module") == "export_planning"
+        and diagnostic.get("source_scope") == "first_party_frame"
+        and type(diagnostic.get("source_line")) is int
+        and diagnostic["source_line"] > 0
+        and type(diagnostic.get("format_count")) is int
+        and diagnostic["format_count"] > 0
+        and all(
+            type(diagnostic.get(key)) is int and diagnostic[key] == 0
+            for key in ("video_format_count", "audio_format_count")
+        )
+    )
+    return network_failure or no_video
+
+
 def _refusal(raw, check):
     job, baseline = raw.get("job"), raw.get("before_worker")
     check(
@@ -151,27 +187,7 @@ def _refusal(raw, check):
         and raw["error"].startswith("_DownloadItemExecutionError:")
         and isinstance(diagnostic, dict)
         and diagnostic.get("stage") == "analysis"
-        and diagnostic.get("error_type")
-        in {
-            "ExtractorError",
-            "HTTPError",
-            "DownloadError",
-            "SSLError",
-            "TimeoutError",
-            "ConnectionError",
-            "URLError",
-            "OSError",
-        }
-        and isinstance(diagnostic.get("reason"), str)
-        and diagnostic["reason"]
-        in {
-            "unknown",
-            "source_unavailable",
-            "network_error",
-            "tls_failure",
-            "timeout",
-            "authentication_required",
-        }
+        and _bounded_failure_cause(diagnostic)
         and (http is None or type(http) is int and 100 <= http <= 599)
         and raw.get("cancel_requested") is False
         and raw.get("skip_video_requested") is False
