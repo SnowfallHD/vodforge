@@ -6,20 +6,17 @@ import errno
 import json
 import os
 from pathlib import Path
-from types import MethodType, SimpleNamespace
 
 import pytest
 
-from tests.test_archive_ui_owners import Variable
 from tests.test_product_telemetry import _permitted_installation
-from yt_downloader.app import DownloaderApp
-from yt_downloader.archive_library_ui import ArchiveLibraryMixin
 from yt_downloader.history import (
     HistoryError,
     load_history,
     pending_history_path,
     stage_history_mutation,
 )
+from yt_downloader.library_history import LibraryHistory
 from yt_downloader.product_telemetry import ProductTelemetryOwner, _load_outbox
 
 pytestmark = pytest.mark.usefixtures("production_telemetry_contract")
@@ -39,19 +36,7 @@ def make_app(tmp_path, monkeypatch, *, consent=True, release=True):
         d1_recorder=lambda _: False,
         heycatch_recorder=lambda *a, **k: False,
     )
-    app = SimpleNamespace(
-        history_path=tmp_path / "PRIVATE history.json",
-        product_telemetry=owner,
-        status_var=Variable(),
-        _event_write_diagnostic=lambda *a: None,
-        _append_log=lambda *a: None,
-        _reconcile_library_projection=lambda: None,
-        library_output_type_var=SimpleNamespace(
-            get=lambda: "MP4", set=lambda value: None
-        ),
-    )
-    for name in ("_archive_usage", "_archive_observe"):
-        setattr(app, name, MethodType(getattr(ArchiveLibraryMixin, name), app))
+    app = LibraryHistory(tmp_path / "PRIVATE history.json", owner)
     return app
 
 
@@ -89,9 +74,9 @@ def test_real_document_failures_have_distinct_durable_diagnostics(
     path.write_text(raw)
     for _ in range(2):
         if boundary == "startup":
-            DownloaderApp._load_download_history(app)
+            app.load()
         else:
-            assert not ArchiveLibraryMixin._archive_flush_history(app)
+            assert not app.flush()
     events = payloads(app)
     failures = [event for event in events if event.get("action") == "failed"]
     assert len(failures) == 2
@@ -114,7 +99,7 @@ def test_real_document_failures_have_distinct_durable_diagnostics(
         assert detail["source_scope"] == "first_party_frame"
         assert 1 <= detail["source_line"] <= 100000
         assert "os_error" not in detail
-    assert app._history_recovery_blocked
+    assert app.blocked
     assert path.read_text() == raw
     assert "PRIVATE" not in json.dumps(events)
     assert str(tmp_path) not in json.dumps(events)
@@ -142,7 +127,7 @@ def test_document_validation_is_explicit_and_non_destructive(
     )
     data = raw if isinstance(raw, bytes) else raw.encode()
     path.write_bytes(data)
-    DownloaderApp._load_download_history(app)
+    app.load()
     events = payloads(app)
     detail = events[-1]["failure_detail"]
     assert detail["failure_code"] == "history_" + cause
@@ -198,15 +183,13 @@ def test_typed_io_failures_reach_durable_outbox_without_losing_history(
     with monkeypatch.context() as scoped:
         scoped.setattr(Path, method, fault)
         if boundary == "startup":
-            DownloaderApp._load_download_history(app)
+            app.load()
         elif boundary == "settlement":
-            assert not ArchiveLibraryMixin._archive_flush_history(app)
+            assert not app.flush()
         else:
             with pytest.raises(HistoryError):
-                ArchiveLibraryMixin._archive_defer_history(
-                    app, "test", lambda: None, mutation=mutation
-                )
-            assert not app.__dict__.get("_archive_deferred_history")
+                app.defer("test", lambda: None, mutation=mutation)
+            assert not app.__dict__.get("_deferred")
     events = payloads(app)
     event = events[-1]
     assert event["action"] == "failed"
@@ -242,8 +225,8 @@ def test_real_failures_obey_consent_and_production_gate(
     if withdrawn:
         app.product_telemetry.set_enabled(False)
     app.history_path.write_text("PRIVATE invalid")
-    DownloaderApp._load_download_history(app)
-    assert app._history_recovery_blocked
+    app.load()
+    assert app.blocked
     assert payloads(app) == []
 
 
@@ -257,14 +240,13 @@ def test_recovery_sequence_and_real_build_artifact(tmp_path, monkeypatch):
     (bundle / "VODFORGE_BUILD_REVISION").write_text(revision)
     monkeypatch.setattr(sys, "_MEIPASS", str(bundle), raising=False)
     called = []
-    ArchiveLibraryMixin._archive_defer_history(
-        app,
+    app.defer(
         "key",
         lambda: called.append(True),
         mutation={"kind": "activity", "owners": [], "activity": []},
     )
     assert pending_history_path(app.history_path).exists()
-    assert ArchiveLibraryMixin._archive_flush_history(app)
+    assert app.flush()
     assert called == [True]
     assert not pending_history_path(app.history_path).exists()
     assert load_history(app.history_path) == []
@@ -296,12 +278,10 @@ def test_unknown_failure_does_not_classify_private_message(tmp_path, monkeypatch
         raise HistoryError("PRIVATE login required no space left timeout")
 
     monkeypatch.setattr(
-        "yt_downloader.archive_library_ui.stage_history_mutation", unknown
+        "yt_downloader.library_history.stage_history_mutation", unknown
     )
     with pytest.raises(HistoryError):
-        ArchiveLibraryMixin._archive_defer_history(
-            app, "key", lambda: None, mutation={}
-        )
+        app.defer("key", lambda: None, mutation={})
     event = payloads(app)[-1]
     assert event["failure_detail"]["reason"] == "unknown"
     assert "failure_code" not in event["failure_detail"]
@@ -327,7 +307,7 @@ def test_export_real_producer_outbox_for_backend(tmp_path, monkeypatch):
             else pending_history_path(app.history_path)
         )
         path.write_text(raw)
-        DownloaderApp._load_download_history(app)
+        app.load()
         events = payloads(app)
         assert [event["action"] for event in events] == ["started", "failed"]
         cases.append({"document": document, "events": events})
@@ -346,9 +326,7 @@ def test_unlocated_os_error_keeps_phase_unknown_and_typed_cause(tmp_path, monkey
 
     monkeypatch.setattr("yt_downloader.history._stage_history_mutation", fault)
     with pytest.raises(HistoryError):
-        ArchiveLibraryMixin._archive_defer_history(
-            app, "key", lambda: None, mutation={}
-        )
+        app.defer("key", lambda: None, mutation={})
     event = payloads(app)[-1]
     assert event["dimensions"]["history_phase"] == "unknown"
     assert event["dimensions"]["history_document"] == "pending"

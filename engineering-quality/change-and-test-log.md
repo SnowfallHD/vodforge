@@ -1181,3 +1181,25 @@ history/data equivalents, obsolete source/workflows and dependencies still need
 migration/removal. Inventory based only on direct class methods undercounts mixin
 consumers; don't treat its “pure” grouping as a proof. Current source is a separate
 successor change and is not packaged verification of5854619.
+
+## Qt retirement — neutral Library history and preserved data/privacy controls
+
+Extracted ledger load/deferred settlement/publication from widget hosts into
+LibraryHistory and migrated actual diagnostic, journal ordering and publication
+regressions. Qt runtime uses the same owner for startup and successful publication;
+its existing job identity, file transaction reconciliation and data schemas stay.
+Publication updates the cached projection only after save_history succeeds.
+
+This uncovered a source Qt startup gap: damaged main/unsupported schema/pending
+ledgers raised out of the runtime constructor. Three actual temporary-file controls
+fail before, pass after neutral load; existing bytes remain unchanged and new work
+is refused with nonprivate recovery copy. App availability is source-tested; no
+frozen5854619 native corrupt-profile claim or byte change is made.
+
+Retained tests: diagnostic/private outbox38passes (37 first, one old patch namespace
+fixed); publication6passes (5 first, one erroneous positive-case raises assertion
+corrected); pending journal19passes; Qt startup/normal-admission5 and existing
+write-preservation6 pass together; two owned batch publication/checkpoint controls
+pass. Original failure logs retained. All tests source-only; no foreground GUI,
+credentials, production transport or candidate/release mutation. Ruff/diff pass.
+Remaining source/mixin/test consumers still require retirement; not complete.

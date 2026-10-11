@@ -14,6 +14,13 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from yt_downloader.caption_languages import (
+    translated_subtitle_language as validate_subtitle_language,
+)
+from yt_downloader.cookie_inputs import (
+    cookie_inputs_for_source,
+    windows_chromium_cookie_warning,
+)
 from yt_downloader.download_service import (
     DownloadWorkerCore,
     ProviderNetworkCoordinator,
@@ -23,23 +30,16 @@ from yt_downloader.download_service import (
     terminate_all_active_child_processes,
     validate_output_directory_access,
 )
-from yt_downloader.caption_languages import (
-    translated_subtitle_language as validate_subtitle_language,
-)
-from yt_downloader.cookie_inputs import (
-    cookie_inputs_for_source,
-    windows_chromium_cookie_warning,
-)
 from yt_downloader.history import (
     RETRY_JOB_METADATA_KEY,
     HistoryError,
     file_operations_pending,
     history_file_path,
-    load_history,
     sanitize_run_activity,
     save_history,
     upsert_history,
 )
+from yt_downloader.library_history import LibraryHistory
 from yt_downloader.local_audio_video import LocalAudioVideoResult
 from yt_downloader.models import (
     CookieSource,
@@ -92,11 +92,15 @@ class DownloadRuntime:
     def __init__(self) -> None:
         self.events: queue.Queue[tuple[str, Any]] = queue.Queue()
         self.history_path = history_file_path()
-        self.history = load_history(self.history_path)
+        self._history_store = LibraryHistory(self.history_path)
+        self._history_store.load()
+        self.history = self._history_store.download_history
         self.recovery = RunRecoveryOwner(run_state_file_path())
         self.recovered, self.queued = self.recovery.startup_recovery()
-        self.recovery_notice = self.recovery.recovery_notice
-        if file_operations_pending(self.history_path) and self.recovery_notice is None:
+        self.recovery_notice = (
+            self._history_store.notice or self.recovery.recovery_notice
+        )
+        if self.recovery_notice is None and file_operations_pending(self.history_path):
             self.recovery_notice = (
                 "Library file recovery must finish before new downloads."
             )
@@ -111,7 +115,7 @@ class DownloadRuntime:
         self._worker_app: DownloadWorkerCore | None = None
         self.provider_network = ProviderNetworkCoordinator()
         self._closing = False
-        self._history_error = False
+        self._history_error = self._history_store.blocked
         self.product_telemetry: Any | None = None
         self.activity: list[dict[str, str]] = []
         for job in [*self.recovered, *self.queued]:
@@ -843,8 +847,8 @@ class DownloadRuntime:
         updated = upsert_history(
             self.history, reconciled, target, replace_missing_media=True
         )
-        save_history(self.history_path, updated)
-        self.history = updated
+        self._history_store.publish(updated)
+        self.history = self._history_store.download_history
 
     def record_local_conversion(self, result: LocalAudioVideoResult) -> None:
         """Commit a completed local video through the same durable Library owner."""

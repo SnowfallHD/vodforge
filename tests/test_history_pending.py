@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import json
-from types import SimpleNamespace
 
 import pytest
 
 from tests.test_archive_relink import mapping, record
-from tests.test_archive_ui_owners import Variable
 from yt_downloader import history
 from yt_downloader.archive_relink import (
     preview_relink,
@@ -163,18 +161,17 @@ def test_pending_activity_follows_relinked_identity_and_future_saved_run(tmp_pat
 
 
 def test_failed_startup_recovery_blocks_destructive_empty_history_fallback(tmp_path):
-    from yt_downloader.app import DownloaderApp
+    from yt_downloader.library_history import LibraryHistory
 
     ledger = tmp_path / "history.json"
     history.save_history(ledger, [record(tmp_path / "original.mp4")])
     history.pending_history_path(ledger).write_text("{invalid")
     before = ledger.read_bytes()
-    app = SimpleNamespace(
-        history_path=ledger, _append_log=lambda *args: None, status_var=Variable()
-    )
-    DownloaderApp._load_download_history(app)
-    assert app._history_recovery_blocked
-    DownloaderApp._record_download_history(app, record(tmp_path / "new.mp4"), tmp_path)
+    app = LibraryHistory(ledger)
+    assert not app.load()
+    assert app.blocked
+    with pytest.raises(history.HistoryError):
+        app.record(record(tmp_path / "new.mp4"), tmp_path)
     assert ledger.read_bytes() == before
 
 
@@ -182,23 +179,13 @@ def test_failed_startup_recovery_blocks_destructive_empty_history_fallback(tmp_p
 def test_settled_callbacks_cannot_be_overwritten_by_earlier_journal_snapshot(
     tmp_path, kind
 ):
-    from types import MethodType
-
-    from yt_downloader.archive_library_ui import ArchiveLibraryMixin
+    from yt_downloader.library_history import LibraryHistory
 
     ledger = tmp_path / "history.json"
     item = record(tmp_path / "clip.mp4")
     history.save_history(ledger, [item])
-    app = SimpleNamespace(
-        history_path=ledger,
-        download_history=[item],
-        status_var=Variable(),
-        _archive_usage=lambda *a, **k: None,
-        _event_write_diagnostic=lambda *a: None,
-    )
-    app._archive_defer_history = MethodType(
-        ArchiveLibraryMixin._archive_defer_history, app
-    )
+    app = LibraryHistory(ledger)
+    app.download_history = [item]
     early = {
         **item,
         "title": "Initially accepted",
@@ -222,8 +209,8 @@ def test_settled_callbacks_cannot_be_overwritten_by_earlier_journal_snapshot(
         }
         history.save_history(ledger, app.download_history)
 
-    app._archive_defer_history(kind, latest_callback, mutation=mutation)
-    assert ArchiveLibraryMixin._archive_flush_history(app)
+    app.defer(kind, latest_callback, mutation=mutation)
+    assert app.flush()
     restored = history.load_history(ledger)
     assert restored[0]["title"] == "Settled title"
     assert restored[0]["vodforge_run_activity"] == ["Accepted", "Settled"]

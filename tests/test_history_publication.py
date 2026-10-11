@@ -1,23 +1,18 @@
 """A successful media file does not imply its history write also succeeded."""
 
 from copy import deepcopy
-from types import SimpleNamespace
 from unittest.mock import Mock
 
-from yt_downloader import app as app_module
+import pytest
+
+from yt_downloader import library_history as app_module
 from yt_downloader.history import HistoryError, upsert_history
 from yt_downloader.library_annotations import LibraryAnnotation, LibraryAnnotationsOwner
+from yt_downloader.library_history import LibraryHistory
 
 
 def state(tmp_path):
-    return SimpleNamespace(
-        download_history=[],
-        history_path=tmp_path / "history.json",
-        status_var=Mock(),
-        _append_log=Mock(),
-        library_output_type_var=SimpleNamespace(get=lambda: "MP4", set=Mock()),
-        _reconcile_library_projection=Mock(),
-    )
+    return LibraryHistory(tmp_path / "history.json")
 
 
 def record(tmp_path, title="Completed media"):
@@ -41,11 +36,10 @@ def test_new_history_failure_keeps_saved_media_and_does_not_publish_row(
         "save_history",
         Mock(side_effect=HistoryError("Controlled full disk")),
     )
-    app_module.DownloaderApp._record_download_history(view, record(tmp_path), tmp_path)
+    with pytest.raises(HistoryError):
+        view.record(record(tmp_path), tmp_path)
     assert view.download_history == [] and not view.history_path.exists()
     assert media.read_bytes() == b"completed media"
-    view._reconcile_library_projection.assert_not_called()
-    assert "could not save" in view.status_var.set.call_args.args[0]
 
 
 def test_retry_after_failed_history_write_publishes_one_durable_row(
@@ -56,12 +50,12 @@ def test_retry_after_failed_history_write_publishes_one_durable_row(
     monkeypatch.setattr(
         app_module, "save_history", Mock(side_effect=HistoryError("Controlled failure"))
     )
-    app_module.DownloaderApp._record_download_history(view, record(tmp_path), tmp_path)
+    with pytest.raises(HistoryError):
+        view.record(record(tmp_path), tmp_path)
     monkeypatch.setattr(app_module, "save_history", save)
-    app_module.DownloaderApp._record_download_history(view, record(tmp_path), tmp_path)
+    view.record(record(tmp_path), tmp_path)
     assert len(view.download_history) == 1 and view.history_path.is_file()
     assert view.download_history[0]["title"] == "Completed media"
-    view._reconcile_library_projection.assert_called_once_with(selected_index=0)
 
 
 def test_existing_row_update_failure_preserves_previous_row_and_annotations(
@@ -80,21 +74,16 @@ def test_existing_row_update_failure_preserves_previous_row_and_annotations(
     monkeypatch.setattr(
         app_module, "save_history", Mock(side_effect=HistoryError("Controlled failure"))
     )
-    app_module.DownloaderApp._record_download_history(
-        view, record(tmp_path, "Updated title"), tmp_path
-    )
+    with pytest.raises(HistoryError):
+        view.record(record(tmp_path, "Updated title"), tmp_path)
     assert view.download_history == before and view.history_path.read_bytes() == disk
     assert annotations.path.read_bytes() == personal
 
 
 def test_existing_row_successful_update_does_not_duplicate_the_owner(tmp_path):
     view = state(tmp_path)
-    app_module.DownloaderApp._record_download_history(
-        view, record(tmp_path, "Old title"), tmp_path
-    )
-    app_module.DownloaderApp._record_download_history(
-        view, record(tmp_path, "Updated title"), tmp_path
-    )
+    view.record(record(tmp_path, "Old title"), tmp_path)
+    view.record(record(tmp_path, "Updated title"), tmp_path)
     assert (
         len(view.download_history) == 1
         and view.download_history[0]["title"] == "Updated title"
@@ -103,25 +92,26 @@ def test_existing_row_successful_update_does_not_duplicate_the_owner(tmp_path):
 
 def test_history_recovery_block_still_prevents_admission(tmp_path, monkeypatch):
     view = state(tmp_path)
-    view._history_recovery_blocked = True
+    view.blocked = True
     save = Mock()
     monkeypatch.setattr(app_module, "save_history", save)
-    app_module.DownloaderApp._record_download_history(view, record(tmp_path), tmp_path)
+    with pytest.raises(HistoryError):
+        view.record(record(tmp_path), tmp_path)
     save.assert_not_called()
     assert view.download_history == []
 
 
-def test_active_archive_commit_still_defers_through_existing_journal(
-    tmp_path, monkeypatch
-):
+def test_active_archive_commit_still_defers_through_existing_journal(tmp_path):
+    from yt_downloader.history import pending_history_path, sanitize_history_record
+
     view = state(tmp_path)
-    view._archive_commit_active = True
-    view._archive_defer_history = Mock()
-    save = Mock()
-    monkeypatch.setattr(app_module, "save_history", save)
-    app_module.DownloaderApp._record_download_history(view, record(tmp_path), tmp_path)
-    save.assert_not_called()
+    item = record(tmp_path)
+    view.defer(
+        "record",
+        lambda: view.record(item, tmp_path),
+        mutation={"kind": "record", "record": sanitize_history_record(item, tmp_path)},
+    )
     assert view.download_history == []
-    call = view._archive_defer_history.call_args
-    assert call.kwargs["mutation"]["kind"] == "record"
-    assert call.kwargs["mutation"]["record"]["id"] == "same-media"
+    assert pending_history_path(view.history_path).is_file()
+    assert view.flush()
+    assert len(view.download_history) == 1
