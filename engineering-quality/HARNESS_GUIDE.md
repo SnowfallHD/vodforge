@@ -2078,3 +2078,25 @@ update/data preservation and consent/privacy checks remain required. Reported
 counts and aggregate metrics do not determine publication. No click-distance
 calculator was found in the inspected release evaluator; do not describe that
 unfinished idea as a proven gate dependency.
+
+### Choose checks by actual change risk
+
+Use the change/test log and original receipts first. Labels do not waive failures
+or invalidate a valid check. Use existing pytest commands, existing package smoke
+and platform/update/privacy checks; do not create a campaign or score system.
+
+- **Hotfix:** run the specific regression with a prior-failure control when
+  applicable, its affected dependency tests (`.venv/bin/python -m pytest -q
+  <tests>`), and a bounded smoke of the exact changed package.
+- **Normal release:** affected regressions plus the core customer journeys that
+  changed inputs can affect: export/readable media, Library/player, queue/error
+  recovery and restart/persistence. Reuse valid unchanged evidence.
+- **Higher risk:** updater, data, privacy, packaging or architecture changes add
+  only their relevant deeper checks: actual update/data hashes and relaunch;
+  interrupted recovery/atomic persistence; consent/transport isolation; signed
+  artifact/runtime identity; or import/owner/lifecycle boundaries and appropriate
+  platform parity. A “hotfix” touching these areas gets the same risk-based scope.
+
+Record passed, failed and untested separately. Diagnostics and unfinished UX or
+completeness mapping remain optional analysis. A failing customer-safety check
+remains blocking; counts and a pathway label are not readiness evidence.
