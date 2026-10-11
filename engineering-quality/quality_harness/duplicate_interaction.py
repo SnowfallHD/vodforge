@@ -49,6 +49,64 @@ def history_path(info):
     )
 
 
+def _reuse_sidecar_staging(worker):
+    """Reuse may atomically repair one sidecar, never stage another media file."""
+    rows = worker.get("staging_trace")
+    control = worker.get("control_trace", [])
+    times = {r.get("phase"): r.get("elapsed_seconds") for r in control}
+    start, end = times.get("worker_started"), times.get("worker_finished")
+    if (
+        worker.get("progress_trace") != []
+        or not isinstance(rows, list)
+        or not rows
+        or not _number(start)
+        or not _number(end)
+    ):
+        return False
+    for row in rows:
+        if not isinstance(row, dict) or not _number(row.get("elapsed_seconds")):
+            return False
+        if row.get("root_present") is False:
+            if row.get("entries") != [] or row.get("run_directories") != []:
+                return False
+            continue
+        directories = row.get("run_directories")
+        entries = row.get("entries")
+        if (
+            row.get("root_present") is not True
+            or row.get("root_mode") != 0o700
+            or row.get("final") is not False
+            or not start <= row["elapsed_seconds"] < end
+            or not isinstance(directories, list)
+            or len(directories) != 1
+            or not isinstance(directories[0], str)
+            or len(directories[0]) != 8
+            or any(c not in "0123456789abcdef" for c in directories[0])
+            or not isinstance(entries, list)
+            or not 1 <= len(entries) <= 2
+        ):
+            return False
+        directory = directories[0]
+        if entries[0] != {"path": directory, "kind": "directory", "size_bytes": None}:
+            return False
+        if len(entries) == 2:
+            sidecar = entries[1]
+            if (
+                not isinstance(sidecar, dict)
+                or sidecar.get("path") != directory + "/sidecar"
+                or sidecar.get("kind") != "file"
+                or type(sidecar.get("size_bytes")) is not int
+                or sidecar["size_bytes"] < 0
+            ):
+                return False
+    return (
+        rows[-1].get("root_present") is False
+        and rows[-1].get("entries") == []
+        and rows[-1].get("final") is True
+        and rows[-1]["elapsed_seconds"] >= end
+    )
+
+
 def _review(raw, root, check):
     rows = raw.get("rows")
     clock = raw.get("clock_origin_monotonic")
@@ -175,11 +233,8 @@ def _review(raw, root, check):
                 "private_staging_observed",
                 "transfer_destination_owned",
             }:
-                valid = worker.get("progress_trace") == [] and all(
-                    r.get("root_present") is False and r.get("entries") == []
-                    for r in worker.get("staging_trace", [])
-                )
-                detail = "Reuse has no media transfer or staging transaction; ordinary new exports require both"
+                valid = _reuse_sidecar_staging(worker)
+                detail = "Reuse preserves media bytes with no media transfer; only a private, bounded sidecar staging transaction may occur and must be removed by return"
             elif original and code == "independent_committed_media":
                 streams = (
                     media[0].get("ffprobe", {}).get("streams", [])

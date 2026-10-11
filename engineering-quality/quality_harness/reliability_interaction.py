@@ -13,6 +13,116 @@ def _number(value: Any) -> bool:
     return type(value) in (int, float) and math.isfinite(value)
 
 
+def _fixture_ledger(state: Any) -> bool:
+    """Require a complete, internally consistent response history."""
+    if not isinstance(state, dict):
+        return False
+    rows = state.get("responses")
+    if not isinstance(rows, list) or not all(
+        isinstance(row, dict)
+        and isinstance(row.get("route"), str)
+        and row["route"].startswith("/")
+        and type(row.get("status")) is int
+        and 100 <= row["status"] <= 599
+        and _number(row.get("observed_at_monotonic"))
+        for row in rows
+    ):
+        return False
+    return (
+        all(
+            isinstance(state.get(key), dict)
+            and all(
+                isinstance(k, str) and type(v) is int and v > 0
+                for k, v in state[key].items()
+            )
+            for key in ("requests", "statuses")
+        )
+        and type(state.get("total_requests")) is int
+        and state["total_requests"] == len(rows)
+        and state.get("requests") == dict(Counter(row["route"] for row in rows))
+        and state.get("statuses") == dict(Counter(str(row["status"]) for row in rows))
+        and all(
+            a["observed_at_monotonic"] <= b["observed_at_monotonic"]
+            for a, b in pairwise(rows)
+        )
+    )
+
+
+def _fixture_clock(raw: dict[str, Any], initial: dict[str, Any]) -> float | None:
+    clock = raw.get("observation_clock_origin_monotonic")
+    if _number(clock):
+        return clock
+    # Older observations retain the absolute response timestamp and matching
+    # elapsed trace, which independently establish the same worker clock.
+    after = raw.get("fixture_state_after")
+    rows = after.get("responses", []) if isinstance(after, dict) else []
+    trace = raw.get("fixture_response_trace")
+    offset = len(initial.get("responses", []))
+    if (
+        isinstance(rows, list)
+        and len(rows) > offset
+        and isinstance(trace, list)
+        and trace
+        and isinstance(rows[offset], dict)
+        and isinstance(trace[0], dict)
+    ):
+        absolute = rows[offset].get("observed_at_monotonic")
+        elapsed = trace[0].get("elapsed_seconds")
+        if _number(absolute) and _number(elapsed):
+            return absolute - elapsed
+    return None
+
+
+def _fixture_baseline_valid(raw: dict[str, Any], initial: Any, start: float) -> bool:
+    elapsed = (raw.get("before_worker") or {}).get("fixture_elapsed_seconds")
+    if (
+        not _fixture_ledger(initial)
+        or not _number(elapsed)
+        or not 0 <= elapsed <= start
+    ):
+        return False
+    rows = initial["responses"]
+    clock = _fixture_clock(raw, initial)
+    return not rows or (
+        clock is not None and rows[-1]["observed_at_monotonic"] <= clock + elapsed
+    )
+
+
+def _fixture_delta_agrees(
+    raw: dict[str, Any],
+    initial: Any,
+    after: Any,
+    responses: list[dict[str, Any]],
+    end: float,
+) -> bool:
+    if not _fixture_ledger(initial) or not _fixture_ledger(after):
+        return False
+    suffix = after["responses"][len(initial["responses"]) :]
+    clock = _fixture_clock(raw, initial)
+    statuses = Counter(initial["statuses"])
+    statuses.update(str(row["status"]) for row in responses)
+    requests = Counter(initial["requests"])
+    requests.update(row["route"] for row in responses)
+    elapsed = raw.get("fixture_after_elapsed_seconds")
+    return (
+        clock is not None
+        and after.get("origin") == initial.get("origin")
+        and after["responses"][: len(initial["responses"])] == initial["responses"]
+        and len(suffix) == len(responses)
+        and all(
+            a["route"] == b["route"]
+            and a["status"] == b["status"]
+            and _number(b.get("elapsed_seconds"))
+            and abs(a["observed_at_monotonic"] - clock - b["elapsed_seconds"]) < 0.00001
+            for a, b in zip(suffix, responses, strict=True)
+        )
+        and after["statuses"] == dict(statuses)
+        and after["requests"] == dict(requests)
+        and _number(elapsed)
+        and elapsed >= end
+    )
+
+
 def _dispatch(
     trace: list[dict[str, Any]], start: float, end: float, check: Any
 ) -> float | None:
@@ -59,15 +169,14 @@ def _fixture(
         and isinstance(initial.get("requests"), dict)
         and isinstance(initial.get("responses"), list)
         and _number(before.get("fixture_elapsed_seconds"))
+        and (not initial["responses"] or _fixture_clock(raw, initial) is not None)
     )
     check(
         "before",
         "fixture_before_dispatch",
         baseline_present,
-        baseline_present
-        and before["fixture_elapsed_seconds"] <= start
-        and initial["requests"].get(route, 0) == 0,
-        "Target source has not been requested when the independent baseline is captured",
+        baseline_present and _fixture_baseline_valid(raw, initial, start),
+        "Consistent fixture history is captured before this worker; prior completed requests remain in the baseline",
     )
     dispatched = _dispatch(trace, start, end, check)
     responses = raw.get("fixture_response_trace")
@@ -110,27 +219,7 @@ def _fixture(
         and typed
         and dispatched is not None
     )
-    if after_present:
-        suffix = after["responses"][len(initial["responses"]) :]
-        statuses = Counter(initial["statuses"])
-        statuses.update(str(row["status"]) for row in responses)
-        requests = Counter(initial["requests"])
-        requests.update(row["route"] for row in responses)
-        agree = (
-            after.get("origin") == initial["origin"]
-            and after["responses"][: len(initial["responses"])] == initial["responses"]
-            and len(suffix) == len(responses)
-            and all(
-                a.get("route") == b["route"] and a.get("status") == b["status"]
-                for a, b in zip(suffix, responses, strict=True)
-            )
-            and after["statuses"] == dict(statuses)
-            and after["requests"] == dict(requests)
-            and after.get("total_requests") == sum(requests.values())
-            and raw["fixture_after_elapsed_seconds"] >= end
-        )
-    else:
-        agree = False
+    agree = after_present and _fixture_delta_agrees(raw, initial, after, responses, end)
     check(
         "after",
         "fixture_response_delta_agrees",

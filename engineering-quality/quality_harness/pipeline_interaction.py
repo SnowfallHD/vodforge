@@ -386,6 +386,8 @@ def _evaluate_http404(
         and not origin.query,
         "Enrolled request targets the exact private loopback 404 fixture",
     )
+    from .reliability_interaction import _fixture_baseline_valid, _fixture_delta_agrees
+
     before = raw.get("before_worker") or {}
     initial = before.get("fixture_state")
     check(
@@ -400,11 +402,8 @@ def _evaluate_http404(
         "before",
         "unrequested_fixture_baseline",
         isinstance(initial, dict) and _number(before.get("fixture_elapsed_seconds")),
-        isinstance(initial, dict)
-        and initial.get("total_requests") == 0
-        and initial.get("responses") == []
-        and before.get("fixture_elapsed_seconds", float("inf")) <= start,
-        "Fixture inventory has no prior requests before worker entry",
+        isinstance(initial, dict) and _fixture_baseline_valid(raw, initial, start),
+        "Consistent fixture inventory precedes this worker; earlier requests remain in its baseline",
     )
     responses = raw.get("fixture_response_trace")
     response_present = isinstance(responses, list) and all(
@@ -499,20 +498,7 @@ def _evaluate_http404(
         and isinstance(after.get("origin"), str)
         and response_present
         and _number(raw.get("fixture_after_elapsed_seconds")),
-        isinstance(after, dict)
-        and valid_responses
-        and raw["fixture_after_elapsed_seconds"] >= end
-        and isinstance(initial, dict)
-        and after.get("origin") == initial.get("origin")
-        and after.get("requests") == {"/status/404": len(responses)}
-        and after.get("statuses") == {"404": len(responses)}
-        and after.get("total_requests") == len(responses)
-        and isinstance(after.get("responses"), list)
-        and len(after["responses"]) == len(responses)
-        and all(
-            r.get("route") == "/status/404" and r.get("status") == 404
-            for r in after["responses"]
-        ),
+        valid_responses and _fixture_delta_agrees(raw, initial, after, responses, end),
         "Post-worker fixture counts agree with the actual in-flight response trace",
     )
     diagnostic = raw.get("failure_diagnostic")

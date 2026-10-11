@@ -16802,9 +16802,9 @@
       "evidence_tier": "unit_static",
       "category": "reliability",
       "status": "passed",
-      "duration_seconds": 109.44553820902365,
+      "duration_seconds": 111.66673991700009,
       "metrics": {
-        "cases_executed": 205,
+        "cases_executed": 208,
         "minimum_cases": 20,
         "required_nodeids": [
           "tests/test_qt_scene_port.py::test_qt_watch_hero_uses_saved_progress_and_role_specific_artwork",
@@ -16824,48 +16824,171 @@
         "unavailable": false
       },
       "evidence": [
-        "Regression class: artwork_latency; production tree SHA256: bc9778ffdfdfffd04a90aa25a3daa041c706264a7fec776441eb28b1093b7613",
-        "Cases: 205; minimum required: 20; complete success: True",
+        "Regression class: artwork_latency; production tree SHA256: fa73f5d261654c2da8122c9cee24849f84e38bbe94571ed580a2987465793a42",
+        "Cases: 208; minimum required: 20; complete success: True",
         "Actual production owners; controlled provider/display seams and headless Tcl traces.",
         "Native resize and exact packaged journey remain separate required gates."
       ],
       "artifacts": [
-        "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-3pv3694r/cases/scene-artwork_latency/cases.xml",
-        "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-3pv3694r/cases/scene-artwork_latency/command.json",
-        "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-3pv3694r/cases/scene-artwork_latency/source-binding.json",
-        "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-3pv3694r/cases/scene-artwork_latency/interaction-observation.json"
+        "/Users/coop/Dev/vodforge/engineering-quality/.runs/vfq-n2t3o7i3/cases/scene-artwork_latency/cases.xml",
+        "/Users/coop/Dev/vodforge/engineering-quality/.runs/vfq-n2t3o7i3/cases/scene-artwork_latency/command.json",
+        "/Users/coop/Dev/vodforge/engineering-quality/.runs/vfq-n2t3o7i3/cases/scene-artwork_latency/source-binding.json",
+        "/Users/coop/Dev/vodforge/engineering-quality/.runs/vfq-n2t3o7i3/cases/scene-artwork_latency/interaction-observation.json"
       ],
       "error": null,
-      "raw_result": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-3pv3694r/cases/scene-artwork_latency/interaction-observation.json",
-      "raw_result_sha256": "4a83f75fd98a23bc8b14250cadb3d43610d215a3ed47586d26b82c1e8c1272ce",
+      "raw_result": "/Users/coop/Dev/vodforge/engineering-quality/.runs/vfq-n2t3o7i3/cases/scene-artwork_latency/interaction-observation.json",
+      "raw_result_sha256": "4b43cc3fe16fd954f8ba5391038b35bef545679674c6de631793e6dd2814421b",
       "interaction_coverage": {
-        "status": "unproven",
+        "status": "failed",
         "scenario_id": "unit_static.scene_artwork_latency",
-        "reason": "Before/during/after requirement-to-assertion review is pending. Existing scenario status and raw traces do not establish complete temporal coverage. Preserve their narrower evidence.",
         "required_phases": [
           "before",
           "during",
           "after"
         ],
-        "assertion_mapping": [],
         "phase_review": {
-          "before": "unproven",
-          "during": "unproven",
-          "after": "unproven"
+          "before": "passed",
+          "during": "failed",
+          "after": "passed"
         },
-        "usability_review": {
-          "status": "unproven",
-          "applicability": "unreviewed",
-          "reason": "Usability evidence and reviewer mapping have not been enrolled. Unknown applicability is not an exemption; functional success does not establish clarity, restraint or accessible interaction.",
-          "dimensions": {
-            "orientation_navigation": "unproven",
-            "action_hierarchy": "unproven",
-            "progressive_disclosure": "unproven",
-            "visual_hierarchy": "unproven",
-            "sparse_busy_content": "unproven",
-            "feedback": "unproven",
-            "accessibility": "unproven"
+        "assertion_mapping": [
+          {
+            "phase": "before",
+            "assertion": "source_suite_identity",
+            "status": "passed",
+            "evidence": "Explicit suite domain and source-only contract match"
+          },
+          {
+            "phase": "during",
+            "assertion": "trace_sequence",
+            "status": "passed",
+            "evidence": "Actual ordered phase observations use an increasing monotonic timeline"
+          },
+          {
+            "phase": "before",
+            "assertion": "reviewed_domain_roster",
+            "status": "passed",
+            "evidence": "Each domain has an explicit reviewed selector/minimum/required-node roster and source-only scope"
+          },
+          {
+            "phase": "before",
+            "assertion": "no_prior_report",
+            "status": "passed",
+            "evidence": "No old JUnit success exists at admission"
+          },
+          {
+            "phase": "before",
+            "assertion": "bound_production_source",
+            "status": "passed",
+            "evidence": "Python source inventory has a recomputed content digest and explicit absolute root"
+          },
+          {
+            "phase": "before",
+            "assertion": "bound_domain_probes",
+            "status": "passed",
+            "evidence": "Every maintained test fixture file in this domain has a recorded hash"
+          },
+          {
+            "phase": "before",
+            "assertion": "bound_scene_assets",
+            "status": "passed",
+            "evidence": "QML, JavaScript, SVG and shader sources used by scene probes are also inventoried"
+          },
+          {
+            "phase": "during",
+            "assertion": "command_owned_path",
+            "status": "passed",
+            "evidence": "Artifact path stays beneath this suite's owned case directory"
+          },
+          {
+            "phase": "during",
+            "assertion": "command_content_binding",
+            "status": "passed",
+            "evidence": "Original constituent content hash verifies"
+          },
+          {
+            "phase": "during",
+            "assertion": "junit_owned_path",
+            "status": "passed",
+            "evidence": "Artifact path stays beneath this suite's owned case directory"
+          },
+          {
+            "phase": "during",
+            "assertion": "junit_content_binding",
+            "status": "passed",
+            "evidence": "Original constituent content hash verifies"
+          },
+          {
+            "phase": "after",
+            "assertion": "binding_owned_path",
+            "status": "passed",
+            "evidence": "Artifact path stays beneath this suite's owned case directory"
+          },
+          {
+            "phase": "after",
+            "assertion": "binding_content_binding",
+            "status": "passed",
+            "evidence": "Original constituent content hash verifies"
+          },
+          {
+            "phase": "during",
+            "assertion": "actual_command_outcome",
+            "status": "passed",
+            "evidence": "Actual pytest process returned normally within its observed suite interval; no timeout/tool-absence success"
+          },
+          {
+            "phase": "during",
+            "assertion": "actual_selector_command",
+            "status": "passed",
+            "evidence": "Bootstrap imports the explicit production tree first and runs exactly this domain's reviewed selectors"
+          },
+          {
+            "phase": "during",
+            "assertion": "complete_per_case_outcomes",
+            "status": "failed",
+            "evidence": "Every exact enrolled test case executed successfully once; skipped, failing, missing, duplicate or substituted cases cannot qualify"
+          },
+          {
+            "phase": "during",
+            "assertion": "returned_junit_file",
+            "status": "passed",
+            "evidence": "Observed generated JUnit file identity matches its bound constituent"
+          },
+          {
+            "phase": "after",
+            "assertion": "reobserved_junit_file",
+            "status": "passed",
+            "evidence": "Observed generated JUnit file identity matches its bound constituent"
+          },
+          {
+            "phase": "after",
+            "assertion": "unchanged_authority",
+            "status": "passed",
+            "evidence": "Production Python/scene assets, test fixtures and the result file remain unchanged after execution"
+          },
+          {
+            "phase": "after",
+            "assertion": "binding_agrees_with_observations",
+            "status": "passed",
+            "evidence": "Independent source-binding artifact agrees with actual before/after observations"
           }
+        ],
+        "domain_contract": "bound-source-regression-suite-v1",
+        "reason": "Suite admission/execution/unchanged-authority evidence only; actual native behavior and usability remain separate.",
+        "usability_review": {
+          "status": "not_applicable",
+          "applicability": "not_applicable",
+          "reason": "Reviewed maintained source regression scope. Suite admission, exact per-case execution and unchanged source/scene-asset authority do not qualify native product feedback, layout, gestures, devices or usability. All native and packaged acceptance remains separate.",
+          "dimensions": {
+            "orientation_navigation": "not_applicable",
+            "action_hierarchy": "not_applicable",
+            "progressive_disclosure": "not_applicable",
+            "visual_hierarchy": "not_applicable",
+            "sparse_busy_content": "not_applicable",
+            "feedback": "not_applicable",
+            "accessibility": "not_applicable"
+          },
+          "reviewer": "explicit-source-suite-v1 scope review"
         }
       }
     },
@@ -16892,14 +17015,14 @@
       "trace": [
         {
           "phase": "before_suite",
-          "elapsed_seconds": 0.011933749978197739,
+          "elapsed_seconds": 0.011820832998637343,
           "report": {
-            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-3pv3694r/cases/scene-artwork_latency/cases.xml",
+            "path": "/Users/coop/Dev/vodforge/engineering-quality/.runs/vfq-n2t3o7i3/cases/scene-artwork_latency/cases.xml",
             "exists": false
           },
           "source": {
             "root": "/Users/coop/Dev/vodforge",
-            "sha256": "bc9778ffdfdfffd04a90aa25a3daa041c706264a7fec776441eb28b1093b7613",
+            "sha256": "fa73f5d261654c2da8122c9cee24849f84e38bbe94571ed580a2987465793a42",
             "files": {
               "yt_downloader/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
               "yt_downloader/activity_ui.py": "41c2d3c79d2ea7a8665549bc8544a83dc91e175630e6575209ccd50011205680",
@@ -16907,7 +17030,7 @@
               "yt_downloader/analytics_consent_ui.py": "217736ee47b1dd7828512630e4715ef4741fa0cac64016112c074f267e11c82c",
               "yt_downloader/analytics_qa_probe.py": "e75e17aba26e81ac0f86c7ff75f4a9a959873b6694f6adededa20e60c9797e6a",
               "yt_downloader/analytics_startup.py": "662e92e617ff4622e772169e97d951d22ca92d98e1a615c085d9dacca9f56d28",
-              "yt_downloader/app.py": "9ad3e6c0cea5b08d420452bc7d73af15669bacb9713bd526a3abdbdd2e89bf9f",
+              "yt_downloader/app.py": "69d976484bb740d532cd48454373246d05180df7e75dd1d166218470af43d444",
               "yt_downloader/archive_artwork.py": "88b9dfa2f80b09ec39bf0c899e61078e3a85d2f6c97fb223f7e40b6d8fb65c9d",
               "yt_downloader/archive_browser.py": "5a4f2333923bdb39e1c78603b95200aac49efa1dd5c44a9ba8a7cad85f4cc8a8",
               "yt_downloader/archive_browser_ui.py": "e552b638ec376f26f4b8331ad11a26cb67cca3b3317db96e0318608c9aaafca2",
@@ -17001,11 +17124,11 @@
               "yt_downloader/qt_quick/analytics.py": "f4b1a20f44abe8ace559cc2caae3e73eb46bb145d987f3767ab814c475b72ed1",
               "yt_downloader/qt_quick/artwork.py": "4cfdd58546b8a1f1bd60376ba3854de91e4c076e0c0c57f302d3955b31cac6e8",
               "yt_downloader/qt_quick/input_trace.py": "9ba31217249bbd2799c9a4166a016d09a6ff50b1358faea29f2371a348b0ed25",
-              "yt_downloader/qt_quick/library_files.py": "906afc03e751854adf23926741c2a6f18761cde4591a81fcbd91df4fec364284",
+              "yt_downloader/qt_quick/library_files.py": "f7e1317fba8a3407e99faa4b18fbe8767e661d02303f33dcb710fa9a3ba0b864",
               "yt_downloader/qt_quick/library_window_model.py": "1c449871bd2421a837b765c5b7a6bbd23178bf7453a93ca06fa4b183ffa11ad2",
               "yt_downloader/qt_quick/local_conversion.py": "d643c9d465eda1ffee140b94c4cebd7d29f98ec396bef61b9d60ca102ee74676",
               "yt_downloader/qt_quick/mac_windowing.py": "94726b1362e7364f9eb2376cd88490b7de85f2f22c2519aeff0e7c40152fecd7",
-              "yt_downloader/qt_quick/main.py": "eaba336537076201bbecdb12a125737cc8351b9ac8ffebcf702285e055140dfc",
+              "yt_downloader/qt_quick/main.py": "c72e08f141c0e153c613934f9ba0759ce96690bbd4b4ac8401af8f728ecbbd4d",
               "yt_downloader/qt_quick/metadata_preview.py": "8c438a7f9fc62876f54cb0f72522399b2583349db6b9d7e0ed241e459e39e03a",
               "yt_downloader/qt_quick/output_config_facts.py": "923f72e8893258fa9fd6e18950e03fc8ab1eacef323b8d52f7153e79bd35a451",
               "yt_downloader/qt_quick/player_geometry.py": "26bcf1da6406b0713757e97eefb5b2381b75306f2d38bc44bcd32d92d59e5e56",
@@ -17095,11 +17218,11 @@
             "yt_downloader/qt_quick/LibrarySelectionBar.qml": "7ad5508160990391324d6a6097e3344cdd6d8ce5f8752d27a0bc18fcff61741d",
             "yt_downloader/qt_quick/LiquidSurface.qml": "0accf71173844025ff1e5bc4596187427fa7154c2b9902daff874f4ecee9c093",
             "yt_downloader/qt_quick/LiquidToolTip.qml": "4d0aaa804b2dcbda13c9dc3f61cc359676e837515bb87cbaa1fbd6c05b557a68",
-            "yt_downloader/qt_quick/Main.qml": "a9c0a7794321c2a4e82ccf64483c3064735bf15026fbb4d47f8c18f94dc5a0cd",
+            "yt_downloader/qt_quick/Main.qml": "f5020b0786ee291aef537777dfde403867c3eb1369fb0184bd868f0df75b8364",
             "yt_downloader/qt_quick/ManualMp4Settings.qml": "7b7de2d7c48447506b11805f2d069397fd0f10017db9711293d6dabe84988634",
             "yt_downloader/qt_quick/OutputPathField.qml": "634ab4a776aeea55209c336c64dae80d152d419692eeda83173264f645b81c30",
             "yt_downloader/qt_quick/PlayerOverlay.qml": "debd5007f67714254e9e0c60a180d2501d56c2ffe0a06d2ba726e76e8fed8e2c",
-            "yt_downloader/qt_quick/PlayerScene.qml": "dc18ca877e928d1470102855d6ffe84c97f101621f6cc05367da897c5fa297ec",
+            "yt_downloader/qt_quick/PlayerScene.qml": "f906be0e62afbdff2835e74bbe21839acd76df47ec188fec883cc946d1d8ddf5",
             "yt_downloader/qt_quick/PlayerThumbnailCard.qml": "f47f075b8642454f94c4d9420a75f8445eee739d7714c9bb2210bbe43e98ad19",
             "yt_downloader/qt_quick/PlayerTrack.qml": "ae95be57cbc6b0e5be787f95354d29c4aaba45c7a9db1506fddc7528750a07a7",
             "yt_downloader/qt_quick/RailWheelHandler.qml": "991f916bc3c5c949fa5c58325c8605226abe8fb7009a822b2636864f9ca67fb7",
@@ -17121,19 +17244,19 @@
             "yt_downloader/qt_quick/WatchScene.qml": "5247db144ea71796044a7242d7eeaf6e5d238f9ae3958e25415aea93b202b6f4"
           },
           "probes": {
-            "tests/test_qt_scene_port.py": "58d4e03ef8767c81f65f9b0abf5b4a37e9b9a583fab6148c544161a5494b5c66"
+            "tests/test_qt_scene_port.py": "26ea52c8300c764870036c2b85bd57cee5dcb5306e02a2be759080f46db33bf4"
           }
         },
         {
           "phase": "suite_returned",
-          "elapsed_seconds": 109.45774487499148,
+          "elapsed_seconds": 111.6792247500016,
           "report": {
-            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-3pv3694r/cases/scene-artwork_latency/cases.xml",
+            "path": "/Users/coop/Dev/vodforge/engineering-quality/.runs/vfq-n2t3o7i3/cases/scene-artwork_latency/cases.xml",
             "exists": true,
             "symlink": false,
             "mode": 420,
-            "size_bytes": 28376,
-            "sha256": "624c1667b9e842701a15c565c391c69355efb46e2980e66e10df63dc131e6048"
+            "size_bytes": 28874,
+            "sha256": "266a2dea2ad959e08a15af3510930516e0af0d5ea17cd4940504da4835c02be9"
           },
           "command_result": {
             "command": [
@@ -17144,11 +17267,11 @@
               "/Users/coop/Dev/vodforge/tests/test_qt_scene_port.py",
               "--import-mode=importlib",
               "-q",
-              "--junitxml=/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-3pv3694r/cases/scene-artwork_latency/cases.xml"
+              "--junitxml=/Users/coop/Dev/vodforge/engineering-quality/.runs/vfq-n2t3o7i3/cases/scene-artwork_latency/cases.xml"
             ],
             "returncode": 0,
-            "duration_seconds": 109.4455,
-            "stdout": "........................................................................ [ 35%]\n........................................................................ [ 70%]\n.............................................................            [100%]\n205 passed in 108.94s (0:01:48)\n",
+            "duration_seconds": 111.6667,
+            "stdout": "........................................................................ [ 34%]\n........................................................................ [ 69%]\n................................................................         [100%]\n208 passed in 111.17s (0:01:51)\n",
             "stderr": "",
             "timed_out": false,
             "unavailable": false
@@ -17156,18 +17279,18 @@
         },
         {
           "phase": "authority_reobserved",
-          "elapsed_seconds": 109.50800420797896,
+          "elapsed_seconds": 111.69526599999881,
           "report": {
-            "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-3pv3694r/cases/scene-artwork_latency/cases.xml",
+            "path": "/Users/coop/Dev/vodforge/engineering-quality/.runs/vfq-n2t3o7i3/cases/scene-artwork_latency/cases.xml",
             "exists": true,
             "symlink": false,
             "mode": 420,
-            "size_bytes": 28376,
-            "sha256": "624c1667b9e842701a15c565c391c69355efb46e2980e66e10df63dc131e6048"
+            "size_bytes": 28874,
+            "sha256": "266a2dea2ad959e08a15af3510930516e0af0d5ea17cd4940504da4835c02be9"
           },
           "source": {
             "root": "/Users/coop/Dev/vodforge",
-            "sha256": "bc9778ffdfdfffd04a90aa25a3daa041c706264a7fec776441eb28b1093b7613",
+            "sha256": "fa73f5d261654c2da8122c9cee24849f84e38bbe94571ed580a2987465793a42",
             "files": {
               "yt_downloader/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
               "yt_downloader/activity_ui.py": "41c2d3c79d2ea7a8665549bc8544a83dc91e175630e6575209ccd50011205680",
@@ -17175,7 +17298,7 @@
               "yt_downloader/analytics_consent_ui.py": "217736ee47b1dd7828512630e4715ef4741fa0cac64016112c074f267e11c82c",
               "yt_downloader/analytics_qa_probe.py": "e75e17aba26e81ac0f86c7ff75f4a9a959873b6694f6adededa20e60c9797e6a",
               "yt_downloader/analytics_startup.py": "662e92e617ff4622e772169e97d951d22ca92d98e1a615c085d9dacca9f56d28",
-              "yt_downloader/app.py": "9ad3e6c0cea5b08d420452bc7d73af15669bacb9713bd526a3abdbdd2e89bf9f",
+              "yt_downloader/app.py": "69d976484bb740d532cd48454373246d05180df7e75dd1d166218470af43d444",
               "yt_downloader/archive_artwork.py": "88b9dfa2f80b09ec39bf0c899e61078e3a85d2f6c97fb223f7e40b6d8fb65c9d",
               "yt_downloader/archive_browser.py": "5a4f2333923bdb39e1c78603b95200aac49efa1dd5c44a9ba8a7cad85f4cc8a8",
               "yt_downloader/archive_browser_ui.py": "e552b638ec376f26f4b8331ad11a26cb67cca3b3317db96e0318608c9aaafca2",
@@ -17269,11 +17392,11 @@
               "yt_downloader/qt_quick/analytics.py": "f4b1a20f44abe8ace559cc2caae3e73eb46bb145d987f3767ab814c475b72ed1",
               "yt_downloader/qt_quick/artwork.py": "4cfdd58546b8a1f1bd60376ba3854de91e4c076e0c0c57f302d3955b31cac6e8",
               "yt_downloader/qt_quick/input_trace.py": "9ba31217249bbd2799c9a4166a016d09a6ff50b1358faea29f2371a348b0ed25",
-              "yt_downloader/qt_quick/library_files.py": "906afc03e751854adf23926741c2a6f18761cde4591a81fcbd91df4fec364284",
+              "yt_downloader/qt_quick/library_files.py": "f7e1317fba8a3407e99faa4b18fbe8767e661d02303f33dcb710fa9a3ba0b864",
               "yt_downloader/qt_quick/library_window_model.py": "1c449871bd2421a837b765c5b7a6bbd23178bf7453a93ca06fa4b183ffa11ad2",
               "yt_downloader/qt_quick/local_conversion.py": "d643c9d465eda1ffee140b94c4cebd7d29f98ec396bef61b9d60ca102ee74676",
               "yt_downloader/qt_quick/mac_windowing.py": "94726b1362e7364f9eb2376cd88490b7de85f2f22c2519aeff0e7c40152fecd7",
-              "yt_downloader/qt_quick/main.py": "eaba336537076201bbecdb12a125737cc8351b9ac8ffebcf702285e055140dfc",
+              "yt_downloader/qt_quick/main.py": "c72e08f141c0e153c613934f9ba0759ce96690bbd4b4ac8401af8f728ecbbd4d",
               "yt_downloader/qt_quick/metadata_preview.py": "8c438a7f9fc62876f54cb0f72522399b2583349db6b9d7e0ed241e459e39e03a",
               "yt_downloader/qt_quick/output_config_facts.py": "923f72e8893258fa9fd6e18950e03fc8ab1eacef323b8d52f7153e79bd35a451",
               "yt_downloader/qt_quick/player_geometry.py": "26bcf1da6406b0713757e97eefb5b2381b75306f2d38bc44bcd32d92d59e5e56",
@@ -17363,11 +17486,11 @@
             "yt_downloader/qt_quick/LibrarySelectionBar.qml": "7ad5508160990391324d6a6097e3344cdd6d8ce5f8752d27a0bc18fcff61741d",
             "yt_downloader/qt_quick/LiquidSurface.qml": "0accf71173844025ff1e5bc4596187427fa7154c2b9902daff874f4ecee9c093",
             "yt_downloader/qt_quick/LiquidToolTip.qml": "4d0aaa804b2dcbda13c9dc3f61cc359676e837515bb87cbaa1fbd6c05b557a68",
-            "yt_downloader/qt_quick/Main.qml": "a9c0a7794321c2a4e82ccf64483c3064735bf15026fbb4d47f8c18f94dc5a0cd",
+            "yt_downloader/qt_quick/Main.qml": "f5020b0786ee291aef537777dfde403867c3eb1369fb0184bd868f0df75b8364",
             "yt_downloader/qt_quick/ManualMp4Settings.qml": "7b7de2d7c48447506b11805f2d069397fd0f10017db9711293d6dabe84988634",
             "yt_downloader/qt_quick/OutputPathField.qml": "634ab4a776aeea55209c336c64dae80d152d419692eeda83173264f645b81c30",
             "yt_downloader/qt_quick/PlayerOverlay.qml": "debd5007f67714254e9e0c60a180d2501d56c2ffe0a06d2ba726e76e8fed8e2c",
-            "yt_downloader/qt_quick/PlayerScene.qml": "dc18ca877e928d1470102855d6ffe84c97f101621f6cc05367da897c5fa297ec",
+            "yt_downloader/qt_quick/PlayerScene.qml": "f906be0e62afbdff2835e74bbe21839acd76df47ec188fec883cc946d1d8ddf5",
             "yt_downloader/qt_quick/PlayerThumbnailCard.qml": "f47f075b8642454f94c4d9420a75f8445eee739d7714c9bb2210bbe43e98ad19",
             "yt_downloader/qt_quick/PlayerTrack.qml": "ae95be57cbc6b0e5be787f95354d29c4aaba45c7a9db1506fddc7528750a07a7",
             "yt_downloader/qt_quick/RailWheelHandler.qml": "991f916bc3c5c949fa5c58325c8605226abe8fb7009a822b2636864f9ca67fb7",
@@ -17389,26 +17512,27 @@
             "yt_downloader/qt_quick/WatchScene.qml": "5247db144ea71796044a7242d7eeaf6e5d238f9ae3958e25415aea93b202b6f4"
           },
           "probes": {
-            "tests/test_qt_scene_port.py": "58d4e03ef8767c81f65f9b0abf5b4a37e9b9a583fab6148c544161a5494b5c66"
+            "tests/test_qt_scene_port.py": "26ea52c8300c764870036c2b85bd57cee5dcb5306e02a2be759080f46db33bf4"
           }
         }
       ],
       "junit": {
-        "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-3pv3694r/cases/scene-artwork_latency/cases.xml",
-        "sha256": "624c1667b9e842701a15c565c391c69355efb46e2980e66e10df63dc131e6048"
+        "path": "/Users/coop/Dev/vodforge/engineering-quality/.runs/vfq-n2t3o7i3/cases/scene-artwork_latency/cases.xml",
+        "sha256": "266a2dea2ad959e08a15af3510930516e0af0d5ea17cd4940504da4835c02be9"
       },
       "command": {
-        "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-3pv3694r/cases/scene-artwork_latency/command.json",
-        "sha256": "2b741a24d28ccee867e9c9619f69f677ea1db732d90b0e233977f4d20cc63157"
+        "path": "/Users/coop/Dev/vodforge/engineering-quality/.runs/vfq-n2t3o7i3/cases/scene-artwork_latency/command.json",
+        "sha256": "d5d76e465d8e9cd3754fb415247f5988e87d3ea72889790e59a5fca21e40f413"
       },
       "binding": {
-        "path": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-3pv3694r/cases/scene-artwork_latency/source-binding.json",
-        "sha256": "7ea32c4f0920f3c6d54d2579b0a512f88941c6ecb85410814712e4d80223033a"
+        "path": "/Users/coop/Dev/vodforge/engineering-quality/.runs/vfq-n2t3o7i3/cases/scene-artwork_latency/source-binding.json",
+        "sha256": "1840b3632e9d475ce783ce1b0e3a4120da968aca121c778c971adf709f0cfad1"
       }
     },
-    "old_root": "/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-3pv3694r/cases/scene-artwork_latency",
+    "old_root": "/Users/coop/Dev/vodforge/engineering-quality/.runs/vfq-n2t3o7i3/cases/scene-artwork_latency",
     "folder": "scene-artwork_latency",
     "constituents": {
+      "junit": "<?xml version=\"1.0\" encoding=\"utf-8\"?><testsuites name=\"pytest tests\"><testsuite name=\"pytest\" errors=\"0\" failures=\"0\" skipped=\"0\" tests=\"208\" time=\"111.058\" timestamp=\"2026-10-10T22:50:40.602623-05:00\" hostname=\"MacBook-Pro-4.local\"><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_group_card_counts_saved_variants_like_tk\" time=\"0.027\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_unfiled_video_stays_in_videos_without_becoming_a_playlist\" time=\"0.021\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_navigation_returns_to_previous_route_and_top_tabs_open_home\" time=\"0.028\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_watch_home_rails_show_groups_across_full_width_and_load_on_scroll\" time=\"1.952\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_activity_opens_at_latest_and_tracks_new_lines\" time=\"0.819\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_group_menu_selects_every_saved_variant\" time=\"0.937\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_group_cards_remain_visible_across_home_and_group_routes\" time=\"0.932\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_settings_extra_tags_reach_existing_download_job\" time=\"0.032\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_unsaved_source_shows_shared_guidance_without_clearing_entry[missing_retry_url]\" time=\"0.032\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_unsaved_source_shows_shared_guidance_without_clearing_entry[write_failed]\" time=\"0.032\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_appearance_refreshes_shared_material_and_saved_palette\" time=\"0.909\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_player_related_uses_saved_variant_owner_and_replaces_selected_media\" time=\"0.061\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_description_uses_current_detail_owner_and_shared_annotations\" time=\"0.038\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_folder_browser_uses_shared_model_and_preserves_version_context\" time=\"0.103\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_my_files_breadcrumbs_only_navigate_saved_ancestors\" time=\"0.073\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_folder_issues_are_distinct_from_full_forge_run_deck\" time=\"0.965\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_missing_saved_media_scans_on_entry_and_refreshes_one_item\" time=\"0.116\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_missing_file_retry_stays_in_issues_until_saved_file_is_present\" time=\"0.110\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_missing_legacy_file_can_choose_settings_in_issues\" time=\"0.082\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_unavailable_saved_location_is_not_reported_as_a_missing_file\" time=\"0.069\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_issue_inspector_retries_with_selected_settings_and_stays_until_success\" time=\"1.409\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_issue_without_saved_source_requires_new_source_in_same_retry_path\" time=\"0.035\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_removing_queued_issue_retry_removes_it_from_issues\" time=\"0.036\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_folder_inspector_follows_tk_selection_and_compact_detail\" time=\"1.083\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_folder_description_attests_real_rendered_visibility\" time=\"0.972\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_player_presentation_rebinds_one_media_player_to_each_surface\" time=\"0.761\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_player_controls_share_video_surface_at_wide_and_compact_sizes\" time=\"0.862\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_player_video_click_and_escape_change_real_playback\" time=\"2.109\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_closing_mini_player_refreshes_visible_watch_home_projection\" time=\"0.818\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_player_related_side_and_recent_artwork_rail_follow_later_design\" time=\"0.879\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_player_caption_track_uses_shared_controls_and_safe_fit\" time=\"1.066\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_bridge_close_stops_polling_and_commits_pending_preferences\" time=\"0.033\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_routes_keep_tk_channel_playlist_collection_and_media_membership\" time=\"0.031\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_watch_group_header_uses_tk_media_summary_and_creator\" time=\"0.820\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_watch_uses_shared_variant_identity_and_playback_preference\" time=\"0.032\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_watch_hero_uses_saved_progress_and_role_specific_artwork\" time=\"0.035\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_transport_arrow_and_arc_have_one_connected_silhouette[backward]\" time=\"0.749\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_transport_arrow_and_arc_have_one_connected_silhouette[forward]\" time=\"0.744\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_caption_menu_fits_content_and_preserves_bounded_scroll[0]\" time=\"0.731\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_caption_menu_fits_content_and_preserves_bounded_scroll[1]\" time=\"0.729\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_caption_menu_fits_content_and_preserves_bounded_scroll[8]\" time=\"0.734\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_retained_watch_hero_tracks_observed_replay_without_rebuilding_rails[False]\" time=\"0.813\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_retained_watch_hero_tracks_observed_replay_without_rebuilding_rails[True]\" time=\"0.828\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_artwork_reuses_shared_owner_and_publishes_only_completed_local_asset\" time=\"0.049\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_artwork_close_retires_blocked_file_io_without_process_shutdown_wait\" time=\"0.031\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_private_cached_art_survives_blocked_artwork_lane\" time=\"0.034\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_first_avatar_transform_runs_in_artwork_worker\" time=\"0.047\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_recent_media_artwork_overtakes_queued_group_artwork\" time=\"0.164\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_artwork_completion_does_not_rebuild_watch_media_projection\" time=\"0.036\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_artwork_spinner_waits_for_a_slow_request\" time=\"1.089\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_inactive_tabs_skip_scene_projection_on_history_refresh\" time=\"0.981\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_artwork_owner_lookup_reuses_snapshot_until_history_changes\" time=\"0.035\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_artwork_reads_existing_shared_thumbnail_cache\" time=\"0.030\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_selected_hero_uses_bounded_shared_thumbnail_fetch\" time=\"0.054\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_import_uses_shared_inspection_and_commits_before_reporting_success\" time=\"0.059\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_saved_collection_is_visible_through_shared_projection\" time=\"0.035\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_inline_note_records_only_durable_changed_fields\" time=\"0.039\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_organization_records_only_durable_changed_fields\" time=\"0.037\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_menu_cannot_control_successor_execution[same-cancel]\" time=\"0.033\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_menu_cannot_control_successor_execution[same-skip_item]\" time=\"0.033\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_menu_cannot_control_successor_execution[same-skip_source]\" time=\"0.033\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_menu_cannot_control_successor_execution[successor-cancel]\" time=\"0.033\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_menu_cannot_control_successor_execution[successor-skip_item]\" time=\"0.035\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_menu_cannot_control_successor_execution[successor-skip_source]\" time=\"0.034\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_menu_cannot_control_successor_execution[finished-cancel]\" time=\"0.033\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_menu_cannot_control_successor_execution[finished-skip_item]\" time=\"0.033\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_menu_cannot_control_successor_execution[finished-skip_source]\" time=\"0.033\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_menu_cannot_control_successor_execution[equal_copy-cancel]\" time=\"0.033\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_menu_cannot_control_successor_execution[equal_copy-skip_item]\" time=\"0.033\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_menu_cannot_control_successor_execution[equal_copy-skip_source]\" time=\"0.033\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_menu_cannot_control_successor_execution[stale_at_open-cancel]\" time=\"0.033\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_menu_cannot_control_successor_execution[stale_at_open-skip_item]\" time=\"0.033\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_menu_cannot_control_successor_execution[stale_at_open-skip_source]\" time=\"0.033\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_rendered_run_menu_uses_admitted_execution\" time=\"0.771\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_saved_owner_actions_remain_in_library_after_work_deck_filter\" time=\"0.035\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_run_deck_keeps_interrupted_run_visible_ahead_of_completed_exports\" time=\"0.034\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_run_deck_requests_artwork_for_each_visible_card_after_sorting\" time=\"0.033\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_run_deck_visible_artwork_paints_from_a_saved_thumbnail\" time=\"0.737\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_forge_simple_activity_shows_saved_steps_after_completion\" time=\"0.739\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_selection_drives_forge_snapshot_and_retires_missing_record\" time=\"0.772\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_forge_and_run_deck_use_shared_terminal_progress_tones\" time=\"0.804\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_detail_keeps_full_long_description_scrollable\" time=\"0.984\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_popup_and_navigation_materials_use_shared_renderer\" time=\"0.057\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_activity_log_uses_existing_private_persistence\" time=\"0.033\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_watch_queue_advances_only_from_current_playback_generation\" time=\"0.055\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_watch_navigation_telemetry_uses_only_closed_dimensions\" time=\"0.034\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_navigation_telemetry_matches_saved_actions_without_user_text\" time=\"0.033\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_missing_media_offer_and_durable_library_removal_are_observed\" time=\"0.034\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_player_replaces_provider_and_tags_each_open\" time=\"0.855\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_help_form_exposes_only_explicit_recent_failure_context\" time=\"0.037\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_all_runs_hover_shows_work_above_button_and_click_opens_library\" time=\"1.726\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_selected_run_beyond_visible_deck_renders_its_hero_artwork\" time=\"1.047\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_editorial_projects_all_shared_feature_previews_and_acknowledges\" time=\"0.035\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_editorial_original_audio_menu_and_activity_demo_use_live_controls\" time=\"0.772\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_forge_activity_and_source_details_keep_shared_layout\" time=\"1.166\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_output_mode_menu_uses_tk_shared_display_contract\" time=\"0.761\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_manual_mp4_fields_stay_in_adaptive_settings_columns\" time=\"1.189\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_settings_fit_minimum_window_and_access_returns_to_settings\" time=\"1.023\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_compact_browse_controls_keep_import_with_other_actions\" time=\"0.919\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_header_search_follows_library_and_watch_without_secondary_fields\" time=\"1.870\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_multi_select_presets_collection_from_visible_owners\" time=\"0.952\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_multi_file_action_requires_all_current_owners_and_no_active_playback\" time=\"0.035\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_home_shows_all_recent_downloads_without_phantom_rows\" time=\"1.232\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_sidebar_and_canvas_follow_tk_parent_bounds\" time=\"1.315\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_empty_panels_match_tk_routes_and_actions\" time=\"1.097\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_watch_empty_home_uses_tk_welcome_and_shared_actions\" time=\"0.819\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_watch_empty_sections_keep_fresh_placeholders_after_a_download\" time=\"0.879\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_shared_header_keeps_navigation_next_to_brand_on_every_tab\" time=\"1.189\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_header_settings_uses_centered_shared_icon\" time=\"0.750\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_folders_columns_clear_the_header_divider\" time=\"1.097\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_my_files_starts_at_saved_path_without_recent_export_cards\" time=\"0.978\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_my_files_empty_saved_location_links_to_existing_recovery\" time=\"0.998\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_my_files_selects_video_thumbnail_and_metadata\" time=\"1.032\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_forge_composer_keeps_bounds_with_download_before_options\" time=\"0.764\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_category_tiles_keep_readable_size_and_reflow_with_emblems\" time=\"1.152\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_all_media_windows_rows_and_artwork_requests\" time=\"1.980\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_watch_media_windows_cards_and_restores_back_scroll\" time=\"1.660\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_watch_group_routes_window_cards_and_artwork[channels-avatar]\" time=\"1.356\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_watch_group_routes_window_cards_and_artwork[playlists-playlist]\" time=\"1.310\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_visible_cards_show_resolved_local_artwork[Watch-groups-watchGroupArtworkImage-False]\" time=\"0.855\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_visible_cards_show_resolved_local_artwork[Library-groups-libraryGroupArtworkImage-False]\" time=\"0.955\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_visible_cards_show_resolved_local_artwork[Watch-groups-watchGroupArtworkImage-True]\" time=\"0.837\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_visible_cards_show_resolved_local_artwork[Library-groups-libraryGroupArtworkImage-True]\" time=\"0.858\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_visible_cards_show_resolved_local_artwork[Watch-media-watchMediaArtworkImage-False]\" time=\"0.831\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_visible_cards_show_resolved_local_artwork[Library-media-libraryMediaArtworkImage-False]\" time=\"0.929\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_group_routes_window_cards_and_artwork[channels-avatar]\" time=\"1.255\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_group_routes_window_cards_and_artwork[playlists-playlist]\" time=\"1.282\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_mp3_cover_selection_validates_and_clears_like_tk\" time=\"0.036\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_mp3_cover_clear_uses_shared_controls_in_both_settings_surfaces\" time=\"0.769\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_consent_keeps_four_icon_summaries_and_actions_inside_surface[1100]\" time=\"0.829\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_consent_keeps_four_icon_summaries_and_actions_inside_surface[860]\" time=\"0.830\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_consent_keeps_four_icon_summaries_and_actions_inside_surface[820]\" time=\"0.834\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_support_review_matches_selected_attachments_and_protects_footer\" time=\"0.784\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_context_controls_share_labels_scope_and_retirement[video]\" time=\"0.785\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_context_controls_share_labels_scope_and_retirement[playlist]\" time=\"0.789\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_context_controls_share_labels_scope_and_retirement[batch]\" time=\"0.787\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_context_controls_share_labels_scope_and_retirement[batch_playlist]\" time=\"0.798\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_path_budget_recovery_uses_existing_output_folder_choice\" time=\"0.732\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_everyday_default_and_saved_preset_survive_restart\" time=\"0.043\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_popup_content_fit_state_actions_and_progress[check-size0]\" time=\"0.635\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_popup_content_fit_state_actions_and_progress[check-size1]\" time=\"0.856\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_popup_content_fit_state_actions_and_progress[download-size0]\" time=\"0.868\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_popup_content_fit_state_actions_and_progress[download-size1]\" time=\"0.859\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_popup_content_fit_state_actions_and_progress[repair-size0]\" time=\"0.861\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_popup_content_fit_state_actions_and_progress[repair-size1]\" time=\"0.857\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_popup_content_fit_state_actions_and_progress[available-size0]\" time=\"0.832\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_popup_content_fit_state_actions_and_progress[available-size1]\" time=\"0.832\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_popup_content_fit_state_actions_and_progress[waiting-size0]\" time=\"0.829\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_popup_content_fit_state_actions_and_progress[waiting-size1]\" time=\"0.831\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_popup_content_fit_state_actions_and_progress[error-size0]\" time=\"0.836\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_popup_content_fit_state_actions_and_progress[error-size1]\" time=\"0.830\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_popup_content_fit_state_actions_and_progress[current-size0]\" time=\"0.835\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_popup_content_fit_state_actions_and_progress[current-size1]\" time=\"0.832\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_popup_content_fit_state_actions_and_progress[manual-size0]\" time=\"0.831\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_popup_content_fit_state_actions_and_progress[manual-size1]\" time=\"0.826\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_one_click_update_verifies_waits_then_handoffs_once[mac-none]\" time=\"0.037\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_one_click_update_verifies_waits_then_handoffs_once[mac-active]\" time=\"0.036\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_one_click_update_verifies_waits_then_handoffs_once[mac-queued]\" time=\"0.037\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_one_click_update_verifies_waits_then_handoffs_once[mac-local]\" time=\"0.036\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_one_click_update_verifies_waits_then_handoffs_once[mac-helper_failure]\" time=\"0.036\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_one_click_update_verifies_waits_then_handoffs_once[mac-verification_failure]\" time=\"0.036\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_one_click_update_verifies_waits_then_handoffs_once[windows-none]\" time=\"0.037\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_one_click_update_verifies_waits_then_handoffs_once[windows-active]\" time=\"0.037\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_one_click_update_verifies_waits_then_handoffs_once[windows-queued]\" time=\"0.036\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_one_click_update_verifies_waits_then_handoffs_once[windows-local]\" time=\"0.035\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_one_click_update_verifies_waits_then_handoffs_once[windows-helper_failure]\" time=\"0.035\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_one_click_update_verifies_waits_then_handoffs_once[windows-verification_failure]\" time=\"0.036\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_player_subtitle_label_fits_native_fonts_and_is_centered\" time=\"0.736\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_waits_for_library_mutations[move]\" time=\"0.038\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_waits_for_library_mutations[import]\" time=\"0.036\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_waits_for_library_mutations[relink]\" time=\"0.037\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_waits_for_library_mutations[recovery]\" time=\"0.037\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_poll_fault_keeps_services_and_requires_proven_idle[none]\" time=\"0.036\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_poll_fault_keeps_services_and_requires_proven_idle[active]\" time=\"0.036\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_poll_fault_keeps_services_and_requires_proven_idle[worker]\" time=\"0.036\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_poll_fault_keeps_services_and_requires_proven_idle[events]\" time=\"0.036\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_poll_fault_keeps_services_and_requires_proven_idle[journal]\" time=\"0.036\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_poll_fault_keeps_services_and_requires_proven_idle[queued_journal]\" time=\"0.036\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_poll_fault_keeps_services_and_requires_proven_idle[unreadable]\" time=\"0.036\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_remove_requires_confirmation_and_keeps_unowned_files[Failed]\" time=\"0.037\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_remove_requires_confirmation_and_keeps_unowned_files[Stopped]\" time=\"0.037\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_remove_requires_confirmation_and_keeps_unowned_files[Skipped]\" time=\"0.037\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_recovery_ui_loads_and_create_footer_fits\" time=\"0.946\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_remove_trashes_only_verified_owned_files[none]\" time=\"0.064\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_remove_trashes_only_verified_owned_files[trash]\" time=\"0.063\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_remove_trashes_only_verified_owned_files[changed]\" time=\"0.062\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_remove_trashes_only_verified_owned_files[active]\" time=\"0.044\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_list_composer_sync_picker_edits_and_toggle\" time=\"0.802\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_issue_inspector_height_stays_bounded_after_selection\" time=\"1.436\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_short_tooltip_single_line_and_clamped_edges[Skip this link]\" time=\"0.714\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_short_tooltip_single_line_and_clamped_edges[Stop batch]\" time=\"0.712\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_watch_recently_added_and_see_all_preserve_history_recency\" time=\"0.033\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_batch_current_metadata_and_whole_batch_progress[success]\" time=\"0.038\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_batch_current_metadata_and_whole_batch_progress[failure]\" time=\"0.037\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_batch_current_metadata_and_whole_batch_progress[skipped]\" time=\"0.038\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_forge_retry_chooses_settings_without_starting_download\" time=\"1.151\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_paused_forge_run_has_resume_and_retains_batch[False]\" time=\"0.844\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_paused_forge_run_has_resume_and_retains_batch[True]\" time=\"0.860\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_paused_batch_and_exported_child_both_remain_in_deck_after_resume\" time=\"0.044\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_missing_list_clears_only_unsubmitted_composer[False]\" time=\"0.678\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_missing_list_clears_only_unsubmitted_composer[True]\" time=\"0.698\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_issue_resume_ignores_edited_draft_and_keeps_saved_settings[False-Paused]\" time=\"0.882\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_issue_resume_ignores_edited_draft_and_keeps_saved_settings[False-Partial]\" time=\"0.955\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_issue_resume_ignores_edited_draft_and_keeps_saved_settings[True-Paused]\" time=\"0.875\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_issue_resume_ignores_edited_draft_and_keeps_saved_settings[True-Partial]\" time=\"0.872\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_resumed_forge_format_hint_uses_saved_job[MP4-MP3-VOD-ready MP4 / H.264 video / AAC audio]\" time=\"1.042\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_resumed_forge_format_hint_uses_saved_job[MP3-MP4-Audio-only MP3 / best YouTube audio source]\" time=\"1.043\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_resumed_forge_format_hint_uses_saved_job[Original audio-MP4-Original audio / No re-encoding]\" time=\"1.045\" /></testsuite></testsuites>",
       "command": {
         "command": [
           "/Users/coop/Dev/vodforge/.venv/bin/python",
@@ -17418,11 +17542,11 @@
           "/Users/coop/Dev/vodforge/tests/test_qt_scene_port.py",
           "--import-mode=importlib",
           "-q",
-          "--junitxml=/private/var/folders/h3/mk90sh3d3r788x4r5stp5vwm0000gn/T/vfq-3pv3694r/cases/scene-artwork_latency/cases.xml"
+          "--junitxml=/Users/coop/Dev/vodforge/engineering-quality/.runs/vfq-n2t3o7i3/cases/scene-artwork_latency/cases.xml"
         ],
         "returncode": 0,
-        "duration_seconds": 109.4455,
-        "stdout": "........................................................................ [ 35%]\n........................................................................ [ 70%]\n.............................................................            [100%]\n205 passed in 108.94s (0:01:48)\n",
+        "duration_seconds": 111.6667,
+        "stdout": "........................................................................ [ 34%]\n........................................................................ [ 69%]\n................................................................         [100%]\n208 passed in 111.17s (0:01:51)\n",
         "stderr": "",
         "timed_out": false,
         "unavailable": false
@@ -17430,7 +17554,7 @@
       "binding": {
         "before": {
           "root": "/Users/coop/Dev/vodforge",
-          "sha256": "bc9778ffdfdfffd04a90aa25a3daa041c706264a7fec776441eb28b1093b7613",
+          "sha256": "fa73f5d261654c2da8122c9cee24849f84e38bbe94571ed580a2987465793a42",
           "files": {
             "yt_downloader/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
             "yt_downloader/activity_ui.py": "41c2d3c79d2ea7a8665549bc8544a83dc91e175630e6575209ccd50011205680",
@@ -17438,7 +17562,7 @@
             "yt_downloader/analytics_consent_ui.py": "217736ee47b1dd7828512630e4715ef4741fa0cac64016112c074f267e11c82c",
             "yt_downloader/analytics_qa_probe.py": "e75e17aba26e81ac0f86c7ff75f4a9a959873b6694f6adededa20e60c9797e6a",
             "yt_downloader/analytics_startup.py": "662e92e617ff4622e772169e97d951d22ca92d98e1a615c085d9dacca9f56d28",
-            "yt_downloader/app.py": "9ad3e6c0cea5b08d420452bc7d73af15669bacb9713bd526a3abdbdd2e89bf9f",
+            "yt_downloader/app.py": "69d976484bb740d532cd48454373246d05180df7e75dd1d166218470af43d444",
             "yt_downloader/archive_artwork.py": "88b9dfa2f80b09ec39bf0c899e61078e3a85d2f6c97fb223f7e40b6d8fb65c9d",
             "yt_downloader/archive_browser.py": "5a4f2333923bdb39e1c78603b95200aac49efa1dd5c44a9ba8a7cad85f4cc8a8",
             "yt_downloader/archive_browser_ui.py": "e552b638ec376f26f4b8331ad11a26cb67cca3b3317db96e0318608c9aaafca2",
@@ -17532,11 +17656,11 @@
             "yt_downloader/qt_quick/analytics.py": "f4b1a20f44abe8ace559cc2caae3e73eb46bb145d987f3767ab814c475b72ed1",
             "yt_downloader/qt_quick/artwork.py": "4cfdd58546b8a1f1bd60376ba3854de91e4c076e0c0c57f302d3955b31cac6e8",
             "yt_downloader/qt_quick/input_trace.py": "9ba31217249bbd2799c9a4166a016d09a6ff50b1358faea29f2371a348b0ed25",
-            "yt_downloader/qt_quick/library_files.py": "906afc03e751854adf23926741c2a6f18761cde4591a81fcbd91df4fec364284",
+            "yt_downloader/qt_quick/library_files.py": "f7e1317fba8a3407e99faa4b18fbe8767e661d02303f33dcb710fa9a3ba0b864",
             "yt_downloader/qt_quick/library_window_model.py": "1c449871bd2421a837b765c5b7a6bbd23178bf7453a93ca06fa4b183ffa11ad2",
             "yt_downloader/qt_quick/local_conversion.py": "d643c9d465eda1ffee140b94c4cebd7d29f98ec396bef61b9d60ca102ee74676",
             "yt_downloader/qt_quick/mac_windowing.py": "94726b1362e7364f9eb2376cd88490b7de85f2f22c2519aeff0e7c40152fecd7",
-            "yt_downloader/qt_quick/main.py": "eaba336537076201bbecdb12a125737cc8351b9ac8ffebcf702285e055140dfc",
+            "yt_downloader/qt_quick/main.py": "c72e08f141c0e153c613934f9ba0759ce96690bbd4b4ac8401af8f728ecbbd4d",
             "yt_downloader/qt_quick/metadata_preview.py": "8c438a7f9fc62876f54cb0f72522399b2583349db6b9d7e0ed241e459e39e03a",
             "yt_downloader/qt_quick/output_config_facts.py": "923f72e8893258fa9fd6e18950e03fc8ab1eacef323b8d52f7153e79bd35a451",
             "yt_downloader/qt_quick/player_geometry.py": "26bcf1da6406b0713757e97eefb5b2381b75306f2d38bc44bcd32d92d59e5e56",
@@ -17605,7 +17729,7 @@
         },
         "after": {
           "root": "/Users/coop/Dev/vodforge",
-          "sha256": "bc9778ffdfdfffd04a90aa25a3daa041c706264a7fec776441eb28b1093b7613",
+          "sha256": "fa73f5d261654c2da8122c9cee24849f84e38bbe94571ed580a2987465793a42",
           "files": {
             "yt_downloader/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
             "yt_downloader/activity_ui.py": "41c2d3c79d2ea7a8665549bc8544a83dc91e175630e6575209ccd50011205680",
@@ -17613,7 +17737,7 @@
             "yt_downloader/analytics_consent_ui.py": "217736ee47b1dd7828512630e4715ef4741fa0cac64016112c074f267e11c82c",
             "yt_downloader/analytics_qa_probe.py": "e75e17aba26e81ac0f86c7ff75f4a9a959873b6694f6adededa20e60c9797e6a",
             "yt_downloader/analytics_startup.py": "662e92e617ff4622e772169e97d951d22ca92d98e1a615c085d9dacca9f56d28",
-            "yt_downloader/app.py": "9ad3e6c0cea5b08d420452bc7d73af15669bacb9713bd526a3abdbdd2e89bf9f",
+            "yt_downloader/app.py": "69d976484bb740d532cd48454373246d05180df7e75dd1d166218470af43d444",
             "yt_downloader/archive_artwork.py": "88b9dfa2f80b09ec39bf0c899e61078e3a85d2f6c97fb223f7e40b6d8fb65c9d",
             "yt_downloader/archive_browser.py": "5a4f2333923bdb39e1c78603b95200aac49efa1dd5c44a9ba8a7cad85f4cc8a8",
             "yt_downloader/archive_browser_ui.py": "e552b638ec376f26f4b8331ad11a26cb67cca3b3317db96e0318608c9aaafca2",
@@ -17707,11 +17831,11 @@
             "yt_downloader/qt_quick/analytics.py": "f4b1a20f44abe8ace559cc2caae3e73eb46bb145d987f3767ab814c475b72ed1",
             "yt_downloader/qt_quick/artwork.py": "4cfdd58546b8a1f1bd60376ba3854de91e4c076e0c0c57f302d3955b31cac6e8",
             "yt_downloader/qt_quick/input_trace.py": "9ba31217249bbd2799c9a4166a016d09a6ff50b1358faea29f2371a348b0ed25",
-            "yt_downloader/qt_quick/library_files.py": "906afc03e751854adf23926741c2a6f18761cde4591a81fcbd91df4fec364284",
+            "yt_downloader/qt_quick/library_files.py": "f7e1317fba8a3407e99faa4b18fbe8767e661d02303f33dcb710fa9a3ba0b864",
             "yt_downloader/qt_quick/library_window_model.py": "1c449871bd2421a837b765c5b7a6bbd23178bf7453a93ca06fa4b183ffa11ad2",
             "yt_downloader/qt_quick/local_conversion.py": "d643c9d465eda1ffee140b94c4cebd7d29f98ec396bef61b9d60ca102ee74676",
             "yt_downloader/qt_quick/mac_windowing.py": "94726b1362e7364f9eb2376cd88490b7de85f2f22c2519aeff0e7c40152fecd7",
-            "yt_downloader/qt_quick/main.py": "eaba336537076201bbecdb12a125737cc8351b9ac8ffebcf702285e055140dfc",
+            "yt_downloader/qt_quick/main.py": "c72e08f141c0e153c613934f9ba0759ce96690bbd4b4ac8401af8f728ecbbd4d",
             "yt_downloader/qt_quick/metadata_preview.py": "8c438a7f9fc62876f54cb0f72522399b2583349db6b9d7e0ed241e459e39e03a",
             "yt_downloader/qt_quick/output_config_facts.py": "923f72e8893258fa9fd6e18950e03fc8ab1eacef323b8d52f7153e79bd35a451",
             "yt_downloader/qt_quick/player_geometry.py": "26bcf1da6406b0713757e97eefb5b2381b75306f2d38bc44bcd32d92d59e5e56",
@@ -17792,15 +17916,14 @@
           "tests/test_qt_scene_port.py::test_qt_visible_cards_show_resolved_local_artwork"
         ],
         "probe_files": {
-          "tests/test_qt_scene_port.py": "58d4e03ef8767c81f65f9b0abf5b4a37e9b9a583fab6148c544161a5494b5c66"
+          "tests/test_qt_scene_port.py": "26ea52c8300c764870036c2b85bd57cee5dcb5306e02a2be759080f46db33bf4"
         },
         "probe_files_after": {
-          "tests/test_qt_scene_port.py": "58d4e03ef8767c81f65f9b0abf5b4a37e9b9a583fab6148c544161a5494b5c66"
+          "tests/test_qt_scene_port.py": "26ea52c8300c764870036c2b85bd57cee5dcb5306e02a2be759080f46db33bf4"
         },
         "probes_unchanged": true,
         "scope": "Bound production source, controlled seams and headless Tcl; not packaged or native-window proof"
-      },
-      "junit": "<?xml version=\"1.0\" encoding=\"utf-8\"?><testsuites name=\"pytest tests\"><testsuite name=\"pytest\" errors=\"0\" failures=\"0\" skipped=\"0\" tests=\"205\" time=\"108.786\" timestamp=\"2026-10-10T09:49:51.832361-05:00\" hostname=\"MacBook-Pro-4.local\"><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_group_card_counts_saved_variants_like_tk\" time=\"0.028\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_unfiled_video_stays_in_videos_without_becoming_a_playlist\" time=\"0.023\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_navigation_returns_to_previous_route_and_top_tabs_open_home\" time=\"0.028\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_watch_home_rails_show_groups_across_full_width_and_load_on_scroll\" time=\"1.596\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_activity_opens_at_latest_and_tracks_new_lines\" time=\"0.750\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_group_menu_selects_every_saved_variant\" time=\"0.929\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_group_cards_remain_visible_across_home_and_group_routes\" time=\"0.931\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_settings_extra_tags_reach_existing_download_job\" time=\"0.034\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_unsaved_source_shows_shared_guidance_without_clearing_entry[missing_retry_url]\" time=\"0.033\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_unsaved_source_shows_shared_guidance_without_clearing_entry[write_failed]\" time=\"0.033\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_appearance_refreshes_shared_material_and_saved_palette\" time=\"0.907\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_player_related_uses_saved_variant_owner_and_replaces_selected_media\" time=\"0.065\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_description_uses_current_detail_owner_and_shared_annotations\" time=\"0.040\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_folder_browser_uses_shared_model_and_preserves_version_context\" time=\"0.069\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_my_files_breadcrumbs_only_navigate_saved_ancestors\" time=\"0.082\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_folder_issues_are_distinct_from_full_forge_run_deck\" time=\"0.962\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_missing_saved_media_scans_on_entry_and_refreshes_one_item\" time=\"0.109\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_missing_file_retry_stays_in_issues_until_saved_file_is_present\" time=\"0.113\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_missing_legacy_file_can_choose_settings_in_issues\" time=\"0.085\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_unavailable_saved_location_is_not_reported_as_a_missing_file\" time=\"0.055\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_issue_inspector_retries_with_selected_settings_and_stays_until_success\" time=\"1.387\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_issue_without_saved_source_requires_new_source_in_same_retry_path\" time=\"0.038\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_removing_queued_issue_retry_removes_it_from_issues\" time=\"0.042\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_folder_inspector_follows_tk_selection_and_compact_detail\" time=\"1.105\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_folder_description_attests_real_rendered_visibility\" time=\"1.001\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_player_presentation_rebinds_one_media_player_to_each_surface\" time=\"0.758\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_player_controls_share_video_surface_at_wide_and_compact_sizes\" time=\"0.880\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_player_video_click_and_escape_change_real_playback\" time=\"2.190\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_closing_mini_player_refreshes_visible_watch_home_projection\" time=\"0.817\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_player_related_side_and_recent_artwork_rail_follow_later_design\" time=\"0.888\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_player_caption_track_uses_shared_controls_and_safe_fit\" time=\"1.114\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_bridge_close_stops_polling_and_commits_pending_preferences\" time=\"0.035\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_routes_keep_tk_channel_playlist_collection_and_media_membership\" time=\"0.032\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_watch_group_header_uses_tk_media_summary_and_creator\" time=\"0.826\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_watch_uses_shared_variant_identity_and_playback_preference\" time=\"0.035\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_watch_hero_uses_saved_progress_and_role_specific_artwork\" time=\"0.034\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_transport_arrow_and_arc_have_one_connected_silhouette[backward]\" time=\"0.750\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_transport_arrow_and_arc_have_one_connected_silhouette[forward]\" time=\"0.748\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_caption_menu_fits_content_and_preserves_bounded_scroll[0]\" time=\"0.736\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_caption_menu_fits_content_and_preserves_bounded_scroll[1]\" time=\"0.756\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_caption_menu_fits_content_and_preserves_bounded_scroll[8]\" time=\"0.749\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_retained_watch_hero_tracks_observed_replay_without_rebuilding_rails[False]\" time=\"0.817\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_retained_watch_hero_tracks_observed_replay_without_rebuilding_rails[True]\" time=\"0.868\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_artwork_reuses_shared_owner_and_publishes_only_completed_local_asset\" time=\"0.055\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_artwork_close_retires_blocked_file_io_without_process_shutdown_wait\" time=\"0.036\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_private_cached_art_survives_blocked_artwork_lane\" time=\"0.037\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_first_avatar_transform_runs_in_artwork_worker\" time=\"0.051\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_recent_media_artwork_overtakes_queued_group_artwork\" time=\"0.171\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_artwork_completion_does_not_rebuild_watch_media_projection\" time=\"0.038\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_artwork_spinner_waits_for_a_slow_request\" time=\"1.080\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_inactive_tabs_skip_scene_projection_on_history_refresh\" time=\"0.984\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_artwork_owner_lookup_reuses_snapshot_until_history_changes\" time=\"0.036\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_artwork_reads_existing_shared_thumbnail_cache\" time=\"0.033\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_selected_hero_uses_bounded_shared_thumbnail_fetch\" time=\"0.056\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_import_uses_shared_inspection_and_commits_before_reporting_success\" time=\"0.064\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_saved_collection_is_visible_through_shared_projection\" time=\"0.042\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_inline_note_records_only_durable_changed_fields\" time=\"0.038\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_organization_records_only_durable_changed_fields\" time=\"0.036\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_menu_cannot_control_successor_execution[same-cancel]\" time=\"0.034\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_menu_cannot_control_successor_execution[same-skip_item]\" time=\"0.034\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_menu_cannot_control_successor_execution[same-skip_source]\" time=\"0.035\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_menu_cannot_control_successor_execution[successor-cancel]\" time=\"0.035\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_menu_cannot_control_successor_execution[successor-skip_item]\" time=\"0.036\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_menu_cannot_control_successor_execution[successor-skip_source]\" time=\"0.036\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_menu_cannot_control_successor_execution[finished-cancel]\" time=\"0.035\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_menu_cannot_control_successor_execution[finished-skip_item]\" time=\"0.035\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_menu_cannot_control_successor_execution[finished-skip_source]\" time=\"0.036\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_menu_cannot_control_successor_execution[equal_copy-cancel]\" time=\"0.036\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_menu_cannot_control_successor_execution[equal_copy-skip_item]\" time=\"0.035\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_menu_cannot_control_successor_execution[equal_copy-skip_source]\" time=\"0.035\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_menu_cannot_control_successor_execution[stale_at_open-cancel]\" time=\"0.035\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_menu_cannot_control_successor_execution[stale_at_open-skip_item]\" time=\"0.035\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_menu_cannot_control_successor_execution[stale_at_open-skip_source]\" time=\"0.035\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_rendered_run_menu_uses_admitted_execution\" time=\"0.780\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_saved_owner_actions_remain_in_library_after_work_deck_filter\" time=\"0.042\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_run_deck_keeps_interrupted_run_visible_ahead_of_completed_exports\" time=\"0.039\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_run_deck_requests_artwork_for_each_visible_card_after_sorting\" time=\"0.035\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_run_deck_visible_artwork_paints_from_a_saved_thumbnail\" time=\"0.747\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_forge_simple_activity_shows_saved_steps_after_completion\" time=\"0.744\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_selection_drives_forge_snapshot_and_retires_missing_record\" time=\"0.788\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_forge_and_run_deck_use_shared_terminal_progress_tones\" time=\"0.829\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_detail_keeps_full_long_description_scrollable\" time=\"0.991\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_popup_and_navigation_materials_use_shared_renderer\" time=\"0.064\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_activity_log_uses_existing_private_persistence\" time=\"0.035\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_watch_queue_advances_only_from_current_playback_generation\" time=\"0.057\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_watch_navigation_telemetry_uses_only_closed_dimensions\" time=\"0.036\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_navigation_telemetry_matches_saved_actions_without_user_text\" time=\"0.036\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_missing_media_offer_and_durable_library_removal_are_observed\" time=\"0.035\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_player_replaces_provider_and_tags_each_open\" time=\"0.859\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_help_form_exposes_only_explicit_recent_failure_context\" time=\"0.038\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_all_runs_hover_shows_work_above_button_and_click_opens_library\" time=\"1.709\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_selected_run_beyond_visible_deck_renders_its_hero_artwork\" time=\"1.054\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_editorial_projects_all_shared_feature_previews_and_acknowledges\" time=\"0.036\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_editorial_original_audio_menu_and_activity_demo_use_live_controls\" time=\"0.791\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_forge_activity_and_source_details_keep_shared_layout\" time=\"1.169\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_output_mode_menu_uses_tk_shared_display_contract\" time=\"0.772\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_manual_mp4_fields_stay_in_adaptive_settings_columns\" time=\"1.210\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_settings_fit_minimum_window_and_access_returns_to_settings\" time=\"1.037\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_compact_browse_controls_keep_import_with_other_actions\" time=\"0.931\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_header_search_follows_library_and_watch_without_secondary_fields\" time=\"1.868\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_multi_select_presets_collection_from_visible_owners\" time=\"0.959\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_multi_file_action_requires_all_current_owners_and_no_active_playback\" time=\"0.036\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_home_shows_all_recent_downloads_without_phantom_rows\" time=\"1.240\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_sidebar_and_canvas_follow_tk_parent_bounds\" time=\"1.335\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_empty_panels_match_tk_routes_and_actions\" time=\"1.003\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_watch_empty_home_uses_tk_welcome_and_shared_actions\" time=\"0.828\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_watch_empty_sections_keep_fresh_placeholders_after_a_download\" time=\"0.896\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_shared_header_keeps_navigation_next_to_brand_on_every_tab\" time=\"1.194\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_header_settings_uses_centered_shared_icon\" time=\"0.766\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_folders_columns_clear_the_header_divider\" time=\"1.100\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_my_files_starts_at_saved_path_without_recent_export_cards\" time=\"0.983\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_my_files_empty_saved_location_links_to_existing_recovery\" time=\"1.019\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_my_files_selects_video_thumbnail_and_metadata\" time=\"1.046\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_forge_composer_keeps_bounds_with_download_before_options\" time=\"0.782\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_category_tiles_keep_readable_size_and_reflow_with_emblems\" time=\"1.173\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_all_media_windows_rows_and_artwork_requests\" time=\"2.002\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_watch_media_windows_cards_and_restores_back_scroll\" time=\"1.682\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_watch_group_routes_window_cards_and_artwork[channels-avatar]\" time=\"1.384\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_watch_group_routes_window_cards_and_artwork[playlists-playlist]\" time=\"1.323\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_visible_cards_show_resolved_local_artwork[Watch-groups-watchGroupArtworkImage-False]\" time=\"0.867\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_visible_cards_show_resolved_local_artwork[Library-groups-libraryGroupArtworkImage-False]\" time=\"0.954\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_visible_cards_show_resolved_local_artwork[Watch-groups-watchGroupArtworkImage-True]\" time=\"0.853\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_visible_cards_show_resolved_local_artwork[Library-groups-libraryGroupArtworkImage-True]\" time=\"0.865\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_visible_cards_show_resolved_local_artwork[Watch-media-watchMediaArtworkImage-False]\" time=\"0.855\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_visible_cards_show_resolved_local_artwork[Library-media-libraryMediaArtworkImage-False]\" time=\"0.941\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_group_routes_window_cards_and_artwork[channels-avatar]\" time=\"1.257\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_library_group_routes_window_cards_and_artwork[playlists-playlist]\" time=\"1.309\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_mp3_cover_selection_validates_and_clears_like_tk\" time=\"0.039\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_mp3_cover_clear_uses_shared_controls_in_both_settings_surfaces\" time=\"0.800\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_consent_keeps_four_icon_summaries_and_actions_inside_surface[1100]\" time=\"0.864\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_consent_keeps_four_icon_summaries_and_actions_inside_surface[860]\" time=\"0.850\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_consent_keeps_four_icon_summaries_and_actions_inside_surface[820]\" time=\"0.851\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_support_review_matches_selected_attachments_and_protects_footer\" time=\"0.822\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_context_controls_share_labels_scope_and_retirement[video]\" time=\"0.816\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_context_controls_share_labels_scope_and_retirement[playlist]\" time=\"0.799\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_context_controls_share_labels_scope_and_retirement[batch]\" time=\"0.812\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_context_controls_share_labels_scope_and_retirement[batch_playlist]\" time=\"0.810\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_path_budget_recovery_uses_existing_output_folder_choice\" time=\"0.735\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_everyday_default_and_saved_preset_survive_restart\" time=\"0.044\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_popup_content_fit_state_actions_and_progress[check-size0]\" time=\"0.643\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_popup_content_fit_state_actions_and_progress[check-size1]\" time=\"0.879\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_popup_content_fit_state_actions_and_progress[download-size0]\" time=\"0.877\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_popup_content_fit_state_actions_and_progress[download-size1]\" time=\"0.864\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_popup_content_fit_state_actions_and_progress[repair-size0]\" time=\"0.869\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_popup_content_fit_state_actions_and_progress[repair-size1]\" time=\"0.865\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_popup_content_fit_state_actions_and_progress[available-size0]\" time=\"0.840\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_popup_content_fit_state_actions_and_progress[available-size1]\" time=\"0.841\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_popup_content_fit_state_actions_and_progress[waiting-size0]\" time=\"0.837\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_popup_content_fit_state_actions_and_progress[waiting-size1]\" time=\"0.838\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_popup_content_fit_state_actions_and_progress[error-size0]\" time=\"0.842\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_popup_content_fit_state_actions_and_progress[error-size1]\" time=\"0.842\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_popup_content_fit_state_actions_and_progress[current-size0]\" time=\"0.843\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_popup_content_fit_state_actions_and_progress[current-size1]\" time=\"0.840\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_popup_content_fit_state_actions_and_progress[manual-size0]\" time=\"0.850\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_popup_content_fit_state_actions_and_progress[manual-size1]\" time=\"0.844\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_one_click_update_verifies_waits_then_handoffs_once[mac-none]\" time=\"0.038\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_one_click_update_verifies_waits_then_handoffs_once[mac-active]\" time=\"0.039\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_one_click_update_verifies_waits_then_handoffs_once[mac-queued]\" time=\"0.038\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_one_click_update_verifies_waits_then_handoffs_once[mac-local]\" time=\"0.038\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_one_click_update_verifies_waits_then_handoffs_once[mac-helper_failure]\" time=\"0.037\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_one_click_update_verifies_waits_then_handoffs_once[mac-verification_failure]\" time=\"0.037\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_one_click_update_verifies_waits_then_handoffs_once[windows-none]\" time=\"0.040\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_one_click_update_verifies_waits_then_handoffs_once[windows-active]\" time=\"0.038\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_one_click_update_verifies_waits_then_handoffs_once[windows-queued]\" time=\"0.037\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_one_click_update_verifies_waits_then_handoffs_once[windows-local]\" time=\"0.038\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_one_click_update_verifies_waits_then_handoffs_once[windows-helper_failure]\" time=\"0.037\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_one_click_update_verifies_waits_then_handoffs_once[windows-verification_failure]\" time=\"0.038\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_player_subtitle_label_fits_native_fonts_and_is_centered\" time=\"0.748\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_waits_for_library_mutations[move]\" time=\"0.042\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_waits_for_library_mutations[import]\" time=\"0.037\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_waits_for_library_mutations[relink]\" time=\"0.038\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_waits_for_library_mutations[recovery]\" time=\"0.038\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_poll_fault_keeps_services_and_requires_proven_idle[none]\" time=\"0.038\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_poll_fault_keeps_services_and_requires_proven_idle[active]\" time=\"0.037\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_poll_fault_keeps_services_and_requires_proven_idle[worker]\" time=\"0.038\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_poll_fault_keeps_services_and_requires_proven_idle[events]\" time=\"0.038\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_poll_fault_keeps_services_and_requires_proven_idle[journal]\" time=\"0.038\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_poll_fault_keeps_services_and_requires_proven_idle[queued_journal]\" time=\"0.038\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_update_poll_fault_keeps_services_and_requires_proven_idle[unreadable]\" time=\"0.038\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_remove_requires_confirmation_and_keeps_unowned_files[Failed]\" time=\"0.040\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_remove_requires_confirmation_and_keeps_unowned_files[Stopped]\" time=\"0.040\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_remove_requires_confirmation_and_keeps_unowned_files[Skipped]\" time=\"0.039\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_recovery_ui_loads_and_create_footer_fits\" time=\"0.970\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_remove_trashes_only_verified_owned_files[none]\" time=\"0.068\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_remove_trashes_only_verified_owned_files[trash]\" time=\"0.066\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_remove_trashes_only_verified_owned_files[changed]\" time=\"0.064\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_run_remove_trashes_only_verified_owned_files[active]\" time=\"0.047\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_list_composer_sync_picker_edits_and_toggle\" time=\"0.818\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_issue_inspector_height_stays_bounded_after_selection\" time=\"1.436\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_short_tooltip_single_line_and_clamped_edges[Skip this link]\" time=\"0.723\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_qt_short_tooltip_single_line_and_clamped_edges[Stop batch]\" time=\"0.721\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_watch_recently_added_and_see_all_preserve_history_recency\" time=\"0.035\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_batch_current_metadata_and_whole_batch_progress[success]\" time=\"0.043\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_batch_current_metadata_and_whole_batch_progress[failure]\" time=\"0.039\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_batch_current_metadata_and_whole_batch_progress[skipped]\" time=\"0.039\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_forge_retry_chooses_settings_without_starting_download\" time=\"1.160\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_paused_forge_run_has_resume_and_retains_batch[False]\" time=\"0.870\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_paused_forge_run_has_resume_and_retains_batch[True]\" time=\"0.863\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_paused_batch_and_exported_child_both_remain_in_deck_after_resume\" time=\"0.044\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_missing_list_clears_only_unsubmitted_composer[False]\" time=\"0.693\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_missing_list_clears_only_unsubmitted_composer[True]\" time=\"0.706\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_issue_resume_ignores_edited_draft_and_keeps_saved_settings[False-Paused]\" time=\"0.900\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_issue_resume_ignores_edited_draft_and_keeps_saved_settings[False-Partial]\" time=\"0.892\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_issue_resume_ignores_edited_draft_and_keeps_saved_settings[True-Paused]\" time=\"0.885\" /><testcase classname=\"tests.test_qt_scene_port\" name=\"test_issue_resume_ignores_edited_draft_and_keeps_saved_settings[True-Partial]\" time=\"0.889\" /></testsuite></testsuites>"
+      }
     }
   },
   {

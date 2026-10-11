@@ -25,6 +25,8 @@ def observation():
             "fixture_state": {
                 "origin": "http://127.0.0.1:12345",
                 "total_requests": 0,
+                "requests": {},
+                "statuses": {},
                 "responses": [],
             },
         },
@@ -61,7 +63,9 @@ def observation():
             "requests": {"/status/404": 1},
             "statuses": {"404": 1},
             "total_requests": 1,
-            "responses": [{"route": "/status/404", "status": 404}],
+            "responses": [
+                {"route": "/status/404", "status": 404, "observed_at_monotonic": 102.0}
+            ],
         },
         "fixture_after_elapsed_seconds": 3.2,
         "failure_diagnostic": {
