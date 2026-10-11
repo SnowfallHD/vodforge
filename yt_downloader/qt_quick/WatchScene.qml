@@ -143,6 +143,26 @@ Item {
         height: parent.height - y
         clip: true
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+        WheelHandler {
+            target: null
+            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+            onWheel: function(wheel) {
+                const page = viewport.contentItem
+                const previous = page.contentY
+                Qt.callLater(function() {
+                    if (scene.visible && page === viewport.contentItem && page.contentY !== previous)
+                        scene.appBridge.recordWatchScroll(false)
+                })
+                wheel.accepted = false
+            }
+        }
+        Connections {
+            target: viewport.contentItem
+            function onContentYChanged() {
+                if (scene.visible && (target.dragging || target.flicking))
+                    scene.appBridge.recordWatchScroll(false)
+            }
+        }
 
         Column {
             width: viewport.availableWidth
@@ -387,6 +407,7 @@ Item {
                         ScrollBar.vertical.policy: ScrollBar.AlwaysOff
                         ScrollBar.horizontal.policy: ScrollBar.AsNeeded
                         RailWheelHandler {
+                            onScrolled: function(horizontal) { scene.appBridge.recordWatchScroll(horizontal) }
                             horizontalView: homeRail
                             verticalView: viewport
                         }

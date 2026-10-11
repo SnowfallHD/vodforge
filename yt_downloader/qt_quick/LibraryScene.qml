@@ -30,6 +30,7 @@ Item {
         if (section === "media" && groupRoute) return
         selectionSection = section
         selectionMode = true
+        appBridge.recordLibraryUsage("selection_started")
     }
     function selectAllSelection() {
         reconcileSelection()
@@ -80,7 +81,11 @@ Item {
         else next.push(owner)
         selectedOwners = next
     }
-    function finishSelection() { selectionActions.close(); clearSelection(); selectionMode = false }
+    function finishSelection() {
+        const wasSelecting = selectionMode
+        selectionActions.close(); clearSelection(); selectionMode = false
+        if (wasSelecting && appBridge) appBridge.recordLibraryUsage("selection_finished")
+    }
     function resetViewport() {
         if (viewport && viewport.contentItem) viewport.contentItem.contentY = 0
     }
@@ -939,6 +944,7 @@ Item {
     }
     AnchoredPopup {
         id: groupMenu
+        onOpened: scene.appBridge.recordLibraryUsage("menu_opened")
         objectName: "libraryGroupMenu"
         parent: scene
         scrollViewport: viewport

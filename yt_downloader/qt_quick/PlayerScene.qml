@@ -350,6 +350,7 @@ Item {
             onCaptionsRequested: scene.toggleOriginalCaptions()
             onSubtitlesRequested: function(anchor) { presentationCaptionMenu.anchorItem = anchor; presentationCaptionMenu.toggleFrom(anchor) }
             onPreviewRequested: function(seconds) { scene.appBridge.hoverPlaybackPreview(seconds) }
+            onPreviewPresented: function(image, available) { scene.appBridge.playbackPreviewPresented(image, available) }
         }
         CaptionTracks {
             id: presentationCaptionMenu
@@ -518,6 +519,7 @@ Item {
                             onCaptionsRequested: scene.toggleOriginalCaptions()
                             onSubtitlesRequested: function(anchor) { captionsMenu.anchorItem = anchor; captionsMenu.toggleFrom(anchor) }
                             onPreviewRequested: function(seconds) { scene.appBridge.hoverPlaybackPreview(seconds) }
+                            onPreviewPresented: function(image, available) { scene.appBridge.playbackPreviewPresented(image, available) }
                         }
                     }
                     Text {
@@ -586,6 +588,12 @@ Item {
                         model: scene.relatedCards.slice(0, 4)
                         StoneField {
                             required property var modelData
+                            function observeRelated() {
+                                if (visible && scene.visible && scene.projection.owner)
+                                    scene.appBridge.recordRelatedShown(scene.projection.owner)
+                            }
+                            Component.onCompleted: Qt.callLater(observeRelated)
+                            onVisibleChanged: Qt.callLater(observeRelated)
                             width: relatedSide.width
                             height: 83
                             RowLayout {

@@ -35,6 +35,23 @@ from yt_downloader.whats_new import SHOWCASE_MODE
 
 EVENTS = PRODUCT_EVENT_NAMES
 
+# These describe distinct Tk behavior, not names for vaguely similar Qt actions:
+# synchronous popup return, original tags/thumbnail URL copying, focusing an
+# existing player, description expand/collapse, and the dedicated lone-episode
+# Watch presentation. Qt Help replacement and shared download reuse remain
+# required because their actual production owners support those semantics.
+QT_LEGACY_ACTIONS = frozenset(
+    {
+        ("help_operation", "popup_returned"),
+        ("library", "source_tags_copied"),
+        ("library", "thumbnail_url_copied"),
+        ("playback_operation", "focused"),
+        ("player", "description_opened"),
+        ("player", "description_closed"),
+        ("watch", "singleton_shown"),
+    }
+)
+
 
 def read_preview_snapshot(site: Path, install_id: str) -> dict[str, Any]:
     install_id = str(uuid.UUID(install_id))
@@ -181,23 +198,21 @@ def validate_journey(data: dict[str, Any]) -> list[str]:
         if feature != "announcement" or SHOWCASE_MODE != "none"
         for action in actions
     }
-    # controls_fallback belongs to the legacy Tk embedded Mac overlay. Its
-    # owner returns before installation on Windows, and the Qt presentation
-    # slot cannot emit it. Keep the complete shared vocabulary, but require this
-    # action only where its actual owner can run. Unknown/unverified Mac launch
-    # renderers retain the stricter requirement; a caller-supplied UI hint is
-    # never sufficient to remove it.
+    # Applicability comes from verified launch attestations and actual producer
+    # semantics. Unknown, unverified and mixed renderers keep the full vocabulary.
     launches = data.get("packaged_e2e", {}).get("launches", [])
+    verified_qt = bool(launches) and all(
+        launch.get("verified") is True
+        and launch.get("attestation", {}).get("renderer") == "qt"
+        for launch in launches
+    )
     if data.get("platform") == "windows" or (
-        data.get("platform") == "macos"
-        and launches
-        and all(
-            launch.get("verified") is True
-            and launch.get("attestation", {}).get("renderer") == "qt"
-            for launch in launches
-        )
+        data.get("platform") == "macos" and verified_qt
     ):
+        # Tk embedded Mac fallback is unreachable on Windows and Qt.
         required_actions.discard(("player", "controls_fallback"))
+    if data.get("platform") in {"macos", "windows"} and verified_qt:
+        required_actions.difference_update(QT_LEGACY_ACTIONS)
     if SHOWCASE_MODE == "none" and any(
         feature == "announcement" for feature, _ in observed_actions
     ):

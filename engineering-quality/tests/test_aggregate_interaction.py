@@ -171,7 +171,7 @@ def build(tmp_path, sid):
             raw["logs"][name] = {}
             for stream, value in (("stdout", output), ("stderr", "")):
                 p = root / (name + "." + stream)
-                p.write_text(value)
+                p.write_text(value, newline="")
                 raw["logs"][name][stream] = {
                     "path": str(p),
                     "sha256": hashlib.sha256(p.read_bytes()).hexdigest(),
@@ -465,7 +465,7 @@ def test_source_only_exclusions_remain_explicit_and_do_not_prove_execution(
         command["stdout"] = "1 passed in 0.1s"
     raw["commands"][name] = save(root / "scoped-command.json", command)
     log = root / "scoped.stdout.log"
-    log.write_text(command["stdout"])
+    log.write_text(command["stdout"], newline="")
     raw["logs"][name]["stdout"] = {
         "path": str(log),
         "sha256": hashlib.sha256(log.read_bytes()).hexdigest(),
@@ -480,3 +480,66 @@ def test_command_durations_cannot_fit_in_fabricated_instantaneous_phase(tmp_path
     raw["trace"][1]["elapsed_seconds"] = 0.000001
     raw["trace"][2]["elapsed_seconds"] = 0.000002
     assert assess(root, raw)["status"] != "passed"
+
+
+@pytest.mark.parametrize(
+    "recorded_root",
+    [
+        "/Users/PRIVATE/source",
+        "C:/PRIVATE/source",
+        "C:PRIVATE/source",
+        "PRIVATE/source",
+    ],
+)
+def test_source_snapshot_uses_recorded_path_semantics(
+    tmp_path, monkeypatch, recorded_root
+):
+    from pathlib import PureWindowsPath
+
+    from quality_harness import aggregate_interaction as module
+
+    fixture = json.loads(FIXTURES.read_text())["source_before"]
+    for entry in fixture.values():
+        entry["root"] = recorded_root
+    # A receipt can be evaluated on a different OS from the source producer.
+    monkeypatch.setattr(module, "Path", PureWindowsPath)
+    assert module._snapshot(fixture) is (
+        recorded_root in {"/Users/PRIVATE/source", "C:/PRIVATE/source"}
+    )
+
+
+def test_source_log_newline_translation_is_not_original_output(tmp_path):
+    root, raw = build(tmp_path, IDS[0])
+    name = "pytest"
+    log = Path(raw["logs"][name]["stdout"]["path"])
+    log.write_bytes(b"1 passed in 0.01s\r\n")
+    raw["logs"][name]["stdout"]["sha256"] = hashlib.sha256(log.read_bytes()).hexdigest()
+    assert assess(root, raw)["status"] == "failed"
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "/PRIVATE/file.py",
+        "C:/PRIVATE/file.py",
+        "C:PRIVATE/file.py",
+        "../file.py",
+        "PRIVATE/../file.py",
+        "PRIVATE\\..\\file.py",
+    ],
+)
+def test_recorded_source_snapshot_rejects_absolute_and_traversing_keys_on_any_host(
+    tmp_path, monkeypatch, key
+):
+    from pathlib import PureWindowsPath
+
+    from quality_harness import aggregate_interaction as module
+
+    fixture = json.loads(FIXTURES.read_text())["source_before"]
+    entry = fixture["desktop"]
+    entry["files"] = {key: "a" * 64}
+    entry["manifest_sha256"] = hashlib.sha256(
+        json.dumps(entry["files"], sort_keys=True).encode()
+    ).hexdigest()
+    monkeypatch.setattr(module, "Path", PureWindowsPath)
+    assert not module._snapshot(fixture)

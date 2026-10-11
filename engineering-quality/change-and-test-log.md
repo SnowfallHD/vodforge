@@ -549,3 +549,41 @@ and task/release-completion-20261010/checkpoint-current.json. Twenty-seven legac
 producer mappings remain required pending source-owner review; none was waived
 by absence of a Qt literal. No Mac foreground/input was changed during the user's
 live Kryden work. No release publication, runtime changes or candidate rebuild.
+
+
+## Oct 11 — Qt observation completion and Windows evidence portability
+
+Implemented the 18 supported Qt observations from the source-owner review,
+including actual folder-inspector admission, visible hover readiness, first relink
+cancel request and Qt Help replacement. Seven distinct legacy Tk semantics are
+excluded only by verified Qt launch attestations; shared reuse and Qt Help
+replacement remain required. Unknown, unverified and mixed renderer controls retain
+all legacy requirements. Universal schema/vocabulary and strict native gates remain
+unchanged.
+
+Broader invariant: observation follows an actual admitted or visible outcome,
+retains original consent for delayed work, never changes a media operation on sink
+failure, and never serializes private values. Representative cross-owner controls
+use the real durable telemetry outbox and actual QML callbacks; denied/regranted,
+stale-owner, hidden/not-ready, repeated request and actual cancellation cases are
+covered. Before-fix failures and corrected fixture limitations are retained.
+
+The three Windows CI failures at8117d58 were evidence portability defects: LF
+translation in source logs and evaluation of recorded POSIX roots through Windows
+Path rules. Preserve original log bytes and validate both path dialects; additional
+negative controls keep absolute, drive-relative and traversing file keys rejected.
+No stdout normalization or candidate/source binding waiver was introduced.
+
+Validation:375 affected telemetry/privacy/Qt controls passed;683 affected
+source/local-D1/presentation/evaluator controls passed;120 applicability controls
+passed, with14 prior failures; the affected Watch wheel behavior control passed.
+Lint, format and diff checks accompany the final patch. Detailed scope, ownership,
+prior-failure proof and evidence paths:engineering-quality/
+qt-telemetry-observation-review.md. QtHelpObservations owns only instrumentation;
+ProductTelemetry owns consent/durable events; app.py gained no responsibility.
+Legacy renderer behavior remains explicit deferred debt.
+
+Runtime changed: one consolidated signed successor is required. Existing
+behavior passes and original native evidence remain preserved; new source-tier
+passes do not qualify signed native/preview-D1 evidence. Mac foreground and
+production D1 were untouched.0.2.6 remains unpublished.

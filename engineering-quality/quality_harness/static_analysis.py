@@ -180,8 +180,12 @@ def run_static_suite(
         )
         outputs[name] = result.as_dict()
         save(case_dir / (name + ".command.json"), outputs[name])
-        (case_dir / f"{name}.stdout.txt").write_text(result.stdout, encoding="utf-8")
-        (case_dir / f"{name}.stderr.txt").write_text(result.stderr, encoding="utf-8")
+        (case_dir / f"{name}.stdout.txt").write_text(
+            result.stdout, encoding="utf-8", newline=""
+        )
+        (case_dir / f"{name}.stderr.txt").write_text(
+            result.stderr, encoding="utf-8", newline=""
+        )
 
     pytest_result = outputs["pytest"]
     harness_result = outputs["pytest_harness"]

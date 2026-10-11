@@ -431,3 +431,486 @@ def test_clipboard_location_and_youtube_source_track_only_success_without_values
         )
     finally:
         bridge.close()
+
+
+@pytest.mark.parametrize("permitted", [True, False])
+def test_archive_observations_follow_admitted_changes(tmp_path, monkeypatch, permitted):
+    from yt_downloader.volume_storage import StorageSnapshot, StorageVolume
+
+    bridge, telemetry = bridge_fixture(tmp_path, monkeypatch, permitted=permitted)
+    try:
+        records = [
+            saved(tmp_path, f"PRIVATE {i}", "MP4") for i in range(qt_main.PAGE_SIZE + 2)
+        ]
+        bridge._runtime.history = records
+        owners = [qt_main.history_archive_owner(record) for record in records]
+        assert not bridge.openLibraryDetails("invalid-owner")
+        assert bridge.openLibraryDetails(owners[0])
+        bridge._detail_versions = [{"owner": owner} for owner in owners[:2]]
+        assert not bridge.chooseLibraryVersion("invalid-owner")
+        assert bridge.chooseLibraryVersion(owners[1])
+        assert bridge.chooseLibraryVersion(owners[1])
+        bridge.setLibrarySort("invalid")
+        bridge.setLibrarySort("title")
+        bridge.setLibrarySort("title")
+        bridge.navigateLibraryFolders("all")
+        bridge.loadMoreLibraryFolder()
+        bridge.loadMoreLibraryFolder()
+        assert bridge._folder_browser.page == 1
+        volumes = tuple(
+            StorageVolume(str(tmp_path / name), "PRIVATE volume")
+            for name in ("one", "two")
+        )
+        snapshot = StorageSnapshot(volumes[0].path, "ready", volumes)
+        bridge._storage._snapshot = bridge._storage_snapshot = snapshot
+        bridge._storage._selected = snapshot.selected
+        bridge.selectStorageVolume("invalid")
+        bridge.selectStorageVolume(volumes[1].path)
+        bridge.selectStorageVolume(volumes[1].path)
+        actual = rows(telemetry, tmp_path, "archive")
+        actions = [row["action"] for row in actual]
+        for action in (
+            "inspector_opened",
+            "version_selected",
+            "scene_sorted",
+            "scene_paged",
+            "volume_selected",
+        ):
+            assert actions.count(action) == (1 if permitted else 0)
+    finally:
+        bridge.close()
+
+
+@pytest.mark.parametrize("permitted", [True, False])
+def test_retired_watch_detail_intent_is_observed_without_private_owner(
+    tmp_path, monkeypatch, permitted
+):
+    bridge, telemetry = bridge_fixture(tmp_path, monkeypatch, permitted=permitted)
+    try:
+        bridge.select("Watch")
+        assert not bridge.openWatchDetails("PRIVATE retired owner")
+        actual = rows(telemetry, tmp_path, "watch")
+        assert [row["action"] for row in actual].count("details_retired") == (
+            1 if permitted else 0
+        )
+    finally:
+        bridge.close()
+
+
+@pytest.mark.parametrize(
+    "context", ["granted", "denied", "regranted", "blocked", "failed", "replacement"]
+)
+def test_help_dispatch_retains_original_consent_and_actual_panel_lifecycle(
+    tmp_path, monkeypatch, context
+):
+    bridge, telemetry = bridge_fixture(
+        tmp_path, monkeypatch, permitted=context != "denied"
+    )
+    try:
+        bridge.helpMenuShown()
+        bridge.prepareHelpAction("feedback")
+        bridge.helpMenuClosed()
+        if context in {"denied", "regranted"}:
+            consent = AnalyticsConsentOwner(tmp_path / "telemetry")
+            if context == "regranted":
+                consent.choose(False)
+                telemetry.set_enabled(False)
+            consent.choose(True)
+            telemetry.set_enabled(True)
+        if context == "blocked":
+            bridge._support.busy = True
+            assert not bridge.openSupport("feedback")
+            bridge._support.busy = False
+        elif context == "failed":
+
+            def broken(*_args):
+                raise OSError("PRIVATE message and folder")
+
+            monkeypatch.setattr(bridge._support, "open", broken)
+            with pytest.raises(OSError):
+                bridge.openSupport("feedback")
+        else:
+            assert bridge.openSupport("feedback")
+            bridge.helpPanelShown("review")  # wrong or retired panel cannot settle
+            bridge.helpPanelShown("feedback")
+            bridge.helpPanelShown("feedback")
+            if context == "replacement":
+                assert bridge.openSupport("review")
+                bridge.helpPanelShown("review")
+            assert bridge.closeSupport()
+        actual = rows(telemetry, tmp_path, "help_operation")
+        actions = [row["action"] for row in actual]
+        if context in {"denied", "regranted"}:
+            assert not actual
+        else:
+            terminal = (
+                ["blocked", "closed"]
+                if context == "blocked"
+                else ["failed", "closed"]
+                if context == "failed"
+                else ["shown", "closed"]
+            )
+            if context == "replacement":
+                assert actions == [
+                    "requested",
+                    "shown",
+                    "selected",
+                    "dispatched",
+                    "shown",
+                    "requested",
+                    "dispatched",
+                    "replaced",
+                    "closed",
+                    "shown",
+                    "closed",
+                ]
+            else:
+                assert actions == [
+                    "requested",
+                    "shown",
+                    "selected",
+                    "dispatched",
+                    *terminal,
+                ]
+                assert len({row["dimensions"]["operation_id"] for row in actual}) == 1
+                assert [row["dimensions"]["operation_step"] for row in actual] == [
+                    str(i + 1) for i in range(len(actual))
+                ]
+            if context == "failed":
+                assert actual[-2]["failure_detail"]["stage"] == "dispatch"
+    finally:
+        bridge.close()
+
+
+def test_rendered_qt_menu_selection_search_and_help_use_real_callbacks(
+    tmp_path, monkeypatch
+):
+    from PySide6.QtCore import QMetaObject, QObject, Qt
+    from PySide6.QtTest import QTest
+
+    from tests.test_qt_scene_port import visual_item
+
+    bridge, telemetry = bridge_fixture(tmp_path, monkeypatch)
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    app = qt_app()
+    try:
+        bridge._runtime.history = [saved(tmp_path, "PRIVATE title", "MP4")]
+        bridge.select("Library")
+        app.processEvents()
+        scene = window.findChild(QObject, "libraryBrowseScene")
+        item = visual_item(window.contentItem(), "librarySelectButton")
+        item.activated.emit()
+        app.processEvents()
+        assert scene.property("selectionMode")
+        assert QMetaObject.invokeMethod(scene, "finishSelection", Qt.DirectConnection)
+        search = visual_item(window.contentItem(), "headerSearchInput")
+        search.forceActiveFocus()
+        app.processEvents()
+        menu = window.findChild(QObject, "librarySavedActionsPopup")
+        assert QMetaObject.invokeMethod(menu, "open", Qt.DirectConnection)
+        app.processEvents()
+        QMetaObject.invokeMethod(menu, "close", Qt.DirectConnection)
+        assert bridge.openSupport("feedback")
+        QTest.qWait(30)
+        assert window.findChild(QObject, "supportPopup").property("visible")
+        library = rows_without_close(tmp_path, "library")
+        assert {row["action"] for row in library} >= {
+            "selection_started",
+            "selection_finished",
+            "search_focused",
+            "menu_opened",
+        }
+        help_rows = rows_without_close(tmp_path, "help_operation")
+        assert [row["action"] for row in help_rows] == [
+            "requested",
+            "dispatched",
+            "shown",
+        ]
+        rows(telemetry, tmp_path, "library")  # shared privacy checks
+    finally:
+        bridge.close()
+        window.close()
+        engine.deleteLater()
+        app.processEvents()
+
+
+def rows_without_close(tmp_path, feature):
+    return [
+        event.public_payload()
+        for event in _load_outbox(tmp_path / "telemetry/events.json")
+        if event.feature == feature
+    ]
+
+
+@pytest.mark.parametrize("permitted", [True, False])
+def test_folder_inspector_observes_actual_selection_and_version_change(
+    tmp_path, monkeypatch, permitted
+):
+    from pathlib import Path
+
+    bridge, telemetry = bridge_fixture(tmp_path, monkeypatch, permitted=permitted)
+    try:
+        video, audio = [
+            saved(tmp_path, "PRIVATE title", kind) for kind in ("MP4", "MP3")
+        ]
+        for record in (video, audio):
+            Path(record["vodforge_output_path"]).write_bytes(b"controlled fixture")
+            record["webpage_url"] = "https://example.com/PRIVATE-source"
+        bridge._runtime.history = [video, audio]
+        bridge.select("Library")
+        bridge.navigateLibraryFolders("all")
+        component = next(
+            row for row in bridge.libraryFolders["components"] if row["kind"] == "media"
+        )
+        assert not bridge.selectLibraryFolderComponent("PRIVATE stale key")
+        assert bridge.selectLibraryFolderComponent(component["key"])
+        inspector = bridge.libraryFolderInspector
+        other = next(
+            row["owner"]
+            for row in inspector["versions"]
+            if row["owner"] != inspector["owner"]
+        )
+        assert not bridge.chooseLibraryFolderInspectorVersion("PRIVATE stale owner")
+        assert bridge.chooseLibraryFolderInspectorVersion(other)
+        assert bridge.chooseLibraryFolderInspectorVersion(other)
+        assert bridge.libraryFolderInspector["type"] == "MP3"
+        actual = rows(telemetry, tmp_path, "archive")
+        actions = [row["action"] for row in actual]
+        assert actions.count("inspector_opened") == (1 if permitted else 0)
+        assert actions.count("version_selected") == (1 if permitted else 0)
+    finally:
+        bridge.close()
+
+
+@pytest.mark.parametrize("context", ["granted", "denied", "regranted"])
+def test_relink_cancellation_observes_request_once_and_actual_cancelled_outcome(
+    tmp_path, monkeypatch, context
+):
+    from pathlib import Path
+
+    from PySide6.QtCore import QUrl
+
+    from tests.test_qt_relink import _settle
+    from yt_downloader.history import load_history, save_history
+    from yt_downloader.qt_quick import relink as relink_module
+
+    bridge, telemetry = bridge_fixture(
+        tmp_path, monkeypatch, permitted=context != "denied"
+    )
+    entered, release = Event(), Event()
+    try:
+        old = tmp_path / "PRIVATE old"
+        old.mkdir()
+        candidate = tmp_path / "PRIVATE new.mp4"
+        candidate.write_bytes(b"controlled saved media")
+        record = saved(old, "PRIVATE old", "MP4")
+        save_history(bridge._runtime.history_path, [record])
+        bridge._runtime.history = load_history(bridge._runtime.history_path)
+        original = Path(bridge._runtime.history_path).read_bytes()
+        owner = qt_main.history_archive_owner(bridge._runtime.history[0])
+        assert bridge.beginRelink(owner, QUrl.fromLocalFile(str(candidate)))
+        _settle(bridge._relink)
+        assert bridge._relink.phase == "preview"
+
+        def interrupted_commit(*_args, cancelled, **_kwargs):
+            entered.set()
+            assert release.wait(2)
+            assert cancelled.is_set()
+            raise ValueError("PRIVATE interrupted fixture")
+
+        monkeypatch.setattr(relink_module, "commit_relink", interrupted_commit)
+        assert bridge.acceptRelink()
+        assert entered.wait(1)
+        if context in {"denied", "regranted"}:
+            consent = AnalyticsConsentOwner(tmp_path / "telemetry")
+            if context == "regranted":
+                consent.choose(False)
+                telemetry.set_enabled(False)
+            consent.choose(True)
+            telemetry.set_enabled(True)
+        bridge.cancelRelink()
+        bridge.cancelRelink()
+        assert bridge._relink.phase == "working"
+        release.set()
+        deadline = time.monotonic() + 2
+        while bridge._relink.phase == "working" and time.monotonic() < deadline:
+            bridge._pump()
+            time.sleep(0.005)
+        assert bridge._relink.phase == "cancelled"
+        assert Path(bridge._runtime.history_path).read_bytes() == original
+        actual = rows(telemetry, tmp_path, "archive_relink_operation")
+        actions = [row["action"] for row in actual]
+        assert actions.count("cancel_requested") == (1 if context == "granted" else 0)
+        assert actions.count("cancelled") == (1 if context == "granted" else 0)
+        assert "committed" not in actions
+    finally:
+        release.set()
+        bridge.close()
+
+
+@pytest.mark.parametrize("permitted", [True, False])
+def test_rendered_watch_scroll_reports_input_movement_not_layout_restoration(
+    tmp_path, monkeypatch, permitted
+):
+    from PySide6.QtCore import QObject, QPoint, QPointF, Qt
+    from PySide6.QtGui import QGuiApplication, QWheelEvent
+
+    from tests.test_qt_scene_port import visual_item
+
+    bridge, telemetry = bridge_fixture(tmp_path, monkeypatch, permitted=permitted)
+    app = qt_app()
+    for i in range(18):
+        record = saved(tmp_path, f"PRIVATE {i}", "MP4")
+        record["playlist_id"] = f"PRIVATE playlist-{i}"
+        record["playlist_title"] = f"PRIVATE playlist {i}"
+        bridge._runtime.history.append(record)
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        bridge.selectHome("Watch")
+        for _ in range(5):
+            app.processEvents()
+        rail = visual_item(window.contentItem(), "watchHomeRail_playlists")
+        page = window.findChild(QObject, "watchViewport").property("contentItem")
+        horizontal = rail.property("contentItem")
+        horizontal.setProperty("contentX", 40)
+        for _ in range(5):
+            app.processEvents()
+        assert not rows_without_close(tmp_path, "watch") or not any(
+            row["action"] in {"rail_scrolled", "catalog_scrolled"}
+            for row in rows_without_close(tmp_path, "watch")
+        )
+        point = rail.mapToScene(QPointF(120, 60))
+        assert 0 < point.y() < window.height(), (point, window.height())
+        for dx, dy in ((0, -80), (-80, 0)):
+            before = (
+                horizontal.property("contentX") if dx else page.property("contentY")
+            )
+            wheel = QWheelEvent(
+                point,
+                point,
+                QPoint(dx, dy),
+                QPoint(),
+                Qt.NoButton,
+                Qt.NoModifier,
+                Qt.ScrollUpdate,
+                False,
+            )
+            QGuiApplication.sendEvent(window, wheel)
+            for _ in range(5):
+                app.processEvents()
+            after = horizontal.property("contentX") if dx else page.property("contentY")
+            assert after > before
+        search = visual_item(window.contentItem(), "headerSearchInput")
+        search.forceActiveFocus()
+        app.processEvents()
+        actual = rows(telemetry, tmp_path, "watch")
+        for action in ("rail_scrolled", "catalog_scrolled", "search_focused"):
+            assert [row["action"] for row in actual].count(action) == (
+                1 if permitted else 0
+            )
+    finally:
+        bridge.close()
+        window.close()
+        engine.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.parametrize("others", [0, 2])
+def test_rendered_related_observation_requires_actual_cards_and_live_owner(
+    tmp_path, monkeypatch, others
+):
+    from PySide6.QtTest import QTest
+
+    bridge, telemetry = bridge_fixture(tmp_path, monkeypatch)
+    app = qt_app()
+    bridge._runtime.history = [
+        saved(tmp_path, f"PRIVATE {i}", "MP4") for i in range(others + 1)
+    ]
+    for i in range(others + 1):
+        (tmp_path / f"PRIVATE {i}.mp4").write_bytes(b"controlled fixture")
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        bridge.recordRelatedShown("PRIVATE stale owner")
+        assert not rows_without_close(tmp_path, "player")
+        assert bridge.openLibraryItem(0)
+        QTest.qWait(40)
+        actual = rows(telemetry, tmp_path, "player")
+        assert [row["action"] for row in actual].count("related_shown") == (
+            1 if others else 0
+        )
+    finally:
+        bridge.close()
+        window.close()
+        engine.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.parametrize("available", [True, False])
+def test_real_qml_hover_callback_waits_for_visible_ready_frame(
+    tmp_path, monkeypatch, available
+):
+    from PIL import Image
+    from PySide6.QtCore import QObject, QUrl
+    from PySide6.QtQml import QQmlComponent
+    from PySide6.QtTest import QTest
+
+    bridge, telemetry = bridge_fixture(tmp_path, monkeypatch)
+    app = qt_app()
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    component = QQmlComponent(engine)
+    component.setData(
+        b"""
+import QtQuick
+Item {
+    width: 900; height: 220
+    QtObject { id: media; property int duration: 100000; property int position: 0; property int playbackState: 1 }
+    PlayerOverlay { objectName: "coverageOverlay"; anchors.fill: parent; player: media; volume: 0.5 }
+}
+""",
+        QUrl.fromLocalFile(
+            str(qt_main.Path(qt_main.__file__).parent / "TelemetryHoverControl.qml")
+        ),
+    )
+    root = component.create()
+    assert root is not None, [error.toString() for error in component.errors()]
+    root.setParentItem(window.contentItem())
+    overlay = root.findChild(QObject, "coverageOverlay")
+    preview = overlay.findChild(QObject, "playerSeekPreview")
+    overlay.setProperty("surfaceHovered", True)
+    observed = []
+    overlay.previewPresented.connect(
+        lambda image, ready: observed.append((image, ready))
+    )
+    try:
+        image = ""
+        if available:
+            file = tmp_path / "PRIVATE_frame.png"
+            Image.new("RGB", (32, 18), "blue").save(file)
+            image = QUrl.fromLocalFile(str(file)).toString()
+        overlay.setProperty(
+            "previews",
+            [{"image": image, "status": "Ready" if available else "No preview"}],
+        )
+        QTest.qWait(30)
+        assert not preview.property("visible")
+        assert observed == []
+        # Control only visibility; production Image status and signal run normally.
+        preview.setProperty("visible", True)
+        QTest.qWait(40)
+        assert observed and set(observed) == {(image, available)}
+        overlay.setProperty("visible", False)
+        observed.clear()
+        overlay.setProperty("previews", [{"image": "", "status": "No preview"}])
+        QTest.qWait(20)
+        assert observed == []
+    finally:
+        root.deleteLater()
+        window.close()
+        engine.deleteLater()
+        app.processEvents()
+        bridge.close()
+        telemetry.shutdown(2)

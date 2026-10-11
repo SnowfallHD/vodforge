@@ -59,6 +59,14 @@ def operation(
         return False
 
 
+def bind_usage(telemetry: Any, feature: str) -> Any:
+    """An optional feature callback retains the original async consent context."""
+    try:
+        return telemetry.bind_feature(feature) if telemetry else None
+    except Exception:  # noqa: BLE001 - unavailable observation must fail closed
+        return None
+
+
 def usage(
     telemetry: Any,
     feature: str,

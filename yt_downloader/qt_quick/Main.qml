@@ -222,8 +222,13 @@ Window {
             supportEmail.text = ""
             supportName.text = ""
             supportPopup.open()
+            const kind = bridge.supportKind
+            Qt.callLater(function() { if (supportPopup.visible && bridge.supportKind === kind) bridge.helpPanelShown(kind) })
         }
-        function onEditorialRequested() { editorialPopup.open() }
+        function onEditorialRequested() {
+            editorialPopup.open()
+            Qt.callLater(function() { if (editorialPopup.visible) bridge.helpPanelShown("editorial") })
+        }
         function onSocialInvitationRequested() { socialInvitationPopup.open() }
         function onFileActionRequested() { fileActionPopup.open() }
         function onLibraryRemovalRequested() { libraryRemovalPopup.open() }
@@ -329,6 +334,8 @@ Window {
     }
     AnchoredPopup {
         id: helpMenu
+        onOpened: bridge.helpMenuShown()
+        onClosed: bridge.helpMenuClosed()
         objectName: "helpMenu"
         parent: window.contentItem
         preferAbove: true
@@ -342,24 +349,24 @@ Window {
             StoneButton {
                 width: parent.width; height: 46
                 label: "Support"
-                onActivated: { helpMenu.close(); settingsPopup.close(); bridge.openSupport("feedback") }
+                onActivated: { bridge.prepareHelpAction("feedback"); helpMenu.close(); settingsPopup.close(); bridge.openSupport("feedback") }
             }
             StoneButton {
                 width: parent.width; height: 46
                 label: "Write a review"
-                onActivated: { helpMenu.close(); settingsPopup.close(); bridge.openSupport("review") }
+                onActivated: { bridge.prepareHelpAction("review"); helpMenu.close(); settingsPopup.close(); bridge.openSupport("review") }
             }
             StoneButton {
                 objectName: "helpWhatsNew"
                 width: parent.width; height: 46
                 visible: bridge.whatsNewAvailable
                 label: "What’s new"
-                onActivated: { helpMenu.close(); settingsPopup.close(); bridge.openWhatsNew() }
+                onActivated: { bridge.prepareHelpAction("menu"); helpMenu.close(); settingsPopup.close(); bridge.openWhatsNew() }
             }
             StoneButton {
                 width: parent.width; height: 46
                 label: "Welcome tour"
-                onActivated: { helpMenu.close(); settingsPopup.close(); bridge.openWelcomeTour() }
+                onActivated: { bridge.prepareHelpAction("welcome"); helpMenu.close(); settingsPopup.close(); bridge.openWelcomeTour() }
             }
         }
     }
@@ -1147,6 +1154,7 @@ Window {
                         background: Item {}
                         font.pixelSize: 15
                         onTextEdited: bridge.setActiveSearch(text)
+                        onActiveFocusChanged: if (activeFocus) bridge.recordSearchFocus()
                     }
                 }
                 StoneButton {
@@ -1936,6 +1944,7 @@ Window {
     AnchoredPopup {
         id: libraryItemPopup
         objectName: "librarySavedActionsPopup"
+        onOpened: bridge.recordLibraryUsage("menu_opened")
         parent: window.contentItem
         preferAbove: true
         alignRight: true

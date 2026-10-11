@@ -7,6 +7,7 @@ import threading
 import time
 from pathlib import Path
 
+import pytest
 from PIL import Image
 from PySide6.QtCore import QSize
 
@@ -132,3 +133,86 @@ def test_qt_preview_images_reject_oversized_or_invalid_data():
     missing = images.requestImage("missing", QSize(), QSize())
     assert not missing.isNull()
     assert missing.pixelColor(0, 0).alpha() == 0
+
+
+@pytest.mark.usefixtures("production_telemetry_contract")
+@pytest.mark.parametrize(
+    "context",
+    [
+        "granted",
+        "unavailable",
+        "denied",
+        "regranted",
+        "replaced",
+        "not_presented",
+        "sink_failed",
+    ],
+)
+def test_preview_observation_requires_current_visible_result_and_original_consent(
+    tmp_path, context
+):
+    from tests.test_presentation_diagnostics import real_owner
+    from tests.test_qt_telemetry_coverage import rows
+    from yt_downloader.analytics_consent import AnalyticsConsentOwner
+
+    owner = PreviewOwner()
+    telemetry = real_owner(tmp_path / "telemetry", permitted=context != "denied")
+    session = QtPreviewSession("ffmpeg", owner=owner)
+    session.product_telemetry = telemetry
+    if context == "sink_failed":
+
+        class Broken:
+            def bind_feature(self, *_args):
+                raise OSError("PRIVATE sink")
+
+        session.product_telemetry = Broken()
+    if context == "unavailable":
+        owner.preview_png = lambda *_args, **_kwargs: None
+    try:
+        session.load(tmp_path / "first.mp4")
+        assert session.request(100)
+        assert session.hover(42)
+        if context != "unavailable":
+            assert owner.first_started.wait(1)
+        assert not session.presented("PRIVATE stale image", True)
+        if context in {"denied", "regranted"}:
+            consent = AnalyticsConsentOwner(tmp_path / "telemetry")
+            if context == "regranted":
+                consent.choose(False)
+                telemetry.set_enabled(False)
+            consent.choose(True)
+            telemetry.set_enabled(True)
+        if context == "replaced":
+            session.load(tmp_path / "second.mp4")
+        owner.release_first.set()
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            if session.poll() or not session._work.busy:
+                break
+            time.sleep(0.005)
+        assert not rows_without_shutdown(telemetry, tmp_path)
+        if context not in {"replaced", "not_presented"}:
+            image = session.records[0]["image"]
+            session.presented(image, bool(image))
+            session.presented(image, bool(image))
+        actual = rows(telemetry, tmp_path, "player")
+        assert [row["action"] for row in actual] == (
+            ["hover_preview_shown"]
+            if context == "granted"
+            else ["hover_preview_unavailable"]
+            if context == "unavailable"
+            else []
+        )
+    finally:
+        session.close()
+        telemetry.shutdown(2)
+
+
+def rows_without_shutdown(telemetry, tmp_path):
+    from yt_downloader.product_telemetry import _load_outbox
+
+    return [
+        row
+        for row in _load_outbox(tmp_path / "telemetry/events.json")
+        if row.feature == "player"
+    ]

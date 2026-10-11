@@ -622,13 +622,7 @@ class ProductTelemetryOwner:
         self.flush_async()
         return True
 
-    def bind_operation(
-        self, feature: str, *, operation_key: str
-    ) -> BoundProductOperation | None:
-        """Bind before asynchronous work; re-grant never adopts prior work."""
-        if feature not in OPERATION_FEATURES:
-            raise ValueError("unsupported operation observation")
-        _valid_uuid(operation_key, version=4)
+    def _bound_consent(self) -> Callable[[], bool] | None:
         with self._lock:
             if not self._permitted()[0]:
                 return None
@@ -651,6 +645,36 @@ class ProductTelemetryOwner:
                     )
                 except (OSError, ValueError):
                     return False
+
+        return current
+
+    def bind_feature(self, feature: str) -> Callable[..., bool] | None:
+        """Bind actual asynchronous presentation to its original consent context."""
+        if feature not in FEATURE_ACTIONS or feature in OPERATION_FEATURES:
+            raise ValueError("unsupported feature observation")
+        current = self._bound_consent()
+        if current is None:
+            return None
+
+        def record(action: str, *, dimensions: Mapping[str, str] | None = None) -> bool:
+            with self._lock:
+                return bool(
+                    current()
+                    and self.record_feature(feature, action, dimensions=dimensions)
+                )
+
+        return record
+
+    def bind_operation(
+        self, feature: str, *, operation_key: str
+    ) -> BoundProductOperation | None:
+        """Bind before asynchronous work; re-grant never adopts prior work."""
+        if feature not in OPERATION_FEATURES:
+            raise ValueError("unsupported operation observation")
+        _valid_uuid(operation_key, version=4)
+        current = self._bound_consent()
+        if current is None:
+            return None
 
         def record(
             action: str,

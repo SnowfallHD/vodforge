@@ -202,6 +202,22 @@ A helper directly posting events is a transport test, not packaged journey proof
    contracts. Provider delivery is explicitly separate: preview excludes HeyCatch;
    never claim provider certification from preview D1.
 
+## Renderer applicability
+
+The shared 215-action vocabulary stays intact. A nonempty set of verified Qt
+launch attestations on macOS or Windows excludes seven distinct legacy Tk
+semantics: synchronous Help popup return; copying original source tags or a
+thumbnail URL; focusing an existing player; expanding/collapsing its description;
+and the dedicated lone-episode Watch presentation. Together with the existing
+embedded Mac controls-fallback exclusion, verified Qt requires 207 actions.
+Unknown, unverified or mixed renderers retain the legacy requirements. Windows
+always excludes the embedded Mac fallback, including with an unknown renderer.
+
+Qt Help panel replacement and shared download output reuse remain required.
+Applicability does not waive ordered native launches, consent/privacy controls,
+operation correlation, exact candidate binding, or preview-D1 readbacks. An absent
+producer alone never makes an action inapplicable.
+
 ## Direct D1 readbacks and enforcement
 
 While each packaged session runs, capture its scoped rows (SELECT only):

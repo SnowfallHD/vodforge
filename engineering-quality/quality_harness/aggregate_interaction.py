@@ -10,7 +10,7 @@ import hashlib
 import json
 import re
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from .pipeline_interaction import _number, load_observation
 from .source_identity import validate_manifest
@@ -36,11 +36,16 @@ def _snapshot(value):
         return False
     for entry in value.values():
         files = entry.get("files", {})
-        if not files or not Path(entry.get("root", "")).is_absolute():
+        if not files or not (
+            PurePosixPath(entry.get("root", "")).is_absolute()
+            or PureWindowsPath(entry.get("root", "")).is_absolute()
+        ):
             return False
         if any(
-            Path(k).is_absolute()
-            or ".." in Path(k).parts
+            PurePosixPath(k).is_absolute()
+            or bool(PureWindowsPath(k).drive)
+            or ".." in PurePosixPath(k).parts
+            or ".." in PureWindowsPath(k).parts
             or not re.fullmatch("[0-9a-f]{64}", str(v))
             for k, v in files.items()
         ):

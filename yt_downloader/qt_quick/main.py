@@ -67,6 +67,7 @@ from yt_downloader.archive_observations import (
     bind_operation,
     operation,
     relink_dimensions,
+    usage,
 )
 from yt_downloader.archive_paths import ArchivePath
 from yt_downloader.archive_relink import record_fingerprint
@@ -186,6 +187,7 @@ from yt_downloader.player_related import player_related_plan
 from yt_downloader.product_telemetry import BoundProductOperation, product_output_kind
 from yt_downloader.qt_quick.analytics import QtAnalyticsSession
 from yt_downloader.qt_quick.artwork import QtArtwork, ThumbnailReductionProvider
+from yt_downloader.qt_quick.help_observations import QtHelpObservations
 from yt_downloader.qt_quick.library_files import QtLibraryFiles, relocated_owner_map
 from yt_downloader.qt_quick.library_window_model import register_window_model
 from yt_downloader.qt_quick.local_conversion import LocalConversionRuntime
@@ -476,6 +478,7 @@ class Bridge(QObject):
         self.selectionChanged.connect(self.activeSearchChanged.emit)
         self.historyChanged.connect(self.runDeckChanged.emit)
         self._support = QtSupportSession(self._runtime.history_path.parent)
+        self._help_observations = QtHelpObservations()
         self._latest_failure: FailureContext | None = None
         self._engagement = EngagementState(
             installation_state_path(data_dir=self._runtime.history_path.parent)
@@ -1154,6 +1157,13 @@ class Bridge(QObject):
                 self._relink_operation,
             )
             self._relink_operation = None
+        elif self._relink.active and not self._relink.cancel_requested:
+            operation(
+                self._analytics.telemetry,
+                "archive_relink_operation",
+                "cancel_requested",
+                self._relink_operation,
+            )
         self._relink.cancel()
         self.relinkChanged.emit()
 
@@ -2490,9 +2500,12 @@ class Bridge(QObject):
     def selectStorageVolume(self, path: str) -> None:
         if path not in {volume.path for volume in self._storage_snapshot.choices}:
             return
+        previous = self._storage_snapshot.selected
         self._storage.select(path)
         self._storage_snapshot = self._storage.snapshot
         self.storageChanged.emit()
+        if self._storage_snapshot.selected != previous:
+            usage(self._analytics.telemetry, "archive", "volume_selected")
 
     @Slot()
     def refreshStorage(self) -> None:
@@ -3563,6 +3576,7 @@ class Bridge(QObject):
         self._library_scene_route = "detail"
         self.historyChanged.emit()
         self._record_update_feature("library", "selected")
+        usage(self._analytics.telemetry, "archive", "inspector_opened")
         return True
 
     @Slot()
@@ -4077,6 +4091,7 @@ class Bridge(QObject):
             self._folder_inspector_owner = ""
             self._folder_inspector_versions = []
             self.historyChanged.emit()
+            usage(self._analytics.telemetry, "archive", "inspector_opened")
             return True
         if (
             component is not None
@@ -4138,6 +4153,7 @@ class Bridge(QObject):
                 }
             )
             self.historyChanged.emit()
+            usage(self._analytics.telemetry, "archive", "inspector_opened")
             return True
         if (
             component is not None
@@ -4177,6 +4193,7 @@ class Bridge(QObject):
                 job, source, str(job.output_dir) if job.output_dir.is_dir() else ""
             )
             self.historyChanged.emit()
+            usage(self._analytics.telemetry, "archive", "inspector_opened")
             return True
         if component is None or component.kind != "media":
             return False
@@ -4192,6 +4209,7 @@ class Bridge(QObject):
         self._issue_live_phase = ""
         self._issue_settings = {}
         self.historyChanged.emit()
+        usage(self._analytics.telemetry, "archive", "inspector_opened")
         return True
 
     @Slot(str, result=bool)
@@ -4202,8 +4220,11 @@ class Bridge(QObject):
             or self._saved_item_for_owner(owner) is None
         ):
             return False
+        changed = self._folder_inspector_owner != owner
         self._folder_inspector_owner = owner
         self.historyChanged.emit()
+        if changed:
+            usage(self._analytics.telemetry, "archive", "version_selected")
         return True
 
     @Slot(result=bool)
@@ -4406,6 +4427,7 @@ class Bridge(QObject):
             return
         model.page += 1
         self.historyChanged.emit()
+        usage(self._analytics.telemetry, "archive", "scene_paged")
 
     @Slot(str, result=bool)
     def chooseLibraryVersion(self, owner: str) -> bool:
@@ -4415,8 +4437,11 @@ class Bridge(QObject):
             return False
         if self._saved_item_for_owner(owner) is None:
             return False
+        changed = self._library_detail_owner != owner
         self._library_detail_owner = owner
         self.historyChanged.emit()
+        if changed:
+            usage(self._analytics.telemetry, "archive", "version_selected")
         return True
 
     @Slot(str)
@@ -4552,12 +4577,52 @@ class Bridge(QObject):
             item.window() == window and item.contains(item.mapFromScene(position))
         )
 
+    @Slot()
+    def helpMenuShown(self) -> None:
+        if not self._closed:
+            self._help_observations.menu_shown(self._analytics.telemetry)
+
+    @Slot()
+    def helpMenuClosed(self) -> None:
+        self._help_observations.menu_closed()
+
+    @Slot(str)
+    def prepareHelpAction(self, target: str) -> None:
+        self._help_observations.select(target)
+
+    @Slot(str)
+    def helpPanelShown(self, target: str) -> None:
+        if target == "editorial":
+            target = (
+                "welcome"
+                if self._editorial_kind in {"welcome", "welcome-tour"}
+                else "menu"
+            )
+        if not self._closed and (
+            target == self._support.kind
+            or target == "welcome"
+            and self._editorial_kind in {"welcome", "welcome-tour"}
+            or target == "menu"
+            and self._editorial_kind == "whats-new"
+        ):
+            self._help_observations.panel_shown(target)
+
     @Slot(str, result=bool)
     def openSupport(self, kind: str) -> bool:
-        if not self._support.open(
-            kind, self._latest_failure if kind == "feedback" else None
-        ):
+        if kind not in {"feedback", "review"}:
             return False
+        bound = self._help_observations.begin(self._analytics.telemetry, kind)
+        try:
+            accepted = self._support.open(
+                kind, self._latest_failure if kind == "feedback" else None
+            )
+        except Exception as error:
+            self._help_observations.failed(bound, kind, error)
+            raise
+        if not accepted:
+            self._help_observations.blocked(bound, kind)
+            return False
+        self._help_observations.ready(bound, kind)
         self.supportChanged.emit()
         self.supportRequested.emit()
         return True
@@ -4572,18 +4637,22 @@ class Bridge(QObject):
     def closeSupport(self) -> bool:
         if not self._support.close():
             return False
+        self._help_observations.panel_closed()
         self.supportChanged.emit()
         return True
 
     @Slot(result=bool)
     def openWhatsNew(self) -> bool:
+        bound = self._help_observations.begin(self._analytics.telemetry, "menu")
         if (
             not self.whatsNewAvailable
             or not self._analytics.settled
             or self._editorial_kind
             or self._support.kind
         ):
+            self._help_observations.blocked(bound, "menu")
             return False
+        self._help_observations.ready(bound, "menu")
         self._editorial_kind = "whats-new"
         self._editorial_slides = HIGHLIGHTS
         self.editorialChanged.emit()
@@ -4600,8 +4669,11 @@ class Bridge(QObject):
         return self._open_welcome(compact=True)
 
     def _open_welcome(self, *, compact: bool) -> bool:
+        bound = self._help_observations.begin(self._analytics.telemetry, "welcome")
         if self._editorial_kind or self._support.kind or self._social_invitation_open:
+            self._help_observations.blocked(bound, "welcome")
             return False
+        self._help_observations.ready(bound, "welcome")
         self._editorial_kind = "welcome" if compact else "welcome-tour"
         self._editorial_slides = (
             (
@@ -4697,6 +4769,7 @@ class Bridge(QObject):
                 self._record_update_feature("announcement", "try_it")
         self._editorial_kind = ""
         self._editorial_slides = ()
+        self._help_observations.panel_closed()
         self.editorialChanged.emit()
 
     @Slot(str)
@@ -4714,6 +4787,8 @@ class Bridge(QObject):
     @Slot(str, result=bool)
     def openWatchDetails(self, owner: str) -> bool:
         if not self.openLibraryDetails(owner):
+            if self._selection == "Watch" and not self._closed:
+                usage(self._analytics.telemetry, "watch", "details_retired")
             return False
         self._library_detail_from_watch = True
         self._record_update_feature("watch", "details")
@@ -4900,12 +4975,46 @@ class Bridge(QObject):
         self._record_update_feature("library", "filtered")
 
     @Slot(str)
+    def recordLibraryUsage(self, action: str) -> None:
+        if (
+            not self._closed
+            and self._selection == "Library"
+            and action in {"menu_opened", "selection_started", "selection_finished"}
+        ):
+            usage(self._analytics.telemetry, "library", action)
+
+    @Slot()
+    def recordSearchFocus(self) -> None:
+        if not self._closed and self._selection in {"Library", "Watch"}:
+            usage(self._analytics.telemetry, self._selection.lower(), "search_focused")
+
+    @Slot(bool)
+    def recordWatchScroll(self, horizontal: bool) -> None:
+        if not self._closed and self._selection == "Watch":
+            usage(
+                self._analytics.telemetry,
+                "watch",
+                "rail_scrolled" if horizontal else "catalog_scrolled",
+            )
+
+    @Slot(str)
+    def recordRelatedShown(self, owner: str) -> None:
+        if (
+            not self._closed
+            and self._playback_binding is not None
+            and self._playback_record is not None
+            and owner == history_archive_owner(self._playback_record)
+        ):
+            usage(self._analytics.telemetry, "player", "related_shown")
+
+    @Slot(str)
     def setLibrarySort(self, value: str) -> None:
         if value not in {"recent", "title"} or value == self._library_sort:
             return
         self._library_sort = value
         self.librarySortChanged.emit()
         self.historyChanged.emit()
+        usage(self._analytics.telemetry, "archive", "scene_sorted")
 
     @Slot(int, result=bool)
     def openAnnotation(self, index: int) -> bool:
@@ -6008,8 +6117,14 @@ class Bridge(QObject):
 
     @Slot(float)
     def hoverPlaybackPreview(self, position: float) -> None:
+        self._previews.product_telemetry = self._analytics.telemetry
         if self._previews.hover(position):
             self.playbackPreviewsChanged.emit()
+
+    @Slot(str, bool)
+    def playbackPreviewPresented(self, image: str, available: bool) -> None:
+        if not self._closed and self._playback_binding is not None:
+            self._previews.presented(image, available)
 
     @Slot(int, result=bool)
     def seekPlaybackChapter(self, index: int) -> bool:
@@ -6955,6 +7070,7 @@ class Bridge(QObject):
         if self._closed:
             return
         self._closed = True
+        self._help_observations.close()
         if self._nvenc_probe is not None:
             probe = self._nvenc_probe
             self._nvenc_probe = None

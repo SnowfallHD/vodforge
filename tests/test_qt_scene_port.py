@@ -3561,6 +3561,7 @@ def test_qt_library_navigation_telemetry_matches_saved_actions_without_user_text
             ("library", "filtered", None),
             ("library", "filtered", None),
             ("library", "selected", None),
+            ("archive", "inspector_opened", None),
         ]
         assert "Private title" not in repr(observer.events)
     finally:

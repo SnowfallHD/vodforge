@@ -11,6 +11,7 @@ from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QImage
 from PySide6.QtQuick import QQuickImageProvider
 
+from yt_downloader.archive_observations import bind_usage
 from yt_downloader.archive_work import ArchiveWorkOwner
 from yt_downloader.media_preview import MediaPreviewOwner
 from yt_downloader.playback_backend import MediaPlayerError
@@ -73,6 +74,11 @@ class QtPreviewSession:
         self._image_version = 0
         self._records: list[dict[str, Any]] = []
         self._closed = False
+        self.product_telemetry: Any = None
+        self._desired_observation: Any = None
+        self._active_observation: Any = None
+        self._published_observation: Any = None
+        self._preview_observed = False
 
     @property
     def records(self) -> list[dict[str, Any]]:
@@ -86,6 +92,10 @@ class QtPreviewSession:
         self._duration = 0.0
         self._desired_position = None
         self._active_position = None
+        self._desired_observation = self._active_observation = (
+            self._published_observation
+        ) = None
+        self._preview_observed = False
         self._records = []
         if self._closed or self._owner is None or path is None:
             return
@@ -113,6 +123,10 @@ class QtPreviewSession:
         self._records = []
         self._desired_position = None
         self._active_position = None
+        self._desired_observation = self._active_observation = (
+            self._published_observation
+        ) = None
+        self._preview_observed = False
         return True
 
     def hover(self, position: float) -> bool:
@@ -136,6 +150,7 @@ class QtPreviewSession:
         ):
             return False
         self._desired_position = position
+        self._desired_observation = bind_usage(self.product_telemetry, "player")
         if not self._records:
             self._records = [
                 {"position": position, "image": "", "status": "Loading preview…"}
@@ -166,6 +181,7 @@ class QtPreviewSession:
 
         if self._work.submit("player_previews", work) is not None:
             self._active_position = position
+            self._active_observation = self._desired_observation
 
     def poll(self) -> bool:
         if self._closed:
@@ -193,10 +209,37 @@ class QtPreviewSession:
             elif self._records and not self._records[0]["image"]:
                 self._records[0]["status"] = "No preview"
                 changed = True
+            if changed:
+                self._published_observation = self._active_observation
+                self._preview_observed = False
+            self._active_observation = None
             if position is not None and self._desired_position == position:
                 self._desired_position = None
         self._start()
         return changed
+
+    def presented(self, image: str, available: bool) -> bool:
+        """Only the currently rendered hover result may settle an observation."""
+        if self._closed or self._preview_observed or not self._records:
+            return False
+        row = self._records[0]
+        if (available and (not image or image != row["image"])) or (
+            not available and (image or row["image"] or row["status"] != "No preview")
+        ):
+            return False
+        callback = self._published_observation
+        if callback is None:
+            return False
+        try:
+            accepted = bool(
+                callback(
+                    "hover_preview_shown" if available else "hover_preview_unavailable"
+                )
+            )
+        except Exception:  # noqa: BLE001 - optional diagnostics cannot own playback
+            accepted = False
+        self._preview_observed = accepted
+        return accepted
 
     def close(self) -> None:
         if self._closed:

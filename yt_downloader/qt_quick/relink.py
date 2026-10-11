@@ -56,6 +56,10 @@ class QtRelinkSession:
         return self.phase in {"checking", "preview", "working"} or self.work.busy
 
     @property
+    def cancel_requested(self) -> bool:
+        return self._cancel_requested
+
+    @property
     def eligible(self) -> bool:
         return (
             self.phase == "preview"

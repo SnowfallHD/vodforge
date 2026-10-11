@@ -31,6 +31,16 @@ Item {
     signal captionsRequested()
     signal subtitlesRequested(var anchor)
     signal previewRequested(real seconds)
+    signal previewPresented(string image, bool available)
+    function observePreview() {
+        if (!controls.visible || !hoverPreview.visible || !previews.length) return
+        const current = previews[0]
+        if (current.image && hoverPreviewImage.status === Image.Ready &&
+                hoverPreviewImage.source.toString() === current.image)
+            previewPresented(current.image, true)
+        else if (!current.image && current.status === "No preview")
+            previewPresented("", false)
+    }
 
     property bool presentationAvailable: true
     property bool surfaceHovered: false
@@ -64,6 +74,7 @@ Item {
     onPreviewsChanged: {
         if (previews.length && previews[0].image)
             lastPreviewImage = previews[0].image
+        Qt.callLater(observePreview)
     }
 
     // The single lower scrim belongs to the video overlay, as in the native player.
@@ -145,6 +156,7 @@ Item {
         id: hoverPreview
         HoverHandler { id: previewHover }
         objectName: "playerSeekPreview"
+        onVisibleChanged: Qt.callLater(controls.observePreview)
         visible: (seekHover.containsMouse || previewHover.hovered) && controls.player && controls.player.duration > 0
         width: 160; height: chapterTrack.chapterAt(controls.hoverSeconds) ? 132 : 112; radius: 7
         x: Math.max(4, Math.min(controls.width - width - 4, seekHover.x + seekHover.mouseX - width / 2))
@@ -153,6 +165,8 @@ Item {
         border.width: 1
         border.color: theme.accent
         Image {
+            id: hoverPreviewImage
+            onStatusChanged: Qt.callLater(controls.observePreview)
             anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
             anchors.margins: 4
             height: 85

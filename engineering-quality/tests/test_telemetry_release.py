@@ -513,3 +513,58 @@ def test_real_legacy_overlay_owner_only_emits_fallback_on_macos(
     PlayerPresentationMixin._install_native_controls(owner)
     assert observed == expected
     assert overlay.MacOSPlayerOverlay.call_count == (1 if platform == "darwin" else 0)
+
+
+QT_LEGACY_ACTIONS = (
+    ("help_operation", "popup_returned"),
+    ("library", "source_tags_copied"),
+    ("library", "thumbnail_url_copied"),
+    ("playback_operation", "focused"),
+    ("player", "description_opened"),
+    ("player", "description_closed"),
+    ("watch", "singleton_shown"),
+)
+
+
+@pytest.mark.parametrize("platform", ["macos", "windows"])
+@pytest.mark.parametrize("pair", QT_LEGACY_ACTIONS)
+@pytest.mark.parametrize("renderer", ["qt", "tk", "mixed", "unknown", "unverified"])
+def test_reviewed_legacy_semantics_require_verified_qt_applicability(
+    platform, pair, renderer
+):
+    data = telemetry_fixture(candidate(), platform)
+    for launch in data["packaged_e2e"]["launches"]:
+        launch["attestation"]["renderer"] = (
+            "qt" if renderer in {"qt", "mixed", "unverified"} else renderer
+        )
+    if renderer == "mixed":
+        data["packaged_e2e"]["launches"][0]["attestation"]["renderer"] = "tk"
+    if renderer == "unverified":
+        data["packaged_e2e"]["launches"][0]["verified"] = False
+    without_action(data, *pair)
+    errors = validate_journey(data)
+    missing = any(repr(pair) in error for error in errors)
+    assert missing is (renderer != "qt")
+    if renderer == "qt":
+        assert not errors
+
+
+@pytest.mark.parametrize("platform", ["macos", "windows"])
+@pytest.mark.parametrize(
+    "pair",
+    [
+        ("download_operation", "reused"),
+        ("help_operation", "replaced"),
+        ("player", "hover_preview_shown"),
+        ("watch", "rail_scrolled"),
+    ],
+)
+def test_qt_shared_and_supported_actions_remain_required(platform, pair):
+    data = telemetry_fixture(candidate(), platform)
+    for launch in data["packaged_e2e"]["launches"]:
+        launch["attestation"]["renderer"] = "qt"
+    for legacy in QT_LEGACY_ACTIONS:
+        without_action(data, *legacy)
+    without_action(data, "player", "controls_fallback")
+    without_action(data, *pair)
+    assert any(repr(pair) in error for error in validate_journey(data))
