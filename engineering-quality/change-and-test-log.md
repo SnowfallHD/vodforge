@@ -284,3 +284,41 @@ renamed. One D1 full dataset response was column-truncated; it is retained but
 not used as complete evidence. Supplemental structured columns preserve all33
 actual updater/startup events without truncation. No runtime or signed archive
 changed; no public release.
+
+## Oct 11 02:59 UTC — native Intel passed and release evidence reconciled
+
+Native Intel CI38106410614 passes using the unchanged signed/notarized5e581d0
+archive, native x86_64/Rosettafalse. Startup checks7.067s and independently owned
+onscreen window9.669s are inside the original20s deadline; normal exit0 and no
+owned survivors. Earlier single-query CI failure and local Rosetta20s failures
+remain unchanged. No runtime or archive change and no repeat qualification.
+[Original Intel receipt](/Users/coop/Documents/Codex/2026-10-09/task/release-completion-20261010/native-intel-ci-attempt3/startup-result.json).
+
+Windows real public0.2.5→final0.2.6 Update/Repair assessment passes20 bounded
+checks, including six existing real media,13 sidecar/media and3 state-file
+hashes, actual Library6 after both transactions, linked preview D1 updater
+receipts and production0. Cleanup normally exits0 and restores ordinary app/
+registration/shortcuts/27 data hashes. Earlier setup/guard/readback failures
+remain preserved. This closes the actual retention/linkage scope; it is not a
+complete36-event/native preview journey or an installation version-transition
+claim (the existing QA identity already had current version0.2.6).
+[Original Windows assessment](/Users/coop/Documents/Codex/2026-10-09/task/release-completion-20261010/windows-retention-update-5e581d0/retention-assessment.json).
+
+Read-only original-receipt reconciliation runs the unchanged maintained release
+evaluator. It remains FAILED: the predecessor full NORMAL has separately fixed
+telemetry failures, DEEP contains only the passed100-job soak, packaged Mac
+smoke has no final immutable binding, source commits differ, and complete
+exact-artifact preview-D1/native receipts for both platforms are absent. No
+original status/source was changed, no synthetic observation appended, no gate
+weakened and no unaffected valid check repeated. Its248 nonpassing requirements
+include duplicated/missing scope and are not248 reproduced product bugs.
+[Reconciliation](/Users/coop/Documents/Codex/2026-10-09/task/release-completion-20261010/release-evidence-reconciliation.json).
+
+Four qualified signed release files were copied to a task-local publication
+folder and their source/destination SHA256 verified against the existing signed
+manifest; checksums and public notes prepared. Read-only draft still has old
+assets/target and temporaryQA archive. Nothing published or replaced. Remaining
+work is exact release-evidence closure, draft asset/source replacement, removal
+of temporaryQA archive, publication/public-byte/updater verification and website
+manifest sync (website currently0.2.5).
+[Prepared files](/Users/coop/Documents/Codex/2026-10-09/task/release-completion-20261010/prepared-release-5e581d0/preparation-receipt.json).
