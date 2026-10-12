@@ -1283,3 +1283,17 @@ error emitted; console evidence in this task (temporary raw fixture removed afte
 run, no lasting native receipt claimed). Ruff/format/diff pass. Actual source scan
 including nested imports now has no Tk imports. Remaining EQH dynamic legacy calls
 and selectors are still explicitly pending; no build or release qualification.
+
+## Oct 12 — restore announcement product semantics after focused review
+
+Parent explicitly requested no manufactured product behavior for an old harness
+expectation. Current eight-slide tour ends with folder/download fixes, not a
+settings task. e1ff771's general Try it label/settings navigation was harness-
+motivated, not a demonstrated user-facing requirement; restore Done for that tour.
+Existing did-you-know/single output-settings Try it remains an actual settings
+intent, records once only on explicit activation; dismissal records no such event.
+Twenty-five orientation checks pass (announcement-product-semantics.log). e1ff771
+and its original checks remain historical Git/log evidence, not successor product
+requirements. Frozen585 is untouched; its candidate-bound producer applicability
+correction459f578 remains separate from this source/product decision. No fabricated
+Done event, schema/data change, gate waiver, build or publication.

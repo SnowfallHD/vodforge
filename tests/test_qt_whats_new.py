@@ -48,7 +48,7 @@ def test_new_editorial_id_is_eligible_once_and_waits_for_idle_ready_ui(
         assert not bridge.editorialSlides
     bridge.checkEditorial(True)
     assert bridge.editorialHeading == "What’s new"
-    assert bridge.editorialFinishLabel == "Try it"
+    assert bridge.editorialFinishLabel == "Done"
     assert [s["key"] for s in bridge.editorialSlides] == [
         s.key for s in qt_main.HIGHLIGHTS
     ]
@@ -366,9 +366,7 @@ def test_release_025_catalog_reaches_upgraders_and_keeps_all_demo_clips(
     assert not bridge.editorialSlides
 
 
-def test_whats_new_try_it_opens_settings_and_records_only_explicit_action(
-    bridge, monkeypatch
-):
+def test_general_tour_completion_does_not_invent_a_settings_action(bridge, monkeypatch):
     events = []
     monkeypatch.setattr(
         bridge,
@@ -376,14 +374,30 @@ def test_whats_new_try_it_opens_settings_and_records_only_explicit_action(
         lambda feature, action: events.append((feature, action)),
     )
     assert bridge.openWhatsNew()
+    assert bridge.editorialFinishLabel == "Done"
+    bridge.dismissEditorial(False)
+    assert events == [("announcement", "shown")]
+    assert not bridge.editorialSlides
+
+
+def test_settings_tip_records_only_its_explicit_try_it_action(bridge, monkeypatch):
+    events = []
+    monkeypatch.setattr(
+        bridge,
+        "_record_update_feature",
+        lambda feature, action: events.append((feature, action)),
+    )
+    bridge._editorial_kind = "did-you-know"
+    bridge._editorial_slides = qt_main.DID_YOU_KNOW_HIGHLIGHTS
     assert bridge.editorialFinishLabel == "Try it"
     bridge.dismissEditorial(True)
     bridge.dismissEditorial(True)
-    assert events == [("announcement", "shown"), ("announcement", "try_it")]
+    assert events == [("announcement", "try_it")]
     assert not bridge.editorialSlides
-    assert bridge.openWhatsNew()
+    bridge._editorial_kind = "did-you-know"
+    bridge._editorial_slides = qt_main.DID_YOU_KNOW_HIGHLIGHTS
     bridge.dismissEditorial(False)
-    assert events[-1] == ("announcement", "shown")
+    assert events == [("announcement", "try_it")]
     qml = (qt_main.Path(qt_main.__file__).parent / "Main.qml").read_text(
         encoding="utf-8"
     )
