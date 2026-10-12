@@ -3332,8 +3332,12 @@ Window {
         readonly property real customColumnWidth: sideBySideExtras
             ? (availableWidth - columnGap * (2 + customReveal)) / (3 + customReveal)
             : (availableWidth - columnGap) / 2
-        height: Math.min(window.height - 40, 540, Math.max(composerManualControls.implicitHeight * customReveal,
-            composerOptionsContent.implicitHeight, sideBySideExtras ? composerQuickExtras.implicitHeight : 0) + 16)
+        readonly property real collapsedHeight: Math.min(window.height - 40, 540,
+            Math.max(composerQuickChoices.height, composerQuickExtras.implicitHeight) + 16)
+        readonly property real expandedHeight: Math.min(window.height - 40, 540,
+            Math.max(composerManualControls.implicitHeight, composerOptionsContent.implicitHeight,
+                composerQuickExtras.implicitHeight) + 16)
+        height: collapsedHeight + Math.max(0, expandedHeight - collapsedHeight) * customReveal
         padding: 8
         topPadding: 8
         StoneButton {

@@ -215,6 +215,9 @@ def test_quick_custom_surface_morphs_without_opening_settings(motion_scene):
     popup.open()
     QTest.qWait(300)
     initial_width = popup.property("width")
+    initial_height = popup.property("height")
+    heights = []
+    popup.heightChanged.connect(lambda: heights.append(popup.property("height")))
     values = []
     popup.customRevealChanged.connect(
         lambda: values.append(popup.property("customReveal"))
@@ -223,10 +226,13 @@ def test_quick_custom_surface_morphs_without_opening_settings(motion_scene):
     wait_for_reveal(popup, 1, "customReveal")
     assert popup.property("width") > initial_width
     assert not window.findChild(QObject, "downloadSettingsPopup").property("visible")
+    final_height = popup.property("height")
+    assert final_height > initial_height
     if reduced_motion:
         assert values == [1.0]
     else:
         assert any(0 < value < 1 for value in values)
+        assert any(initial_height < height < final_height for height in heights)
     bridge.setExportMode("Everyday")
     wait_for_reveal(popup, 0, "customReveal")
     assert popup.property("width") == pytest.approx(initial_width)
