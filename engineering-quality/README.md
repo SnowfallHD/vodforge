@@ -3509,3 +3509,19 @@ provider availability/native package acceptance. Native frame reviews must bind
 full window/client origin and pixels: UIA client-only captures missed header and
 edge displacement at96DPI. Retained resize/fresh-start observations diagnose
 scope but do not prove the blocked SW_RESTORE causal control.
+
+October12 display-selection learning: information and activation need distinct
+hit targets. Existing chapter timeline/hover tests did not check the chapter
+section's placement/orientation or list-copy interaction, and existing
+SelectableText used TextEdit without a standard context menu. Representative
+checks now bind actual horizontal overflow/whole-list clipboard output/independent
+seek, source/personal note groups, standard Qt menu clipboard behavior and
+unchanged readonly/navigation state. Prior UI fails the new order/group/menu
+checks. Source URL selection uses a separate opener, retaining exact owner
+routing and copy-hit geometry. Accessing a deferred context menu during component
+construction leaves its editor unset; keep Qt lazy creation intact. Native menu
+preference failed the Cocoa source attempt and is not enabled; Basic's standard
+Qt popup remains, with OS-native and packaged right-click acceptance explicitly
+unproven. Native tool transport loss is not a user cancellation or a passed
+normal-exit result. Preserve original failed source/CI/probe receipts; do not
+promote counters or renderer screenshots to signed package/native proof.

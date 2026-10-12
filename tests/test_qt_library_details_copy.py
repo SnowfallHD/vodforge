@@ -13,7 +13,7 @@ from PySide6.QtCore import (
 from PySide6.QtTest import QTest
 
 from tests.test_qt_library_window_model import cards, visual_descendants
-from tests.test_qt_scene_port import qt_app, saved
+from tests.test_qt_scene_port import qt_app, saved, visual_item
 from yt_downloader.qt_quick import main
 
 
@@ -296,7 +296,7 @@ def test_fact_copy_targets_do_not_add_row_gaps_or_clip_wrapped_values(
         )
         assert abs(following.y() - row.y() - row.height()) < 0.1
         button = next(
-            item for item in row.childItems() if item.property("accessibilityLabel")
+            item for item in row.childItems() if item.property("factLabel") == label
         )
         assert button.height() == 30  # Existing copy target remains usable.
         assert abs(button.y() - (row.height() - 30) / 2) < 0.1
@@ -408,3 +408,124 @@ def test_original_tags_are_read_only_and_personal_removal_preserves_source(detai
     assert row["tags"] == original
     assert bridge.libraryDetail["sourceTags"] == ["Science", "Shared"]
     assert bridge.libraryDetail["note"] == "A personal note"
+
+
+@pytest.fixture
+def chapter_details(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from tests.test_qt_interaction_invariants import _close, _launch
+    from yt_downloader.history import sanitize_chapters
+
+    record = saved(tmp_path, "Chapter fixture", "MP4")
+    record.update(
+        chapters=[
+            {
+                "start_time": 3661 if n == 11 else n * 86,
+                "end_time": (3661 if n == 11 else n * 86) + 85,
+                "title": f"Chapter {n}",
+            }
+            for n in range(12)
+        ],
+        tags=["Original", "Source tag"],
+        vodforge_user_tags=["Personal"],
+        vodforge_user_note="A private note.",
+    )
+    app, bridge, engine, window = _launch(tmp_path, monkeypatch, [record])
+    from PySide6.QtCore import QUrl
+
+    from yt_downloader.history import history_archive_owner, history_output_path
+
+    owner = history_archive_owner(record)
+    assert bridge.openLibraryDetails(owner)
+    assert bridge.editLibraryTag(owner, "Personal", False)
+    assert bridge.saveLibraryNote(owner, "A private note.")
+    bridge._playback_record = record
+    bridge._playback_path = history_output_path(record)
+    bridge._playback_url = QUrl.fromLocalFile(str(bridge._playback_path))
+    bridge._playback_chapters = sanitize_chapters(record["chapters"])
+    bridge.select("Watch")
+    scene = window.findChild(QObject, "watchPlayerScene")
+    scene.setProperty("visible", True)
+    scene.setProperty("player", None)
+    bridge.playerSceneChanged.emit()
+    bridge.playbackUrlChanged.emit()
+    seeks = []
+    bridge._playback_binding = SimpleNamespace(
+        manual_seek=lambda snapshot: seeks.append(snapshot.position)
+    )
+    QTest.qWait(100)
+    try:
+        yield app, bridge, window, scene, record, seeks
+    finally:
+        bridge._playback_binding = None
+        _close(bridge, engine, window)
+
+
+@pytest.mark.parametrize("size", [(1100, 740), (820, 560)])
+def test_chapters_follow_recent_rail_and_horizontal_overflow_preserves_seek_copy(
+    chapter_details, size
+):
+    app, bridge, window, scene, _record, seeks = chapter_details
+    window.resize(*size)
+    QTest.qWait(100)
+    chapters = scene.findChild(QObject, "watchChapters")
+    recent = scene.findChild(QObject, "playerRecentRail")
+    assert chapters.y() >= recent.y() + recent.height()
+    rail = scene.findChild(QObject, "playerChapterRail")
+    cards = [visual_item(scene, "playerChapterCard_" + str(n)) for n in range(12)]
+    assert all(card.y() == cards[0].y() for card in cards)
+    assert cards[1].x() >= cards[0].x() + cards[0].width()
+    flick = rail.property("contentItem")
+    assert flick.property("contentWidth") > flick.width()
+    flick.setProperty("contentX", flick.property("contentWidth") - flick.width())
+    app.processEvents()
+    assert cards[-1].mapToItem(flick, 0, 0).x() < flick.width()
+    copy = scene.findChild(QObject, "playerCopyChaptersButton")
+    assert len(scene.findChildren(QObject, "playerCopyChaptersButton")) == 1
+    before = [dict(row) for row in bridge._runtime.history]
+    assert QMetaObject.invokeMethod(copy, "activated")
+    assert app.clipboard().text().splitlines() == [
+        (
+            "1:01:01 Chapter 11"
+            if n == 11
+            else f"{n * 86 // 60}:{n * 86 % 60:02d} Chapter {n}"
+        )
+        for n in range(12)
+    ]
+    assert copy.property("copied") and bridge.status == "Copied chapters."
+    assert seeks == [] and before == bridge._runtime.history
+    assert not bridge.copyPlayerChapters("stale-owner")
+    assert QMetaObject.invokeMethod(
+        visual_item(scene, "playerChapterSeek_11"), "activated"
+    )
+    assert seeks == [3661]
+    bridge._playback_record = None
+    assert not bridge.copyPlayerChapters(scene.property("displayedOwner"))
+
+
+def test_player_personal_groups_and_selected_chapter_text_do_not_seek(chapter_details):
+    from PySide6.QtGui import QKeySequence
+
+    app, _bridge, window, scene, record, seeks = chapter_details
+    values = [
+        visual_item(scene, "playerPersonalValue_" + label)
+        for label in ("Source tags", "Your tags", "Your note")
+    ]
+    assert [v.property("text") for v in values] == [
+        "Original, Source tag",
+        "Personal",
+        "A private note.",
+    ]
+    assert all(v.property("readOnly") and v.property("selectByMouse") for v in values)
+    groups = [
+        visual_item(scene, "playerPersonalGroup_" + label)
+        for label in ("Source tags", "Your tags", "Your note")
+    ]
+    assert groups[0].y() + groups[0].height() <= groups[1].y()
+    text = visual_item(scene, "playerChapterText_0")
+    text.forceActiveFocus()
+    text.selectAll()
+    QTest.keySequence(window, QKeySequence(QKeySequence.StandardKey.Copy))
+    assert app.clipboard().text() == "0:00  Chapter 0"
+    assert seeks == [] and record["tags"] == ["Original", "Source tag"]

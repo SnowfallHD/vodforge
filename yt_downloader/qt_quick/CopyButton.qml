@@ -11,6 +11,7 @@ StoneButton {
     property string displayedText: ""
     property string tooltipText: accessibilityLabel
     property bool copied: false
+    property var copyAction: null
     onOwnerChanged: copied = false
     onDisplayedTextChanged: copied = false
     label: "⧉"
@@ -22,7 +23,7 @@ StoneButton {
     LiquidToolTip { visible: parent.hovered; text: parent.copied ? "Copied" : parent.tooltipText }
     onActivated: {
         if (!appBridge || !owner) return
-        copied = factLabel.length ? appBridge.copyLibraryFact(owner, section, factLabel) :
+        copied = typeof copyAction === "function" ? copyAction(owner) : factLabel.length ? appBridge.copyLibraryFact(owner, section, factLabel) :
             field === "note" ? appBridge.copyLibraryText(owner, field, displayedText) :
             appBridge.copyLibraryText(owner, field)
         if (copied) feedback.restart()

@@ -42,7 +42,7 @@ ColumnLayout {
             Layout.maximumWidth: details.width
             Layout.topMargin: modelData.label === "Save to" ? 8 : 0
             spacing: 10
-            Text {
+            SelectableText {
                 text: modelData.label
                 color: theme.muted
                 font.pixelSize: 14
@@ -51,7 +51,7 @@ ColumnLayout {
                 Layout.minimumWidth: 0
                 Layout.alignment: Qt.AlignTop
             }
-            Text {
+            SelectableText {
                 objectName: modelData.label === "Save to" ? "forgeSourceDestination" : ""
                 text: modelData.value
                 color: theme.text

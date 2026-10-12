@@ -175,8 +175,12 @@ def test_real_library_fact_and_description_use_read_only_selection(detail):  # n
     assert description.property("readOnly")
     assert description.property("selectByMouse")
     source = visual_item(window.contentItem(), "libraryFactValue_source_Source URL")
-    assert not source.property("selectionEnabled")
-    assert not source.property("selectByMouse")
+    assert source.property("selectionEnabled")
+    assert source.property("selectByMouse")
+    source.forceActiveFocus()
+    source.selectAll()
+    QTest.keySequence(window, QKeySequence(QKeySequence.StandardKey.Copy))
+    assert app.clipboard().text() == source.property("text")
 
 
 def test_real_library_description_routes_by_current_overflow(detail):  # noqa: F811
@@ -243,3 +247,33 @@ def test_real_library_description_routes_by_current_overflow(detail):  # noqa: F
     assert before > 0
     send(point, 40)
     assert outer.property("contentY") == pytest.approx(max(0, before - 40))
+
+
+def test_standard_context_copy_preserves_selection_and_readonly_state(information):
+    app, bridge, _window, holder, text = information
+    original = text.property("text")
+    text.forceActiveFocus()
+    text.select(0, 10)
+    expected = text.property("selectedText")
+    menu = text.standardContextMenu()
+    if hasattr(menu, "toQObject"):
+        menu = menu.toQObject()
+    assert menu is not None
+    # Offscreen has no OS-generated context events. Exercise the actual Qt menu
+    # and action; packaged native right-click acceptance remains separate.
+    menu.popup(text, 20.0, 9.0, None)
+    QTest.qWait(100)
+    assert menu is not None and menu.property("visible"), {
+        key: menu.property(key)
+        for key in ("count", "editor", "parent", "visible", "opened", "enabled")
+    }
+    action = next(
+        item
+        for item in menu.findChildren(QObject)
+        if item.property("text") == "Copy" and "Action" in item.metaObject().className()
+    )
+    action.trigger(None)
+    assert app.clipboard().text() == expected
+    assert text.property("text") == original and text.property("readOnly")
+    assert holder.property("buttonActivations") == 0 and bridge.selection == "Library"
+    menu.close()

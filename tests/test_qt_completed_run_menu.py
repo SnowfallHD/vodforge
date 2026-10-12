@@ -87,7 +87,9 @@ def test_completed_menu_routes_exact_saved_owner(tmp_path, monkeypatch, entry, a
             assert bridge.selection == "Library"
             assert bridge.libraryDetail["owner"] == selected["owner"]
         else:
-            assert calls == [str(Path(chosen["vodforge_output_path"]).parent)]
+            assert [Path(value) for value in calls] == [
+                Path(chosen["vodforge_output_path"]).parent
+            ]
         assert Path(row["vodforge_output_path"]).read_bytes() == b"private fixture"
         assert Path(other["vodforge_output_path"]).read_bytes() == b"other fixture"
     finally:

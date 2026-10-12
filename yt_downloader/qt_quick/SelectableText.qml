@@ -1,10 +1,16 @@
 import QtQuick
+import QtQuick.Controls
 
 // For informational text outside clickable cards/buttons. Keep actionable links
 // and elided captions on their existing components until their interaction is explicit.
-TextEdit {
+TextArea {
     id: information
     property bool selectionEnabled: true
+    // Preserve Qt's lazy standard menu. Native-popup qualification remains open;
+    // the Basic style's standard Qt popup keeps its supported editing actions.
+    function standardContextMenu() { return ContextMenu.menu }
+    padding: 0
+    background: null
     readOnly: true
     textFormat: TextEdit.PlainText
     selectByMouse: selectionEnabled

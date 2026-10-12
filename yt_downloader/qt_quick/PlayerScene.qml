@@ -7,6 +7,13 @@ import QtMultimedia
 Item {
     id: scene
     property var appBridge
+    function chapterTimestamp(seconds) {
+        const total = Math.max(0, Math.floor(seconds))
+        const tail = ("0" + (total % 60)).slice(-2)
+        return total >= 3600 ? Math.floor(total / 3600) + ":" +
+            ("0" + Math.floor((total % 3600) / 60)).slice(-2) + ":" + tail :
+            Math.floor(total / 60) + ":" + tail
+    }
     property var player
     property real volume: 0.8
     property alias videoSurface: videoSurface
@@ -387,20 +394,21 @@ Item {
                     Layout.fillWidth: true
                     Layout.minimumWidth: 0
                     spacing: 3
-                    Text {
+                    SelectableText {
+                        objectName: "playerTitleText"
                         text: scene.projection.title || "Saved media"
                         color: theme.text
                         font.pixelSize: 25
                         font.bold: true
-                        elide: Text.ElideRight
+                        wrapMode: Text.WordWrap
                         Layout.fillWidth: true
                         Layout.minimumWidth: 0
                     }
-                    Text {
+                    SelectableText {
                         text: (scene.projection.creator || "") + (scene.projection.category ? " · " + scene.projection.category : "")
                         color: theme.muted
                         font.pixelSize: 14
-                        elide: Text.ElideRight
+                        wrapMode: Text.WordWrap
                         Layout.fillWidth: true
                         Layout.minimumWidth: 0
                     }
@@ -635,27 +643,6 @@ Item {
             }
 
             Column {
-                objectName: "watchChapters"
-                visible: scene.appBridge.playbackChapters.length > 0
-                width: parent.width
-                spacing: 6
-                Text { text: "CHAPTERS"; color: theme.muted; font.pixelSize: 12; font.bold: true }
-                Repeater {
-                    model: scene.appBridge.playbackChapters
-                    StoneButton {
-                        required property var modelData
-                        required property int index
-                        width: Math.min(460, scene.width)
-                        height: 34
-                        label: Math.floor(modelData.start_time / 60) + ":" +
-                            ("0" + Math.floor(modelData.start_time % 60)).slice(-2) +
-                            "  " + (modelData.title || "Untitled chapter")
-                        onActivated: scene.appBridge.seekPlaybackChapter(index)
-                    }
-                }
-            }
-
-            Column {
                 objectName: "playerRecentRail"
                 visible: scene.recentCards.length > 0 || scene.relatedCards.length === 0
                 width: parent.width
@@ -693,6 +680,64 @@ Item {
             }
 
             Column {
+                objectName: "watchChapters"
+                visible: scene.appBridge.playbackChapters.length > 0
+                width: parent.width
+                spacing: 8
+                Row {
+                    width: parent.width
+                    Text { text: "CHAPTERS"; color: theme.muted; font.pixelSize: 12; font.bold: true; width: parent.width - 36 }
+                    CopyButton {
+                        objectName: "playerCopyChaptersButton"
+                        appBridge: scene.appBridge; owner: scene.projection.owner || ""
+                        accessibilityLabel: "Copy all chapter timestamps and titles"
+                        copyAction: function(owner) { return scene.appBridge.copyPlayerChapters(owner) }
+                    }
+                }
+                ScrollView {
+                    id: chapterRail
+                    objectName: "playerChapterRail"
+                    width: parent.width
+                    height: 104
+                    clip: true
+                    ScrollBar.vertical.policy: ScrollBar.AlwaysOff
+                    ScrollBar.horizontal.policy: ScrollBar.AsNeeded
+                    RailWheelHandler { horizontalView: chapterRail; verticalView: viewport }
+                    Row {
+                        spacing: 12
+                        Repeater {
+                            model: scene.appBridge.playbackChapters
+                            StoneField {
+                                required property var modelData
+                                required property int index
+                                objectName: "playerChapterCard_" + index
+                                width: Math.min(300, chapterRail.width)
+                                height: 84
+                                RowLayout {
+                                    anchors.fill: parent; anchors.margins: 10; spacing: 10
+                                    SelectableText {
+                                        objectName: "playerChapterText_" + parent.parent.index
+                                        text: scene.chapterTimestamp(modelData.start_time) +
+                                            "  " + (modelData.title || "Untitled chapter")
+                                        color: theme.text; font.pixelSize: 14
+                                        Layout.fillWidth: true; Layout.minimumWidth: 0
+                                        Layout.maximumHeight: 64
+                                        clip: true
+                                    }
+                                    StoneButton {
+                                        objectName: "playerChapterSeek_" + parent.parent.index
+                                        label: "▶"; accessibilityLabel: "Seek to chapter " + (modelData.title || "Untitled chapter")
+                                        size: "inline"; Layout.preferredWidth: 32
+                                        onActivated: scene.appBridge.seekPlaybackChapter(parent.parent.index)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Column {
                 width: parent.width
                 spacing: 8
                 Row {
@@ -705,7 +750,8 @@ Item {
                         onActivated: scene.appBridge.copyLibraryText(scene.projection.owner, "description")
                     }
                 }
-                Text {
+                SelectableText {
+                    objectName: "playerDescriptionText"
                     text: scene.projection.description || "No description saved for this media."
                     color: theme.text
                     width: parent.width
@@ -726,16 +772,28 @@ Item {
                         onActivated: scene.appBridge.copyLibraryText(scene.projection.owner, "tags")
                     }
                 }
-                Text {
-                    text: (scene.projection.category ? "Collection: " + scene.projection.category + "\n" : "") +
-                          ((scene.projection.sourceTags || []).length ? "Source tags (read-only): " + scene.projection.sourceTags.join(", ") + "\n" : "") +
-                          ((scene.projection.userTags || []).length ? "Your tags: " + scene.projection.userTags.join(", ") + "\n" : "") +
-                          (scene.projection.note ? "Your note: " + scene.projection.note : "") ||
-                          "Add a note or tags in Library."
-                    color: theme.muted
-                    width: parent.width
-                    font.pixelSize: 14
-                    wrapMode: Text.WordWrap
+                Repeater {
+                    model: [
+                        {label: "Collection", value: scene.projection.category || ""},
+                        {label: "Source tags", value: (scene.projection.sourceTags || []).join(", "), hint: "Read-only originals"},
+                        {label: "Your tags", value: (scene.projection.userTags || []).join(", ")},
+                        {label: "Your note", value: scene.projection.note || ""}
+                    ]
+                    Column {
+                        required property var modelData
+                        objectName: "playerPersonalGroup_" + modelData.label
+                        visible: modelData.label !== "Collection" || modelData.value.length > 0
+                        width: parent.width; spacing: 6
+                        Rectangle { width: parent.width; height: 1; color: theme.border }
+                        Text { text: modelData.label + (modelData.hint ? " · " + modelData.hint : ""); color: theme.muted; font.pixelSize: 12; font.bold: true }
+                        SelectableText {
+                            objectName: "playerPersonalValue_" + modelData.label
+                            text: modelData.value || "None saved"
+                            width: parent.width; color: modelData.value ? theme.text : theme.muted
+                            font.pixelSize: 14
+                        }
+                        Item { width: 1; height: 6 }
+                    }
                 }
                 StoneButton {
                     label: "Edit your details"
@@ -763,7 +821,7 @@ Item {
                                 required property var modelData
                                 width: parent.width
                                 Text { text: modelData.label; color: theme.muted; font.pixelSize: 14; Layout.preferredWidth: 160 }
-                                Text { text: modelData.value; color: theme.text; font.pixelSize: 14; wrapMode: Text.WrapAnywhere; Layout.fillWidth: true }
+                                SelectableText { text: modelData.value; color: theme.text; font.pixelSize: 14; wrapMode: Text.WrapAnywhere; Layout.fillWidth: true; Layout.minimumWidth: 0 }
                                 StoneButton {
                                     visible: modelData.label === "Source URL" && !!modelData.value
                                     label: "⧉"

@@ -60,15 +60,16 @@ Item {
                 Column {
                     width: detail.compact ? hero.width : hero.width - Math.min(475, hero.width * 0.43) - 27
                     spacing: 12
-                    Text {
+                    SelectableText {
+                        objectName: "libraryTitleText"
                         text: detail.item.title || "Saved media"
                         width: parent.width
                         color: theme.text
                         font.pixelSize: 32
                         font.bold: true
                         wrapMode: Text.WordWrap
-                        maximumLineCount: 2
-                        elide: Text.ElideRight
+                        height: Math.min(implicitHeight, 84)
+                        clip: true
                     }
                     Text {
                         text: [detail.item.category, detail.item.type, detail.item.creator].filter(Boolean).join("  ·  ")
@@ -430,19 +431,20 @@ Item {
                                         SelectableText {
                                             id: factValue
                                             objectName: "libraryFactValue_" + factsPanel.section + "_" + modelData.label
-                                            selectionEnabled: modelData.label !== "Source URL"
                                             y: (parent.height - height) / 2
                                             text: modelData.value
                                             width: parent.width - Math.min(138, parent.width * 0.29) - 12 -
-                                                   (modelData.label === "Saved Location" || modelData.label === "Source URL" ? 46 : 0)
+                                                   (modelData.label === "Source URL" ? 88 : modelData.label === "Saved Location" ? 46 : 0)
                                             color: modelData.label === "Source URL" ? theme.accent : theme.text
                                             font.pixelSize: 14; wrapMode: Text.WrapAnywhere
-                                            MouseArea {
-                                                anchors.fill: parent
-                                                enabled: modelData.label === "Source URL"
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: detail.appBridge.openLibrarySource(detail.item.owner)
-                                            }
+                                        }
+                                        StoneButton {
+                                            objectName: "libraryOpenSourceButton"
+                                            visible: modelData.label === "Source URL"
+                                            label: "↗"; accessibilityLabel: "Open source in browser"
+                                            size: "inline"; width: visible ? 30 : 0; height: 30
+                                            y: (parent.height - height) / 2
+                                            onActivated: detail.appBridge.openLibrarySource(detail.item.owner)
                                         }
                                         CopyButton {
                                             appBridge: detail.appBridge; owner: detail.item.owner || ""

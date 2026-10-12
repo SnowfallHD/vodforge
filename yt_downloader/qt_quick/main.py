@@ -6140,6 +6140,25 @@ class Bridge(QObject):
         if not self._closed and self._playback_binding is not None:
             self._previews.presented(image, available)
 
+    @Slot(str, result=bool)
+    def copyPlayerChapters(self, owner: str) -> bool:
+        record = self._playback_record
+        if self._closed or record is None or history_archive_owner(record) != owner:
+            return False
+        chapters = sanitize_chapters(record.get("chapters"))
+        clipboard = QGuiApplication.clipboard()
+        if not chapters or clipboard is None:
+            return False
+        clipboard.setText(
+            "\n".join(
+                f"{format_duration(chapter['start_time'])} {chapter['title'] or 'Untitled chapter'}"
+                for chapter in chapters
+            )
+        )
+        self._status = "Copied chapters."
+        self.statusChanged.emit()
+        return True
+
     @Slot(int, result=bool)
     def seekPlaybackChapter(self, index: int) -> bool:
         if self._playback_binding is None or not 0 <= index < len(
