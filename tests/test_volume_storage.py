@@ -34,6 +34,43 @@ def test_platform_defaults_and_shared_apfs_capacity_are_truthful():
     assert [v.path for v in distinct] == ["/", "/Volumes/Media"]
 
 
+@pytest.mark.parametrize(
+    "path,label,expected",
+    [
+        ("C:\\", "OS", "OS (C:)"),
+        ("D:\\", "Media", "Media (D:)"),
+        ("E:\\", "Storage", "Storage (E:)"),
+        ("F:\\", "Storage", "Storage (F:)"),
+        ("D:\\", "", "Drive D:"),
+        ("E:\\", "Drive E:", "Drive E:"),
+        ("C:\\", "OS (C:)", "OS (C:)"),
+        ("C:\\", "C:", "C:"),
+        ("Z:\\", "Shared", "Shared (Z:)"),
+        ("\\\\server\\share", "Shared", "Shared"),
+        ("/", "Macintosh HD", "Macintosh HD"),
+        ("/Volumes/Media", "Media", "Media"),
+    ],
+)
+def test_volume_display_uses_its_own_drive_identity_without_renaming(
+    path, label, expected
+):
+    volume = StorageVolume(path, label)
+    assert volume.display_label == expected
+    assert (volume.path, volume.label) == (path, label)
+
+
+def test_duplicate_windows_names_remain_distinct_in_resolved_location_labels():
+    from yt_downloader.archive_paths import ArchivePath
+    from yt_downloader.storage_labels import location_labels
+
+    volumes = (StorageVolume("E:\\", "Storage"), StorageVolume("F:\\", "Storage"))
+    labels = location_labels(
+        tuple(ArchivePath.parse(path) for path in ("E:\\Media", "F:\\Media")), volumes
+    )
+    assert [label.title for label in labels] == ["Storage (E:)", "Storage (F:)"]
+    assert [str(label.path) for label in labels] == ["E:\\Media", "F:\\Media"]
+
+
 def test_volume_usage_does_not_depend_on_empty_library_and_unmounted_path_never_falls_back(
     monkeypatch,
 ):

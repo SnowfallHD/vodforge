@@ -39,6 +39,25 @@ class StorageVolume:
     capacity_group: str = ""
     kind: Literal["local", "external", "network", "unknown"] = "unknown"
 
+    @property
+    def display_label(self) -> str:
+        root = self.path.replace("\\", "/").rstrip("/")
+        if (
+            len(root) != 2
+            or root[1] != ":"
+            or root[0].upper() not in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        ):
+            return self.label
+        drive = root.upper()
+        name = self.label.strip()
+        if not name:
+            return f"Drive {drive}"
+        if name.upper() in {drive, f"DRIVE {drive}"} or name.upper().endswith(
+            (f"({drive})", f" {drive}")
+        ):
+            return name
+        return f"{name} ({drive})"
+
 
 @dataclass(frozen=True, slots=True)
 class VolumeCapacity:

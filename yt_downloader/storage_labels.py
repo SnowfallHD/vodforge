@@ -40,7 +40,7 @@ def location_labels(
                 candidates.append((len(mount.parts), candidate))
         volume = max(candidates, key=lambda item: item[0])[1] if candidates else None
         if volume:
-            title = volume.label
+            title = volume.display_label
             kind = volume.kind
         elif lexical_kind == "network":
             # UNC syntax explicitly names a share; a drive letter does not.

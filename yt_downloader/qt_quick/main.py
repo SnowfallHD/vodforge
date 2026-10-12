@@ -2488,7 +2488,7 @@ class Bridge(QObject):
                 "fraction": 0.0,
             }
         return {
-            "label": capacity.volume.label,
+            "label": capacity.volume.display_label,
             "detail": f"{format_storage_bytes(capacity.used)} of {format_storage_bytes(capacity.total)} used",
             "free": f"{format_storage_bytes(capacity.free)} free",
             "fraction": capacity.fraction_used,
@@ -2497,7 +2497,7 @@ class Bridge(QObject):
     @Property(_QVARIANT_LIST, notify=storageChanged)
     def storageChoices(self) -> list[dict[str, str]]:
         return [
-            {"path": volume.path, "label": volume.label}
+            {"path": volume.path, "label": volume.display_label}
             for volume in self._storage_snapshot.choices
         ]
 
