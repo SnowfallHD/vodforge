@@ -2180,7 +2180,7 @@ def lifecycle_staging_transitions(
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Observe staging ownership through skip, successor, completion, and removal."""
 
-    from yt_downloader.app import create_staging_dir
+    from yt_downloader.download_service import create_staging_dir
     from yt_downloader.library_state import resolve_library_removal_plan
     from yt_downloader.safe_output import cleanup_private_staging_directory
 
@@ -2475,7 +2475,7 @@ def lifecycle_soak(
     recorder = LifecycleCheckpointRecorder(
         runner.run_root, jobs=jobs, detailed=detailed
     )
-    from yt_downloader import app as app_module
+    from yt_downloader import download_service as app_module
 
     initial_children = active_child_snapshot(app_module)
     fixture_before = server.state.snapshot()
@@ -2599,7 +2599,7 @@ def lifecycle_soak(
             for item in result.get("active_children_before_harness_cleanup") or []
         )
     ]
-    from yt_downloader import app as app_module
+    from yt_downloader import download_service as app_module
 
     survivors_before_cleanup = active_child_snapshot(app_module)
     if any(item["alive"] for item in survivors_before_cleanup):
@@ -2768,7 +2768,7 @@ def lifecycle_soak(
 def concurrency_mixed(
     runner: HeadlessPipelineRunner, server: FixtureHTTPServer
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    from yt_downloader import app as app_module
+    from yt_downloader import download_service as app_module
 
     started = time.monotonic()
     before = {
@@ -2827,7 +2827,7 @@ def concurrency_mixed(
         thread.start()
     for thread in threads:
         thread.join(timeout=120)
-    from yt_downloader import app as app_module
+    from yt_downloader import download_service as app_module
 
     final_observed_at = time.monotonic() - started
     survivors_before_cleanup = active_child_snapshot(app_module)

@@ -2,7 +2,7 @@
 
 from types import SimpleNamespace
 
-import yt_downloader.ui_materials as materials
+import yt_downloader.visual_materials as materials
 
 
 def test_backdrop_repositions_only_on_actual_scene_motion(monkeypatch):

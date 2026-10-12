@@ -123,7 +123,6 @@ def real_owner(tmp_path, permitted=True):
         installation_state_path=installation,
         app_version="0.1.9",
         d1_recorder=lambda _event: False,
-
     )
     return owner
 

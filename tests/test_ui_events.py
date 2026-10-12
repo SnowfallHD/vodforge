@@ -8,7 +8,7 @@ from yt_downloader.models import (
     OutputType,
 )
 from yt_downloader.run_identity import annotate_job_metadata
-from yt_downloader.ui_events import (
+from yt_downloader.worker_events import (
     history_record_event,
     installation_result_event,
     job_info_event,

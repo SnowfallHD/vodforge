@@ -23,29 +23,6 @@ def file_change_time_ns(descriptor: int, observed: os.stat_result) -> int:
     return observed.st_ctime_ns
 
 
-def supports_tk_event(widget: Any, sequence: str) -> bool:
-    """Parse an event on an unattached Tcl tag without registering a Python callback."""
-    import tkinter as tk
-    from uuid import uuid4
-
-    # A read-only bind lookup accepts even unknown event names on Tk 8.6.
-    # A script binding forces parsing. The private tag is never attached to a
-    # widget, so the probe cannot consume input or invoke application callbacks.
-    tag = f"VODForgeEventProbe-{uuid4().hex}"
-    if widget.tk.call("bind", tag):
-        return False  # Never replace or clean up another owner's tag.
-    try:
-        widget.tk.call("bind", tag, sequence, "break")
-    except tk.TclError:
-        return False
-    finally:
-        try:
-            widget.tk.call("bind", tag, sequence, "")
-        except tk.TclError:
-            pass
-    return True
-
-
 def is_windows(platform_name: str | None = None) -> bool:
     """Return whether the requested or running platform uses Windows behavior."""
     value = sys.platform if platform_name is None else platform_name
@@ -56,34 +33,6 @@ def is_macos(platform_name: str | None = None) -> bool:
     """Return whether the requested or running platform uses macOS behavior."""
     value = sys.platform if platform_name is None else platform_name
     return value == "darwin"
-
-
-def request_window_foreground(root: Any) -> bool:
-    """Request cooperative activation; attention is never successful activation."""
-    root.lift()
-    if is_macos():
-        from .platforms.macos.windowing import request_window_foreground as activate
-
-        return activate(root)
-    if is_windows():
-        from .platforms.windows.windowing import request_window_foreground as activate
-
-        return activate(root)
-    return False
-
-
-def install_native_quit_handler(
-    root: Any,
-    callback: Callable[[], None],
-    *,
-    platform_name: str | None = None,
-) -> bool:
-    """Route the macOS application-menu Quit action through safe shutdown."""
-
-    if not is_macos(platform_name):
-        return False
-    root.createcommand("::tk::mac::Quit", callback)
-    return True
 
 
 def diagnostics_dir(
@@ -112,7 +61,7 @@ def platform_font_families(platform_name: str | None = None) -> tuple[str, str]:
         return "Helvetica Neue", "Menlo"
     if is_windows(platform_name):
         return "Segoe UI", "Cascadia Mono"
-    return "TkDefaultFont", "TkFixedFont"
+    return "Sans Serif", "Monospace"
 
 
 def focus_view_shortcut_bindings(
@@ -317,25 +266,6 @@ def open_path(
     popen([opener, str(path)])
 
 
-def capture_own_widget(widget: Any) -> Any:
-    """Capture only an owned view; an unavailable optional effect cannot block navigation."""
-    width, height = widget.winfo_width(), widget.winfo_height()
-    if width < 2 or height < 2 or width * height > 4_000_000:
-        return None
-    try:
-        if is_macos():
-            from .platforms.macos.surfaces import capture_own_widget as capture
-
-            return capture(widget, width, height)
-        if is_windows():
-            from .platforms.windows.surfaces import capture_own_widget as capture
-
-            return capture(widget, width, height)
-    except Exception:  # noqa: BLE001 - optional effect cannot block navigation
-        return None
-    return None
-
-
 def system_trash_available() -> bool:
     """Recoverable native backends only; never permanent-delete fallback."""
     try:
@@ -367,72 +297,5 @@ def trash_file(path: Path) -> str | None:
     raise OSError("System Trash is unavailable for this file.")
 
 
-def surface_backing_scale(widget: Any) -> int:
-    """Native raster backing scale; separate from typography and Tk scaling."""
-    if is_macos():
-        from .platforms.macos.surfaces import surface_backing_scale as backing_scale
-
-        return backing_scale(widget)
-    return 1
-
-
-def create_surface_image(
-    widget: Any,
-    bitmap: Any,
-    scale: int,
-    *,
-    logical_size: tuple[int, int] | None = None,
-    existing: Any = None,
-) -> tuple[Any, int]:
-    """Use native pixel backing when supported; preserve common Tk fallback."""
-    from PIL import Image, ImageTk
-
-    width, height = logical_size if logical_size is not None else bitmap.size
-    if is_macos() and scale > 1:
-        from .platforms.macos.surfaces import create_surface_image as native_image
-
-        result = native_image(
-            widget, bitmap, scale, logical_size=(width, height), existing=existing
-        )
-        if result is not None:
-            return result
-    fallback = (
-        bitmap
-        if bitmap.size == (width, height)
-        else bitmap.resize((width, height), Image.Resampling.LANCZOS)
-    )
-    if isinstance(existing, ImageTk.PhotoImage) and (
-        existing.width(),
-        existing.height(),
-    ) == (width, height):
-        existing.paste(fallback)
-        return existing, width * height * 4
-    return ImageTk.PhotoImage(fallback, master=widget), width * height * 4
-
-
-def present_pending_drawing(widget: Any, *, child_canvas_only: bool = False) -> bool:
-    """Bounded platform drawing before a shared surface becomes visible."""
-    if is_macos():
-        from .platforms.macos.surfaces import present_pending_drawing as present
-
-        return present(widget, child_canvas_only=child_canvas_only)
-    return True
-
-
 # Scrolling needs explicit drawing only for embedded child viewports; complete
 # destination reveals use the same owner for all widget layouts.
-def present_scrolled_canvas(widget: Any) -> None:
-    present_pending_drawing(widget, child_canvas_only=True)
-
-
-def integrate_main_window(
-    window: Any, title: str, diagnostic: Callable[[str], None]
-) -> bool:
-    """Keep common title semantics; native header integration requires Aqua."""
-    if window.tk.call("tk", "windowingsystem") != "aqua":
-        window.title(title)
-        window._native_toolbar_header = False
-        return False
-    from .platforms.macos.windowing import integrate_main_window as integrate
-
-    return integrate(window, title, diagnostic)

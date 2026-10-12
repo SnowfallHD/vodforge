@@ -4,7 +4,8 @@ import math
 
 import pytest
 
-from yt_downloader import app, export_planning
+from yt_downloader import download_service as app
+from yt_downloader import export_planning
 from yt_downloader.models import ExportMode
 
 

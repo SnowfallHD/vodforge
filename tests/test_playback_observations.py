@@ -1,98 +1,10 @@
 from __future__ import annotations
 
-import json
-
 import pytest
-from quality_harness.playback_probe import CASES, run_case
 
-from tests.test_history_diagnostics import make_app, payloads
+from tests.test_history_diagnostics import make_app
 
 pytestmark = pytest.mark.usefixtures("production_telemetry_contract")
-
-
-@pytest.mark.parametrize("case", CASES)
-def test_control_and_failure_producers_preserve_bounded_distinctions(
-    tmp_path, monkeypatch, case
-):
-    holder = make_app(tmp_path, monkeypatch, consent=True)
-    result = run_case(tmp_path / "provider", holder.product_telemetry, case)
-    events = payloads(holder)
-    assert len(events) <= (38 if case == "command_flood" else 10)
-    assert "PRIVATE" not in json.dumps(events)
-    assert all(event["dimensions"]["playback_origin"] == "watch" for event in events)
-    volume = [event for event in events if event["action"].startswith("volume_")]
-    outcomes = [event["dimensions"]["volume_outcome"] for event in volume]
-    if case == "immediate_mute":
-        assert outcomes == ["applied"]
-        assert volume[0]["dimensions"]["volume_observed"] == "0"
-    elif case == "delayed_mute":
-        assert outcomes == ["pending", "applied"]
-    elif case in {
-        "pending_at_close",
-        "accepted_mismatch",
-        "readback_unavailable",
-        "readback_exception",
-    }:
-        assert outcomes == ["pending", "pending_at_close"]
-        assert "applied" not in outcomes
-    elif case == "setter_exception":
-        assert outcomes == ["failed"]
-        assert volume[0]["failure_detail"]["error_type"] == "RuntimeError"
-        assert volume[0]["failure_detail"]["source_module"] == "libvlc_backend"
-    elif case == "superseded_request":
-        assert outcomes == ["pending", "applied"]
-        assert all(event["dimensions"]["volume_request"] == "2" for event in volume)
-        assert volume[-1]["dimensions"]["volume_observed"] == "37"
-    elif case == "output_recreated":
-        assert outcomes == ["applied", "pending", "applied"]
-    elif case == "command_flood":
-        assert len(volume) == 33
-        assert outcomes[-1] == "pending_at_close"
-        assert volume[-1]["dimensions"]["volume_request"] == "202"
-        assert volume[-1]["dimensions"]["volume_requested"] == "37"
-        assert events[-1]["action"] == "closed"
-    elif case in {"provider_event", "state_read"}:
-        failure = next(event for event in events if event["action"] == "failed")
-        assert failure["dimensions"]["playback_failure_boundary"] == case
-        if case == "state_read":
-            assert failure["failure_detail"]["error_type"] == "OSError"
-            assert failure["failure_detail"]["os_error"] == 5
-    assert result["physical_input"] is False and result["audibility_observed"] is False
-
-
-@pytest.mark.parametrize("consent", [False, "revoked"])
-def test_control_observations_respect_denied_and_revoked_consent(
-    tmp_path, monkeypatch, consent
-):
-    holder = make_app(tmp_path, monkeypatch, consent=consent == "revoked")
-    if consent == "revoked":
-        holder.product_telemetry.set_enabled(False)
-    result = run_case(tmp_path / "provider", holder.product_telemetry, "delayed_mute")
-    assert result["volume"]["observed"] == 0
-    assert payloads(holder) == []
-
-
-def test_volume_diagnostics_sink_exception_preserves_playback_and_close(
-    tmp_path, monkeypatch
-):
-    holder = make_app(tmp_path, monkeypatch, consent=True)
-
-    def unavailable(_event):
-        raise OSError("PRIVATE telemetry sink path")
-
-    diagnostic = []
-    holder.product_telemetry._diagnostic = diagnostic.append
-    holder.product_telemetry._d1_recorder = unavailable
-    result = run_case(tmp_path / "provider", holder.product_telemetry, "delayed_mute")
-    events = payloads(holder)
-    assert result["volume"]["observed"] == 0
-    assert events[-1]["action"] == "closed"
-    assert "PRIVATE" not in json.dumps(events)
-    assert diagnostic and all("PRIVATE" not in value for value in diagnostic)
-    holder.product_telemetry._d1_recorder = lambda event: True
-    holder.product_telemetry._heycatch_recorder = lambda *_args, **_fields: True
-    holder.product_telemetry.flush_async()
-    assert payloads(holder) == []
 
 
 def test_failed_sink_retires_worker_and_revoked_epoch_cannot_replay(
@@ -150,21 +62,3 @@ def test_failed_sink_retires_worker_and_revoked_epoch_cannot_replay(
     assert owner.shutdown(2)
     assert len(delivered) == 1 and delivered[0].event_id != old_event
     assert delivered[0].consent_epoch == consent.snapshot()["collection_epoch"]
-
-
-def test_exhausted_volume_budget_quick_close_emits_only_final_summary(
-    tmp_path, monkeypatch
-):
-    holder = make_app(tmp_path, monkeypatch, consent=True)
-    run_case(
-        tmp_path / "provider",
-        holder.product_telemetry,
-        "command_flood",
-        close_before_settle=True,
-    )
-    events = payloads(holder)
-    volume = [event for event in events if event["action"].startswith("volume_")]
-    assert len(volume) == 33
-    assert volume[-1]["action"] == "volume_unresolved"
-    assert volume[-1]["dimensions"]["volume_request"] == "202"
-    assert events[-1]["action"] == "closed"

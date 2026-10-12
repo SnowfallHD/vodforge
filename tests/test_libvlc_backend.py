@@ -11,7 +11,6 @@ from yt_downloader.libvlc_backend import (
     LibVLCPlaybackBackend,
     LibVLCRuntime,
 )
-from yt_downloader.media_player_ui import MediaPlayerWindow
 from yt_downloader.playback_backend import MediaPlayerError, NativeRenderSurface
 
 
@@ -271,66 +270,6 @@ def test_provider_state_failure_becomes_an_immutable_failed_snapshot(
 
     assert backend.snapshot.status == "Failed"
     assert backend.snapshot.error == "The local playback engine stopped responding."
-
-
-def test_provider_error_edge_survives_ended_state_and_clears_on_retry(
-    tmp_path: Path,
-) -> None:
-    """Real libVLC emits EncounteredError but reports Ended for unreadable media."""
-    media = tmp_path / "video.mp4"
-    media.write_bytes(b"video")
-    backend, module = make_backend()
-    backend.load(media, duration=12)
-    backend.play()
-    callback = module.player.event_callbacks.get(
-        module.EventType.MediaPlayerEncounteredError
-    )
-    assert callback is not None
-    callback(None)
-    module.player.state = module.State.Ended
-    assert backend.snapshot.status == "Failed"
-    assert backend.snapshot.error == "The local media file could not be played."
-    observed: list[str] = []
-    operations = []
-    player_window = SimpleNamespace(
-        _closed=False,
-        playback=backend,
-        _last_snapshot=None,
-        _on_feature=observed.append,
-        _operation_play_observed=False,
-        _observe_volume=lambda snapshot: None,
-        _on_operation=lambda action, diagnostic=None, **_fields: operations.append(
-            (action, diagnostic)
-        ),
-        time_var=SimpleNamespace(set=lambda value: None),
-        status_var=SimpleNamespace(set=lambda value: None),
-        play_button=SimpleNamespace(configure=lambda **kwargs: None),
-        _update_timeline_value=lambda snapshot: None,
-        _refresh_previews=lambda snapshot: None,
-        _drain_previews=lambda: None,
-        popup=SimpleNamespace(after=lambda delay, callback: None),
-        _poll=lambda: None,
-    )
-    player_window._present_native_controls = (
-        MediaPlayerWindow._present_native_controls.__get__(player_window)
-    )
-    player_window._present_snapshot = lambda snapshot: (
-        MediaPlayerWindow._present_snapshot(player_window, snapshot)
-    )
-    MediaPlayerWindow._poll(player_window)
-    MediaPlayerWindow._poll(player_window)
-    assert observed == ["failed"]
-    assert backend.play().status == "Playing"
-    MediaPlayerWindow._poll(player_window)
-    module.player.state = module.State.Ended
-    assert backend.snapshot.status == "Ended"
-    MediaPlayerWindow._poll(player_window)
-    assert observed == ["failed", "completed"]
-    assert [action for action, _ in operations] == ["failed", "started", "completed"]
-    assert operations[0][1].stage == "playback"
-    assert (
-        operations[0][1].error_type is None
-    )  # Provider supplied text, not a typed exception.
 
 
 def test_provider_error_during_play_is_not_cleared_after_provider_returns(

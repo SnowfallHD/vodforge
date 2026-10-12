@@ -46,7 +46,6 @@ def telemetry(tmp_path, *, enabled=True, sink=lambda event: False):
         app_version="0.2.3",
         enabled=enabled,
         d1_recorder=sink,
-
     )
 
 

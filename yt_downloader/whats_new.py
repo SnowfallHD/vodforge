@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
 
 
 class NativePreview(str, Enum):
@@ -131,101 +130,3 @@ DID_YOU_KNOW_HIGHLIGHTS = (
         NativePreview.YOUTUBE_ACCESS_EXPANDED,
     ),
 )
-
-
-class WhatsNewOwner:
-    """Own one showcase's eligibility and lifetime; settings own persistence."""
-
-    def __init__(
-        self,
-        parent: Any,
-        seen: Any,
-        ready: Any,
-        *,
-        showcase_id: str = SHOWCASE_ID,
-        highlights: tuple[FeatureHighlight, ...] | None = None,
-        mode: str = SHOWCASE_MODE,
-        open_settings: Any = None,
-        on_feature: Any = None,
-    ) -> None:
-        self.parent, self.seen, self.ready = parent, seen, ready
-        if mode not in {"none", "whats-new", "did-you-know"}:
-            raise ValueError("Unknown showcase mode")
-        self.heading = "Did you know?" if mode == "did-you-know" else "What’s new"
-        self.open_settings = open_settings
-        self.on_feature = on_feature or (lambda _action: None)
-        self.is_tip = mode == "did-you-know"
-        self.showcase_id = showcase_id
-        self.highlights = (
-            ()
-            if mode == "none"
-            else (
-                highlights
-                if highlights is not None
-                else (DID_YOU_KNOW_HIGHLIGHTS if mode == "did-you-know" else HIGHLIGHTS)
-            )
-        )
-        self.panel: Any = None
-        self.closed = False
-        self.timer: Any = None
-
-    @property
-    def pending(self) -> bool:
-        return bool(
-            self.highlights and self.showcase_id and self.seen.get() != self.showcase_id
-        )
-
-    def start(self) -> None:
-        if (
-            not self.closed
-            and self.pending
-            and self.timer is None
-            and self.panel is None
-        ):
-            self.timer = self.parent.after(1000, self._poll)
-
-    def _poll(self) -> None:
-        self.timer = None
-        if self.closed or not self.pending:
-            return
-        if not self.ready() or self.parent.grab_current() is not None:
-            self.timer = self.parent.after(300, self._poll)
-            return
-        self.show()
-
-    def show(self) -> None:
-        if self.closed or not self.highlights or self.panel is not None:
-            return
-        from .whats_new_ui import WhatsNewPanel
-
-        settings_action = self.is_tip or (
-            len(self.highlights) == 1 and self.highlights[0].key == "output-settings"
-        )
-        self.panel = WhatsNewPanel(
-            self.parent,
-            self.highlights,
-            self._dismissed,
-            heading=self.heading,
-            finish_label="Try it" if settings_action else None,
-            on_finish=self._try_it if settings_action else None,
-        )
-
-        self.on_feature("shown")
-
-    def _try_it(self) -> None:
-        self.on_feature("try_it")
-        if self.open_settings is not None:
-            self.open_settings()
-
-    def _dismissed(self) -> None:
-        self.seen.set(self.showcase_id)
-        self.panel = None
-
-    def close(self) -> None:
-        self.closed = True
-        if self.timer is not None:
-            self.parent.after_cancel(self.timer)
-            self.timer = None
-        if self.panel is not None:
-            self.panel.close(acknowledge=False)
-            self.panel = None

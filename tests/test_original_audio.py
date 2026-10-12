@@ -101,7 +101,7 @@ def original_probe(codec):
 def test_original_validated_artifact_reuses_with_its_preservation_plan(
     tmp_path, monkeypatch, codec, source_codec, extension
 ):
-    from yt_downloader import app
+    from yt_downloader import download_service as app
 
     path = tmp_path / ("original" + extension)
     path.write_bytes(b"controlled valid probe fixture")
@@ -156,7 +156,7 @@ def test_original_fresh_and_reuse_reject_the_same_incompatible_artifact(
 ):
     import copy
 
-    from yt_downloader import app
+    from yt_downloader import download_service as app
 
     probe = copy.deepcopy(original_probe(codec))
     plan = build_original_audio_plan(
@@ -205,7 +205,7 @@ def test_original_fresh_and_reuse_reject_the_same_incompatible_artifact(
 def test_reuse_validation_rejection_is_bounded_and_observer_cannot_change_result(
     tmp_path, monkeypatch
 ):
-    from yt_downloader import app
+    from yt_downloader import download_service as app
 
     path = tmp_path / "source.m4a"
     path.write_bytes(b"corrupt generated artifact")
@@ -263,7 +263,7 @@ def test_audio_activity_follows_selected_output_type(
     import queue
 
     from tests.test_state_authority import make_job
-    from yt_downloader import app
+    from yt_downloader import download_service as app
     from yt_downloader.export_planning import build_mp3_export_plan
     from yt_downloader.models import Mp3ExportSettings
 

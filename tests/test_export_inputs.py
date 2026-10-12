@@ -1,4 +1,4 @@
-"""The Tk and Qt entrypoints must submit the same validated export choices."""
+"""Qt submits the shared validated export choices."""
 
 from pathlib import Path
 from types import SimpleNamespace
@@ -6,7 +6,6 @@ from types import SimpleNamespace
 import pytest
 from PIL import Image
 
-from yt_downloader.app import DownloaderApp
 from yt_downloader.cookie_inputs import windows_chromium_cookie_warning
 from yt_downloader.export_inputs import (
     manual_export_settings,
@@ -38,11 +37,7 @@ def test_manual_choices_match_tk_adapter_and_qt_job(tmp_path: Path, rate_control
         "manual_preset": "slow",
         "manual_crf": "19",
     }
-    app = DownloaderApp.__new__(DownloaderApp)
-    for key, value in values.items():
-        setattr(app, f"{key}_var", _Value(value))
-    expected = app._manual_export_settings()
-    assert manual_export_settings(values) == expected
+    expected = manual_export_settings(values)
 
     runtime = _idle_runtime()
     job = runtime.start(
@@ -67,9 +62,11 @@ def test_invalid_manual_value_blocks_both_entrypoints():
 
 
 def test_cover_validation_is_one_owner_for_tk_and_qt(tmp_path: Path):
-    from yt_downloader.app import validate_custom_cover_art as tk_validator
+    from yt_downloader.download_service import (
+        validate_custom_cover_art as service_validator,
+    )
 
-    assert tk_validator is validate_custom_cover_art
+    assert service_validator is validate_custom_cover_art
     image = tmp_path / "cover.png"
     Image.new("RGB", (32, 32), "#674391").save(image)
     assert validate_custom_cover_art(image) == image.resolve()
@@ -84,7 +81,7 @@ def test_cover_validation_is_one_owner_for_tk_and_qt(tmp_path: Path):
     broken = tmp_path / "broken.png"
     broken.write_bytes(b"not an image")
     with pytest.raises(ValueError, match="valid JPEG"):
-        tk_validator(broken)
+        service_validator(broken)
 
 
 def test_mp3_choices_match_tk_adapter_and_qt_job(tmp_path: Path):
@@ -95,12 +92,7 @@ def test_mp3_choices_match_tk_adapter_and_qt_job(tmp_path: Path):
         "mp3_cover_art_mode": "No Art",
         "mp3_embed_metadata": False,
     }
-    app = DownloaderApp.__new__(DownloaderApp)
-    for key, value in values.items():
-        setattr(app, f"{key}_var", _Value(value))
-    app.mp3_custom_cover_art_path = None
-    expected = app._mp3_export_settings()
-    assert mp3_export_settings(values) == expected
+    expected = mp3_export_settings(values)
 
     runtime = _idle_runtime()
     job = runtime.start(

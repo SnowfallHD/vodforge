@@ -15,69 +15,6 @@ from yt_downloader.telemetry_features import (
 pytestmark = pytest.mark.usefixtures("production_telemetry_contract")
 
 
-@pytest.mark.parametrize(
-    "field,value,action",
-    [
-        ("note", "Private note sentinel", "notes_saved"),
-        ("tags", ("private-tag",), "tags_saved"),
-        ("category", "Private category", "category_saved"),
-    ],
-)
-@pytest.mark.parametrize("operation", ["create", "clear", "unchanged", "failed"])
-def test_annotation_save_producer_tracks_only_successful_changes(
-    tmp_path, monkeypatch, field, value, action, operation
-):
-    from types import SimpleNamespace
-
-    import yt_downloader.app as app_module
-    from yt_downloader.library_annotations import (
-        LibraryAnnotation,
-        LibraryAnnotationsError,
-        LibraryAnnotationsOwner,
-    )
-
-    owner = LibraryAnnotationsOwner(tmp_path / "annotations.json")
-    populated = LibraryAnnotation(**{field: value})
-    previous = populated if operation in {"clear", "unchanged"} else LibraryAnnotation()
-    proposed = LibraryAnnotation() if operation == "clear" else populated
-    owner.replace("run:test", previous)
-    events = []
-    outcomes = []
-    info = {app_module.ANNOTATION_OWNER_KEY: "run:test", "title": "Private title"}
-    app = SimpleNamespace(
-        metadata_items=[info],
-        library_annotations=owner,
-        _reconcile_library_projection=lambda **kwargs: None,
-        _record_feature=lambda *args: events.append(args),
-        status_var=SimpleNamespace(set=lambda text: None),
-    )
-
-    def dialog(*args, **kwargs):
-        return SimpleNamespace(
-            show=lambda: outcomes.append(kwargs["on_save"](proposed))
-        )
-
-    monkeypatch.setattr(app_module, "LibraryAnnotationDialog", dialog)
-    monkeypatch.setattr(
-        app_module.messagebox, "showerror", lambda *args, **kwargs: None
-    )
-    if operation == "failed":
-
-        def fail_save(*args):
-            raise LibraryAnnotationsError("Cannot save private path")
-
-        monkeypatch.setattr(owner, "replace", fail_save)
-    app_module.DownloaderApp._show_library_annotation_editor(app, info)
-    assert outcomes == [operation != "failed"]
-    assert events == (
-        [("organization", action)] if operation in {"create", "clear"} else []
-    )
-    assert owner.annotation_for("run:test") == (
-        previous if operation == "failed" else proposed
-    )
-    assert "Private" not in repr(events)
-
-
 def test_attempts_link_across_restart_without_exposing_local_identity(tmp_path):
     installation = tmp_path / "installation.json"
     install_id = _permitted_installation(installation)
@@ -89,7 +26,6 @@ def test_attempts_link_across_restart_without_exposing_local_identity(tmp_path):
             installation_state_path=installation,
             app_version="0.2.1",
             d1_recorder=lambda _event: False,
-
         )
 
     first = owner()
@@ -157,7 +93,6 @@ def test_all_feature_actions_persist_and_are_deduplicated_in_session(tmp_path):
         installation_state_path=installation,
         app_version="0.2.1",
         d1_recorder=lambda _event: False,
-
     )
     legacy_features = {
         key: actions
@@ -239,50 +174,11 @@ def test_denial_cannot_reuse_cached_engagement_success(tmp_path):
         installation_state_path=installation,
         app_version="0.2.1",
         d1_recorder=lambda _event: True,
-
     )
     assert owner.record_feature("library", "searched")
     owner.shutdown(2)
     AnalyticsConsentOwner(tmp_path).choose(False)
     assert not owner.record_feature("library", "searched")
-
-
-@pytest.mark.parametrize("kind", ["error", "cancelled"])
-def test_local_failure_callback_never_receives_exception_text(kind):
-    import queue
-    from types import SimpleNamespace
-
-    from yt_downloader.local_audio_video_ui import LocalAudioVideoDialog
-
-    calls = []
-    events = queue.Queue()
-    events.put((kind, "PRIVATE PATH AND TITLE"))
-    control = SimpleNamespace(configure=lambda **kwargs: None)
-    dialog = SimpleNamespace(
-        _closed=False,
-        _events=events,
-        _worker=object(),
-        _telemetry_run_id="random-local-run",
-        on_telemetry=lambda *args: calls.append(args),
-        cancel_button=control,
-        audio_button=control,
-        image_button=control,
-        destination_button=control,
-        profile_combo=control,
-        choose_output=None,
-        _sync_ready_state=lambda **kwargs: None,
-        _close_when_idle=False,
-    )
-    LocalAudioVideoDialog._pump_events(dialog)
-    assert calls == [
-        (
-            "local_conversion_failed"
-            if kind == "error"
-            else "local_conversion_stopped",
-            "random-local-run",
-        )
-    ]
-    assert "PRIVATE" not in repr(calls)
 
 
 def test_failed_update_receipt_survives_later_but_never_backfills_denied(tmp_path):
@@ -308,91 +204,6 @@ def test_failed_update_receipt_survives_later_but_never_backfills_denied(tmp_pat
     assert list(pending_update_telemetry_receipts(folder.parent, executable)) == []
 
 
-def test_update_observation_is_discarded_on_refusal_not_backfilled(
-    tmp_path, monkeypatch
-):
-    import sys
-    from types import SimpleNamespace
-
-    import yt_downloader.app as app_module
-
-    folder = tmp_path / "updates" / "v1"
-    folder.mkdir(parents=True)
-    receipt = folder / ("handoff-" + uuid.uuid4().hex + ".json")
-    receipt.write_text(
-        json.dumps(
-            {
-                "status": "failed",
-                "executable": sys.executable,
-                "telemetry_permitted": True,
-            }
-        )
-    )
-    monkeypatch.setattr(app_module, "application_data_dir", lambda: tmp_path)
-    monkeypatch.delenv("VODFORGE_UPDATE_RECEIPT", raising=False)
-    owner = SimpleNamespace(
-        permitted=lambda: False,
-        record=lambda *args, **kwargs: pytest.fail("refused update was recorded"),
-    )
-    app = SimpleNamespace(product_telemetry=owner, _closing=False)
-    app_module.DownloaderApp._record_update_telemetry_receipt(app)
-    assert receipt.with_suffix(".failed.telemetry-discarded").exists()
-    owner.permitted = lambda: True
-    app_module.DownloaderApp._record_update_telemetry_receipt(app)
-
-
-def test_local_typed_worker_failure_reaches_outbox_without_display_text(tmp_path):
-    import queue
-    from types import SimpleNamespace
-
-    from yt_downloader.app import DownloaderApp
-    from yt_downloader.failure_diagnostics import capture_failure
-    from yt_downloader.local_audio_video_ui import (
-        LocalAudioVideoDialog,
-        LocalConversionFailure,
-    )
-
-    installation = tmp_path / "installation.json"
-    _permitted_installation(installation)
-    path = tmp_path / "events.json"
-    telemetry = ProductTelemetryOwner(
-        state_path=path,
-        installation_state_path=installation,
-        app_version="0.2.3-dev",
-        d1_recorder=lambda _event: False,
-
-    )
-    app = SimpleNamespace(product_telemetry=telemetry)
-    events = queue.Queue()
-    detail = capture_failure(PermissionError(13, "PRIVATE title path"), stage="commit")
-    events.put(("error", LocalConversionFailure("PRIVATE title path", detail)))
-    control = SimpleNamespace(configure=lambda **kwargs: None)
-    dialog = SimpleNamespace(
-        _closed=False,
-        _events=events,
-        _worker=object(),
-        _telemetry_run_id=str(uuid.uuid4()),
-        on_telemetry=lambda *args: DownloaderApp._record_local_conversion_event(
-            app, *args
-        ),
-        cancel_button=control,
-        audio_button=control,
-        image_button=control,
-        destination_button=control,
-        profile_combo=control,
-        choose_output=None,
-        _sync_ready_state=lambda **kwargs: None,
-        _close_when_idle=False,
-    )
-    LocalAudioVideoDialog._pump_events(dialog)
-    assert telemetry.shutdown(2)
-    recorded = _load_outbox(path)[0].public_payload()
-    assert recorded["failure_reason"] == "permission_denied"
-    assert recorded["failure_detail"]["stage"] == "commit"
-    assert recorded["attempt_id"]
-    assert "PRIVATE" not in json.dumps(recorded)
-
-
 def test_operation_journeys_repeat_order_and_revoke_without_presence_dedup(tmp_path):
     installation = tmp_path / "installation.json"
     _permitted_installation(installation)
@@ -402,7 +213,6 @@ def test_operation_journeys_repeat_order_and_revoke_without_presence_dedup(tmp_p
         installation_state_path=installation,
         app_version="0.2.3-dev",
         d1_recorder=lambda _event: False,
-
     )
     keys = [str(uuid.uuid4()), str(uuid.uuid4())]
     for key in keys:
@@ -442,7 +252,6 @@ def test_operation_observation_limits_preserve_missing_evidence(tmp_path, monkey
         installation_state_path=installation,
         app_version="0.2.3-dev",
         d1_recorder=lambda _event: False,
-
     )
     monkeypatch.setattr(owner, "flush_async", lambda: None)
     key = str(uuid.uuid4())
@@ -488,123 +297,6 @@ def test_build_revision_requires_build_marker(tmp_path):
     assert read_build_revision(marker) == "a" * 40
 
 
-def test_resize_summary_uses_existing_pump_and_consent_clears_pending(
-    tmp_path, monkeypatch
-):
-    from types import SimpleNamespace
-
-    from yt_downloader import app as module
-
-    installation = tmp_path / "installation.json"
-    _permitted_installation(installation)
-    captured = []
-    telemetry = ProductTelemetryOwner(
-        state_path=tmp_path / "events.json",
-        installation_state_path=installation,
-        app_version="0.2.3-qa",
-        d1_recorder=lambda event: captured.append(event) is None,
-
-    )
-    clock = [10.0]
-    monkeypatch.setattr(module.time, "monotonic", lambda: clock[0])
-    app = SimpleNamespace(
-        product_telemetry=telemetry,
-        _closing=False,
-        anonymous_usage_analytics_var=SimpleNamespace(get=lambda: True),
-        _focus_selected_view="library",
-        download_history=[{}] * 5000,
-        _resize_last_pump=10.0,
-    )
-    module.DownloaderApp._observe_resize_geometry(app, 1000, 700)
-    clock[0] = 10.1
-    module.DownloaderApp._observe_resize_geometry(app, 1200, 800)
-    clock[0] = 10.7
-    module.DownloaderApp._observe_resize_pump(app)
-    assert telemetry.shutdown(2)
-    assert len(captured) == 1
-    assert captured[0].dimensions["lag_bucket"] == "250_999ms"
-    assert captured[0].dimensions["lag_measurement"] == "ui_pump_delay"
-    assert captured[0].dimensions["row_count_bucket"] == "501_5000"
-    clock[0] = 10.8
-    module.DownloaderApp._observe_resize_geometry(app, 1000, 700)
-    # Existing consent callback must discard a burst, even on rapid re-enable.
-    app._record_update_telemetry_receipt = lambda: None
-    module.DownloaderApp._analytics_permission_changed(app, False)
-    clock[0] = 11.5
-    module.DownloaderApp._observe_resize_pump(app)
-    assert app._resize_observation is None
-    assert len(captured) == 1
-
-
-@pytest.mark.parametrize(
-    "reason,has_detail",
-    [
-        ("validation_failed", True),
-        ("plan_mismatch", False),
-        ("custom_artwork_unverifiable", False),
-        ("no_eligible_candidate", False),
-    ],
-)
-def test_reuse_rejection_survives_real_telemetry_validation(
-    tmp_path, monkeypatch, reason, has_detail
-):
-    from tests.test_state_authority import make_job
-    from yt_downloader import app as app_module
-    from yt_downloader.failure_diagnostics import FailureDiagnostic
-
-    installation = tmp_path / "installation.json"
-    _permitted_installation(installation)
-    state = tmp_path / "events.json"
-    telemetry = ProductTelemetryOwner(
-        state_path=state,
-        installation_state_path=installation,
-        app_version="0.2.1",
-        d1_recorder=lambda _event: False,
-
-    )
-    app = app_module.DownloaderApp.__new__(app_module.DownloaderApp)
-    app.product_telemetry = telemetry
-    app.download_history = []
-    app._find_ffprobe = lambda: "trusted-probe"
-    job = make_job(tmp_path)
-    job.telemetry_operation_id = str(uuid.uuid4())
-
-    def rejected_candidate(*_args, **kwargs):
-        if reason != "no_eligible_candidate":
-            kwargs["on_rejection"](
-                reason,
-                FailureDiagnostic(
-                    reason="unknown", stage="reuse", error_type="RuntimeError"
-                )
-                if has_detail
-                else None,
-            )
-
-    monkeypatch.setattr(app_module, "find_valid_existing_output", rejected_candidate)
-    assert (
-        app._try_reuse_existing_output(
-            job,
-            {"id": "fixture"},
-            None,
-            label="QA",
-            all_output_dirs=[],
-            control_check=lambda: None,
-        )
-        is None
-    )
-    assert telemetry.shutdown(2)
-    events = _load_outbox(state)
-    assert len(events) == 1
-    assert events[0].action == (
-        "stage" if reason == "no_eligible_candidate" else "candidate_rejected"
-    )
-    assert events[0].dimensions["reuse_rejection"] == reason
-    if has_detail:
-        assert events[0].failure_detail.stage == "reuse"
-    else:
-        assert events[0].failure_detail is None
-
-
 @pytest.mark.parametrize(
     "feature,action",
     [
@@ -626,7 +318,6 @@ def test_rejected_observation_increments_drop_count_for_next_valid_fact(
         installation_state_path=installation,
         app_version="0.2.1",
         d1_recorder=lambda _event: False,
-
     )
     operation = str(uuid.uuid4())
     with pytest.raises(ValueError):

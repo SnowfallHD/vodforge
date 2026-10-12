@@ -1235,3 +1235,34 @@ Ruff focused source/owner tests passes. Frozen package/new native delivery remai
 untested for this successor. No rebuild/publication. App now has no active HeyCatch
 transport; historical QA documents/deny-list domains and inert installation fields
 are deliberately historical/compatibility data, not enabled integrations.
+
+## Oct 12 — retire widget implementation and retain neutral data consumers
+
+Version-remove54 obsolete widget/platform presentation source files and legacy
+Tk previews/probes. Qt's existing scenes, worker core, typed events and neutral
+history/prompt/material owners remain. Removed Tk-only platform helpers and font
+aliases; generic presentation observations stay. Pure local-conversion recovery,
+sidecar publication, output observations, event constructors, history and platform
+controls were retained from mixed files. Removed widget-owned cases only; named
+per-definition disposition receipts are under recovery-20261011 (mixed-widget,
+nested-widget, retired-widget-fixture and legacy-widget-test disposition JSON).
+Git preserves retired implementation; no generated binary/object cleanup performed.
+
+Full collection6994cases, zero errors (retirement-full-collection.log). Actual
+retained data controls188pass in1.21s (retirement-retained-controls-after.log).
+First attempt242passed/29failed on additional dynamic legacy imports; failures
+retained and retired against their widget owner, not relabeled as passes. Remaining
+Qt entry, diagnostic selector and immutable packaged-receipt import controls6pass
+in1.18s (retirement-entry-contracts.log). Current modified Python Ruff/format and
+diff checks pass. Tk/PIL.ImageTk source import inventory empty. No foreground GUI,
+new package, frozen artifact mutation, production write, secret/profile read.
+
+This is an incremental retirement checkpoint, NOT completion or release acceptance.
+Residual old EQH scene/recovery selectors and dynamic synthetic Tk producer calls
+still need migration/reconciliation; zero collection errors does not execute them.
+Some legacy source-bound tests need current-owner selectors. Native successor and
+new package/update/privacy qualification remain untested; retained frozen585 proof
+cannot qualify source changes. Existing actual Qt counterparts include runtime event
+identity/batch publication/restart, scene annotation ownership, queue generation,
+metadata ownership, copy private-outbox, playback/frame and interaction invariants.
+No blanket skip, fake DownloaderApp or fabricated native event is introduced.

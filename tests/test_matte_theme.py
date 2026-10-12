@@ -6,8 +6,7 @@ from pathlib import Path
 import pytest
 from PIL import Image, ImageChops
 
-from yt_downloader.ui_materials import backdrop_pixels, tint_brand
-from yt_downloader.ui_theme import (
+from yt_downloader.product_theme import (
     FOREGROUND_ROLES,
     MATERIAL_ROLES,
     THEME,
@@ -15,6 +14,7 @@ from yt_downloader.ui_theme import (
     apply_theme_selection,
     theme_motif,
 )
+from yt_downloader.visual_materials import backdrop_pixels, tint_brand
 
 
 def luminance(color):
@@ -100,7 +100,7 @@ def test_brand_tint_preserves_geometry_and_source_alpha():
 
 
 def test_raised_material_falls_to_transparent_before_bitmap_boundary():
-    from yt_downloader.ui_chrome import action_button_image
+    from yt_downloader.visual_chrome import action_button_image
 
     for width, height in ((28, 28), (140, 44), (220, 40)):
         image = action_button_image(width, height, accent=True)
@@ -115,7 +115,7 @@ def test_raised_material_falls_to_transparent_before_bitmap_boundary():
 @pytest.mark.parametrize("accent", [False, True])
 def test_shared_hover_is_an_inset_without_a_new_face_or_border(accent):
     """The pre-change bright-hover renderer fails this center/contour oracle."""
-    from yt_downloader.ui_chrome import (
+    from yt_downloader.visual_chrome import (
         _blend_color,
         action_button_image,
         control_material_roles,
@@ -159,7 +159,7 @@ def test_shared_hover_is_an_inset_without_a_new_face_or_border(accent):
 
 
 def test_shared_field_hover_replaces_the_prior_bright_face_with_an_inset_contour():
-    from yt_downloader.ui_chrome import (
+    from yt_downloader.visual_chrome import (
         _blend_color,
         field_border_image,
         ttk_surface_image,
@@ -189,7 +189,7 @@ def test_shared_field_hover_replaces_the_prior_bright_face_with_an_inset_contour
 
 
 def test_navigation_uses_shared_inset_hover_and_selection_without_accent_edge():
-    from yt_downloader.ui_chrome import navigation_button_image
+    from yt_downloader.visual_chrome import navigation_button_image
 
     idle = navigation_button_image(140, 44, background=THEME["panel"])
     hover = navigation_button_image(140, 44, background=THEME["panel"], state="hover")
@@ -226,7 +226,7 @@ def test_navigation_uses_shared_inset_hover_and_selection_without_accent_edge():
 
 @pytest.mark.parametrize("density", [1, 2])
 def test_full_action_keeps_rounded_corner_outside_ttk_stretch_zone(density):
-    from yt_downloader.ui_chrome import action_button_image
+    from yt_downloader.visual_chrome import action_button_image
 
     image = action_button_image(140, 44, accent=True, density=density)
     assert image.size == (140 * density, 44 * density)

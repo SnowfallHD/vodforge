@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from yt_downloader.ui_theme import (
+from yt_downloader.product_theme import (
     CUSTOM_THEME_NAME,
     DEFAULT_THEME_NAME,
     THEME,

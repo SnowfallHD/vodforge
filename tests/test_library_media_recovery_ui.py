@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from yt_downloader.library_media_recovery import LibraryMediaRecoveryPlan
-from yt_downloader.library_media_recovery_ui import library_media_recovery_prompt
+from yt_downloader.library_media_recovery_prompt import library_media_recovery_prompt
 from yt_downloader.models import (
     DownloadJob,
     ExportMode,

@@ -5,12 +5,12 @@ from types import SimpleNamespace
 import pytest
 from PIL import ImageChops
 
-from yt_downloader.ui_chrome import field_border_image
 from yt_downloader.ui_layout import (
     WindowLogicalMetrics,
     install_window_logical_metrics,
     window_logical_metrics,
 )
+from yt_downloader.visual_chrome import field_border_image
 
 
 def test_default_window_keeps_font_and_geometry():
@@ -19,33 +19,6 @@ def test_default_window_keeps_font_and_geometry():
     metrics = window_logical_metrics(child)
     assert metrics.px(34) == 34
     assert metrics.font(("Segoe UI", 11, "bold")) == ("Segoe UI", 11, "bold")
-
-
-@pytest.mark.parametrize("scale", [1, 2])
-def test_timeline_pointer_fraction_uses_scaled_insets_only(scale):
-    from yt_downloader.media_player_ui import MediaPlayerWindow
-
-    window = SimpleNamespace(
-        _vodforge_logical_metrics=WindowLogicalMetrics(scale, physical_fonts=True)
-    )
-    seeks, features = [], []
-    state = SimpleNamespace(
-        timeline=SimpleNamespace(
-            winfo_toplevel=lambda: window, winfo_width=lambda: 400
-        ),
-        _media_intent_current=lambda: True,
-        playback=SimpleNamespace(snapshot=SimpleNamespace(duration=200)),
-        _seek_to=seeks.append,
-        _heatmap=[object()],
-        _on_feature=features.append,
-    )
-    for x in (10 * scale, 200, 400 - 10 * scale):
-        MediaPlayerWindow._timeline_clicked(state, SimpleNamespace(x=x, y=0))
-    assert seeks == [0, 100, 200]
-    assert features == ["heatmap"] * 3
-    state._media_intent_current = lambda: False
-    MediaPlayerWindow._timeline_clicked(state, SimpleNamespace(x=200, y=0))
-    assert seeks == [0, 100, 200]
 
 
 def test_physical_font_is_independent_of_interpreter_point_scaling():

@@ -146,7 +146,6 @@ def test_settings_transitions_preserve_a_b_a_and_suppress_unchanged(tmp_path):
         installation_state_path=tmp_path / "installation.json",
         app_version="0.2.2",
         d1_recorder=lambda e: seen.append(e) or True,
-
     )
     for choice in ("disabled", "disabled", "browser", "disabled"):
         assert owner.record_feature(
@@ -161,62 +160,13 @@ def test_settings_transitions_preserve_a_b_a_and_suppress_unchanged(tmp_path):
 
 
 def test_packaged_runtime_gate_rejects_missing_certificate_bundle(monkeypatch):
-    from yt_downloader import app
+    from yt_downloader import download_service as app
 
     def missing():
         raise FileNotFoundError("certificate bundle absent")
 
     monkeypatch.setattr(app, "update_ssl_context", missing)
     assert app.runtime_smoke() == 1
-
-
-def test_qt_packaged_runtime_gate_requires_deno_but_not_legacy_player(monkeypatch):
-    from yt_downloader import app
-
-    class Roots:
-        def cert_store_stats(self):
-            return {"x509_ca": 100}
-
-    monkeypatch.setattr(app, "update_ssl_context", Roots)
-    monkeypatch.setattr(
-        app.DownloaderApp, "_find_ffmpeg", staticmethod(lambda: "ffmpeg")
-    )
-    monkeypatch.setattr(
-        app.DownloaderApp, "_find_ffprobe", staticmethod(lambda: "ffprobe")
-    )
-    monkeypatch.setattr(app.DownloaderApp, "_find_deno", staticmethod(lambda: "deno"))
-    monkeypatch.setattr(app, "probe_runtime_version", lambda name, _path: name)
-    monkeypatch.setattr(
-        app, "_smoke_ytdlp_stack", lambda: ("pinned", "pinned", ("solver",))
-    )
-    monkeypatch.setattr(app, "find_libvlc_runtime", lambda: None)
-    assert app.runtime_smoke(require_libvlc=False) == 0
-    assert app.runtime_smoke() == 1
-    monkeypatch.setattr(app.DownloaderApp, "_find_deno", staticmethod(lambda: None))
-    assert app.runtime_smoke(require_libvlc=False) == 1
-
-
-def test_every_persisted_setting_has_an_explicit_privacy_decision():
-    import ast
-    import inspect
-    import textwrap
-
-    from yt_downloader.app import DownloaderApp
-    from yt_downloader.telemetry_features import SETTINGS_BOOLEANS, SETTINGS_CHOICES
-
-    tree = ast.parse(
-        textwrap.dedent(inspect.getsource(DownloaderApp._settings_variables))
-    )
-    keys = {
-        key.value
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Dict)
-        for key in node.keys
-        if isinstance(key, ast.Constant)
-    }
-    excluded = {"output_dir", "custom_accent", "whats_new_seen"}
-    bucketed = {"manual_video_bitrate", "manual_audio_bitrate"}
-    assert keys == set(SETTINGS_CHOICES) | SETTINGS_BOOLEANS | bucketed | excluded
 
 
 def test_settings_save_failure_does_not_report_successful_snapshot(
@@ -243,7 +193,7 @@ def test_settings_save_failure_does_not_report_successful_snapshot(
 def test_impersonation_smoke_rejects_missing_browser_backend(monkeypatch, targets):
     from types import SimpleNamespace
 
-    from yt_downloader import app
+    from yt_downloader import download_service as app
 
     class Downloader:
         def __enter__(self):
@@ -267,7 +217,7 @@ def test_impersonation_smoke_rejects_missing_browser_backend(monkeypatch, target
 def test_impersonation_smoke_checks_targets_without_forcing_requests(monkeypatch):
     from types import SimpleNamespace
 
-    from yt_downloader import app
+    from yt_downloader import download_service as app
 
     class Downloader:
         def __enter__(self):

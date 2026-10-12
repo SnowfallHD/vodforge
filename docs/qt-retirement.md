@@ -73,3 +73,11 @@ Direct-Tk source inventory (not deletion approval for generated artifacts):
 - yt_downloader/ui_materials.py
 - yt_downloader/platforms/macos/surfaces.py
 - yt_downloader/platforms/macos/windowing.py
+
+Oct 12 incremental checkpoint:
+
+- Widget entry is gone (242510c); LibraryHistory is a neutral durable owner (6f28b81).
+- Explicit announcement Try it source correction is e1ff771; HeyCatch desktop transport removal is f42d6eb. Both affect a successor only.
+-54 widget/platform source files and legacy previews/probes are retired in the next incremental commit. Mixed service/data test consumers preserve actual worker, recovery, publication and privacy owners. Disposition receipts name retired definitions; implementation rollback stays in Git.
+-Full collection6994/zero import errors; retained affected data suites188pass; Qt entry/diagnostic/package-receipt import controls6pass. These counts describe actual checks, not acceptance parity.
+-Remaining: reconcile old EQH scene/recovery selectors and dynamic synthetic Tk producer calls, update source-bound selectors, then verify affected current-owner boundaries. Packaging/native/update/privacy qualification is separate and untested for this successor. No new build until retention cleanup prerequisites resolve.

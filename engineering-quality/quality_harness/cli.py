@@ -47,8 +47,8 @@ def _parser() -> argparse.ArgumentParser:
         )
         run.add_argument(
             "--ui",
-            choices=("tk", "qt"),
-            default=os.environ.get("VODFORGE_UI", "tk"),
+            choices=("qt",),
+            default=os.environ.get("VODFORGE_UI", "qt"),
             help="Select the source-native renderer contract for this candidate",
         )
         run.add_argument(
@@ -382,7 +382,7 @@ def run_fast_gate(
     raw_dir = gate_dir / "engineering-quality"
     profile_args = argparse.Namespace(
         command="normal",
-        ui=os.environ.get("VODFORGE_UI", "tk"),
+        ui=os.environ.get("VODFORGE_UI", "qt"),
         include_public=False,
         scenario=[
             "unit_static.repository_suite",

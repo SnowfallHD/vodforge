@@ -34,7 +34,6 @@ def make_app(tmp_path, monkeypatch, *, consent=True, release=True):
         installation_state_path=installation,
         app_version="0.2.3",
         d1_recorder=lambda _: False,
-
     )
     app = LibraryHistory(tmp_path / "PRIVATE history.json", owner)
     return app
@@ -277,9 +276,7 @@ def test_unknown_failure_does_not_classify_private_message(tmp_path, monkeypatch
     def unknown(*args, **kwargs):
         raise HistoryError("PRIVATE login required no space left timeout")
 
-    monkeypatch.setattr(
-        "yt_downloader.library_history.stage_history_mutation", unknown
-    )
+    monkeypatch.setattr("yt_downloader.library_history.stage_history_mutation", unknown)
     with pytest.raises(HistoryError):
         app.defer("key", lambda: None, mutation={})
     event = payloads(app)[-1]

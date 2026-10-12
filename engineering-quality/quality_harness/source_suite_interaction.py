@@ -178,7 +178,7 @@ def _evaluate(raw, root, specification, check):
         typed,
         typed
         and argv[1] == "-c"
-        and "import yt_downloader.app as app" in argv[2]
+        and "import yt_downloader.download_service as app" in argv[2]
         and "is_relative_to(target)" in argv[2]
         and argv[3] == source.get("root")
         and argv[4:]

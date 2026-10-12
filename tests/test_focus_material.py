@@ -3,12 +3,12 @@
 import pytest
 from PIL import ImageChops, ImageColor
 
-from yt_downloader.ui_chrome import (
+from yt_downloader.product_theme import THEME, THEME_PRESETS
+from yt_downloader.visual_chrome import (
     action_button_image,
     field_border_image,
     navigation_button_image,
 )
-from yt_downloader.ui_theme import THEME, THEME_PRESETS
 
 
 @pytest.mark.parametrize("theme", list(THEME_PRESETS))

@@ -1217,47 +1217,6 @@ def test_journal_admission_reserves_recovery_growth_before_effect(
     assert ops.pending_file_operations(move_context[2]) == ()
 
 
-@pytest.mark.parametrize("blocked", ["pending_operation", "replay_failed"])
-def test_startup_never_retires_receipts_when_recovery_is_unsettled(
-    item, move_context, monkeypatch, blocked
-):
-    from unittest.mock import Mock
-
-    from tests.test_history_publication import state
-    from yt_downloader import app as app_module
-    from yt_downloader.archive_library_ui import ArchiveLibraryMixin
-    from yt_downloader.history import HistoryError
-
-    view = state(move_context[1].parent)
-    view.after_idle = Mock()
-    view._show_library_file_recovery = Mock()
-    monkeypatch.setattr(ArchiveLibraryMixin, "_archive_history_observe", Mock())
-    retirement = Mock()
-    monkeypatch.setattr(ops, "_retire_finished_receipts", retirement)
-    if blocked == "pending_operation":
-        event = Event()
-
-        def stop(boundary):
-            if boundary == "history_saved":
-                event.set()
-
-        result = move(item, move_context, cancelled=event, boundary=stop)
-        view.history_path = move_context[1]
-        app_module.DownloaderApp._load_download_history(view)
-        assert view._archive_file_recovery_blocked
-        assert (
-            view.download_history[0]["vodforge_output_path"]
-            == result.records[0]["vodforge_output_path"]
-        )
-    else:
-        monkeypatch.setattr(
-            app_module, "load_history", Mock(side_effect=HistoryError("replay failed"))
-        )
-        app_module.DownloaderApp._load_download_history(view)
-        assert view._history_recovery_blocked
-    retirement.assert_not_called()
-
-
 def test_kept_uncertain_delete_preserves_committed_absence_against_late_delta(
     item, move_context, fake_trash, monkeypatch
 ):

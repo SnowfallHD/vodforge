@@ -69,7 +69,6 @@ def test_retry_and_permission_order_preserve_identity_without_false_delivery(
         installation_state_path=tmp_path / "installation.json",
         app_version="0.2.2",
         d1_recorder=deliver,
-
     )
     assert owner.record_app_opened()
     assert owner.shutdown(2)

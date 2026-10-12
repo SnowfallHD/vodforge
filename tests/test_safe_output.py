@@ -7,7 +7,6 @@ from types import SimpleNamespace
 import pytest
 
 from yt_downloader.download_service import package_downloaded_media_from_staging
-
 from yt_downloader.safe_output import UnsafeOutputPathError, is_symlink_or_reparse
 
 
@@ -239,7 +238,7 @@ def test_optional_sidecar_never_overwrites_a_symlink_target(
 
     from PIL import Image
 
-    from yt_downloader import app
+    from yt_downloader import download_service as app
 
     output = tmp_path / "selected"
     output.mkdir()
@@ -277,7 +276,7 @@ def test_optional_sidecar_never_overwrites_a_symlink_target(
 def test_reuse_does_not_adopt_descendant_directory_links(
     tmp_path, monkeypatch, owned, inside
 ):
-    from yt_downloader import app
+    from yt_downloader import download_service as app
     from yt_downloader.models import OutputType
 
     root = tmp_path / "selected"
@@ -311,7 +310,7 @@ def test_sidecar_root_and_child_link_policy(tmp_path, monkeypatch, kind, linked_
 
     from PIL import Image
 
-    from yt_downloader import app
+    from yt_downloader import download_service as app
 
     real = tmp_path / "real"
     real.mkdir()

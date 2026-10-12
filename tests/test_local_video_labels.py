@@ -102,28 +102,3 @@ def test_activity_projection_changes_only_known_converter_generated_line():
     arbitrary = "User note: 720p Compact; committed /Standard.mp4"
     assert local_video_profile_text(arbitrary) == arbitrary
     assert local_video_profile_value("unknown") == "unknown"
-
-
-def test_tk_display_choice_keeps_persisted_profile_variable():
-    from yt_downloader.local_audio_video_ui import LocalAudioVideoDialog
-
-    class Variable:
-        def __init__(self, value=""):
-            self.value = value
-
-        def get(self):
-            return self.value
-
-        def set(self, value):
-            self.value = value
-
-    dialog = LocalAudioVideoDialog.__new__(LocalAudioVideoDialog)
-    dialog.profile_var = Variable(LocalVideoProfile.STANDARD.value)
-    dialog.profile_display_var = Variable()
-    dialog.profile_description_var = Variable()
-    dialog._sync_profile_description()
-    assert dialog.profile_display_var.get() == "Everyday"
-    dialog.profile_display_var.set("Broadcast")
-    dialog._select_profile_label()
-    assert dialog.profile_var.get() == LocalVideoProfile.STRICT_CBR.value
-    assert dialog.profile_display_var.get() == "Broadcast"

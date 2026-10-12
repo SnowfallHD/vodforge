@@ -29,7 +29,7 @@ def main() -> None:
     os.environ["LOCALAPPDATA"] = str(home)
     os.environ["VODFORGE_DISABLE_TELEMETRY"] = "1"
     sys.path.insert(0, str(ROOT))
-    from yt_downloader.app import save_cached_thumbnail_bytes
+    from yt_downloader.download_service import save_cached_thumbnail_bytes
     from yt_downloader.engagement_state import EngagementState
     from yt_downloader.history import (
         application_data_dir,

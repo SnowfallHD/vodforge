@@ -159,7 +159,6 @@ def test_preset_commits_and_reuses_real_valid_media(
         installation_state_path=state / "installation.json",
         app_version="0.2.3-qa",
         d1_recorder=lambda _event: False,
-
     )
     job = DownloadJob(
         url=info["webpage_url"],
@@ -270,7 +269,6 @@ def test_quality_presets_have_measurable_size_and_detail_tradeoffs(source, tmp_p
     import re
 
     from yt_downloader.download_service import build_vod_ffmpeg_command
-
     from yt_downloader.export_planning import build_auto_export_plan
 
     path, ffmpeg, _ffprobe = source

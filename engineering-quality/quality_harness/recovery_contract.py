@@ -158,7 +158,7 @@ def recovery_class_contract(
         "import pathlib,sys; "
         "target=pathlib.Path(sys.argv.pop(1)).resolve(); "
         "sys.path.insert(0,str(target)); "
-        "import yt_downloader.app as app; "
+        "import yt_downloader.download_service as app; "
         "assert pathlib.Path(app.__file__).resolve().is_relative_to(target); "
         "import pytest; raise SystemExit(pytest.main(sys.argv[1:]))"
     )

@@ -12,7 +12,6 @@ from typing import Any
 
 import pytest
 
-from yt_downloader import app as app_module
 from yt_downloader.history import upsert_history
 from yt_downloader.library_state import LibraryProjectionOwner
 from yt_downloader.local_audio_video import (
@@ -23,7 +22,6 @@ from yt_downloader.local_audio_video import (
     LocalAudioVideoCancelled,
     LocalAudioVideoConversionOwner,
     LocalAudioVideoError,
-    LocalAudioVideoResult,
     LocalAudioVideoRuntime,
     LocalConversionRecoveryOwner,
     LocalVideoProfile,
@@ -32,10 +30,6 @@ from yt_downloader.local_audio_video import (
     local_video_filename,
     local_video_profile_spec,
     new_local_audio_video_request,
-)
-from yt_downloader.local_audio_video_ui import (
-    LocalAudioVideoDialog,
-    compact_dialog_path,
 )
 from yt_downloader.models import OutputType
 from yt_downloader.process_lifecycle import ProcessOwnershipError
@@ -288,42 +282,6 @@ def test_profile_names_are_general_and_standard_is_default(tmp_path: Path) -> No
     )
 
 
-def test_local_profile_uses_the_focused_settings_owner_and_dialog_boundary() -> None:
-    initialization = inspect.getsource(app_module.DownloaderApp.__init__)
-    persistence = inspect.getsource(app_module.DownloaderApp._settings_variables)
-    dialog_open = inspect.getsource(app_module.DownloaderApp._show_local_audio_video)
-
-    assert '"local_video_profile"' in initialization
-    assert '"local_video_profile": self.local_video_profile_var' in persistence
-    assert "profile_variable=self.local_video_profile_var" in dialog_open
-    assert "export_mode_var" not in dialog_open
-
-
-def test_local_dialog_normalizes_typed_destination_like_download_submission(
-    monkeypatch, tmp_path: Path
-) -> None:
-    captured = {}
-    folder = tmp_path / "exports with spaces"
-    host = SimpleNamespace(
-        output_var=SimpleNamespace(get=lambda: f" {folder} "),
-        local_audio_video=object(),
-        local_video_profile_var=object(),
-        _complete_local_audio_video=lambda _result: None,
-        _local_audio_video_dialog_closed=lambda: None,
-        _browse_output=lambda: None,
-    )
-
-    def dialog(_parent, **kwargs):
-        captured.update(kwargs)
-        return SimpleNamespace(show=lambda: None)
-
-    monkeypatch.setattr(app_module, "LocalAudioVideoDialog", dialog)
-    host._record_local_conversion_event = lambda *_args: None
-    app_module.DownloaderApp._show_local_audio_video(host)
-    assert captured["output_dir"] == folder
-    assert captured["choose_output"]() == folder
-
-
 @pytest.mark.parametrize(
     ("source", "expected"),
     [
@@ -336,44 +294,6 @@ def test_local_video_filename_is_cross_platform_safe(
     source: str, expected: str
 ) -> None:
     assert local_video_filename(Path(source)) == expected
-
-
-def test_dialog_preserves_actionable_error_when_controls_return_idle() -> None:
-    values: list[object] = []
-    dialog = SimpleNamespace(
-        audio_path=Path("audio.mp3"),
-        image_path=Path("still.png"),
-        create_button=SimpleNamespace(
-            configure=lambda **options: values.append(("button", options))
-        ),
-        status_var=SimpleNamespace(set=lambda value: values.append(("status", value))),
-    )
-
-    LocalAudioVideoDialog._sync_ready_state(
-        dialog,
-        status="The selected audio is not a valid, playable MP3 file.",
-    )
-
-    assert ("button", {"state": "normal"}) in values
-    assert (
-        "status",
-        "The selected audio is not a valid, playable MP3 file.",
-    ) in values
-
-
-def test_dialog_output_path_is_bounded_without_hiding_its_destination() -> None:
-    path = Path("/exports") / "/".join(
-        f"descriptive destination segment {index}" for index in range(12)
-    )
-
-    displayed = compact_dialog_path(path, maximum=90)
-
-    assert len(displayed) <= 90
-    assert displayed.startswith(str(Path("/exports")) + os.sep)
-    assert displayed.endswith("descriptive destination segment 11")
-    assert "…" in displayed
-    short_path = Path("/exports/short")
-    assert compact_dialog_path(short_path, maximum=90) == str(short_path)
 
 
 def test_conversion_commits_directly_to_output_and_projects_into_mp4_library(
@@ -448,68 +368,6 @@ def test_existing_filename_is_preserved_and_new_output_gets_suffix(
 
     assert original.read_bytes() == b"existing media"
     assert result.output_path == output_dir / "Song (1).mp4"
-
-
-def test_app_coordinates_completed_output_through_canonical_history(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    output = tmp_path / "selected" / "Song.mp4"
-    image = tmp_path / "still.png"
-    metadata = {
-        "id": "local_run",
-        "title": "Song",
-        "vodforge_run_id": "run",
-        "vodforge_output_type": "MP4",
-        "vodforge_output_path": str(output),
-    }
-    events: list[object] = []
-    app = SimpleNamespace(
-        download_history=[],
-        last_output_dirs=[],
-        status_var=SimpleNamespace(set=lambda value: events.append(("status", value))),
-        _append_log=lambda value: events.append(("log", value)),
-        _select_focus_view=lambda value: events.append(("view", value)),
-    )
-
-    def record(info, destination):
-        events.append(("history", info, destination))
-        app.download_history = [dict(info)]
-
-    app._record_download_history = record
-    recorded_events = []
-    app.product_telemetry = SimpleNamespace(
-        record=lambda name, **fields: recorded_events.append((name, fields)),
-        record_operation=lambda *_args, **_fields: None,
-    )
-    monkeypatch.setattr(
-        app_module,
-        "save_custom_cached_thumbnail_image",
-        lambda info, source: events.append(("thumbnail", info, source)),
-    )
-    result = LocalAudioVideoResult(
-        output_path=output,
-        image_path=image,
-        history_metadata=metadata,
-    )
-
-    app_module.DownloaderApp._complete_local_audio_video(app, result)
-
-    assert recorded_events == [
-        (
-            "local_conversion_completed",
-            {
-                "dedupe_key": "run",
-                "attempt_key": "run",
-                "dimensions": {},
-                "run_kind": "local_audio_video",
-                "output_type": "mp4",
-            },
-        )
-    ]
-    assert ("history", metadata, output.parent) in events
-    assert ("view", "library") in events
-    assert output.parent in app.last_output_dirs
-    assert not hasattr(app, "metadata_items")
 
 
 def test_fast_cancel_reaps_child_and_removes_private_stage(tmp_path: Path) -> None:

@@ -5,7 +5,6 @@ from uuid import uuid4
 import pytest
 
 from yt_downloader.download_service import DownloadWorkerCore, _build_download_item_plan
-
 from yt_downloader.export_planning import build_auto_export_plan
 from yt_downloader.failure_diagnostics import SourceSelectionError, capture_failure
 from yt_downloader.models import ExportMode, ManualExportSettings, OutputType
@@ -252,7 +251,6 @@ def test_actual_producer_consent_and_bounded_selection_payloads(
         installation_state_path=installation,
         app_version="0.2.4",
         d1_recorder=local_delivery,
-
     )
     worker = SimpleNamespace(product_telemetry=owner)
     for formats, terminal in (

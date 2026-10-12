@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-import yt_downloader.app as app_module
+import yt_downloader.download_service as app_module
 from yt_downloader.quality_e2e import (
     QUALITY_E2E_ATTESTATION_PREFIX,
     QUALITY_E2E_ISOLATION_ROOT_ENV,

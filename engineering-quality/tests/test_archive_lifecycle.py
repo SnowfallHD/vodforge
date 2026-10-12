@@ -114,10 +114,11 @@ def test_ui_transaction_keeps_actual_durable_outcome_and_flushes_deferred_writer
 ):
     from types import MethodType, SimpleNamespace
 
-    import yt_downloader.archive_relink as relink
-    from tests.test_archive_ui_owners import Variable
-    from yt_downloader import history
     from yt_downloader.archive_library_ui import ArchiveLibraryMixin
+
+    import yt_downloader.archive_relink as relink
+    from tests.value_fixtures import Variable
+    from yt_downloader import history
 
     new = tmp_path / "new"
     new.mkdir()

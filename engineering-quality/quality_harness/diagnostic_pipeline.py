@@ -19,17 +19,6 @@ from unittest.mock import patch
 from urllib.parse import urlsplit
 
 from .diagnostic_expectations import verify_scenario_events
-from .diagnostic_probes import (
-    LIBRARY_CASES,
-    OPENING_CASES,
-    PRESENTATION_CASES,
-    RELINK_CASES,
-    library_case,
-    opening_case,
-    presentation_case,
-    relink_case,
-)
-from .library_disclosure_probe import DISCLOSURE_CASES, disclosure_case
 from .qt_diagnostic_probes import (
     QT_COVERAGE_CASES,
     QT_PRESENTATION_CASES,
@@ -41,7 +30,6 @@ from .telemetry_checks import (
     assert_feature_vocabulary,
     install_telemetry_guard,
 )
-from .watch_queue_probe import QUEUE_CASES, queue_case
 
 
 def source_snapshot(repo: Path):
@@ -147,27 +135,8 @@ def pipeline(repo: Path, site: Path, destination: Path, *, cases=None):
     save(destination / "source-before.json", before)
     script = Path(__file__).with_name("telemetry_worker.mjs")
     mapping, delivered, diagnostics = [], [], []
-    chosen = set(
-        cases
-        or (
-            *PRESENTATION_CASES,
-            *LIBRARY_CASES,
-            *OPENING_CASES,
-            *RELINK_CASES,
-            *QUEUE_CASES,
-            *DISCLOSURE_CASES,
-        )
-    )
-    assert chosen <= set(
-        PRESENTATION_CASES
-        + LIBRARY_CASES
-        + OPENING_CASES
-        + RELINK_CASES
-        + QUEUE_CASES
-        + DISCLOSURE_CASES
-        + QT_PRESENTATION_CASES
-        + QT_COVERAGE_CASES
-    )
+    chosen = set(cases or (*QT_PRESENTATION_CASES, *QT_COVERAGE_CASES))
+    assert chosen <= set(QT_PRESENTATION_CASES + QT_COVERAGE_CASES)
     with (destination / "worker.stderr.txt").open("w") as errors:
         process = subprocess.Popen(
             ["node", str(script), str(site)],
@@ -226,19 +195,12 @@ def pipeline(repo: Path, site: Path, destination: Path, *, cases=None):
                         app_version="0.1.8",
                         platform_name="darwin",
                         d1_recorder=deliver,
-
                         diagnostic=diagnostics.append,
                     )
 
                 for case in (
-                    *PRESENTATION_CASES,
                     *QT_PRESENTATION_CASES,
                     *QT_COVERAGE_CASES,
-                    *LIBRARY_CASES,
-                    *OPENING_CASES,
-                    *RELINK_CASES,
-                    *QUEUE_CASES,
-                    *DISCLOSURE_CASES,
                 ):
                     if case not in chosen:
                         continue
@@ -246,21 +208,9 @@ def pipeline(repo: Path, site: Path, destination: Path, *, cases=None):
                     usage = create_usage(case)
                     try:
                         result = (
-                            disclosure_case
-                            if case in DISCLOSURE_CASES
-                            else queue_case
-                            if case in QUEUE_CASES
-                            else qt_coverage_case
+                            qt_coverage_case
                             if case in QT_COVERAGE_CASES
                             else qt_presentation_case
-                            if case in QT_PRESENTATION_CASES
-                            else presentation_case
-                            if case in PRESENTATION_CASES
-                            else opening_case
-                            if case in OPENING_CASES
-                            else relink_case
-                            if case in RELINK_CASES
-                            else library_case
                         )(destination / "fixtures" / case, usage, case)
                     finally:
                         usage.flush_async()
@@ -270,9 +220,7 @@ def pipeline(repo: Path, site: Path, destination: Path, *, cases=None):
                     ), (case, "Undelivered producer events")
                     events = delivered[offset:]
                     feature = (
-                        ("player" if case == "player_description" else "library")
-                        if case in DISCLOSURE_CASES
-                        else "archive"
+                        "archive"
                         if case == "qt_file_navigation"
                         else "updater_operation"
                         if case in {"qt_update_choice", "qt_update_failure"}
@@ -283,14 +231,8 @@ def pipeline(repo: Path, site: Path, destination: Path, *, cases=None):
                             "qt_player_resume_timeout",
                             "qt_player_native_error",
                         }
-                        else "watch_queue_operation"
-                        if case in QUEUE_CASES
                         else "presentation_operation"
-                        if case in (*PRESENTATION_CASES, *QT_PRESENTATION_CASES)
-                        else "playback_operation"
-                        if case in OPENING_CASES
-                        else "archive_relink_operation"
-                        if case in RELINK_CASES
+                        if case in QT_PRESENTATION_CASES
                         else "library_action_operation"
                     )
                     diagnostic_events = [
@@ -623,7 +565,7 @@ if __name__ == "__main__":
     main()
 
 
-def diagnostic_surface_contract(repo_root: Path, output_dir: Path, *, ui: str = "tk"):
+def diagnostic_surface_contract(repo_root: Path, output_dir: Path, *, ui: str = "qt"):
     """Enroll the actual producer/transport matrix in the engineering harness."""
     import sys
 
@@ -634,7 +576,7 @@ def diagnostic_surface_contract(repo_root: Path, output_dir: Path, *, ui: str = 
         os.environ.get("VODFORGE_SITE_REPO", str(repo_root.parent / "vodforge-site"))
     ).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    if ui not in {"tk", "qt"}:
+    if ui != "qt":
         raise ValueError(f"Unsupported presentation renderer: {ui}")
     command = [
         sys.executable,
@@ -664,16 +606,7 @@ def diagnostic_surface_contract(repo_root: Path, output_dir: Path, *, ui: str = 
     log.write_text(result.stdout + "\n" + result.stderr)
     report = output_dir / "receipt.json"
     data = json.loads(report.read_text()) if report.exists() else {}
-    expected_cases = (
-        len(QT_PRESENTATION_CASES) + len(QT_COVERAGE_CASES)
-        if ui == "qt"
-        else len(PRESENTATION_CASES)
-        + len(LIBRARY_CASES)
-        + len(OPENING_CASES)
-        + len(RELINK_CASES)
-        + len(QUEUE_CASES)
-        + len(DISCLOSURE_CASES)
-    )
+    expected_cases = len(QT_PRESENTATION_CASES) + len(QT_COVERAGE_CASES)
     passed = (
         result.returncode == 0
         and data.get("passed") is True

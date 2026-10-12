@@ -6,7 +6,7 @@ from urllib.error import HTTPError
 
 import pytest
 
-from yt_downloader import app
+from yt_downloader import download_service as app
 from yt_downloader.transfer_refresh import SplitTransferRefresh, TransferRefreshError
 
 

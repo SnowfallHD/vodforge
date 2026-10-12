@@ -7625,7 +7625,7 @@ def _smoke_impersonation_targets() -> tuple[str, ...]:
     return targets
 
 
-def runtime_smoke(*, require_libvlc: bool = True) -> int:
+def runtime_smoke(*, require_libvlc: bool = False) -> int:
     """Verify packaged dependencies without opening the GUI or fetching media."""
     try:
         context = update_ssl_context()

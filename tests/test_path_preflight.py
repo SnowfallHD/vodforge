@@ -9,7 +9,7 @@ from tests.worker_fixtures import (
     _worker_test_export_plan,
     _worker_test_job,
 )
-from yt_downloader import app
+from yt_downloader import download_service as app
 
 
 def units(path):

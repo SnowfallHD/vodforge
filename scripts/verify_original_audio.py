@@ -14,7 +14,7 @@ from unittest.mock import patch
 os.environ["VODFORGE_DISABLE_TELEMETRY"] = "1"
 from quality_harness import pipeline
 
-import yt_downloader.app as app_module
+import yt_downloader.download_service as app_module
 
 root = Path("build/original-audio-verification").resolve()
 root.mkdir(parents=True, exist_ok=True)

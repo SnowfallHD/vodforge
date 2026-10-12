@@ -133,30 +133,6 @@ def test_recovery_destination_is_session_only_and_expires_with_source(tmp_path):
     assert owner.destination_for("source", default) == default
 
 
-def test_cancelling_unknown_root_does_not_change_forge():
-    from types import SimpleNamespace
-    from unittest.mock import Mock
-
-    from yt_downloader.app import DownloaderApp
-    from yt_downloader.library_media_recovery import LibraryMediaRecoveryPlan
-
-    app = SimpleNamespace(
-        _pick_output_directory=Mock(return_value=None),
-        url_var=Mock(),
-        output_var=Mock(),
-        output_type_var=Mock(),
-        _select_focus_view=Mock(),
-    )
-    DownloaderApp._open_missing_media_in_forge(
-        app,
-        {},
-        LibraryMediaRecoveryPlan("legacy", None, requires_destination_choice=True),
-    )
-    app.url_var.set.assert_not_called()
-    app.output_var.set.assert_not_called()
-    app._select_focus_view.assert_not_called()
-
-
 def test_missing_media_rebuilds_exact_saved_job_with_fresh_run_identity(
     tmp_path: Path,
 ) -> None:
@@ -258,38 +234,6 @@ def test_single_item_recovery_reuses_exact_saved_source_without_watch_url(
     fallback = LibraryMediaRecoveryOwner().plan(mismatched)
     assert fallback.can_redownload and fallback.job is not None
     assert fallback.job.url == "https://www.youtube.com/watch?v=missing"
-
-
-def test_tk_recovery_review_prepares_the_same_saved_source(tmp_path: Path) -> None:
-    from types import SimpleNamespace
-    from unittest.mock import Mock
-
-    from yt_downloader.app import DownloaderApp
-
-    original = _job(tmp_path)
-    original.url = "https://example.com/video-page"
-    original.urls = [original.url]
-    original.preview_info = {"id": "missing"}
-    record = _missing_record(original)
-    record["original_url"] = original.url
-    owner = LibraryMediaRecoveryOwner()
-    plan = owner.plan(record)
-    assert plan.can_redownload
-    app = SimpleNamespace(
-        _pick_output_directory=Mock(),
-        _reset_source_input_after_send=Mock(),
-        url_var=Mock(),
-        library_media_recovery=owner,
-        _sync_focus_destination=Mock(),
-        output_type_var=Mock(),
-        _select_focus_view=Mock(),
-        status_var=Mock(),
-    )
-
-    DownloaderApp._open_missing_media_in_forge(app, record, plan)
-
-    app.url_var.set.assert_called_once_with(original.url)
-    assert owner.is_draft_for(original.url)
 
 
 def test_legacy_or_tampered_missing_media_never_guesses_saved_settings(
