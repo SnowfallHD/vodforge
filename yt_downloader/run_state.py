@@ -68,8 +68,17 @@ class RunStateError(RuntimeError):
         self.attempt_key = attempt_key
 
 
-def run_admission_failure_message(error: RunStateError) -> str:
+def run_admission_failure_message(
+    error: RunStateError, *, history_recovery_required: bool = False
+) -> str:
     """Give both renderers the same bounded guidance for an unsaved source."""
+    if history_recovery_required:
+        return (
+            "Library recovery must finish before new downloads. "
+            "Restore compatible Library data and its pending updates from a backup, "
+            "then restart VODForge. The existing files were left untouched. "
+            "No download was started."
+        )
     if error.cause == "missing_retry_url":
         return (
             "VODForge could not save this source link. Paste a valid web link "

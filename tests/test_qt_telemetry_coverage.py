@@ -760,6 +760,11 @@ def test_rendered_watch_scroll_reports_input_movement_not_layout_restoration(
 
     bridge, telemetry = bridge_fixture(tmp_path, monkeypatch, permitted=permitted)
     app = qt_app()
+    # This is a Watch journey after first-run onboarding, not a tour test.
+    # The 700 ms editorial timer otherwise steals input on slower builders.
+    bridge._engagement.presented_welcome()
+    bridge._settings["whats_new_seen"] = qt_main.SHOWCASE_ID
+    bridge._settings["social_invitation_dismissed"] = True
     for i in range(18):
         record = saved(tmp_path, f"PRIVATE {i}", "MP4")
         record["playlist_id"] = f"PRIVATE playlist-{i}"
@@ -777,6 +782,12 @@ def test_rendered_watch_scroll_reports_input_movement_not_layout_restoration(
         horizontal.setProperty("contentX", 40)
         for _ in range(5):
             app.processEvents()
+        from PySide6.QtCore import QEventLoop, QTimer
+
+        settle = QEventLoop()
+        QTimer.singleShot(1200, settle.quit)
+        settle.exec()
+        assert not window.findChild(QObject, "editorialPopup").property("visible")
         assert not rows_without_close(tmp_path, "watch") or not any(
             row["action"] in {"rail_scrolled", "catalog_scrolled"}
             for row in rows_without_close(tmp_path, "watch")

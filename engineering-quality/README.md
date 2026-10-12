@@ -4,6 +4,17 @@ Consult [the change and test log](change-and-test-log.md) before assigning or
 repeating qualification work. Retain valid prior passes; record a concrete
 affected change or evidence defect before repeating a check.
 
+## Recovery feedback follows the blocking owner — 2026-10-12
+
+Damaged main/pending Library ledgers must remain untouched and block durable work,
+while admission feedback tells the user to restore a compatible ledger pair.
+A generic recovery exception must not turn that condition into disk-space advice.
+`tests/test_qt_history_startup.py` exercises the actual Bridge feedback for three
+ledger failures and checks bounded guidance across ledger, journal-write and
+missing-source failures. Prior native and source failures are retained in the
+change log. This representative classification does not cover every filesystem
+failure; exact successor native restoration is still required.
+
 ## Recovery, Watch and batch presentation gaps — 2026-10-10
 
 The private Qt pass exposed gaps that membership-only and object-existence tests

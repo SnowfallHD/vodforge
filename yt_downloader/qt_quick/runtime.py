@@ -89,6 +89,10 @@ class _WorkerEventQueue(queue.Queue[Any]):
 
 
 class DownloadRuntime:
+    @property
+    def history_recovery_required(self) -> bool:
+        return self._history_store.blocked
+
     def __init__(self) -> None:
         self.events: queue.Queue[tuple[str, Any]] = queue.Queue()
         self.history_path = history_file_path()

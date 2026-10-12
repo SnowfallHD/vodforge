@@ -7293,7 +7293,9 @@ class Bridge(QObject):
                 self._metadata_preview_record = {}
                 self.forgePreviewChanged.emit()
         except RunStateError as exc:
-            self._status = run_admission_failure_message(exc)
+            self._status = run_admission_failure_message(
+                exc, history_recovery_required=self._runtime.history_recovery_required
+            )
             outcome = "rejected"
         except (OSError, RuntimeError, SettingsError, ValueError) as exc:
             self._status = str(exc)

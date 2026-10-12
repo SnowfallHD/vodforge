@@ -13,26 +13,43 @@ import pytest
 
 @pytest.mark.parametrize("count,scroll", [(72, 1900), (2000, 1900), (2000, 90000)])
 def test_library_column_reflow_keeps_painted_owners_bounded(tmp_path, count, scroll):
-    result = subprocess.run(
-        [sys.executable, __file__, "--probe", str(tmp_path), str(count), str(scroll)],
-        env={
-            **os.environ,
-            "QT_QPA_PLATFORM": "offscreen",
-            "QT_QUICK_BACKEND": "software",
-            "QT_QUICK_CONTROLS_STYLE": "Basic",
-            "VODFORGE_DISABLE_TELEMETRY": "1",
-            "HOME": str(tmp_path),
-            "LOCALAPPDATA": str(tmp_path),
-            "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
-        },
-        capture_output=True,
-        text=True,
-        # Measured Intel software CI needs up to91s for fixture creation,
-        # scene setup, 153 pixel captures and detail/return assertions. This
-        # whole-process guard is not a native resize-latency qualification.
-        timeout=120,
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            [
+                sys.executable,
+                __file__,
+                "--probe",
+                str(tmp_path),
+                str(count),
+                str(scroll),
+            ],
+            env={
+                **os.environ,
+                "QT_QPA_PLATFORM": "offscreen",
+                "QT_QUICK_BACKEND": "software",
+                "QT_QUICK_CONTROLS_STYLE": "Basic",
+                "VODFORGE_DISABLE_TELEMETRY": "1",
+                "HOME": str(tmp_path),
+                "LOCALAPPDATA": str(tmp_path),
+                "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
+            },
+            capture_output=True,
+            text=True,
+            # Measured Intel software CI needs up to91s for fixture creation,
+            # scene setup, 153 pixel captures and detail/return assertions. This
+            # whole-process guard is not a native resize-latency qualification.
+            timeout=120,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as error:
+        phases = tmp_path / "phases.jsonl"
+        details = phases.read_text() if phases.exists() else "No phase receipt."
+        stderr = error.stderr or b""
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", errors="replace")
+        pytest.fail(
+            f"Unchanged 120s probe guard expired.\n{details}\n{stderr[-12000:]}"
+        )
     assert result.returncode == 0, result.stdout[-3000:] + result.stderr[-3000:]
     proof = json.loads((tmp_path / "proof.json").read_text())
     assert not proof["blank_faces"], proof["blank_faces"]
@@ -45,12 +62,17 @@ def test_library_column_reflow_keeps_painted_owners_bounded(tmp_path, count, scr
 
 
 def probe(output: Path, count: int, scroll: int) -> None:
+    import faulthandler
     import math
     import shutil
     import statistics
     import time
     from collections import Counter
 
+    # Capture all thread stacks before the existing parent timeout kills the
+    # isolated child. This is diagnostic evidence, not a longer guard.
+    faulthandler.enable()
+    faulthandler.dump_traceback_later(100, repeat=False)
     started = time.monotonic()
 
     def phase(name):
@@ -296,6 +318,7 @@ def probe(output: Path, count: int, scroll: int) -> None:
         engine.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         bridge.close()
+        faulthandler.cancel_dump_traceback_later()
         phase("teardown_completed")
 
 
