@@ -73,7 +73,11 @@ def _install_frosted_backdrop(window: Any, native: Any, view: Any) -> bool:
         original_opaque = native.isOpaque()
         original_background = native.backgroundColor()
         parent = view.superview()
-        if parent is None:
+        # A top-level Qt view sits in AppKit's private NSThemeFrame. That
+        # frame does not support arbitrary sibling views. Keep the readable
+        # opaque fallback unless the sibling owner is the public content view.
+        if parent is None or parent != native.contentView():
+            window.setProperty("backgroundOpacity", 1.0)
             return False
         frost = NSVisualEffectView.alloc().initWithFrame_(view.frame())
         frost.setMaterial_(NSVisualEffectMaterialSidebar)

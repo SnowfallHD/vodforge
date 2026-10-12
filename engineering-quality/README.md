@@ -4,6 +4,15 @@ Consult [the change and test log](change-and-test-log.md) before assigning or
 repeating qualification work. Retain valid prior passes; record a concrete
 affected change or evidence defect before repeating a check.
 
+## Native decoration respects public view ownership — 2026-10-12
+
+A native decoration may attach only inside an accessible content owner. It must
+leave private framework frames untouched and keep readable opacity when the owner
+is absent or insertion fails. The macOS public-owner matrix exercises independent
+insertion/state outcomes; the original Intel SIGBUS exit failure is retained.
+This owner correction has not yet established that crash's cause. Exact successor
+native startup and normal exit remain required; no crash dump/replay was collected.
+
 ## Recovery feedback follows the blocking owner — 2026-10-12
 
 Damaged main/pending Library ledgers must remain untouched and block durable work,
