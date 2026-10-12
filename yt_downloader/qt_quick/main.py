@@ -2221,7 +2221,7 @@ class Bridge(QObject):
             return "Get started"
         if self._editorial_kind == "welcome-tour":
             return "Start using VODForge"
-        if self._editorial_kind == "did-you-know" or (
+        if self._editorial_kind in {"whats-new", "did-you-know"} or (
             len(self._editorial_slides) == 1
             and self._editorial_slides[0].key == "output-settings"
         ):

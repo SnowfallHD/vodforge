@@ -1203,3 +1203,14 @@ write-preservation6 pass together; two owned batch publication/checkpoint contro
 pass. Original failure logs retained. All tests source-only; no foreground GUI,
 credentials, production transport or candidate/release mutation. Ruff/diff pass.
 Remaining source/mixin/test consumers still require retirement; not complete.
+
+## Oct 12 — explicit announcement event correction
+
+User answered “fix the event then”. Successor What's New final action now says
+Try it and follows the existing acknowledged(true) route to Settings. That explicit
+action emits announcement/try_it once; close/dismiss still emits none. No synthetic
+Done acknowledgement, backfilled event or frozen5854619 mutation. Actual Bridge
+regression failed before at Done; all24 maintained orientation checks pass after
+(announcement-event-before.log/announcement-event-after.log under recovery-20261011).
+This is source/offscreen proof; successor packaged UI/preview evidence remains
+untested and requires the separately constrained build/retention workflow.

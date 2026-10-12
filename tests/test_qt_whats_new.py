@@ -48,7 +48,7 @@ def test_new_editorial_id_is_eligible_once_and_waits_for_idle_ready_ui(
         assert not bridge.editorialSlides
     bridge.checkEditorial(True)
     assert bridge.editorialHeading == "What’s new"
-    assert bridge.editorialFinishLabel == "Done"
+    assert bridge.editorialFinishLabel == "Try it"
     assert [s["key"] for s in bridge.editorialSlides] == [
         s.key for s in qt_main.HIGHLIGHTS
     ]
@@ -364,3 +364,27 @@ def test_release_025_catalog_reaches_upgraders_and_keeps_all_demo_clips(
     assert bridge._settings["whats_new_seen"] == "release-0.2.5-design-v1"
     bridge.checkEditorial(True)
     assert not bridge.editorialSlides
+
+
+def test_whats_new_try_it_opens_settings_and_records_only_explicit_action(
+    bridge, monkeypatch
+):
+    events = []
+    monkeypatch.setattr(
+        bridge,
+        "_record_update_feature",
+        lambda feature, action: events.append((feature, action)),
+    )
+    assert bridge.openWhatsNew()
+    assert bridge.editorialFinishLabel == "Try it"
+    bridge.dismissEditorial(True)
+    bridge.dismissEditorial(True)
+    assert events == [("announcement", "shown"), ("announcement", "try_it")]
+    assert not bridge.editorialSlides
+    assert bridge.openWhatsNew()
+    bridge.dismissEditorial(False)
+    assert events[-1] == ("announcement", "shown")
+    qml = (qt_main.Path(qt_main.__file__).parent / "Main.qml").read_text(
+        encoding="utf-8"
+    )
+    assert "if (tryIt) settingsPopup.open()" in qml
