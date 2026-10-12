@@ -34,7 +34,7 @@ def make_app(tmp_path, monkeypatch, *, consent=True, release=True):
         installation_state_path=installation,
         app_version="0.2.3",
         d1_recorder=lambda _: False,
-        heycatch_recorder=lambda *a, **k: False,
+
     )
     app = LibraryHistory(tmp_path / "PRIVATE history.json", owner)
     return app

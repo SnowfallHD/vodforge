@@ -31,7 +31,7 @@ def test_all_archive_actions_obey_consent_and_exclude_private_content(
         installation_state_path=installation,
         app_version="0.2.3",
         d1_recorder=lambda _: False,
-        heycatch_recorder=lambda *a, **k: False,
+
     )
     if permission == "withdrawn":
         owner.set_enabled(False)
@@ -90,7 +90,7 @@ def test_preview_observations_contain_only_counts_and_time(tmp_path, legacy_mism
         installation_state_path=tmp_path / "installation.json",
         app_version="0.2.3",
         d1_recorder=lambda _: False,
-        heycatch_recorder=lambda *a, **k: False,
+
     )
     assert operation(
         owner, "archive_relink_operation", "verified", str(uuid.uuid4()), dimensions

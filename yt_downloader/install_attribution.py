@@ -22,9 +22,7 @@ from .cloud_funnel import (
     mark_attribution_claim_issued,
     mark_attribution_claim_opened,
     mark_first_launch_confirmed,
-    mark_heycatch_first_launch_confirmed,
 )
-from .heycatch_telemetry import record_first_launch as record_heycatch_first_launch
 from .telemetry_credentials import TelemetryCredentialOwner
 from .telemetry_policy import telemetry_collection_allowed, telemetry_site_origin
 from .telemetry_transport import telemetry_urlopen
@@ -165,7 +163,6 @@ class InstallationAttributionOwner:
         state_path: Path,
         *,
         first_party_recorder: Callable[..., bool] | None = None,
-        heycatch_recorder: Callable[..., bool] = record_heycatch_first_launch,
         claim_issuer: Callable[..., ClaimIssueResult | None] = issue_claim,
         claim_reader: Callable[..., ClaimState] = claim_state,
         browser_opener: Callable[..., bool] = webbrowser.open,
@@ -182,7 +179,6 @@ class InstallationAttributionOwner:
                 )
             )
         )
-        self._heycatch_recorder = heycatch_recorder
         self._claim_issuer = claim_issuer
         self._claim_reader = claim_reader
         self._browser_opener = browser_opener
@@ -194,11 +190,9 @@ class InstallationAttributionOwner:
             return True
         if not state.first_launch_confirmed:
             return True
-        if state.heycatch_first_launch_confirmed:
+        if state.attribution_claim_confirmed:
             return False
-        if state.attribution_claim_confirmed or state.attribution_claim_token:
-            return True
-        return not state.attribution_claim_opened
+        return bool(state.attribution_claim_token) or not state.attribution_claim_opened
 
     def deliver_first_launch(
         self,
@@ -212,7 +206,6 @@ class InstallationAttributionOwner:
         ):
             return state
         current = load_or_create_installation_state(self._state_path)
-        platform = installation_platform(platform_name)
         if (
             not current.first_launch_confirmed
             or (
@@ -226,19 +219,6 @@ class InstallationAttributionOwner:
         ):
             current = mark_first_launch_confirmed(self._state_path, current.install_id)
 
-        already_delivered = current.heycatch_first_launch_confirmed
-        if (
-            not current.heycatch_first_launch_confirmed
-            and current.first_launch_confirmed
-        ):
-            current = self._deliver_native_event(current, app_version, platform)
-        if already_delivered and not current.attribution_claim_token:
-            return current
-        if (
-            current.heycatch_first_launch_confirmed
-            and current.attribution_claim_confirmed
-        ):
-            return current
         if current.attribution_claim_confirmed:
             return current
 
@@ -298,27 +278,9 @@ class InstallationAttributionOwner:
                 current = mark_attribution_claim_confirmed(
                     self._state_path, current.install_id
                 )
-                return self._deliver_native_event(current, app_version, platform)
+                return current
             if status in {"expired", "unknown"}:
                 return clear_attribution_claim(self._state_path, current.install_id)
             if attempt + 1 < self._poll_attempts:
                 self._sleep(POLL_INTERVAL_SECONDS)
         return current
-
-    def _deliver_native_event(
-        self,
-        state: InstallationState,
-        app_version: str,
-        platform: str,
-    ) -> InstallationState:
-        if state.heycatch_first_launch_confirmed:
-            return state
-        if analytics_allowed(self._state_path.parent) and self._heycatch_recorder(
-            state.install_id,
-            app_version=app_version,
-            platform=platform,
-        ):
-            return mark_heycatch_first_launch_confirmed(
-                self._state_path, state.install_id
-            )
-        return state

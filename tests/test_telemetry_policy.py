@@ -37,7 +37,6 @@ def test_source_checkout_cannot_enable_production(monkeypatch):
 def test_disabled_transports_never_call_network(monkeypatch):
     from yt_downloader import (
         cloud_funnel,
-        heycatch_telemetry,
         install_attribution,
         product_telemetry,
     )
@@ -47,20 +46,11 @@ def test_disabled_transports_never_call_network(monkeypatch):
 
     for module in (
         cloud_funnel,
-        heycatch_telemetry,
         install_attribution,
         product_telemetry,
     ):
-        name = (
-            "production_telemetry_allowed"
-            if module is heycatch_telemetry
-            else "telemetry_collection_allowed"
-        )
-        monkeypatch.setattr(module, name, lambda: False)
+        monkeypatch.setattr(module, "telemetry_collection_allowed", lambda: False)
     assert not cloud_funnel._post_json("https://getvodforge.com", {}, opener=forbidden)
-    assert not heycatch_telemetry._capture(
-        "first_launch", "unused", {}, opener=forbidden
-    )
     assert (
         install_attribution._post_json_object(
             "https://getvodforge.com", {}, opener=forbidden
@@ -105,7 +95,6 @@ def test_disabled_owners_do_not_open_browser_or_persist_delivery(tmp_path, monke
         installation_state_path=path,
         app_version="0.1.8",
         d1_recorder=forbidden,
-        heycatch_recorder=forbidden,
     )
     assert not events.record_app_opened()
     events._flush()

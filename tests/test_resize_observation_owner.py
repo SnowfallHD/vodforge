@@ -35,7 +35,7 @@ def test_resize_outbox_keeps_originating_view(
         installation_state_path=installation,
         app_version="0.2.3",
         d1_recorder=lambda _: False,
-        heycatch_recorder=lambda *args, **kwargs: False,
+
     )
     clock = [10.0]
     monkeypatch.setattr(module.time, "monotonic", lambda: clock[0])
@@ -92,7 +92,7 @@ def test_resize_observation_does_not_emit_without_eligible_burst(
         installation_state_path=installation,
         app_version="0.2.3",
         d1_recorder=lambda _: False,
-        heycatch_recorder=lambda *args, **kwargs: False,
+
     )
     clock = [10.0]
     monkeypatch.setattr(module.time, "monotonic", lambda: clock[0])

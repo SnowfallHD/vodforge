@@ -238,7 +238,7 @@ def test_context_is_collected_only_after_permission_and_survives_immutable_repla
         installation_state_path=tmp_path / "installation.json",
         app_version="0.2.2",
         d1_recorder=lambda _: False,
-        heycatch_recorder=lambda *_a, **_kw: False,
+
     )
     owner.observe_nvidia_driver("572.83")
     assert owner.record_app_opened() is permitted
@@ -270,7 +270,7 @@ def test_context_is_collected_only_after_permission_and_survives_immutable_repla
         installation_state_path=tmp_path / "installation.json",
         app_version="0.2.2",
         d1_recorder=lambda e: delivered.append(e.public_payload()) is None,
-        heycatch_recorder=lambda *_a, **_kw: True,
+
     )
     restarted.flush_async()
     assert restarted.shutdown(2)

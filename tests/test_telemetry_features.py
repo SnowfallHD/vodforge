@@ -89,7 +89,7 @@ def test_attempts_link_across_restart_without_exposing_local_identity(tmp_path):
             installation_state_path=installation,
             app_version="0.2.1",
             d1_recorder=lambda _event: False,
-            heycatch_recorder=lambda *_args, **_kwargs: False,
+
         )
 
     first = owner()
@@ -157,7 +157,7 @@ def test_all_feature_actions_persist_and_are_deduplicated_in_session(tmp_path):
         installation_state_path=installation,
         app_version="0.2.1",
         d1_recorder=lambda _event: False,
-        heycatch_recorder=lambda *_args, **_kwargs: False,
+
     )
     legacy_features = {
         key: actions
@@ -239,7 +239,7 @@ def test_denial_cannot_reuse_cached_engagement_success(tmp_path):
         installation_state_path=installation,
         app_version="0.2.1",
         d1_recorder=lambda _event: True,
-        heycatch_recorder=lambda *_args, **_kwargs: True,
+
     )
     assert owner.record_feature("library", "searched")
     owner.shutdown(2)
@@ -360,7 +360,7 @@ def test_local_typed_worker_failure_reaches_outbox_without_display_text(tmp_path
         installation_state_path=installation,
         app_version="0.2.3-dev",
         d1_recorder=lambda _event: False,
-        heycatch_recorder=lambda *_a, **_kw: False,
+
     )
     app = SimpleNamespace(product_telemetry=telemetry)
     events = queue.Queue()
@@ -402,7 +402,7 @@ def test_operation_journeys_repeat_order_and_revoke_without_presence_dedup(tmp_p
         installation_state_path=installation,
         app_version="0.2.3-dev",
         d1_recorder=lambda _event: False,
-        heycatch_recorder=lambda *_a, **_kw: False,
+
     )
     keys = [str(uuid.uuid4()), str(uuid.uuid4())]
     for key in keys:
@@ -442,7 +442,7 @@ def test_operation_observation_limits_preserve_missing_evidence(tmp_path, monkey
         installation_state_path=installation,
         app_version="0.2.3-dev",
         d1_recorder=lambda _event: False,
-        heycatch_recorder=lambda *_a, **_kw: False,
+
     )
     monkeypatch.setattr(owner, "flush_async", lambda: None)
     key = str(uuid.uuid4())
@@ -503,7 +503,7 @@ def test_resize_summary_uses_existing_pump_and_consent_clears_pending(
         installation_state_path=installation,
         app_version="0.2.3-qa",
         d1_recorder=lambda event: captured.append(event) is None,
-        heycatch_recorder=lambda *_a, **_kw: True,
+
     )
     clock = [10.0]
     monkeypatch.setattr(module.time, "monotonic", lambda: clock[0])
@@ -560,7 +560,7 @@ def test_reuse_rejection_survives_real_telemetry_validation(
         installation_state_path=installation,
         app_version="0.2.1",
         d1_recorder=lambda _event: False,
-        heycatch_recorder=lambda *_args, **_kwargs: False,
+
     )
     app = app_module.DownloaderApp.__new__(app_module.DownloaderApp)
     app.product_telemetry = telemetry
@@ -626,7 +626,7 @@ def test_rejected_observation_increments_drop_count_for_next_valid_fact(
         installation_state_path=installation,
         app_version="0.2.1",
         d1_recorder=lambda _event: False,
-        heycatch_recorder=lambda *_args, **_kwargs: False,
+
     )
     operation = str(uuid.uuid4())
     with pytest.raises(ValueError):

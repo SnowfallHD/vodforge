@@ -146,7 +146,7 @@ def test_settings_transitions_preserve_a_b_a_and_suppress_unchanged(tmp_path):
         installation_state_path=tmp_path / "installation.json",
         app_version="0.2.2",
         d1_recorder=lambda e: seen.append(e) or True,
-        heycatch_recorder=lambda *_a, **_k: True,
+
     )
     for choice in ("disabled", "disabled", "browser", "disabled"):
         assert owner.record_feature(

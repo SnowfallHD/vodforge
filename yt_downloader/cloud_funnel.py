@@ -48,6 +48,8 @@ class InstallationState:
     install_id: str
     first_launch_confirmed: bool = False
     cloud_seen_confirmed: bool = False
+    # Read/write legacy acknowledgement solely for installation-file compatibility.
+    # No runtime transport consumes this value.
     heycatch_first_launch_confirmed: bool = False
     attribution_claim_opened: bool = False
     attribution_claim_confirmed: bool = False

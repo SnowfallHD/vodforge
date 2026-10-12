@@ -1214,3 +1214,24 @@ regression failed before at Done; all24 maintained orientation checks pass after
 (announcement-event-before.log/announcement-event-after.log under recovery-20261011).
 This is source/offscreen proof; successor packaged UI/preview evidence remains
 untested and requires the separately constrained build/retention workflow.
+
+## Oct 12 — remove HeyCatch desktop transport
+
+Explicit user requested removal from VODForge and site; separate owner handles
+canonical website. Removed app capture implementation and both injected secondary
+transport APIs. Product events retire only on genuine first-party acknowledgement;
+first-launch/session and first-party browser campaign claim routes remain. No
+remote account, credentials, production data/schema or frozen585 bytes changed.
+Legacy installation acknowledgement stays inert for file compatibility; legacy
+queued secondary acknowledgement is ignored and cannot replace first-party receipt.
+No ordinary profile or stored service data accessed/migrated/deleted.
+
+Existing affected checks139pass;21 failures are retired widget/app imports in the
+mixed telemetry-features suite (named in heycatch-focused-final.log), not asserted
+passes. Original11 obsolete secondary-contract failures were ported to first-party
+retry/acknowledgement/claim controls, preserving consent and private payload checks.
+Two new actual legacy-outbox read/retry cases pass (heycatch-legacy-queue.log).
+Ruff focused source/owner tests passes. Frozen package/new native delivery remains
+untested for this successor. No rebuild/publication. App now has no active HeyCatch
+transport; historical QA documents/deny-list domains and inert installation fields
+are deliberately historical/compatibility data, not enabled integrations.

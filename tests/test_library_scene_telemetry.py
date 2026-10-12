@@ -109,7 +109,7 @@ def test_import_observations_remain_bound_to_starting_consent(
         app_version="0.2.3",
         enabled=permission not in {"denied", "late_grant"},
         d1_recorder=lambda _: False,
-        heycatch_recorder=lambda *args, **kwargs: False,
+
     )
     if permission in {"observer_unavailable", "observer_failure"}:
         monkeypatch.setattr(
@@ -219,7 +219,7 @@ def test_import_worker_refusal_does_not_leave_polling_or_checking_status(
         app_version="0.2.3",
         enabled=enabled,
         d1_recorder=lambda _: False,
-        heycatch_recorder=lambda *args, **kwargs: False,
+
     )
     worker = ArchiveWorkOwner()
     pending, bindings = [], {}

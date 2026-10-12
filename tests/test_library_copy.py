@@ -112,7 +112,7 @@ def test_actual_copy_controls_persist_only_bounded_telemetry(
         installation_state_path=installation,
         app_version="0.2.3",
         d1_recorder=lambda _: False,
-        heycatch_recorder=lambda *args, **kwargs: False,
+
     )
     app, owner = copy_app(
         {

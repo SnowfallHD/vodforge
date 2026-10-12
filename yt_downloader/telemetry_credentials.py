@@ -225,7 +225,7 @@ class TelemetryCredentialOwner:
         if not self.first_launch(__version__, str(payload["platform"])):
             return False
         try:
-            # Legacy UUID remains only in the local outbox/HeyCatch contract.
+            # Legacy UUID remains only in the local outbox contract.
             event = {
                 key: value for key, value in payload.items() if key != "install_id"
             }

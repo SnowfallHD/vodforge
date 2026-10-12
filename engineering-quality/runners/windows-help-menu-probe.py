@@ -65,7 +65,7 @@ telemetry = ProductTelemetryOwner(
     installation_state_path=RUN / "installation.json",
     app_version="0.2.3-qa",
     d1_recorder=lambda _event: False,
-    heycatch_recorder=lambda *_args, **_kwargs: False,
+
 )
 
 

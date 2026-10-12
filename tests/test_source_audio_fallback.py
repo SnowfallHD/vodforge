@@ -252,7 +252,7 @@ def test_actual_producer_consent_and_bounded_selection_payloads(
         installation_state_path=installation,
         app_version="0.2.4",
         d1_recorder=local_delivery,
-        heycatch_recorder=lambda *_a, **_k: True,
+
     )
     worker = SimpleNamespace(product_telemetry=owner)
     for formats, terminal in (

@@ -44,7 +44,6 @@ def production_telemetry_contract(monkeypatch):
     from yt_downloader import (
         analytics_consent,
         cloud_funnel,
-        heycatch_telemetry,
         install_attribution,
         product_telemetry,
     )
@@ -52,13 +51,7 @@ def production_telemetry_contract(monkeypatch):
     for module in (
         analytics_consent,
         cloud_funnel,
-        heycatch_telemetry,
         install_attribution,
         product_telemetry,
     ):
-        name = (
-            "production_telemetry_allowed"
-            if module is heycatch_telemetry
-            else "telemetry_collection_allowed"
-        )
-        monkeypatch.setattr(module, name, lambda: True)
+        monkeypatch.setattr(module, "telemetry_collection_allowed", lambda: True)

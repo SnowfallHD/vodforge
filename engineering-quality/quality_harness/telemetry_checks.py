@@ -560,7 +560,7 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                     app_version="0.1.8",
                     platform_name="darwin",
                     d1_recorder=deliver,
-                    heycatch_recorder=lambda *_args, **_kwargs: True,
+
                 )
                 # Exercise the real outbox and serializer for every supported
                 # product event, not only two hand-selected failure payloads.

@@ -30,7 +30,7 @@ def test_idle_session_retries_same_pending_event_without_user_input(
         return ProductTelemetryOwner(
             **kwargs,
             d1_recorder=deliver,
-            heycatch_recorder=lambda *_args, **_kwargs: True,
+
         )
 
     monkeypatch.setattr(analytics, "ProductTelemetryOwner", telemetry_factory)

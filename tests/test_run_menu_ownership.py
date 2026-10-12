@@ -102,7 +102,7 @@ def test_run_control_producer_outbox_consent_and_private_content(
         installation_state_path=installation,
         app_version="0.2.3",
         d1_recorder=lambda _: False,
-        heycatch_recorder=lambda *args, **kwargs: False,
+
     )
     if permission == "withdrawn":
         telemetry.set_enabled(False)

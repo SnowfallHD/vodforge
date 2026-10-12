@@ -141,7 +141,7 @@ def main() -> None:
         app_version=args.version,
         platform_name="darwin",
         d1_recorder=deliver,
-        heycatch_recorder=lambda *_args, **_kwargs: False,
+
     )
 
     if args.qt:

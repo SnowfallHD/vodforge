@@ -23,7 +23,6 @@ from .failure_diagnostics import (
     FailureDiagnostic,
     validate_failure_detail,
 )
-from .heycatch_telemetry import record_product_event as record_heycatch_event
 from .history import application_data_dir
 from .private_files import write_private_bytes
 from .telemetry_credentials import RejectedTelemetryEvent, TelemetryCredentialOwner
@@ -37,7 +36,7 @@ from .telemetry_features import (
     validate_dimensions,
     validate_operation_fields,
 )
-from .telemetry_policy import preview_telemetry_allowed, telemetry_collection_allowed
+from .telemetry_policy import telemetry_collection_allowed
 from .telemetry_transport import telemetry_urlopen
 
 PRODUCT_TELEMETRY_ENDPOINT = "https://getvodforge.com/api/telemetry/events"
@@ -120,7 +119,6 @@ class ProductTelemetryEvent:
     action: str | None = None
     dimensions: dict[str, str] = field(default_factory=dict)
     d1_delivered: bool = False
-    heycatch_delivered: bool = False
     consent_epoch: str | None = None
 
     def public_payload(self) -> dict[str, Any]:
@@ -267,7 +265,6 @@ def _parse_event(value: Any) -> ProductTelemetryEvent:
         failure_reason=failure_reason,
         failure_detail=validate_failure_detail(detail) if detail is not None else None,
         d1_delivered=value.get("d1_delivered") is True,
-        heycatch_delivered=value.get("heycatch_delivered") is True,
     )
 
 
@@ -371,7 +368,6 @@ class ProductTelemetryOwner:
         platform_name: str | None = None,
         enabled: bool = True,
         d1_recorder: Callable[[ProductTelemetryEvent], bool] = _post_d1_event,
-        heycatch_recorder: Callable[..., bool] = record_heycatch_event,
         diagnostic: Callable[[str], None] | None = None,
         session_id: str | None = None,
     ) -> None:
@@ -388,7 +384,6 @@ class ProductTelemetryOwner:
             if d1_recorder is _post_d1_event
             else d1_recorder
         )
-        self._heycatch_recorder = heycatch_recorder
         self._diagnostic = diagnostic or (lambda _message: None)
         self._session_id = _valid_uuid(session_id or uuid.uuid4())
         self._recorded_dedupe_ids: set[str] = set()
@@ -909,34 +904,12 @@ class ProductTelemetryOwner:
                 continue
             if not self._delivery_permitted(event, generation):
                 return
-            heycatch_delivered = event.heycatch_delivered or self._heycatch_recorder(
-                event.install_id,
-                event_name=event.event_name,
-                event_id=event.event_id,
-                app_version=event.app_version,
-                platform=event.platform,
-                release_channel=event.release_channel,
-                run_kind=event.run_kind,
-                output_type=event.output_type,
-                dimensions=event.dimensions,
-                attempt_id=event.attempt_id,
-                retry_of=event.retry_of,
-                feature=event.feature,
-                action=event.action,
-                schema_version=event.schema_version,
-            )
-            updated = replace(
-                event,
-                d1_delivered=d1_delivered,
-                heycatch_delivered=heycatch_delivered,
-            )
+            updated = replace(event, d1_delivered=d1_delivered)
             with self._lock:
                 latest = _load_outbox(self._state_path)
                 if not latest or latest[0].event_id != event.event_id:
                     continue
-                delivery_complete = d1_delivered and (
-                    heycatch_delivered or preview_telemetry_allowed()
-                )
+                delivery_complete = d1_delivered
                 remaining = latest[1:] if delivery_complete else [updated, *latest[1:]]
                 _save_outbox(self._state_path, remaining)
             if not delivery_complete:

@@ -226,7 +226,7 @@ def pipeline(repo: Path, site: Path, destination: Path, *, cases=None):
                         app_version="0.1.8",
                         platform_name="darwin",
                         d1_recorder=deliver,
-                        heycatch_recorder=lambda *_a, **_k: True,
+
                         diagnostic=diagnostics.append,
                     )
 

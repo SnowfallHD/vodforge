@@ -40,7 +40,6 @@ def test_existing_profile_delivery_never_issues_browser_claim(tmp_path):
     owner = InstallationAttributionOwner(
         path,
         first_party_recorder=lambda *a, **kw: delivered.append(True) or True,
-        heycatch_recorder=lambda *a, **kw: True,
         claim_issuer=forbidden,
         browser_opener=forbidden,
     )
@@ -116,11 +115,10 @@ def _state_path(tmp_path: Path) -> Path:
     return path
 
 
-def test_owner_delivers_d1_then_alias_claim_then_direct_native_event(tmp_path: Path):
+def test_owner_delivers_first_party_and_confirms_browser_claim(tmp_path: Path):
     path = _state_path(tmp_path)
     original = load_or_create_installation_state(path)
     first_party_calls: list[str] = []
-    native_calls: list[tuple[str, str, str]] = []
     opened: list[tuple[str, int, bool]] = []
 
     owner = InstallationAttributionOwner(
@@ -135,9 +133,6 @@ def test_owner_delivers_d1_then_alias_claim_then_direct_native_event(tmp_path: P
         browser_opener=lambda url, new, autoraise: (
             opened.append((url, new, autoraise)) is None
         ),
-        heycatch_recorder=lambda install_id, *, app_version, platform: (
-            native_calls.append((install_id, app_version, platform)) is None
-        ),
         poll_attempts=1,
     )
 
@@ -151,25 +146,21 @@ def test_owner_delivers_d1_then_alias_claim_then_direct_native_event(tmp_path: P
     assert len(opened) == 1
     assert opened[0][1:] == (2, False)
     assert opened[0][0].startswith("https://getvodforge.com/claim#token=")
-    assert native_calls == [(original.install_id, "0.1.8-dev", "macos")]
     assert updated.first_launch_confirmed is True
     assert updated.attribution_claim_opened is True
     assert updated.attribution_claim_confirmed is True
     assert updated.attribution_claim_token is None
-    assert updated.heycatch_first_launch_confirmed is True
     assert owner.needs_delivery(updated) is False
 
     assert owner.deliver_first_launch(updated, app_version="0.1.8-dev") == updated
     assert first_party_calls == [original.install_id]
-    assert len(native_calls) == 1
 
 
-def test_permitted_native_event_is_independent_of_expired_browser_claim(
+def test_first_party_delivery_survives_expired_browser_claim(
     tmp_path: Path,
 ):
     path = _state_path(tmp_path)
     original = load_or_create_installation_state(path)
-    native_calls: list[str] = []
     owner = InstallationAttributionOwner(
         path,
         first_party_recorder=lambda *_args, **_kwargs: True,
@@ -178,9 +169,6 @@ def test_permitted_native_event_is_independent_of_expired_browser_claim(
         ),
         claim_reader=lambda _token: "expired",
         browser_opener=lambda *_args, **_kwargs: True,
-        heycatch_recorder=lambda install_id, **_kwargs: (
-            native_calls.append(install_id) is None
-        ),
         poll_attempts=1,
     )
 
@@ -190,17 +178,14 @@ def test_permitted_native_event_is_independent_of_expired_browser_claim(
     assert updated.attribution_claim_opened is True
     assert updated.attribution_claim_confirmed is False
     assert updated.attribution_claim_token is None
-    assert updated.heycatch_first_launch_confirmed is True
-    assert native_calls == [original.install_id]
     assert owner.needs_delivery(updated) is False
 
 
-def test_owner_sends_permitted_native_event_while_claim_is_pending(
+def test_first_party_delivery_preserves_pending_browser_claim(
     tmp_path: Path,
 ):
     path = _state_path(tmp_path)
     original = load_or_create_installation_state(path)
-    native_calls: list[str] = []
     owner = InstallationAttributionOwner(
         path,
         first_party_recorder=lambda *_args, **_kwargs: True,
@@ -209,9 +194,6 @@ def test_owner_sends_permitted_native_event_while_claim_is_pending(
         ),
         claim_reader=lambda _token: "pending",
         browser_opener=lambda *_args, **_kwargs: True,
-        heycatch_recorder=lambda install_id, **_kwargs: (
-            native_calls.append(install_id) is None
-        ),
         poll_attempts=1,
     )
 
@@ -221,33 +203,21 @@ def test_owner_sends_permitted_native_event_while_claim_is_pending(
     assert updated.attribution_claim_opened is True
     assert updated.attribution_claim_confirmed is False
     assert updated.attribution_claim_token is not None
-    assert updated.heycatch_first_launch_confirmed is True
-    assert native_calls == [original.install_id]
-    assert owner.needs_delivery(updated) is False
+    assert owner.needs_delivery(updated) is True
 
 
-def test_owner_retries_native_delivery_without_reopening_a_confirmed_claim(
-    tmp_path: Path,
-):
+def test_completed_browser_claim_never_reopens_or_calls_removed_provider(tmp_path):
     path = _state_path(tmp_path)
     original = load_or_create_installation_state(path)
     current = mark_first_launch_confirmed(path, original.install_id)
     current = mark_attribution_claim_confirmed(path, original.install_id)
-    outcomes = iter([False, True])
-    opened: list[str] = []
     owner = InstallationAttributionOwner(
         path,
-        heycatch_recorder=lambda *_args, **_kwargs: next(outcomes),
-        browser_opener=lambda url, **_kwargs: opened.append(url) is None,
-        poll_attempts=0,
+        first_party_recorder=lambda *_a, **_kw: pytest.fail("already delivered"),
+        browser_opener=lambda *_a, **_kw: pytest.fail("already confirmed"),
     )
-
-    failed = owner.deliver_first_launch(current, app_version="0.1.8-dev")
-    delivered = owner.deliver_first_launch(failed, app_version="0.1.8-dev")
-
-    assert failed.heycatch_first_launch_confirmed is False
-    assert delivered.heycatch_first_launch_confirmed is True
-    assert opened == []
+    assert not owner.needs_delivery(current)
+    assert owner.deliver_first_launch(current, app_version="0.2.6") == current
 
 
 def test_owner_retries_after_first_launch_network_is_unavailable(tmp_path: Path):
@@ -269,7 +239,6 @@ def test_owner_retries_after_first_launch_network_is_unavailable(tmp_path: Path)
         claim_issuer=issue,
         claim_reader=lambda _token: "claimed",
         browser_opener=lambda url, **_kwargs: opened.append(url) is None or True,
-        heycatch_recorder=lambda *_args, **_kwargs: True,
         poll_attempts=1,
     )
 
@@ -282,7 +251,6 @@ def test_owner_retries_after_first_launch_network_is_unavailable(tmp_path: Path)
     assert issue_attempts == 2
     assert len(opened) == 1
     assert delivered.attribution_claim_confirmed is True
-    assert delivered.heycatch_first_launch_confirmed is True
 
 
 def test_owner_retries_same_persisted_claim_when_browser_was_unavailable(
@@ -303,7 +271,6 @@ def test_owner_retries_same_persisted_claim_when_browser_was_unavailable(
         ),
         claim_reader=lambda token: read_tokens.append(token) or "claimed",
         browser_opener=lambda *_args, **_kwargs: next(open_results),
-        heycatch_recorder=lambda *_args, **_kwargs: True,
         poll_attempts=1,
     )
 
@@ -316,7 +283,6 @@ def test_owner_retries_same_persisted_claim_when_browser_was_unavailable(
     assert len(issued_tokens) == 1
     assert delivered.attribution_claim_opened is True
     assert delivered.attribution_claim_confirmed is True
-    assert delivered.heycatch_first_launch_confirmed is True
 
 
 def test_owner_resumes_status_poll_after_browser_closed_before_claim_completed(
@@ -335,7 +301,6 @@ def test_owner_resumes_status_poll_after_browser_closed_before_claim_completed(
         ),
         claim_reader=lambda _token: next(claim_states),
         browser_opener=lambda url, **_kwargs: opened.append(url) is None or True,
-        heycatch_recorder=lambda *_args, **_kwargs: True,
         poll_attempts=1,
     )
 
@@ -347,7 +312,6 @@ def test_owner_resumes_status_poll_after_browser_closed_before_claim_completed(
     assert pending.attribution_claim_confirmed is False
     assert len(opened) == 1
     assert delivered.attribution_claim_confirmed is True
-    assert delivered.heycatch_first_launch_confirmed is True
 
 
 def test_native_owner_observes_each_session_even_with_completed_attribution(
@@ -388,7 +352,6 @@ def test_native_owner_observes_each_session_even_with_completed_attribution(
     for count in (2, 3):
         owner = InstallationAttributionOwner(
             path,
-            heycatch_recorder=forbidden,
             claim_issuer=forbidden,
             browser_opener=forbidden,
         )

@@ -97,7 +97,7 @@ def run(site: Path, output: Path) -> dict:
                     app_version="0.1.8",
                     platform_name="darwin",
                     d1_recorder=deliver,
-                    heycatch_recorder=lambda *_args, **_kwargs: True,
+
                 )
                 results = []
                 for case in CONTROL_CASES:

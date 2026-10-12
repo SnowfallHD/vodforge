@@ -199,8 +199,9 @@ A helper directly posting events is a transport test, not packaged journey proof
 7. Repeat on Windows. Cover accepted/refused/unknown regional permission, browser
    claim source attribution and refusal, offline retry, exact retry deduplication,
    rate limiting, credential conflict and revocation in the required backend/local
-   contracts. Provider delivery is explicitly separate: preview excludes HeyCatch;
-   never claim provider certification from preview D1.
+   contracts. Successor app telemetry uses only first-party delivery. Legacy
+   frozen-package provider receipts remain historical; removal does not relabel
+   their delivery evidence or modify stored service data.
 
 ## Renderer applicability
 
