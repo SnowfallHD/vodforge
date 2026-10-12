@@ -7,6 +7,8 @@ Item {
     property real surfaceOpacity: Window.window && Window.window.glassControlOpacity !== undefined
                                   ? Window.window.glassControlOpacity : 1.0
     property bool interactive: false
+    property real materialWidth: width
+    property real materialHeight: height
     property string accessibilityLabel: ""
     signal activated()
     implicitHeight: 48
@@ -21,8 +23,8 @@ Item {
         property string presentationRole: "control"
         anchors.fill: parent
         // Hidden scenes retain their fields; admit material work only when visible.
-        source: visible ? ("image://vodforge/field/" + Math.max(1, Math.round(field.width))
-                + "/" + Math.max(1, Math.round(field.height))
+        source: visible ? ("image://vodforge/field/" + Math.max(1, Math.round(field.materialWidth))
+                + "/" + Math.max(1, Math.round(field.materialHeight))
                 + "/" + (field.focused ? "focus" : "normal") + "/r" + bridge.themeRevision) : ""
         fillMode: Image.Stretch
         cache: true

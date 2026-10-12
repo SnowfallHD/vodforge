@@ -219,6 +219,11 @@ def test_quick_custom_surface_morphs_without_opening_settings(motion_scene):
     heights = []
     popup.heightChanged.connect(lambda: heights.append(popup.property("height")))
     values = []
+    shadow = popup.findChild(QObject, "popupElevationShadow")
+    shadow_sources = []
+    shadow.sourceChanged.connect(
+        lambda: shadow_sources.append(shadow.property("source"))
+    )
     popup.customRevealChanged.connect(
         lambda: values.append(popup.property("customReveal"))
     )
@@ -233,6 +238,7 @@ def test_quick_custom_surface_morphs_without_opening_settings(motion_scene):
     else:
         assert any(0 < value < 1 for value in values)
         assert any(initial_height < height < final_height for height in heights)
+    assert len(set(map(str, shadow_sources))) <= 2, shadow_sources
     bridge.setExportMode("Everyday")
     wait_for_reveal(popup, 0, "customReveal")
     assert popup.property("width") == pytest.approx(initial_width)

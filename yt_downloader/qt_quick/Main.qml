@@ -3338,6 +3338,10 @@ Window {
             Math.max(composerManualControls.implicitHeight, composerOptionsContent.implicitHeight,
                 composerQuickExtras.implicitHeight) + 16)
         height: collapsedHeight + Math.max(0, expandedHeight - collapsedHeight) * customReveal
+        // Stretch one cached material through the liquid transition instead of
+        // generating a large border and blurred shadow at every animation frame.
+        materialWidth: customReveal > 0 && customReveal < 1 ? expandedWidth : width
+        materialHeight: customReveal > 0 && customReveal < 1 ? expandedHeight : height
         padding: 8
         topPadding: 8
         StoneButton {
@@ -3658,7 +3662,9 @@ Window {
         id: translatedSubtitleMenu
         objectName: "translatedSubtitleMenu"
         parent: window.contentItem
-        scrollViewport: optionsMenu.visible ? composerOptionsScroll : settingsBody
+        scrollViewport: optionsMenu.visible
+            ? (optionsMenu.sideBySideExtras ? composerExtrasScroll : composerOptionsScroll)
+            : settingsBody
         width: 270; height: Math.min(320, window.height - 48)
         padding: 4
         ScrollView {
@@ -3673,6 +3679,7 @@ Window {
                     model: bridge.subtitleLanguageChoices
                     StoneButton {
                         required property var modelData
+                        objectName: "translatedSubtitleChoice_" + modelData.code
                         width: parent.width; height: 40
                         label: modelData.label
                         selected: bridge.translatedSubtitleLanguage === modelData.code

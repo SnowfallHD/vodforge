@@ -292,6 +292,13 @@ def qt_image(source: Image.Image) -> QImage:
     ).copy()
 
 
+def _subtitle_language_label(code: str) -> str:
+    language = QLocale(code).language()
+    return (
+        QLocale.languageToString(language) if language != QLocale.Language.C else code
+    )
+
+
 class Materials(QQuickImageProvider):
     """Adapter for the existing VODForge material and artwork owners."""
 
@@ -2639,7 +2646,7 @@ class Bridge(QObject):
     @Property(str, notify=downloadOptionsChanged)
     def translatedSubtitleLabel(self) -> str:
         code = self._translated_subtitle_language
-        return (QLocale(code).nativeLanguageName() or code) if code else "Off"
+        return _subtitle_language_label(code) if code else "Off"
 
     @Property(_QVARIANT_LIST, constant=True)
     def subtitleLanguageChoices(self) -> list[dict[str, str]]:
@@ -2647,7 +2654,7 @@ class Bridge(QObject):
         languages = [
             {
                 "code": code,
-                "label": (QLocale(code).nativeLanguageName() or code) + f" ({code})",
+                "label": _subtitle_language_label(code) + f" ({code})",
             }
             for code in PROVIDER_SUBTITLE_LANGUAGES
         ]

@@ -39,6 +39,11 @@ def test_optin_settings_persist_and_survive_restart(profile):
         assert bridge.translatedSubtitleLabel == "Off"
         choices = bridge.subtitleLanguageChoices
         assert choices[0] == {"code": "", "label": "Off"}
+        labels = {entry["code"]: entry["label"] for entry in choices}
+        assert labels["el"] == "Greek (el)"
+        assert labels["ru"] == "Russian (ru)"
+        assert labels["qu"] == "Quechua (qu)"
+        assert labels["ae"] == "ae (ae)"  # Qt has no locale; never label it "C".
         assert any(
             choice["code"] == "en" and "en" in choice["label"] for choice in choices
         )

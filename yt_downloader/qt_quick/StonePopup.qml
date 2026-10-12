@@ -5,6 +5,8 @@ Popup {
     id: popup
     focus: true
     property real surfaceOpacity: 0.84
+    property real materialWidth: width
+    property real materialHeight: height
     property Item triggerItem
     property bool dismissedByTriggerPress: false
     property bool closingFromTrigger: false
@@ -52,6 +54,8 @@ Popup {
     background: StoneField {
         id: surface
         surfaceOpacity: popup.surfaceOpacity
+        materialWidth: popup.materialWidth
+        materialHeight: popup.materialHeight
         Image {
             objectName: "popupElevationShadow"
             // Paint outside the face without expanding the popup's input area.
@@ -60,8 +64,8 @@ Popup {
             height: surface.height + 48
             z: -1
             source: surface.visible ? "image://vodforge/popup-shadow/"
-                    + Math.max(1, Math.round(surface.width)) + "/"
-                    + Math.max(1, Math.round(surface.height)) : ""
+                    + Math.max(1, Math.round(popup.materialWidth)) + "/"
+                    + Math.max(1, Math.round(popup.materialHeight)) : ""
             fillMode: Image.Stretch
             cache: true
             smooth: true

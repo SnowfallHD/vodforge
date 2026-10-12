@@ -9,6 +9,58 @@ from tests.test_qt_scene_port import visual_item
 from yt_downloader.settings_store import load_settings
 
 
+@pytest.mark.parametrize("size", [(1100, 740), (820, 560)])
+@pytest.mark.parametrize("custom", [False, True])
+def test_options_subtitle_menu_remains_open_in_its_scroll_owner(
+    tmp_path, monkeypatch, size, custom
+):
+    from tests.test_qt_composer_custom_options import wait_for_reveal
+
+    app, bridge, engine, window = _launch(tmp_path, monkeypatch, [])
+    try:
+        window.resize(*size)
+        if custom:
+            bridge.setExportMode("Manual Override")
+        popup = window.findChild(QObject, "optionsMenu")
+        popup.open()
+        wait_for_reveal(popup, 1 if custom else 0, "customReveal")
+        body = window.findChild(
+            QObject,
+            "composerExtrasScroll"
+            if popup.property("sideBySideExtras")
+            else "composerOptionsScroll",
+        )
+        viewport = body.property("contentItem")
+        viewport.setProperty(
+            "contentY", max(0, viewport.property("contentHeight") - viewport.height())
+        )
+        app.processEvents()
+        button = window.findChild(QObject, "composerTranslatedSubtitleButton")
+        assert QMetaObject.invokeMethod(button, "activated")
+        QTest.qWait(150)
+        menu = window.findChild(QObject, "translatedSubtitleMenu")
+        assert menu.property("visible")
+        assert menu.property("scrollViewport") == body
+        assert not window.findChild(QObject, "downloadSettingsPopup").property(
+            "visible"
+        )
+        assert QMetaObject.invokeMethod(
+            visual_item(menu.property("contentItem"), "translatedSubtitleChoice_el"),
+            "activated",
+        )
+        app.processEvents()
+        assert bridge.translatedSubtitleLanguage == "el"
+        assert "Greek" in button.property("label")
+        assert not menu.property("visible")
+        assert QMetaObject.invokeMethod(button, "activated")
+        QTest.qWait(150)
+        assert menu.property("visible")
+        menu.close()
+        popup.close()
+    finally:
+        _close(bridge, engine, window)
+
+
 @pytest.mark.parametrize("size", [(1400, 900), (1100, 740), (820, 560)])
 def test_options_retains_quick_surface_and_reaches_shared_controls(
     tmp_path, monkeypatch, size
