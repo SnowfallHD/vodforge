@@ -1346,3 +1346,26 @@ Successor floor is undetermined until build inputs/final dependencies/oldest-OS
 execution are qualified. Metadata-only lowering is invalid. Exact receipts under
 recovery-20261011; docs/macos-runtime-support.md describes the packaging choice.
 No build/tool install/environment or package mutation occurred.
+
+## Oct 12 — successor prebuild retention and CI dispatch
+
+Parent authorized focused successor artifact-only CI after cleanup owner completed
+minimal18 recoverable renames. Fresh independent checks confirm originals absent,
+quarantine inode/device/mtime unchanged, inventories present and protected roots'
+identities preserved. Existing candidate_space_guard(build) passes at01:39:42UTC:
+zero obsolete blockers,85,778,202,624bytes free,20GiB required; no bytes reclaimed.
+Review receipt under recovery-20261011/successor-cleanup-verification.json.
+
+Local planned download/extract/sign/freeze/QA staging peak8,637,126,911bytes plus
+separate20GiB reserve gives30,111,963,391bytes required, versus85,606,400,000free.
+This is a conservative known585-size envelope, NOT a measured successor peak;
+actual new archive sizes must be checked before staging/signing. No local compile.
+Remote hosted builds use existing macOS15 ARM/Intel and Windows workflows.
+
+Tests workflow lacked an explicit dispatch trigger on candidate branches; add only
+workflow_dispatch to run its existing unchanged six-platform matrix against one
+exact source. No new campaign/test set/permissions. Release workflow artifacts_only
+prevents draft/release/tag mutation. Current source will be frozen after this
+increment; publication remains held pending exact qualification/gap review. Initial
+sandbox GitHub read failed connectivity; authorized network read succeeded. No
+unrelated site/CRM source included, optional frame catalogs unchanged.
