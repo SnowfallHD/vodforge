@@ -1,4 +1,4 @@
-"""Custom controls in the shared Options form preserve settings and scrolling."""
+"""Quick Options retains its liquid morph and shared manual settings bindings."""
 
 import time
 
@@ -28,9 +28,7 @@ def test_custom_remains_in_shared_form_and_keeps_dialog_centered(run_scene):  # 
     popup = window.findChild(QObject, "optionsMenu")
     popup.open()
     QTest.qWait(100)
-    window.findChild(QObject, "settingsOutputModeButton").activated.emit()
-    QTest.qWait(40)
-    menu = window.findChild(QObject, "settingsOutputModeMenu")
+    menu = popup
     custom = next(
         item
         for item in descendants(menu.property("contentItem"))
@@ -38,7 +36,7 @@ def test_custom_remains_in_shared_form_and_keeps_dialog_centered(run_scene):  # 
     )
     point = custom.mapToScene(QPointF(custom.width() / 2, custom.height() / 2))
     QTest.mouseClick(window, Qt.LeftButton, pos=point.toPoint())
-    QTest.qWait(100)
+    QTest.qWait(350)
     assert popup.property("visible")
     assert bridge.exportMode == "Manual Override"
     assert (
@@ -100,7 +98,7 @@ def test_custom_single_column_scrolls_with_expanded_choices(run_scene):  # noqa:
     popup = window.findChild(QObject, "optionsMenu")
     popup.open()
     manual = window.findChild(QObject, "composerManualMp4")
-    scroll = window.findChild(QObject, "settingsBodyViewport")
+    scroll = window.findChild(QObject, "composerManualScroll")
     rate = manual.findChild(QObject, "manualRateControlSelector")
     audio = manual.findChild(QObject, "manualAudioCodecSelector")
     preset = manual.findChild(QObject, "manualPresetSelector")
@@ -166,7 +164,7 @@ def test_options_stay_open_until_done_with_shared_selectors(run_scene):  # noqa:
         QTest.qWait(30)
         assert popup.property("visible")
     assert bridge.exportMode == "Everyday" and bridge.quality == "1080p Full HD"
-    close = window.findChild(QObject, "settingsDoneButton")
+    close = window.findChild(QObject, "composerOptionsCloseButton")
     QTest.mouseClick(
         window,
         Qt.LeftButton,
@@ -184,7 +182,7 @@ def test_dropdown_expansion_reveals_bottom_without_scrolling_visible_choices(run
     popup.open()
     QTest.qWait(350)
     manual = window.findChild(QObject, "composerManualMp4")
-    scroll = window.findChild(QObject, "settingsBodyViewport")
+    scroll = window.findChild(QObject, "composerManualScroll")
     viewport = scroll.property("contentItem")
     rate = manual.findChild(QObject, "manualRateControlSelector")
     rate.setProperty("expanded", True)
@@ -206,3 +204,31 @@ def test_dropdown_expansion_reveals_bottom_without_scrolling_visible_choices(run
     bottom = preset.mapToScene(QPointF(0, preset.height())).y()
     assert bottom <= viewport.mapToScene(QPointF(0, viewport.height())).y() + 1
     assert popup.property("visible")
+
+
+@pytest.mark.parametrize("motion_scene", [False, True], indirect=True)
+def test_quick_custom_surface_morphs_without_opening_settings(motion_scene):
+    scene, reduced_motion = motion_scene
+    _app, bridge, window, _button, _popup = scene
+    bridge.setExportMode("Everyday")
+    popup = window.findChild(QObject, "optionsMenu")
+    popup.open()
+    QTest.qWait(300)
+    initial_width = popup.property("width")
+    values = []
+    popup.customRevealChanged.connect(
+        lambda: values.append(popup.property("customReveal"))
+    )
+    bridge.setExportMode("Manual Override")
+    QTest.qWait(350)
+    assert popup.property("customReveal") == 1
+    assert popup.property("width") > initial_width
+    assert not window.findChild(QObject, "downloadSettingsPopup").property("visible")
+    if reduced_motion:
+        assert values == [1.0]
+    else:
+        assert any(0 < value < 1 for value in values)
+    bridge.setExportMode("Everyday")
+    QTest.qWait(350)
+    assert popup.property("customReveal") == 0
+    assert popup.property("width") == pytest.approx(initial_width)

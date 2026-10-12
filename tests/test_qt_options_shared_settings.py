@@ -1,4 +1,4 @@
-"""Options and Settings show one form and retain the existing preference owner."""
+"""Quick Options and Settings bind the same existing preference owner."""
 
 import pytest
 from PySide6.QtCore import QMetaObject, QObject
@@ -10,7 +10,7 @@ from yt_downloader.settings_store import load_settings
 
 
 @pytest.mark.parametrize("size", [(1400, 900), (1100, 740), (820, 560)])
-def test_options_reuses_complete_settings_form_and_scrolls_without_top_gap(
+def test_options_retains_quick_surface_and_reaches_shared_controls(
     tmp_path, monkeypatch, size
 ):
     app, bridge, engine, window = _launch(tmp_path, monkeypatch, [])
@@ -18,22 +18,24 @@ def test_options_reuses_complete_settings_form_and_scrolls_without_top_gap(
         window.resize(*size)
         popup = window.findChild(QObject, "optionsMenu")
         settings = window.findChild(QObject, "downloadSettingsPopup")
-        body = window.findChild(QObject, "settingsBodyViewport")
-        tags = window.findChild(QObject, "extraTagsInput")
+        body = window.findChild(QObject, "composerOptionsScroll")
+        tags = window.findChild(QObject, "composerExtraTagsInput")
         popup.open()
         QTest.qWait(100)
         assert popup.property("visible")
         assert not settings.property("visible")
         assert body.isVisible() and tags.isVisible()
-        assert window.findChild(QObject, "settingsTitle").property("text") == "Options"
+        assert not window.findChild(QObject, "settingsBodyViewport").isVisible()
+        assert popup.property("customReveal") == 0
+        assert popup.property("width") == pytest.approx(min(550, size[0] - 40))
         assert popup.property("height") <= size[1] - popup.property("y")
         for name in (
-            "settingsYouTubeAccessButton",
-            "settingsDownloadOption_embed_thumbnail",
-            "settingsDownloadOption_write_thumbnail",
-            "settingsDownloadOption_embed_metadata",
-            "settingsDownloadOption_write_info_json",
-            "settingsDownloadOption_use_nvenc",
+            "composerYouTubeAccessButton",
+            "composerDownloadOption_embed_thumbnail",
+            "composerDownloadOption_write_thumbnail",
+            "composerDownloadOption_embed_metadata",
+            "composerDownloadOption_write_info_json",
+            "composerDownloadOption_use_nvenc",
         ):
             assert visual_item(window.contentItem(), name) is not None
         viewport = body.property("contentItem")
@@ -45,7 +47,8 @@ def test_options_reuses_complete_settings_form_and_scrolls_without_top_gap(
         popup.close()
         settings.open()
         QTest.qWait(100)
-        assert body.isVisible() and tags.isVisible()
+        assert not body.isVisible() and not tags.isVisible()
+        assert window.findChild(QObject, "settingsBodyViewport").isVisible()
         assert window.findChild(QObject, "settingsTitle").property("text") == "Settings"
         assert len(window.findChildren(QObject, "extraTagsInput")) == 1
     finally:
@@ -74,7 +77,7 @@ def test_options_toggles_shared_preferences_without_changing_active_job(
         ):
             expected[key] = not bridge.downloadOptions[key]
             assert QMetaObject.invokeMethod(
-                visual_item(window.contentItem(), "settingsDownloadOption_" + key),
+                visual_item(window.contentItem(), "composerDownloadOption_" + key),
                 "activated",
             )
             app.processEvents()
@@ -103,7 +106,7 @@ def test_youtube_access_returns_to_options_without_reading_browser_store(
         popup.open()
         QTest.qWait(100)
         assert QMetaObject.invokeMethod(
-            window.findChild(QObject, "settingsYouTubeAccessButton"), "activated"
+            window.findChild(QObject, "composerYouTubeAccessButton"), "activated"
         )
         app.processEvents()
         access = window.findChild(QObject, "youtubeAccessPopup")
@@ -116,7 +119,7 @@ def test_youtube_access_returns_to_options_without_reading_browser_store(
         QTest.qWait(100)
         assert popup.property("visible")
         assert (
-            window.findChild(QObject, "settingsYouTubeAccessButton")
+            window.findChild(QObject, "composerYouTubeAccessButton")
             .property("label")
             .endswith("cookies.txt")
         )

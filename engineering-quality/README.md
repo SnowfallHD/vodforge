@@ -3491,3 +3491,21 @@ bounded helper transactions separately from main installation counts/privacy.
 Original paged snapshots retain their offsets, ranges, counts and event identities;
 missing rowid boundaries remain explicitly unproven and cannot become synthesized
 complete/privacy checkpoints. Run the read-only plan before assigning more UI work.
+
+October12 private review learning: sharing a durable preference owner does not
+require sharing an entire visual form. Quick Options and Settings retain distinct
+presentation contracts while using the existing Bridge setters. Bounded cases
+now observe actual outer Custom morph values (including reduced-motion), shared
+persistent toggles, active-job immutability, and access-popup return; earlier
+full-form tests validated the wrong interpretation and missed loss of the quick
+surface. Both prior-QML morph negative controls fail. Explicit optional output
+requests must either preserve the selected artifact/language or visibly fail;
+availability absence must not silently convert a requested translation to Off.
+Prior subtitle tests intentionally accepted unavailable targets, missing this
+request-integrity boundary. Missing target/source and transport429 guidance now
+have prior-failure controls alongside existing actual two-track local roundtrip
+and stream-count/language validation. This is bounded source evidence, not
+provider availability/native package acceptance. Native frame reviews must bind
+full window/client origin and pixels: UIA client-only captures missed header and
+edge displacement at96DPI. Retained resize/fresh-start observations diagnose
+scope but do not prove the blocked SW_RESTORE causal control.

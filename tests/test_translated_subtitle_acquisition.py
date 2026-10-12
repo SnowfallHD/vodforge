@@ -3,14 +3,13 @@ from dataclasses import replace
 import pytest
 
 from tests.test_run_identity import make_job
+from yt_downloader.caption_languages import translated_subtitle_language
 from yt_downloader.download_service import (
     _build_item_preflight_options,
     apply_original_caption_options,
     require_selected_subtitle_streams,
     sanitized_subtitle_tracks,
 )
-
-from yt_downloader.caption_languages import translated_subtitle_language
 from yt_downloader.models import OutputType
 from yt_downloader.run_identity import job_attempt_signature
 from yt_downloader.run_state import deserialize_download_job, serialize_download_job
@@ -57,7 +56,7 @@ def test_exact_original_plus_one_explicit_translation(uploaded):
     assert "en-ru" in info["automatic_captions"]
 
 
-@pytest.mark.parametrize("target", [None, "ru", "de"])
+@pytest.mark.parametrize("target", [None, "ru"])
 def test_off_same_or_unavailable_does_not_invent_translation(target):
     opts = {"postprocessors": []}
     prepared = apply_original_caption_options(opts, source_info(), target)
@@ -70,8 +69,8 @@ def test_generated_translation_must_match_original_source():
     info["automatic_captions"]["en-ru"][0]["url"] = (
         "https://example.invalid/?lang=es&tlang=en"
     )
-    prepared = apply_original_caption_options({"postprocessors": []}, info, "en")
-    assert len(prepared["vodforge_subtitle_tracks"]) == 1
+    with pytest.raises(RuntimeError, match="no output was committed"):
+        apply_original_caption_options({"postprocessors": []}, info, "en")
 
 
 @pytest.mark.parametrize("invalid", ["all", "en.*", "xx", "https://secret", 1])
@@ -148,7 +147,6 @@ def test_actual_two_track_roundtrip(tmp_path):
     import subprocess
 
     from yt_downloader.download_service import build_vod_ffmpeg_command
-
 
     ffmpeg, ffprobe = shutil.which("ffmpeg"), shutil.which("ffprobe")
     if not ffmpeg or not ffprobe:
@@ -234,7 +232,6 @@ def test_installed_ytdlp_embedding_then_production_transcode(tmp_path):
 
     from yt_downloader.download_service import build_vod_ffmpeg_command
 
-
     ffmpeg, ffprobe = shutil.which("ffmpeg"), shutil.which("ffprobe")
     if not ffmpeg or not ffprobe:
         pytest.skip("local fixture tools unavailable")
@@ -312,3 +309,26 @@ def test_automatic_original_and_translation_both_requested():
     assert options["writeautomaticsub"] is True
     assert options["subtitleslangs"] == ["ru", "en"]
     assert set(prepared["automatic_captions"]) == {"ru", "en"}
+
+
+@pytest.mark.parametrize(
+    "target,info", [("de", source_info()), ("qu", {}), ("qu", source_info())]
+)
+def test_explicit_unavailable_translation_refuses_without_silent_fallback(target, info):
+    options = {"postprocessors": []}
+    with pytest.raises(RuntimeError, match="no output was committed"):
+        apply_original_caption_options(options, info, target)
+    assert options == {"postprocessors": []}
+
+
+def test_runasimi_code_and_rate_limit_guidance_preserve_explicit_choice():
+    from yt_downloader.download_error_presentation import download_error_message
+
+    assert translated_subtitle_language("qu") == "qu"
+    message = download_error_message(
+        RuntimeError(
+            "Unable to download video subtitles for 'qu': HTTP Error 429: Too Many Requests"
+        )
+    )
+    assert "subtitles" in message and "No output was committed" in message
+    assert "Off in Options" in message and "Wait before retrying" in message

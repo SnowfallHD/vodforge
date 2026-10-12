@@ -65,6 +65,18 @@ def download_error_message(error: object) -> str:
     text = str(error)[:16384].lower()
     diagnostic = capture_failure(error) if isinstance(error, BaseException) else None
     reason = diagnostic.reason if diagnostic is not None else classify_failure(text)
+    if "subtitles" in text and reason == "rate_limited":
+        return (
+            "The site rate-limited the selected subtitles. No output was committed. "
+            "Wait before retrying, or turn translated subtitles Off in Options "
+            "if you want the video without that translation."
+        )
+    if "selected translated subtitles are unavailable" in text:
+        return (
+            "The selected translation is unavailable or its source language could not "
+            "be verified. No output was committed. Choose another language or turn "
+            "translated subtitles Off in Options."
+        )
     # Machine evidence takes priority over ambiguous provider wording.
     if "could not reset the batch failure report" in text and reason != "disk_full":
         return "Could not reset the batch failure report. Check that the log folder is writable, then retry."

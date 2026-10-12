@@ -4891,6 +4891,12 @@ def apply_original_caption_options(
     target = validate_translation_language(translation_language)
     selection = original_caption_selection(info)
     if selection is None:
+        if target:
+            raise RuntimeError(
+                "Selected translated subtitles are unavailable or their source language "
+                "could not be verified; no output was committed. "
+                "Choose another language or turn translated subtitles Off."
+            )
         return info
     key, kind = selection
     language = key.removesuffix("-orig")
@@ -4940,6 +4946,15 @@ def apply_original_caption_options(
                         "translated",
                     )
                     break
+    if (
+        target
+        and target != language
+        and not any(track["role"] == "translated" for track in summaries)
+    ):
+        raise RuntimeError(
+            "Selected translated subtitles are unavailable; no output was committed. "
+            "Choose another language or turn translated subtitles Off."
+        )
     prepared["vodforge_caption_summary"] = summaries[0]
     prepared["vodforge_subtitle_tracks"] = summaries
     options.update(

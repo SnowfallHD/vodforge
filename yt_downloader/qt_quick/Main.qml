@@ -2599,16 +2599,15 @@ Window {
         objectName: "downloadSettingsPopup"
         onClosed: { translatedSubtitleMenu.close(); settingsQualityMenu.close(); settingsOutputModeMenu.close(); appearanceThemeMenu.close(); helpMenu.close() }
         function observeVisiblePro() {
-            if ((!opened && !optionsMenu.opened) || !proButton.visible) return
-            const point = proButton.mapToItem(downloadSettingsContent, 0, 0)
+            if (!opened || !proButton.visible) return
+            const point = proButton.mapToItem(contentItem, 0, 0)
             if (point.x >= 0 && point.y >= 0 &&
-                point.x + proButton.width <= downloadSettingsContent.width &&
-                point.y + proButton.height <= downloadSettingsContent.height)
+                point.x + proButton.width <= contentItem.width &&
+                point.y + proButton.height <= contentItem.height)
                 bridge.recordCloudCtaSeen()
         }
         onOpened: {
             optionsMenu.close()
-            downloadSettingsContent.parent = contentItem
             Qt.callLater(observeVisiblePro)
         }
         x: Math.max(0, (window.width - width) / 2)
@@ -2618,12 +2617,11 @@ Window {
         padding: 18
         modal: true
         ColumnLayout {
-            id: downloadSettingsContent
             anchors.fill: parent
             spacing: 7
             RowLayout {
                 Layout.fillWidth: true
-                Text { objectName: "settingsTitle"; text: optionsMenu.visible ? "Options" : "Settings"; color: theme.text; font.pixelSize: 21; font.bold: true; Layout.fillWidth: true }
+                Text { objectName: "settingsTitle"; text: "Settings"; color: theme.text; font.pixelSize: 21; font.bold: true; Layout.fillWidth: true }
                 StoneButton {
                     id: proButton
                     objectName: "settingsProButton"
@@ -2694,7 +2692,7 @@ Window {
                         }
                     }
                     Text { text: "YOUTUBE ACCESS"; color: theme.accent; font.pixelSize: 13; font.bold: true }
-                    StoneButton { objectName: "settingsYouTubeAccessButton"; label: "YouTube access: " + bridge.cookieSource; Layout.fillWidth: true; Layout.preferredHeight: 40; onActivated: { accessPopup.returnToSettings = true; accessPopup.returnToOptions = optionsMenu.visible; window.closeDownloadSettings(); accessPopup.toggleFrom(this) } }
+                    StoneButton { objectName: "settingsYouTubeAccessButton"; label: "YouTube access: " + bridge.cookieSource; Layout.fillWidth: true; Layout.preferredHeight: 40; onActivated: { accessPopup.returnToSettings = true; accessPopup.returnToOptions = false; settingsPopup.close(); accessPopup.toggleFrom(this) } }
                     Text { text: "METADATA"; color: theme.accent; font.pixelSize: 13; font.bold: true }
                     Text { text: "Extra tags (comma-separated)"; color: theme.muted; font.pixelSize: 13 }
                     StoneField {
@@ -2739,7 +2737,7 @@ Window {
                         }
                     }
                     ManualMp4Settings {
-                        objectName: optionsMenu.visible ? "composerManualMp4" : "settingsManualMp4"
+                        objectName: "settingsManualMp4"
                         headingColor: theme.accent
                         visible: window.outputFormat === "MP4" && bridge.exportMode === "Manual Override"
                         Layout.fillWidth: true
@@ -3320,19 +3318,251 @@ Window {
         id: optionsMenu
         objectName: "optionsMenu"
         x: Math.max(0, (window.width - width) / 2)
-        y: 66
-        width: Math.min(820, window.width - 70)
-        height: Math.min(752, window.height - y - 12)
-        padding: 18
-        modal: true
-        onOpened: {
-            settingsPopup.close()
-            downloadSettingsContent.parent = contentItem
-            Qt.callLater(settingsPopup.observeVisiblePro)
+        y: Math.max(0, (window.height - height) / 2)
+        property real customReveal: window.outputFormat === "MP4" && bridge.exportMode === "Manual Override" ? 1 : 0
+        Behavior on customReveal {
+            NumberAnimation { duration: bridge.reducedMotion ? 0 : 280; easing.type: Easing.InOutCubic }
         }
-        onClosed: {
-            translatedSubtitleMenu.close(); settingsQualityMenu.close(); settingsOutputModeMenu.close(); appearanceThemeMenu.close(); helpMenu.close()
-            downloadSettingsContent.parent = settingsPopup.contentItem
+        readonly property real baseWidth: Math.min(550, window.width - 40)
+        readonly property real expandedWidth: Math.min(baseWidth + (baseWidth - 32) / 2 + 16, window.width - 40)
+        width: baseWidth + (expandedWidth - baseWidth) * customReveal
+        readonly property real customColumnWidth: (expandedWidth - 48) / 3
+        height: Math.min(window.height - 40, 540, 387 + Math.max(0, Math.max(composerManualControls.implicitHeight, composerOptionsContent.implicitHeight) + 48 - 387) * customReveal)
+        padding: 8
+        topPadding: 40
+        StoneButton {
+            objectName: "composerOptionsCloseButton"
+            x: optionsMenu.availableWidth - width
+            y: -32
+            width: 28; height: 28
+            label: "×"
+            accessibilityLabel: "Close options"
+            onActivated: optionsMenu.close()
+        }
+        onOpened: settingsPopup.close()
+        onClosed: translatedSubtitleMenu.close()
+        modal: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        Overlay.modal: Rectangle { color: "#9915151c" }
+        Item {
+            id: customOptionsColumn
+            objectName: "customOptionsColumn"
+            width: optionsMenu.customColumnWidth * optionsMenu.customReveal
+            height: optionsMenu.availableHeight
+            clip: true
+            visible: optionsMenu.customReveal > 0
+            opacity: optionsMenu.customReveal
+            ScrollView {
+                objectName: "composerManualScroll"
+                contentWidth: availableWidth
+                anchors.fill: parent
+                clip: true
+                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                ManualMp4Settings {
+                    id: composerManualControls
+                    objectName: "composerManualMp4"
+                    width: optionsMenu.customColumnWidth
+                    gridColumns: 1
+                    backend: bridge
+                    colors: theme
+                    headingColor: theme.accent
+                }
+            }
+        }
+        ScrollView {
+            id: composerOptionsScroll
+            objectName: "composerOptionsScroll"
+            contentWidth: availableWidth
+            x: customOptionsColumn.width + 16 * optionsMenu.customReveal
+            width: optionsMenu.availableWidth - x
+            height: optionsMenu.availableHeight
+            clip: true
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+            Column {
+                id: composerOptionsContent
+                width: composerOptionsScroll.availableWidth
+                spacing: 12
+        Row {
+            width: parent.width
+            visible: window.outputFormat === "MP4"
+            height: visible ? 339 : 0
+            spacing: 16
+            Column {
+                width: (parent.width - 16) / 2
+                spacing: 3
+                Text { text: "OUTPUT MODE"; color: theme.accent; font.pixelSize: 12; font.bold: true; font.letterSpacing: 1; height: 32; leftPadding: 8; verticalAlignment: Text.AlignVCenter }
+                Repeater {
+                    model: bridge.exportModeOptions
+                    StoneButton {
+                        required property var modelData
+                        width: parent.width; height: 40
+                        label: modelData.label
+                        selected: bridge.exportMode === modelData.value
+                        onActivated: {
+                            bridge.setExportMode(modelData.value)
+                        }
+                    }
+                }
+                Text {
+                    width: parent.width
+                    height: 40
+                    text: "Custom reveals the manual MP4 controls."
+                    color: theme.muted
+                    font.pixelSize: 12
+                    wrapMode: Text.WordWrap
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+            Column {
+                width: (parent.width - 16) / 2
+                spacing: 3
+                Text { text: "QUALITY"; color: theme.accent; font.pixelSize: 12; font.bold: true; font.letterSpacing: 1; height: 32; leftPadding: 8; verticalAlignment: Text.AlignVCenter }
+                Repeater {
+                    model: qualityOptions
+                    StoneButton {
+                        required property string modelData
+                        width: parent.width; height: 40
+                        label: modelData
+                        selected: bridge.quality === modelData
+                        onActivated: bridge.setQuality(modelData)
+                    }
+                }
+            }
+        }
+                Column {
+                    objectName: "composerQuickExtras"
+                    width: parent.width
+                    spacing: 8
+                    Rectangle { width: parent.width; height: 1; color: theme.border }
+                    StoneButton {
+                        objectName: "composerYouTubeAccessButton"
+                        width: parent.width; height: 40
+                        label: "YouTube access: " + bridge.cookieSource
+                        onActivated: { accessPopup.returnToSettings = true; accessPopup.returnToOptions = true; optionsMenu.close(); accessPopup.toggleFrom(this) }
+                    }
+                    Repeater {
+                        model: [
+                            { key: "mp3_quality", title: "Encoding quality", choices: bridge.mp3QualityOptions },
+                            { key: "mp3_sample_rate", title: "Sample rate", choices: bridge.mp3SampleRateOptions },
+                            { key: "mp3_channels", title: "Channels", choices: bridge.mp3ChannelOptions },
+                            { key: "mp3_cover_art_mode", title: "Cover art", choices: bridge.mp3CoverOptions }
+                        ]
+                        StoneButton {
+                            required property var modelData
+                            objectName: "composerMp3Option_" + modelData.key
+                            visible: window.outputFormat === "MP3"
+                            width: parent.width; height: visible ? 40 : 0
+                            label: modelData.title + ": " + bridge.mp3Values[modelData.key]
+                            onActivated: {
+                                const choices = modelData.choices
+                                const next = choices[(choices.indexOf(bridge.mp3Values[modelData.key]) + 1) % choices.length]
+                                if (modelData.key === "mp3_cover_art_mode" && next === "Custom art" && !bridge.mp3CoverAvailable) mp3CoverDialog.open()
+                                else bridge.setMp3Value(modelData.key, next)
+                            }
+                        }
+                    }
+                    StoneButton {
+                        objectName: "composerMp3Metadata"
+                        visible: window.outputFormat === "MP3"
+                        width: parent.width; height: visible ? 40 : 0
+                        label: "Embed title, artist, and tags: " + (bridge.mp3Values.mp3_embed_metadata ? "On" : "Off")
+                        selected: bridge.mp3Values.mp3_embed_metadata
+                        onActivated: bridge.setMp3Metadata(!bridge.mp3Values.mp3_embed_metadata)
+                    }
+                    Row {
+                        visible: window.outputFormat === "MP3" && bridge.mp3Values.mp3_cover_art_mode === "Custom art"
+                        width: parent.width; spacing: 6
+                        StoneButton { width: parent.width - 78; height: 38; label: "Replace image"; onActivated: mp3CoverDialog.open() }
+                        StoneButton { width: 72; height: 38; label: "Clear"; onActivated: bridge.clearMp3Cover() }
+                    }
+                    Text {
+                        visible: window.outputFormat === "Original audio"
+                        width: parent.width; wrapMode: Text.WordWrap
+                        text: "Keep the source audio without extra compression."
+                        color: theme.muted; font.pixelSize: 13
+                    }
+                    Repeater {
+                        model: [
+                            { key: "use_nvenc", label: "NVIDIA encoder" },
+                            { key: "embed_thumbnail", label: "Embed thumbnail" },
+                            { key: "embed_metadata", label: "Embed metadata" },
+                            { key: "write_thumbnail", label: "Save thumbnail file" },
+                            { key: "write_info_json", label: "Save metadata file" }
+                        ]
+                        RowLayout {
+                            required property var modelData
+                            visible: window.outputFormat === "MP4" && !(modelData.key === "use_nvenc" && Qt.platform.os === "osx")
+                            width: parent.width; height: visible ? 38 : 0
+                            Text { text: modelData.label; color: theme.text; font.pixelSize: 13; Layout.fillWidth: true }
+                            StoneButton {
+                                objectName: "composerDownloadOption_" + modelData.key
+                                enabled: modelData.key !== "use_nvenc" || bridge.nvencAvailable
+                                label: !enabled ? "Unavailable" : (bridge.downloadOptions[modelData.key] ? "On" : "Off")
+                                selected: enabled && bridge.downloadOptions[modelData.key]
+                                Layout.preferredWidth: enabled ? 74 : 108; Layout.preferredHeight: 36
+                                onActivated: bridge.setDownloadOption(modelData.key, !bridge.downloadOptions[modelData.key])
+                            }
+                        }
+                    }
+                    StoneButton {
+                        objectName: "composerTranslatedSubtitleButton"
+                        visible: window.outputFormat === "MP4"
+                        width: parent.width; height: visible ? 40 : 0
+                        label: "Translated subtitles: " + bridge.translatedSubtitleLabel
+                        onActivated: { translatedSubtitleMenu.anchorItem = this; translatedSubtitleMenu.toggleFrom(this) }
+                    }
+                    Text { width: parent.width; text: "Extra metadata tags"; color: theme.muted; font.pixelSize: 12 }
+                    StoneField {
+                        width: parent.width; height: 38
+                        TextField {
+                            objectName: "composerExtraTagsInput"
+                            anchors.fill: parent
+                            background: null
+                            color: theme.text; selectionColor: theme.accent; selectedTextColor: theme.bg
+                            text: bridge.extraTags
+                            onEditingFinished: { if (!bridge.setExtraTags(text)) text = bridge.extraTags }
+                        }
+                    }
+                }
+                Column {
+                    objectName: "composerCustomSummary"
+                    visible: optionsMenu.customReveal > 0
+                    opacity: optionsMenu.customReveal
+                    width: parent.width
+                    spacing: 10
+                    Rectangle { width: parent.width; height: 1; color: theme.border }
+                    Text { text: "YOUR CUSTOM OUTPUT"; color: theme.accent; font.pixelSize: 12; font.bold: true; font.letterSpacing: 1 }
+                    Text {
+                        objectName: "composerCustomSummaryValues"
+                        width: parent.width
+                        wrapMode: Text.WordWrap
+                        color: theme.text
+                        font.pixelSize: 14
+                        text: bridge.quality + "  •  " + (bridge.manualValues.manual_rate_control === "Quality"
+                            ? "CRF " + bridge.manualValues.manual_crf
+                            : bridge.manualValues.manual_video_bitrate + " kbps video") + "\n"
+                            + bridge.manualValues.manual_audio_codec + "  •  " + bridge.manualValues.manual_audio_bitrate
+                            + " kbps  •  " + bridge.manualValues.manual_channels + "\n"
+                            + "Encoding speed: " + bridge.manualValues.manual_preset
+                    }
+                    Text {
+                        width: parent.width
+                        wrapMode: Text.WordWrap
+                        color: theme.muted
+                        font.pixelSize: 13
+                        text: bridge.manualValues.manual_rate_control === "Quality"
+                            ? "Quality adjusts the bitrate to the picture. A lower CRF keeps more detail and usually makes a larger file."
+                            : "CBR targets your chosen video bitrate. Raise it to preserve more detail, or lower it for smaller files."
+                    }
+                    Text {
+                        width: parent.width
+                        wrapMode: Text.WordWrap
+                        color: theme.muted
+                        font.pixelSize: 12
+                        text: "Resolution is limited by the source. Slower encoding can improve compression but takes longer."
+                    }
+                }
+            }
         }
     }
     AnchoredPopup {
@@ -3387,7 +3617,7 @@ Window {
         id: translatedSubtitleMenu
         objectName: "translatedSubtitleMenu"
         parent: window.contentItem
-        scrollViewport: settingsBody
+        scrollViewport: optionsMenu.visible ? composerOptionsScroll : settingsBody
         width: 270; height: Math.min(320, window.height - 48)
         padding: 4
         ScrollView {
