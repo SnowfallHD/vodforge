@@ -282,6 +282,7 @@ def validate_journey(data: dict[str, Any], *, candidate=None) -> list[str]:
         if feature != "announcement" or SHOWCASE_MODE != "none"
         for action in actions
     }
+    announcement_disabled = candidate is None and SHOWCASE_MODE == "none"
     if candidate is not None:
         try:
             announcement_actions = candidate_announcement_actions(candidate, data)
@@ -299,6 +300,7 @@ def validate_journey(data: dict[str, Any], *, candidate=None) -> list[str]:
                 ("announcement", a) for a in FEATURE_ACTIONS["announcement"]
             )
         else:
+            announcement_disabled = not announcement_actions
             required_actions.difference_update(
                 ("announcement", a) for a in FEATURE_ACTIONS["announcement"]
             )
@@ -325,7 +327,7 @@ def validate_journey(data: dict[str, Any], *, candidate=None) -> list[str]:
         required_actions.discard(("player", "controls_fallback"))
     if data.get("platform") in {"macos", "windows"} and verified_qt:
         required_actions.difference_update(QT_LEGACY_ACTIONS)
-    if SHOWCASE_MODE == "none" and any(
+    if announcement_disabled and any(
         feature == "announcement" for feature, _ in observed_actions
     ):
         errors.append("Disabled release announcement emitted telemetry")

@@ -453,9 +453,9 @@ def test_release_readback_rejects_contradictory_presentation_action():
     assert validate_journey(data)
 
 
-def test_enabled_release_requires_announcement_observations(monkeypatch):
-    monkeypatch.setattr("quality_harness.telemetry_release.SHOWCASE_MODE", "whats-new")
-    data = telemetry_fixture(candidate())
+def test_enabled_release_requires_announcement_observations(tmp_path, monkeypatch):
+    c = editorial_candidate(tmp_path, monkeypatch, "whats-new", ["design"])
+    data = telemetry_fixture(c)
     assert validate_journey(data) == []
     events = data["snapshots"]["events_complete"]["events"]
     events[:] = [event for event in events if event.get("feature") != "announcement"]
@@ -594,6 +594,7 @@ def editorial_candidate(tmp_path, monkeypatch, mode, keys):
         f"HIGHLIGHTS=({catalog})\nDID_YOU_KNOW_HIGHLIGHTS=({catalog})\n"
     )
     monkeypatch.setattr(module, "ANNOUNCEMENT_SOURCE_ROOT", tmp_path)
+    monkeypatch.setattr(module, "SHOWCASE_MODE", mode)
     return candidate()
 
 
@@ -666,11 +667,14 @@ def test_bound_editorial_action_semantics_and_rejections(
         "missing_candidate",
     ],
 )
-def test_announcement_exclusion_cannot_be_supplied_without_source_binding(mutation):
+def test_announcement_exclusion_cannot_be_supplied_without_source_binding(
+    mutation, tmp_path, monkeypatch
+):
     from quality_harness import telemetry_release as module
 
-    c = candidate()
-    data = telemetry_fixture(c)  # Exact current catalog: shown, no Try it.
+    monkeypatch.setattr(module, "SHOWCASE_MODE", "whats-new")
+    c = editorial_candidate(tmp_path, monkeypatch, "whats-new", ["design"])
+    data = telemetry_fixture(c)  # Explicit enabled catalog: shown, no Try it.
     if mutation == "source_bytes":
         c["source"]["manifest"]["files"][module.ANNOUNCEMENT_SOURCE_FILES[0]][
             "sha256"
