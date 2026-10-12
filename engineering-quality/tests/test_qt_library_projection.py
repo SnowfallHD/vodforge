@@ -144,6 +144,7 @@ def test_search_and_type_filter_keep_play_bound_to_original_history(
             "note": "Private note",
             "tags": "serendipity, audio",
             "category": "Saved",
+            "sourceTags": [],
         }
         seeks = QSignalSpy(reopened.playbackSeekRequested)
         reopened.openLibraryItem(1)
