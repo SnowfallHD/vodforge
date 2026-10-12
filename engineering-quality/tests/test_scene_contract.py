@@ -52,7 +52,7 @@ def test_semantic_scene_probes_are_enrolled_in_their_required_classes():
             filename, function = node.split("::")
             names = {
                 getattr(n, "name", None)
-                for n in ast.parse((root / filename).read_text()).body
+                for n in ast.parse((root / filename).read_text(encoding="utf-8")).body
             }
             assert function in names, node
     assert any(

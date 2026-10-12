@@ -1,7 +1,5 @@
 """Section switching and bulk dispatch cannot retain hidden Library targets."""
 
-from pathlib import Path
-
 import pytest
 from PySide6.QtCore import QObject, QUrl
 from PySide6.QtTest import QTest
@@ -57,7 +55,9 @@ def values(scene, name):
 
 
 @pytest.mark.parametrize("width", [760, 1100, 2400])
-def test_home_sections_have_separate_controls_and_switch_clears(library, width):
+def test_home_sections_have_separate_controls_and_switch_clears(
+    library, width, tmp_path
+):
     app, bridge, window, scene = library
     window.resize(width, 900)
     app.processEvents()
@@ -90,7 +90,7 @@ def test_home_sections_have_separate_controls_and_switch_clears(library, width):
     click(window, "libraryCollectionsSelectionBarSelectAll", app)
     assert scene.property("selectedEntityCount") == 2
     assert values(scene, "selectedOwners") == []
-    root = Path(__file__).resolve().parents[2] / "renders"
+    root = tmp_path / "renders"
     root.mkdir(exist_ok=True)
     assert window.grabWindow().save(str(root / f"collections-{width}.png"))
     click(window, "libraryCollectionsSelectButton", app)

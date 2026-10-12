@@ -54,11 +54,12 @@ SCENE_CLASSES = {
     ),
     "window_chrome": (6, ("tests/test_qt_player_frame_handoff.py",)),
     "channel_membership": (
-        6,
+        7,
         (
             "tests/test_watch_channels.py",
             "tests/test_qt_scene_port.py::test_qt_routes_keep_tk_channel_playlist_collection_and_media_membership",
             "tests/test_qt_scene_port.py::test_qt_library_group_card_counts_saved_variants_like_tk",
+            "tests/test_qt_scene_port.py::test_qt_saved_collection_is_visible_through_shared_projection",
         ),
     ),
     "channel_artwork": (
@@ -276,6 +277,7 @@ SCENE_REQUIRED_TESTS = {
         "tests/test_watch_channels.py::test_channel_url_fallback_normalizes_host_without_fusing_distinct_paths",
         "tests/test_qt_scene_port.py::test_qt_routes_keep_tk_channel_playlist_collection_and_media_membership",
         "tests/test_qt_scene_port.py::test_qt_library_group_card_counts_saved_variants_like_tk",
+        "tests/test_qt_scene_port.py::test_qt_saved_collection_is_visible_through_shared_projection",
     ),
     "channel_artwork": (
         "tests/test_channel_artwork.py::test_foreign_or_invalid_provider_cannot_authorize_channel_lookup",

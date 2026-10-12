@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import socket
+import sys
 import threading
 import time
 import urllib.parse
@@ -21,6 +22,18 @@ LIBRARY_DESCRIPTION_STRESS_ROUTE = "/page/library-description-stress"
 SLOW_LIBRARY_DESCRIPTION_STRESS_ROUTE = "/slow/page/library-description-stress"
 CANCELLATION_ROUTE = "/slow/page/cancellation"
 QUEUED_LIBRARY_DESCRIPTION_STRESS_ROUTE = "/slow/page/queued-library-description-stress"
+
+
+class _ExclusiveFixtureServer(ThreadingHTTPServer):
+    # Windows SO_REUSEADDR can adopt a live origin instead of rejecting it.
+    # POSIX reuse remains necessary for a verified closed-origin continuation.
+    allow_reuse_address = sys.platform != "win32"
+    allow_reuse_port = False
+
+    def server_bind(self) -> None:
+        if sys.platform == "win32":
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
 
 
 class FaultState:
@@ -485,7 +498,7 @@ class FixtureHTTPServer:
                 except (BrokenPipeError, ConnectionResetError, OSError):
                     return
 
-        self._server = ThreadingHTTPServer(("127.0.0.1", self.listen_port), Handler)
+        self._server = _ExclusiveFixtureServer(("127.0.0.1", self.listen_port), Handler)
         self._server.daemon_threads = True
         with state.lock:
             state.origin = self.base_url
