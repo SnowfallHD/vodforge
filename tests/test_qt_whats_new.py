@@ -25,6 +25,8 @@ def bridge(tmp_path, monkeypatch):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    # These catalog journeys explicitly exercise an enabled editorial fixture.
+    monkeypatch.setattr(qt_main, "SHOWCASE_MODE", "whats-new")
     qt_app()
     owner = qt_main.Bridge(None)
     owner._engagement.presented_welcome()
@@ -34,6 +36,17 @@ def bridge(tmp_path, monkeypatch):
         yield owner
     finally:
         owner.close()
+
+
+def test_release_editorial_choice_does_not_automatically_present(bridge, monkeypatch):
+    from yt_downloader.whats_new import SHOWCASE_MODE
+
+    monkeypatch.setattr(qt_main, "SHOWCASE_MODE", SHOWCASE_MODE)
+    requested = QSignalSpy(bridge.editorialRequested)
+    bridge._settings["whats_new_seen"] = ""
+    bridge.checkEditorial(True)
+    assert not bridge.editorialSlides
+    assert requested.count() == 0
 
 
 def test_new_editorial_id_is_eligible_once_and_waits_for_idle_ready_ui(

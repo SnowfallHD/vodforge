@@ -119,7 +119,7 @@ HIGHLIGHTS = (
 
 # Release editorial switch: choose one surface, never both. Keep the current
 # mode until a release explicitly changes its editorial choice and SHOWCASE_ID.
-SHOWCASE_MODE = "whats-new"
+SHOWCASE_MODE = "none"
 DID_YOU_KNOW_HIGHLIGHTS = (
     FeatureHighlight(
         "youtube-access-tip",
