@@ -62,7 +62,8 @@ def test_release_draft_builds_qt_on_both_platforms():
         assert "VODFORGE_UI: qt" in build_step
     assert "install_vlc_macos.sh" not in workflow
     assert "install_vlc_windows.ps1" not in workflow
-    assert "vlc_args=(--exclude-module vlc)" in macos_build
+    assert "--exclude-module vlc" in macos_build
+    assert "--exclude-module tkinter" in macos_build
     assert '"--exclude-module", "vlc"' in windows_build
 
 
@@ -71,7 +72,7 @@ def test_macos_dependency_install_recovers_only_when_every_formula_is_present():
         encoding="utf-8"
     )
 
-    assert "if ! brew install python@3.13 python-tk@3.13 ffmpeg deno; then" in workflow
+    assert "if ! brew install python@3.13 ffmpeg deno; then" in workflow
     assert 'brew list --versions "$formula"' in workflow
     assert "brew --prefix python@3.13" in workflow
 
@@ -114,7 +115,9 @@ def test_macos_release_preflight_keeps_each_qt_module_out_of_backend_process():
 
 def test_release_builds_pin_yt_dlp_with_matching_ejs_scripts():
     requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines()
-    app_source = (ROOT / "yt_downloader" / "app.py").read_text(encoding="utf-8")
+    app_source = (ROOT / "yt_downloader" / "download_service.py").read_text(
+        encoding="utf-8"
+    )
 
     assert "yt-dlp[default,curl-cffi]==2026.8.19" in requirements
     assert not any(line.startswith("yt-dlp>=") for line in requirements)
@@ -162,7 +165,9 @@ def test_local_macos_bundle_is_resigned_after_final_metadata_mutation():
 def test_lazy_ytdlp_runtime_is_explicitly_collected_for_both_packagers():
     macos_build = (ROOT / "build_macos.sh").read_text(encoding="utf-8")
     windows_build = (ROOT / "build_windows.ps1").read_text(encoding="utf-8")
-    app_source = (ROOT / "yt_downloader" / "app.py").read_text(encoding="utf-8")
+    app_source = (ROOT / "yt_downloader" / "download_service.py").read_text(
+        encoding="utf-8"
+    )
 
     assert "--collect-all yt_dlp" in macos_build
     assert "--collect-all yt_dlp" in windows_build
@@ -175,82 +180,30 @@ def test_lazy_ytdlp_runtime_is_explicitly_collected_for_both_packagers():
     assert 'YTDLP_EJS_SOLVER_RESOURCES = ("core.min.js", "lib.min.js")' in app_source
 
 
-def test_library_player_runtime_is_self_contained_on_macos_and_windows():
-    macos_build = (ROOT / "build_macos.sh").read_text(encoding="utf-8")
-    windows_build = (ROOT / "build_windows.ps1").read_text(encoding="utf-8")
-    windows_install = (ROOT / "install_vlc_windows.ps1").read_text(encoding="utf-8")
-    macos_install = (ROOT / "install_vlc_macos.sh").read_text(encoding="utf-8")
-    app_source = (ROOT / "yt_downloader" / "app.py").read_text(encoding="utf-8")
-
-    assert '--add-binary "$vlc_library:vlc/lib"' in macos_build
-    assert '--add-data "$vlc_plugins:vlc/plugins"' in macos_build
-    assert 'Join-Path $vlcRoot "libvlc.dll"' in windows_build
-    assert '"--add-data", "$vlcPlugins;vlc/plugins"' in windows_build
-    assert "Get-Content $vlcVersionMarker -Raw" in windows_build
-    assert (
-        "992d19dbd0b8a7cde9167d2f7780b1ef6f92acc8a71acfa736101a21f35181e1"
-        in windows_install
-    )
-    assert "curl.exe --fail --location --retry 3" in windows_install
-    assert '"VODFORGE_VLC_VERSION"' in windows_install
-    assert (
-        "fc6fac08d87f538517d44aca0c5e7a244b67c8c4cb589bf478363a7315fd5e0d"
-        in macos_install
-    )
-    assert (
-        "ec01530ce69d849dd057fba8876e68ac39bf279dc28de4e9c04e4aec11fc98db"
-        in macos_install
-    )
-    assert 'team_identifier" != "75GAHG3SZQ"' in macos_install
-    assert '"$vendor/plugins/libmacosx_plugin.dylib"' in macos_install
-    assert '"$vendor/plugins/libosx_notifications_plugin.dylib"' in macos_install
-    assert 'vlc_version="3.0.23"' in macos_build
-    assert "find_libvlc_runtime()" in app_source
-    assert "ffplay" not in macos_build.casefold()
-    assert "ffplay" not in windows_build.casefold()
+def test_qt_player_runtime_is_collected_without_legacy_widget_dependencies():
+    macos = (ROOT / "build_macos.sh").read_text(encoding="utf-8")
+    windows = (ROOT / "build_windows.ps1").read_text(encoding="utf-8")
+    for source in (macos, windows):
+        assert "PySide6.QtMultimedia" in source
+        assert "PySide6.QtQuickControls2" in source
+        assert "tkinter" in source and "PIL.ImageTk" in source
+        assert "libvlc.dll" not in source and "vlc_plugins" not in source
+    assert not (ROOT / ".github/workflows/playback-windows-e2e.yml").exists()
 
 
-def test_live_playback_cannot_regress_to_python_frame_copy_or_split_audio():
-    backend = (ROOT / "yt_downloader" / "libvlc_backend.py").read_text(encoding="utf-8")
-    contract = (ROOT / "yt_downloader" / "playback_backend.py").read_text(
+def test_live_qt_playback_uses_one_media_player_and_native_video_outputs():
+    main = (ROOT / "yt_downloader/qt_quick/Main.qml").read_text(encoding="utf-8")
+    player = (ROOT / "yt_downloader/qt_quick/PlayerScene.qml").read_text(
         encoding="utf-8"
     )
-    player_ui = (ROOT / "yt_downloader" / "media_player_ui.py").read_text(
-        encoding="utf-8"
-    )
-    legacy_module = (ROOT / "yt_downloader" / "media_player.py").read_text(
-        encoding="utf-8"
-    )
-
-    assert "class PlaybackBackend(Protocol)" in contract
-    assert "class LibVLCPlaybackBackend" in backend
-    assert "set_hwnd" in backend and "set_nsobject" in backend
-    combined_live_path = f"{backend}\n{player_ui}\n{legacy_module}".casefold()
-    assert "ffplay" not in combined_live_path
-    assert "rawvideo" not in combined_live_path
-    assert "latest_frame" not in combined_live_path
-    assert "image.frombytes" not in player_ui.casefold()
-
-
-def test_windows_packaged_playback_e2e_covers_portable_and_installer():
-    workflow = (ROOT / ".github" / "workflows" / "playback-windows-e2e.yml").read_text(
-        encoding="utf-8"
-    )
-
-    assert "generate_playback_fixtures.py" in workflow
-    assert "--playback-smoke" in workflow
-    assert "playback-portable.json" in workflow
-    assert "playback-installer.json" in workflow
-    assert '"/VODFORGEHANDOFF=1"' in workflow
-    assert "$install.WaitForExit(120000)" in workflow
-    assert "playback-install.log" in workflow
-    assert "build_windows_installer.ps1" in workflow
-    assert "Get-Process VODForge,vlc,ffmpeg,ffplay" in workflow
-    assert "ref: ${{ github.event.pull_request.head.sha || github.sha }}" in workflow
+    assert main.count("MediaPlayer {") == 1
+    assert "audioOutput: AudioOutput" in main
     assert (
-        'source_sha = "${{ github.event.pull_request.head.sha || github.sha }}"'
-        in workflow
+        "videoOutput: window.miniPlayerActive ? miniVideoSurface : playerScene.activeVideoSurface"
+        in main
     )
+    assert "VideoOutput {" in player and "VideoOutput.KeepLastFrame" in player
+    assert "ffplay" not in (main + player).casefold()
 
 
 def test_packaged_apps_and_windows_installer_use_vodforge_icon_assets():

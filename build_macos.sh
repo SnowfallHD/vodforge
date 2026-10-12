@@ -52,6 +52,8 @@ fi
     --ignore=tests/test_qt_player_responsive_stage.py \
     --ignore=tests/test_qt_player_resize_continuity.py \
     --ignore=tests/test_qt_retry_recovery_membership.py \
+    --ignore=tests/test_qt_without_tk.py \
+    --ignore=tests/test_qt_history_startup.py \
     --ignore=tests/test_qt_runtime_event_ownership.py \
     --ignore=tests/test_qt_saved_output_access.py \
     --ignore=tests/test_qt_terminal_dismissal.py \
@@ -136,6 +138,8 @@ fi
     tests/test_qt_player_responsive_stage.py \
     tests/test_qt_player_resize_continuity.py \
     tests/test_qt_retry_recovery_membership.py \
+    tests/test_qt_without_tk.py \
+    tests/test_qt_history_startup.py \
     tests/test_qt_runtime_event_ownership.py \
     tests/test_qt_saved_output_access.py \
     tests/test_qt_terminal_dismissal.py \

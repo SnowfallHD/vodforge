@@ -142,7 +142,6 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 .\install_ffmpeg_windows.ps1
 .\install_deno_windows.ps1
-.\install_vlc_windows.ps1
 python qt_main.py
 ```
 
@@ -301,7 +300,6 @@ Install the portable dependencies, then build and smoke-test:
 ```powershell
 .\install_ffmpeg_windows.ps1
 .\install_deno_windows.ps1
-.\install_vlc_windows.ps1
 $env:VODFORGE_UI = "qt"
 .\build_windows.ps1
 .\smoke_launch.ps1

@@ -28,7 +28,6 @@ $env:TMP = $env:TEMP
 New-Item -ItemType Directory -Force -Path $env:TEMP | Out-Null
 Set-Location $source
 & .\install_ffmpeg_windows.ps1
-& .\install_vlc_windows.ps1
 & .\install_deno_windows.ps1
 & .\build_windows.ps1
 if (-not (Test-Path '.\dist\VODForge\VODForge.exe')) { throw 'Missing built executable' }
