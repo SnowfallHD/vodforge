@@ -183,7 +183,7 @@ def main() -> None:
             ]
             plan = None
             if args.production:
-                from yt_downloader.app import build_vod_ffmpeg_command
+                from yt_downloader.download_service import build_vod_ffmpeg_command
                 from yt_downloader.export_planning import (
                     apply_manual_export_settings,
                     build_auto_export_plan,
@@ -257,7 +257,7 @@ def main() -> None:
                 )
             )
             if plan is not None:
-                from yt_downloader.app import validate_output_artifact
+                from yt_downloader.download_service import validate_output_artifact
                 from yt_downloader.models import OutputType
 
                 validate_output_artifact(

@@ -1369,3 +1369,18 @@ prevents draft/release/tag mutation. Current source will be frozen after this
 increment; publication remains held pending exact qualification/gap review. Initial
 sandbox GitHub read failed connectivity; authorized network read succeeded. No
 unrelated site/CRM source included, optional frame catalogs unchanged.
+
+## Oct 12 — first successor CI collection failure retained
+
+Tests38193054062 on exact4ceba74 fails all six backend jobs before tests execute.
+Original Mac311 failed log retained at recovery-20261011/ci-4ceba74-mac311-failed.log.
+Root-level CI collection includes fine-tuning/tests and windows_smoke_test.py,
+which the earlier explicitly scoped tests+engineering-quality collection omitted.
+Both still imported old app helper/DownloaderApp symbols. Migrate actual pure
+benchmark/validation calls and Windows dependency-report script to DownloadWorkerCore/
+download_service; no UI alias/fake class or skipped coverage. Four fine-tuning
+controls pass; whole-root collection6833/zero errors in27.62s. Windows report now
+runs only through main instead of printing/reading tools on import. No benchmark,
+training, local build or package exists for failed4ceba74; it cannot qualify release.
+The focused correction supersedes that unqualified source freeze; all successor
+artifacts/checks must bind the one corrected commit. No historical evidence relabeled.

@@ -15,7 +15,10 @@ from itertools import pairwise
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from yt_downloader.app import build_vod_ffmpeg_command, validate_output_artifact
+from yt_downloader.download_service import (
+    build_vod_ffmpeg_command,
+    validate_output_artifact,
+)
 from yt_downloader.export_planning import (
     build_auto_export_plan,
     export_mode_from_display_name,
