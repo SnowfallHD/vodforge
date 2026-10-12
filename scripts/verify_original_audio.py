@@ -22,7 +22,7 @@ pipeline.configure_production_sandbox(root)
 runner = pipeline.HeadlessPipelineRunner(root)
 build_job = pipeline.build_job
 build_plan = app_module.build_original_audio_plan
-build_options = app_module.DownloaderApp._build_ydl_options
+build_options = app_module.DownloadWorkerCore._build_ydl_options
 rows = []
 for codec in ("opus", "mp4a"):
     source = root / (codec + "-source.bin")
@@ -57,7 +57,9 @@ for codec in ("opus", "mp4a"):
     with (
         patch.object(pipeline, "build_job", job_factory),
         patch.object(app_module, "build_original_audio_plan", plan_factory),
-        patch.object(app_module.DownloaderApp, "_build_ydl_options", options_factory),
+        patch.object(
+            app_module.DownloadWorkerCore, "_build_ydl_options", options_factory
+        ),
     ):
         result = runner.run_job(
             case_id=codec,

@@ -16,21 +16,20 @@ def batch_failure_report_reset_probe(
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     import yt_downloader.download_service as app_module
     from yt_downloader.download_service import (
-        DownloaderApp,
         DownloadJob,
         DownloadOutcome,
+        DownloadWorkerCore,
         ExportMode,
-        ManualExportSettings,
-        Mp3ExportSettings,
         OutputType,
     )
+    from yt_downloader.models import ManualExportSettings, Mp3ExportSettings
 
     case_dir.mkdir(parents=True, exist_ok=True)
     report = case_dir / "batch-url-failures.txt"
     old_contents = "failure from the previous batch\n"
     report.write_text(old_contents, encoding="utf-8")
     processed: list[str] = []
-    app = DownloaderApp.__new__(DownloaderApp)
+    app = DownloadWorkerCore.__new__(DownloadWorkerCore)
     app.events = queue.Queue()
     app.cancel_requested = False
     app._active_progress_context = None

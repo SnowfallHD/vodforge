@@ -1266,3 +1266,20 @@ cannot qualify source changes. Existing actual Qt counterparts include runtime e
 identity/batch publication/restart, scene annotation ownership, queue generation,
 metadata ownership, copy private-outbox, playback/frame and interaction invariants.
 No blanket skip, fake DownloaderApp or fabricated native event is introduced.
+
+## Oct 12 — close lazy Tk presentation adapter and neutral batch probe
+
+Follow-up indentation-aware source scan found the lazy PresentationProbe TclError
+import, missed by the earlier top-level-only inventory. Removed that unused widget
+adapter and canvas_snapshot; current QtPresentationProbe still consumes unchanged
+PresentationObservations. Ten maintained bounded observation/privacy controls pass
+(retirement-presentation-owner-after.log). Initial command named a nonexistent
+batch test file and executed no tests; retained, not counted.
+
+Migrated existing batch-report refusal probe and original-audio script to actual
+DownloadWorkerCore, with settings constructors from models. Direct bounded probe
+passes: zero media worker calls after reset refusal, old report preserved, clear
+error emitted; console evidence in this task (temporary raw fixture removed after
+run, no lasting native receipt claimed). Ruff/format/diff pass. Actual source scan
+including nested imports now has no Tk imports. Remaining EQH dynamic legacy calls
+and selectors are still explicitly pending; no build or release qualification.
