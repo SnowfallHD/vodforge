@@ -1,7 +1,7 @@
 """Quick Options and Settings bind the same existing preference owner."""
 
 import pytest
-from PySide6.QtCore import QMetaObject, QObject
+from PySide6.QtCore import QMetaObject, QObject, QPointF
 from PySide6.QtTest import QTest
 
 from tests.test_qt_interaction_invariants import _close, _launch
@@ -18,7 +18,7 @@ def test_options_retains_quick_surface_and_reaches_shared_controls(
         window.resize(*size)
         popup = window.findChild(QObject, "optionsMenu")
         settings = window.findChild(QObject, "downloadSettingsPopup")
-        body = window.findChild(QObject, "composerOptionsScroll")
+        body = window.findChild(QObject, "composerExtrasScroll")
         tags = window.findChild(QObject, "composerExtraTagsInput")
         popup.open()
         QTest.qWait(100)
@@ -27,7 +27,10 @@ def test_options_retains_quick_surface_and_reaches_shared_controls(
         assert body.isVisible() and tags.isVisible()
         assert not window.findChild(QObject, "settingsBodyViewport").isVisible()
         assert popup.property("customReveal") == 0
-        assert popup.property("width") == pytest.approx(min(550, size[0] - 40))
+        assert popup.property("width") == pytest.approx(
+            min(3 * 250 + 2 * 16 + 16, size[0] - 40)
+        )
+        assert popup.property("topPadding") == 8
         assert popup.property("height") <= size[1] - popup.property("y")
         for name in (
             "composerYouTubeAccessButton",
@@ -123,5 +126,130 @@ def test_youtube_access_returns_to_options_without_reading_browser_store(
             .property("label")
             .endswith("cookies.txt")
         )
+    finally:
+        _close(bridge, engine, window)
+
+
+@pytest.mark.parametrize("size", [(900, 560), (1100, 740), (1400, 900)])
+@pytest.mark.parametrize("custom", [False, True])
+def test_options_places_groups_by_available_width(tmp_path, monkeypatch, size, custom):
+    from tests.test_qt_composer_custom_options import wait_for_reveal
+
+    _app, bridge, engine, window = _launch(tmp_path, monkeypatch, [])
+    try:
+        window.resize(*size)
+        popup = window.findChild(QObject, "optionsMenu")
+        popup.open()
+        bridge.setExportMode("Manual Override" if custom else "Everyday")
+        wait_for_reveal(popup, int(custom), "customReveal")
+        QTest.qWait(40)
+        mode = visual_item(window.contentItem(), "composerOutputModes")
+        quality = visual_item(window.contentItem(), "composerQualities")
+        extras = visual_item(window.contentItem(), "composerQuickExtras")
+        manual = visual_item(window.contentItem(), "customOptionsColumn")
+
+        def point(item, x=0, y=0):
+            return item.mapToScene(QPointF(x, y))
+
+        assert popup.property("topPadding") == 8
+        assert point(mode).y() - popup.property("y") <= 10
+        assert point(quality).x() >= point(mode, mode.width()).x() + 15
+        enough = (
+            size[0] - 40
+            >= 4 * popup.property("columnMinimum")
+            + 3 * popup.property("columnGap")
+            + 16
+        )
+        side_by_side = not custom or enough
+        assert popup.property("sideBySideExtras") == side_by_side
+        if side_by_side:
+            assert point(extras).x() >= point(quality, quality.width()).x() + 15
+            assert abs(point(extras).y() - point(mode).y()) < 1
+            assert window.findChild(QObject, "composerExtrasScroll").isVisible()
+        else:
+            right = window.findChild(QObject, "composerOptionsScroll")
+            assert manual.width() == pytest.approx(right.width(), abs=1)
+            assert point(extras).x() == pytest.approx(point(mode).x(), abs=1)
+            assert point(extras).y() > point(mode).y() + 339
+            assert not window.findChild(QObject, "composerExtrasScroll").isVisible()
+        if custom:
+            assert manual.isVisible()
+            assert point(mode).x() >= point(manual, manual.width()).x() + 15
+        for item in (mode, quality, extras):
+            assert item.width() > 100
+            assert (
+                point(item, item.width()).x()
+                <= popup.property("x") + popup.property("width") - 7
+            )
+        assert not window.findChild(QObject, "downloadSettingsPopup").property(
+            "visible"
+        )
+    finally:
+        _close(bridge, engine, window)
+
+
+@pytest.mark.parametrize("touchpad", [False, True])
+def test_custom_resize_relocates_extras_and_keeps_scroll_owners_independent(
+    tmp_path, monkeypatch, touchpad
+):
+    from tests.test_qt_composer_custom_options import wait_for_reveal
+    from tests.test_qt_watch_scroll_extent import gesture
+
+    _app, bridge, engine, window = _launch(tmp_path, monkeypatch, [])
+    try:
+        popup = window.findChild(QObject, "optionsMenu")
+        bridge.setExportMode("Manual Override")
+        window.resize(1400, 900)
+        popup.open()
+        wait_for_reveal(popup, 1, "customReveal")
+        QTest.qWait(40)
+        extras = visual_item(window.contentItem(), "composerQuickExtras")
+        wide_parent = extras.parentItem()
+        assert popup.property("sideBySideExtras")
+        window.resize(900, 560)
+        QTest.qWait(100)
+        assert not popup.property("sideBySideExtras")
+        assert extras.parentItem() is not wide_parent
+        left = window.findChild(QObject, "composerManualScroll").property("contentItem")
+        right = window.findChild(QObject, "composerOptionsScroll").property(
+            "contentItem"
+        )
+        preset = window.findChild(QObject, "composerManualMp4").findChild(
+            QObject, "manualPresetSelector"
+        )
+        preset.setProperty("expanded", True)
+        wait_for_reveal(preset, 1)
+        QTest.qWait(40)
+        assert left.property("contentHeight") > left.height()
+        assert right.property("contentHeight") > right.height()
+        left.setProperty("contentY", 0)
+        right.setProperty("contentY", 0)
+        gesture(
+            window, left.mapToScene(QPointF(4, left.height() / 2)), touchpad=touchpad
+        )
+        assert left.property("contentY") > 0
+        assert right.property("contentY") == 0
+        left_before = left.property("contentY")
+        gesture(
+            window, right.mapToScene(QPointF(4, right.height() / 2)), touchpad=touchpad
+        )
+        assert right.property("contentY") > 0
+        assert left.property("contentY") == pytest.approx(left_before)
+        right.setProperty("contentY", right.property("contentHeight") - right.height())
+        QTest.qWait(30)
+        tags = visual_item(window.contentItem(), "composerExtraTagsInput")
+        bottom = tags.mapToItem(right, QPointF(0, tags.height())).y()
+        assert 0 <= bottom <= right.height() + 1
+        window.resize(1400, 900)
+        QTest.qWait(100)
+        assert popup.property("sideBySideExtras")
+        assert extras.parentItem() is wide_parent
+        for viewport in (left, right):
+            assert (
+                0
+                <= viewport.property("contentY")
+                <= max(0, viewport.property("contentHeight") - viewport.height()) + 1
+            )
+        assert len(window.findChildren(QObject, "composerExtraTagsInput")) == 1
     finally:
         _close(bridge, engine, window)

@@ -9,11 +9,11 @@ from PySide6.QtTest import QTest
 from tests.test_qt_all_runs_hover_seam import run_scene  # noqa: F401
 
 
-def wait_for_reveal(selector, target):
+def wait_for_reveal(selector, target, property_name="reveal"):
     deadline = time.monotonic() + 2
-    while selector.property("reveal") != target and time.monotonic() < deadline:
+    while selector.property(property_name) != target and time.monotonic() < deadline:
         QTest.qWait(20)
-    assert selector.property("reveal") == target
+    assert selector.property(property_name) == target
 
 
 def descendants(item):
@@ -220,8 +220,7 @@ def test_quick_custom_surface_morphs_without_opening_settings(motion_scene):
         lambda: values.append(popup.property("customReveal"))
     )
     bridge.setExportMode("Manual Override")
-    QTest.qWait(350)
-    assert popup.property("customReveal") == 1
+    wait_for_reveal(popup, 1, "customReveal")
     assert popup.property("width") > initial_width
     assert not window.findChild(QObject, "downloadSettingsPopup").property("visible")
     if reduced_motion:
@@ -229,6 +228,5 @@ def test_quick_custom_surface_morphs_without_opening_settings(motion_scene):
     else:
         assert any(0 < value < 1 for value in values)
     bridge.setExportMode("Everyday")
-    QTest.qWait(350)
-    assert popup.property("customReveal") == 0
+    wait_for_reveal(popup, 0, "customReveal")
     assert popup.property("width") == pytest.approx(initial_width)

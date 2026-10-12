@@ -3323,17 +3323,24 @@ Window {
         Behavior on customReveal {
             NumberAnimation { duration: bridge.reducedMotion ? 0 : 280; easing.type: Easing.InOutCubic }
         }
-        readonly property real baseWidth: Math.min(550, window.width - 40)
-        readonly property real expandedWidth: Math.min(baseWidth + (baseWidth - 32) / 2 + 16, window.width - 40)
+        readonly property real columnMinimum: 250
+        readonly property real columnGap: 16
+        readonly property real baseWidth: Math.min(window.outputFormat === "MP4" ? 3 * columnMinimum + 2 * columnGap + 16 : 550, window.width - 40)
+        readonly property real expandedWidth: Math.min(4 * columnMinimum + 3 * columnGap + 16, window.width - 40)
+        readonly property bool sideBySideExtras: window.outputFormat === "MP4" && (customReveal === 0 || window.width - 40 >= 4 * columnMinimum + 3 * columnGap + 16)
         width: baseWidth + (expandedWidth - baseWidth) * customReveal
-        readonly property real customColumnWidth: (expandedWidth - 48) / 3
-        height: Math.min(window.height - 40, 540, 387 + Math.max(0, Math.max(composerManualControls.implicitHeight, composerOptionsContent.implicitHeight) + 48 - 387) * customReveal)
+        readonly property real customColumnWidth: sideBySideExtras
+            ? (availableWidth - columnGap * (2 + customReveal)) / (3 + customReveal)
+            : (availableWidth - columnGap) / 2
+        height: Math.min(window.height - 40, 540, Math.max(composerManualControls.implicitHeight * customReveal,
+            composerOptionsContent.implicitHeight, sideBySideExtras ? composerQuickExtras.implicitHeight : 0) + 16)
         padding: 8
-        topPadding: 40
+        topPadding: 8
         StoneButton {
             objectName: "composerOptionsCloseButton"
             x: optionsMenu.availableWidth - width
-            y: -32
+            y: 0
+            z: 2
             width: 28; height: 28
             label: "×"
             accessibilityLabel: "Close options"
@@ -3353,7 +3360,9 @@ Window {
             visible: optionsMenu.customReveal > 0
             opacity: optionsMenu.customReveal
             ScrollView {
+                id: composerManualScroll
                 objectName: "composerManualScroll"
+                VerticalScrollChain { nestedScrollView: composerManualScroll }
                 contentWidth: availableWidth
                 anchors.fill: parent
                 clip: true
@@ -3372,22 +3381,28 @@ Window {
         ScrollView {
             id: composerOptionsScroll
             objectName: "composerOptionsScroll"
+            VerticalScrollChain { nestedScrollView: composerOptionsScroll }
             contentWidth: availableWidth
             x: customOptionsColumn.width + 16 * optionsMenu.customReveal
-            width: optionsMenu.availableWidth - x
+            width: optionsMenu.availableWidth - x - (optionsMenu.sideBySideExtras ? composerExtrasScroll.width + optionsMenu.columnGap : 0)
             height: optionsMenu.availableHeight
             clip: true
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-            Column {
+            Item {
                 id: composerOptionsContent
                 width: composerOptionsScroll.availableWidth
-                spacing: 12
+                implicitHeight: Math.max(composerQuickChoices.height,
+                    !optionsMenu.sideBySideExtras ? composerQuickExtras.y + composerQuickExtras.implicitHeight : 0,
+                    composerCustomSummary.visible ? composerCustomSummary.y + composerCustomSummary.implicitHeight : 0)
         Row {
+            id: composerQuickChoices
+            objectName: "composerQuickChoices"
             width: parent.width
             visible: window.outputFormat === "MP4"
             height: visible ? 339 : 0
             spacing: 16
             Column {
+                objectName: "composerOutputModes"
                 width: (parent.width - 16) / 2
                 spacing: 3
                 Text { text: "OUTPUT MODE"; color: theme.accent; font.pixelSize: 12; font.bold: true; font.letterSpacing: 1; height: 32; leftPadding: 8; verticalAlignment: Text.AlignVCenter }
@@ -3414,6 +3429,7 @@ Window {
                 }
             }
             Column {
+                objectName: "composerQualities"
                 width: (parent.width - 16) / 2
                 spacing: 3
                 Text { text: "QUALITY"; color: theme.accent; font.pixelSize: 12; font.bold: true; font.letterSpacing: 1; height: 32; leftPadding: 8; verticalAlignment: Text.AlignVCenter }
@@ -3430,13 +3446,15 @@ Window {
             }
         }
                 Column {
+                    id: composerQuickExtras
                     objectName: "composerQuickExtras"
+                    parent: optionsMenu.sideBySideExtras ? composerExtrasSlot : composerOptionsContent
+                    y: optionsMenu.sideBySideExtras ? 0 : composerQuickChoices.height + (composerQuickChoices.visible ? 12 : 0)
                     width: parent.width
                     spacing: 8
-                    Rectangle { width: parent.width; height: 1; color: theme.border }
                     StoneButton {
                         objectName: "composerYouTubeAccessButton"
-                        width: parent.width; height: 40
+                        width: parent.width - (optionsMenu.sideBySideExtras || window.outputFormat !== "MP4" ? 36 : 0); height: 40
                         label: "YouTube access: " + bridge.cookieSource
                         onActivated: { accessPopup.returnToSettings = true; accessPopup.returnToOptions = true; optionsMenu.close(); accessPopup.toggleFrom(this) }
                     }
@@ -3525,7 +3543,9 @@ Window {
                     }
                 }
                 Column {
+                    id: composerCustomSummary
                     objectName: "composerCustomSummary"
+                    y: composerQuickChoices.height + (optionsMenu.sideBySideExtras ? 12 : composerQuickExtras.implicitHeight + 24)
                     visible: optionsMenu.customReveal > 0
                     opacity: optionsMenu.customReveal
                     width: parent.width
@@ -3562,6 +3582,23 @@ Window {
                         text: "Resolution is limited by the source. Slower encoding can improve compression but takes longer."
                     }
                 }
+            }
+        }
+        ScrollView {
+            id: composerExtrasScroll
+            objectName: "composerExtrasScroll"
+            VerticalScrollChain { nestedScrollView: composerExtrasScroll }
+            visible: optionsMenu.sideBySideExtras
+            x: optionsMenu.availableWidth - width
+            width: visible ? (optionsMenu.availableWidth - customOptionsColumn.width - optionsMenu.columnGap * optionsMenu.customReveal - 2 * optionsMenu.columnGap) / 3 : 0
+            height: optionsMenu.availableHeight
+            contentWidth: availableWidth
+            clip: true
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+            Item {
+                id: composerExtrasSlot
+                width: composerExtrasScroll.availableWidth
+                implicitHeight: composerQuickExtras.implicitHeight
             }
         }
     }
