@@ -63,7 +63,7 @@ def test_source_copy_uses_canonical_metadata_not_personal_display(
     [
         ("source_tags", "provider, second"),
         ("source_description", "First line\nLast line"),
-        ("tags", "PRIVATE, tag two"),
+        ("tags", "provider, second, PRIVATE, tag two"),
         ("note", "PRIVATE note\nsecond line"),
         ("thumbnail_url", "https://example.invalid/source.jpg"),
     ],

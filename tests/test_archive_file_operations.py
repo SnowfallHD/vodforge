@@ -947,6 +947,8 @@ def test_new_run_is_not_suppressed_by_a_prior_delete_receipt(
     item["vodforge_run_id"] = "old-run"
     delete(item, move_context, trash=fake_trash[1])
     source = ops.Path(item["vodforge_output_path"])
+    # A fresh download recreates the owned folder pruned after the old Trash.
+    source.parent.mkdir(exist_ok=True)
     source.write_bytes(b"fresh new download")
     new = dict(
         item,

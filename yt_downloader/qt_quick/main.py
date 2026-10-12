@@ -161,7 +161,11 @@ from yt_downloader.library_state import (
     persisted_run_deck_records,
     resolve_library_removal_plan,
 )
-from yt_downloader.library_text import COPY_ACTIONS, library_copy_text
+from yt_downloader.library_text import (
+    COPY_ACTIONS,
+    library_copy_text,
+    library_tag_values,
+)
 from yt_downloader.local_audio_video import (
     LOCAL_VIDEO_PROFILE_OPTIONS,
     LocalAudioVideoError,
@@ -1720,7 +1724,9 @@ class Bridge(QObject):
                 or ""
             ),
             "note": str(current.get("vodforge_user_note") or ""),
-            "tags": [str(tag) for tag in current.get("vodforge_user_tags") or ()],
+            "tags": library_tag_values(current),
+            "sourceTags": library_tag_values(current, "source_tags"),
+            "userTags": library_tag_values(current, "user_tags"),
             "source": [{"label": label, "value": value} for label, value, _ in source],
             "output": [{"label": label, "value": value} for label, value, _ in output],
             "upNext": cards(plan.up_next),
@@ -2352,7 +2358,11 @@ class Bridge(QObject):
                     )
                     if row is not None
                     else "",
-                    "tags": list(row.get("vodforge_user_tags") or ())
+                    "tags": library_tag_values(row) if row is not None else [],
+                    "userTags": library_tag_values(row, "user_tags")
+                    if row is not None
+                    else [],
+                    "sourceTags": library_tag_values(row, "source_tags")
                     if row is not None
                     else [],
                 }
@@ -2437,7 +2447,9 @@ class Bridge(QObject):
             },
             "note": str(row.get("vodforge_user_note") or ""),
             "location": str(history_output_path(row) or ""),
-            "tags": [str(tag) for tag in row.get("vodforge_user_tags") or ()],
+            "tags": library_tag_values(row),
+            "sourceTags": library_tag_values(row, "source_tags"),
+            "userTags": library_tag_values(row, "user_tags"),
             "artwork": self._artwork.request(row),
             "source": [{"label": label, "value": value} for label, value, _ in source],
             "output": [{"label": label, "value": value} for label, value, _ in output],
@@ -5034,6 +5046,7 @@ class Bridge(QObject):
             "note": annotation.note,
             "tags": ", ".join(annotation.tags),
             "category": annotation.category,
+            "sourceTags": library_tag_values(rows[index], "source_tags"),
         }
         self.annotationChanged.emit()
         return True

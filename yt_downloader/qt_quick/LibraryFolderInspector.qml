@@ -230,7 +230,7 @@ Column {
                     id: fileTags
                     objectName: "libraryFolderFileTags"
                     anchors.fill: parent; anchors.margins: 8
-                    text: (inspector.item.tags || []).join(", ")
+                    text: (inspector.item.userTags || []).join(", ")
                     placeholderText: "Separate tags with commas"
                     color: theme.text; placeholderTextColor: theme.muted
                     background: Item {}
@@ -630,7 +630,8 @@ Column {
                     SelectableText {
                         id: tagsText
                         objectName: "libraryInspectorTagsText"
-                        text: (inspector.item.tags || []).join(", ") || "No tags yet"
+                        text: ((inspector.item.sourceTags || []).length ? "Source (read-only): " + inspector.item.sourceTags.join(", ") + "\n" : "") +
+                              ((inspector.item.userTags || []).length ? "Your tags: " + inspector.item.userTags.join(", ") : "") || "No tags yet"
                         width: parent.width
                         color: theme.text
                         font.pixelSize: 13

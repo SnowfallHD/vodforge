@@ -252,7 +252,8 @@ Item {
                             width: parent.width
                             height: childrenRect.height
                             spacing: 6
-                            readonly property var tagRows: (detail.item.tags || []).map(function(tag) { return {owner: tag, tag: tag} })
+                            readonly property var tagRows: (detail.item.sourceTags || []).map(function(tag) { return {owner: "source:" + tag, tag: tag, source: true} }).concat(
+                                (detail.item.userTags || []).map(function(tag) { return {owner: "user:" + tag, tag: tag, source: false} }))
                             function updateTags() { tagWindow.replace(tagRows) }
                             onTagRowsChanged: Qt.callLater(updateTags)
                             OwnerWindowModel { id: tagWindow }
@@ -262,16 +263,18 @@ Item {
                                 StoneButton {
                                     objectName: "libraryTagChip"
                                     required property var modelData
-                                    label: modelData.tag + " ×"
-                                    accessibilityLabel: "Remove tag " + modelData.tag
+                                    label: modelData.tag + (modelData.source ? "" : " ×")
+                                    accessibilityLabel: modelData.source ? "Source tag " + modelData.tag + " (read-only)" : "Remove personal tag " + modelData.tag
                                     hoverMaterial: false
                                     emphasized: hovered || activeFocus
                                     size: "inline"
                                     width: Math.min(tagColumn.width, implicitWidth)
-                                    onActivated: detail.appBridge.editLibraryTag(detail.item.owner, modelData.tag, true)
+                                    onActivated: { if (!modelData.source) detail.appBridge.editLibraryTag(detail.item.owner, modelData.tag, true) }
+                                    LiquidToolTip { visible: parent.hovered; text: parent.modelData.source ? "Original source tag (read-only)" : "Remove your personal tag" }
                                 }
                             }
                         }
+                        Text { text: "Source tags are read-only. Tags marked × are yours."; color: theme.muted; font.pixelSize: 12; width: parent.width; wrapMode: Text.WordWrap }
                         Row {
                             width: parent.width; spacing: 8
                             StoneField {

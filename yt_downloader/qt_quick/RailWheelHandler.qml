@@ -9,7 +9,31 @@ WheelHandler {
     // The default accepts mouse wheels only. macOS sends trackpad gestures
     // as TouchPad events, so the rail must own those gestures explicitly.
     acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+    // WheelHandler's default vertical orientation never emits a pure X event.
+    // Keep the existing vertical owner for mixed/drifting gestures and attach
+    // one horizontal-only companion to the same viewport, without a second
+    // content item or replaying mixed deltas through both handlers.
+    property WheelHandler horizontalHandler: WheelHandler {
+        parent: handler.parent
+        target: null
+        orientation: Qt.Horizontal
+        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+        onWheel: function(wheel) {
+            if (wheel.pixelDelta.y !== 0 || wheel.angleDelta.y !== 0) {
+                wheel.accepted = false
+                return
+            }
+            handler.routeWheel(wheel)
+        }
+    }
     onWheel: function(wheel) {
+        if (wheel.pixelDelta.y === 0 && wheel.angleDelta.y === 0) {
+            wheel.accepted = false
+            return
+        }
+        routeWheel(wheel)
+    }
+    function routeWheel(wheel) {
         if (!horizontalView || !verticalView ||
                 !horizontalView.contentItem || !verticalView.contentItem) {
             wheel.accepted = false

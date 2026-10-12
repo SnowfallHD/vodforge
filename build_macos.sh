@@ -49,6 +49,9 @@ fi
     --ignore=tests/test_qt_library_group_selection.py \
     --ignore=tests/test_qt_library_playlist_art.py \
     --ignore=tests/test_qt_overflow_action_pointer.py \
+    --ignore=tests/test_qt_completed_run_menu.py \
+    --ignore=tests/test_qt_options_shared_settings.py \
+    --ignore=tests/test_qt_watch_scroll_extent.py \
     --ignore=tests/test_qt_player_responsive_stage.py \
     --ignore=tests/test_qt_player_resize_continuity.py \
     --ignore=tests/test_qt_retry_recovery_membership.py \
@@ -136,6 +139,9 @@ fi
     tests/test_qt_library_group_selection.py \
     tests/test_qt_library_playlist_art.py \
     tests/test_qt_overflow_action_pointer.py \
+    tests/test_qt_completed_run_menu.py \
+    tests/test_qt_options_shared_settings.py \
+    tests/test_qt_watch_scroll_extent.py \
     tests/test_qt_player_responsive_stage.py \
     tests/test_qt_player_resize_continuity.py \
     tests/test_qt_retry_recovery_membership.py \

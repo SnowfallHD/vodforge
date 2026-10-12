@@ -360,7 +360,13 @@ def _move_root(record: Mapping[str, Any], source: Path) -> Path | None:
         value = job.get("output_dir") if isinstance(job, Mapping) else None
     if not isinstance(value, str) or not value:
         return None
-    root = Path(value)
+    try:
+        parsed = ArchivePath.parse(value)
+    except ValueError:
+        return None
+    if (parsed.style == "windows") != (os.name == "nt"):
+        return None
+    root = Path(str(parsed))
     if not root.is_absolute() or root == source.parent:
         return None
     return root if source.parent.is_relative_to(root) else None
@@ -388,7 +394,10 @@ def _ensure_move_parents(destination: Path, target: Path) -> None:
         directory_evidence(current)
 
 
-def _prune_move_source(record: Mapping[str, Any], item: FileOperationItem) -> None:
+def _prune_empty_source(
+    record: Mapping[str, Any], item: FileOperationItem, *, leaf_only: bool = False
+) -> None:
+    """Remove only empty, unchanged owned ancestors below the retained root."""
     if item.source is None:
         return
     root = _move_root(record, item.source)
@@ -398,6 +407,13 @@ def _prune_move_source(record: Mapping[str, Any], item: FileOperationItem) -> No
     current = item.source.parent
     while current != root and current.is_relative_to(root):
         try:
+            # Recheck the complete remaining ancestry, including the retained
+            # root: an unchanged child inode alone cannot prove its parent path.
+            evidence = directory_evidence(current)
+            if any(
+                proofs.get(path) != (device, inode) for path, device, inode in evidence
+            ):
+                return
             observed = current.lstat()
             if _redirect(observed) or proofs.get(current) != (
                 observed.st_dev,
@@ -408,9 +424,115 @@ def _prune_move_source(record: Mapping[str, Any], item: FileOperationItem) -> No
         except FileNotFoundError:
             if not item.missing_media:
                 return
-        except OSError:
+        except (OSError, ValueError):
+            return
+        if leaf_only:
             return
         current = current.parent
+
+
+def _trash_channel_root(record: Mapping[str, Any], source: Path) -> Path | None:
+    """Use durable provider metadata and the canonical layout, never a label guess."""
+    root = _move_root(record, source)
+    if root is None or not any(
+        isinstance(record.get(key), str) and record[key].strip()
+        for key in ("channel", "uploader", "channel_id")
+    ):
+        return None
+    from .download_service import channel_folder_name
+
+    channel = root / channel_folder_name(dict(record))
+    return channel if source.parent.is_relative_to(channel) else None
+
+
+def _empty_channel_directories(channel: Path) -> dict[Path, tuple[int, int]] | None:
+    """Bounded no-follow inspection; any remaining file or uncertainty stops cleanup."""
+    pending = [channel]
+    directories = {}
+    inspected = 0
+    try:
+        while pending:
+            folder = pending.pop()
+            evidence = directory_evidence(folder)[-1]
+            directories[folder] = evidence[1:]
+            with os.scandir(folder) as children:
+                for child in children:
+                    inspected += 1
+                    if inspected > MAX_HISTORY_ITEMS:
+                        return None
+                    observed = child.stat(follow_symlinks=False)
+                    # Media of every format, metadata-only, thumbnail-only and
+                    # unknown files all retain the channel's higher hierarchy.
+                    if _redirect(observed) or not stat.S_ISDIR(observed.st_mode):
+                        return None
+                    pending.append(Path(child.path))
+        return directories
+    except (OSError, ValueError):
+        return None
+
+
+def _prune_trash_source(
+    record: Mapping[str, Any],
+    item: FileOperationItem,
+    records: Sequence[Mapping[str, Any]],
+) -> None:
+    if item.source is None:
+        return
+    channel = _trash_channel_root(record, item.source)
+    directories = _empty_channel_directories(channel) if channel is not None else None
+    if directories is None:
+        _prune_empty_source(record, item, leaf_only=True)
+        return
+    proofs = {path: (device, inode) for path, device, inode in item.ancestors}
+    if directories.get(channel) != proofs.get(channel):
+        return
+    _prune_empty_source(record, item, leaf_only=True)
+    try:
+        item.source.parent.lstat()
+    except FileNotFoundError:
+        directories.pop(item.source.parent, None)
+    except OSError:
+        return
+    else:
+        return
+    # Sibling folders need independent durable ownership, not merely an empty
+    # directory name. Current/history-indexed empty branches are recoverable;
+    # unindexed empty folders remain unknown and are deliberately retained.
+    owned = {
+        path for path in proofs if path.is_relative_to(channel) and path in directories
+    }
+    for peer in records:
+        try:
+            source = recorded_artifact(peer)
+            if source is None:
+                continue
+            peer_source = Path(str(source))
+            if _trash_channel_root(peer, peer_source) != channel:
+                continue
+            for path in (peer_source.parent, *peer_source.parent.parents):
+                if path.is_relative_to(channel) and path in directories:
+                    owned.add(path)
+        except (OSError, ValueError, TypeError):
+            continue
+    for folder in sorted(owned, key=lambda path: len(path.parts), reverse=True):
+        try:
+            # A new artifact anywhere in the channel retains every higher
+            # folder, even when the selected video's playlist is now empty.
+            if _empty_channel_directories(channel) != directories:
+                return
+            evidence = directory_evidence(folder)
+            if any(
+                path in proofs
+                and proofs[path] != (device, inode)
+                or path in directories
+                and directories[path] != (device, inode)
+                for path, device, inode in evidence
+            ):
+                return
+            folder.rmdir()
+            directories.pop(folder)
+        except (OSError, ValueError):
+            return
 
 
 def _shared_move_sources(plan, records, owners):
@@ -1708,7 +1830,7 @@ def move_files(
                     for row in records
                     if history_archive_owner(dict(row)) == item.owner
                 )
-                _prune_move_source(source_record, item)
+                _prune_empty_source(source_record, item)
     return FileOperationResult(tuple(current), tuple(outcomes), journal.path)
 
 
@@ -1861,6 +1983,18 @@ def delete_files(
         journal.write()
     except (OSError, ValueError) as journal_error:
         raise FileOperationUncertain(journal.path) from journal_error
+    # Never remove source directories before both the durable history and the
+    # complete receipt acknowledge the Trash/delete transaction. Missing-only
+    # entries and partial/uncertain transfers do not acquire cleanup authority.
+    if journal.document["state"] == "completed":
+        for item in plan.items:
+            if item.state == "ready" and (item.owner, "completed") in outcomes:
+                source_record = next(
+                    row
+                    for row in records
+                    if history_archive_owner(dict(row)) == item.owner
+                )
+                _prune_trash_source(source_record, item, records)
     return FileOperationResult(tuple(current), tuple(outcomes), journal.path)
 
 
@@ -1993,7 +2127,7 @@ def recover_move_cleanup(
                 ),
                 missing_media=entry.get("missing_media") is True,
             )
-            _prune_move_source(
+            _prune_empty_source(
                 {"vodforge_archive_root": entry["source_archive_root"]}, item
             )
     return FileOperationResult(tuple(current), tuple(outcomes), receipt)

@@ -728,7 +728,8 @@ Item {
                 }
                 Text {
                     text: (scene.projection.category ? "Collection: " + scene.projection.category + "\n" : "") +
-                          ((scene.projection.tags || []).length ? "Tags: " + scene.projection.tags.join(", ") + "\n" : "") +
+                          ((scene.projection.sourceTags || []).length ? "Source tags (read-only): " + scene.projection.sourceTags.join(", ") + "\n" : "") +
+                          ((scene.projection.userTags || []).length ? "Your tags: " + scene.projection.userTags.join(", ") + "\n" : "") +
                           (scene.projection.note ? "Your note: " + scene.projection.note : "") ||
                           "Add a note or tags in Library."
                     color: theme.muted

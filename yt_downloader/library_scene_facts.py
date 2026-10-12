@@ -7,6 +7,8 @@ from pathlib import PurePosixPath, PureWindowsPath
 from typing import Any
 
 from .encoding_summary import SUMMARY_COMPARISON_ROWS
+from .export_planning import export_mode_display_name
+from .models import ExportMode
 
 
 def saved_file_path(row: Mapping[str, Any]) -> str:
@@ -141,7 +143,6 @@ def library_detail_facts(
             output_extra.append((output_label, str(value or "Not recorded"), icon))
     for label, key in (
         ("Output status", "Output status"),
-        ("File path", "Output file path"),
         ("Rate control", "Output rate-control mode"),
         ("Duration", "Output duration"),
         ("H.264 profile", "H.264 profile"),
@@ -150,8 +151,18 @@ def library_detail_facts(
         ("Failure reason", "Failure reason"),
     ):
         value = output.get(key)
-        if value or key in {"Output status", "Output duration", "Output file path"}:
+        if (
+            key == "Output rate-control mode"
+            and isinstance(value, str)
+            and value in {mode.value for mode in ExportMode}
+        ):
+            label = "Preset"
+            value = export_mode_display_name(ExportMode(value))
+        if value or key in {"Output status", "Output duration"}:
             output_extra.append((label, str(value or "Not recorded"), "file"))
+    rate = output.get("Video rate control")
+    if rate and rate != output.get("Output rate-control mode"):
+        output_extra.append(("Rate control", str(rate), "film"))
     warnings = summary.get("warnings")
     if isinstance(warnings, (list, tuple)) and warnings:
         output_extra.append(("Warnings", ", ".join(str(v) for v in warnings), "file"))

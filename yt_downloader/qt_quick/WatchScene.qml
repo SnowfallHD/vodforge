@@ -148,12 +148,17 @@ Item {
             acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
             onWheel: function(wheel) {
                 const page = viewport.contentItem
+                const dy = wheel.pixelDelta.y || wheel.angleDelta.y / 120 * 80
+                if (!page || dy === 0) {
+                    wheel.accepted = false
+                    return
+                }
                 const previous = page.contentY
-                Qt.callLater(function() {
-                    if (scene.visible && page === viewport.contentItem && page.contentY !== previous)
-                        scene.appBridge.recordWatchScroll(false)
-                })
-                wheel.accepted = false
+                page.contentY = Math.max(0, Math.min(page.contentHeight - viewport.height,
+                                                    previous - dy))
+                if (scene.visible && page.contentY !== previous)
+                    scene.appBridge.recordWatchScroll(false)
+                wheel.accepted = true
             }
         }
         Connections {

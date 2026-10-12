@@ -152,11 +152,11 @@ def test_tag_bursts_retain_unrelated_chips_and_preserve_real_press_feedback(deta
         after = cards(engine, repeater)
         assert all(after[tag] == before[tag] for tag in before)
     for tag in ["first", "middle", *[f"tag{i}" for i in range(12)]]:
-        last = cards(engine, repeater)["last"]
+        last = cards(engine, repeater)["user:last"]
         assert bridge.editLibraryTag(owner, tag, True)
         for _ in range(3):
             app.processEvents()
-        assert cards(engine, repeater)["last"] == last
+        assert cards(engine, repeater)["user:last"] == last
     chip = next(
         item
         for item in visual_descendants(window.contentItem())
@@ -354,3 +354,57 @@ def test_fact_copy_targets_do_not_add_row_gaps_or_clip_wrapped_values(
         if wrapped:
             assert row.height() > 30
     assert not window.grabWindow().isNull()
+
+
+def test_original_tags_are_read_only_and_personal_removal_preserves_source(detail):
+    app, bridge, owner, _engine, window = detail
+    original = ["Science", "Shared", "Science"]
+    row = {
+        **bridge._runtime.history[0],
+        "tags": list(original),
+        "description": "Original source description",
+    }
+    bridge._runtime.history = [row]
+    bridge.historyChanged.emit()
+    assert bridge.editLibraryTag(owner, "Shared", False)
+    assert bridge.editLibraryTag(owner, "Personal", False)
+    for _ in range(4):
+        app.processEvents()
+    assert bridge.libraryDetail["sourceTags"] == ["Science", "Shared"]
+    assert bridge.libraryDetail["userTags"] == ["Shared", "Personal"]
+    assert bridge.copyLibraryText(owner, "tags")
+    assert app.clipboard().text() == "Science, Shared, Personal"
+    assert bridge.copyLibraryText(owner, "source_tags")
+    assert app.clipboard().text() == "Science, Shared"
+    chip = next(
+        item
+        for item in visual_descendants(window.contentItem())
+        if item.objectName() == "libraryTagChip"
+        and "read-only" in str(item.property("accessibilityLabel"))
+    )
+    before = bridge._annotations.snapshot
+    assert QMetaObject.invokeMethod(chip, "activated")
+    app.processEvents()
+    assert bridge._annotations.snapshot == before
+    assert bridge.editLibraryTag(owner, "Shared", True)
+    assert bridge.libraryDetail["tags"] == ["Science", "Shared", "Personal"]
+    assert (
+        row["tags"] == original and row["description"] == "Original source description"
+    )
+    assert bridge.libraryDetail["note"] == ""
+    assert bridge.openAnnotationOwner(owner)
+    assert bridge.annotationValues["sourceTags"] == ["Science", "Shared"]
+    assert bridge.annotationValues["tags"] == "Personal"
+    popup = window.findChild(QObject, "libraryAnnotationPopup")
+    popup.open()
+    app.processEvents()
+    chips = [
+        item
+        for item in visual_descendants(popup.property("contentItem"))
+        if item.objectName() == "annotationSourceTagChip"
+    ]
+    assert {item.property("label") for item in chips} == {"Science", "Shared"}
+    assert bridge.saveAnnotation("A personal note", "Personal", "")
+    assert row["tags"] == original
+    assert bridge.libraryDetail["sourceTags"] == ["Science", "Shared"]
+    assert bridge.libraryDetail["note"] == "A personal note"
