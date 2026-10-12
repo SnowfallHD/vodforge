@@ -10,6 +10,7 @@ from collections.abc import Callable
 from itertools import pairwise
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 from .diagnostic_pipeline import diagnostic_surface_contract
 from .fault_server import FixtureHTTPServer
@@ -1052,12 +1053,39 @@ def _recover_with_orphan_child(
     return recovered, error, recovery_reaped_child, trace
 
 
+def _stop_recovered_queue(state_dir: Path, run_state_path: Path, jobs):
+    from yt_downloader.library_state import LibraryProjectionOwner
+    from yt_downloader.qt_quick import runtime as qt_runtime
+
+    with (
+        patch.object(
+            qt_runtime, "history_file_path", return_value=state_dir / "library.json"
+        ),
+        patch.object(qt_runtime, "run_state_file_path", return_value=run_state_path),
+    ):
+        runtime = qt_runtime.DownloadRuntime()
+    try:
+        for index, job in enumerate(jobs):
+            successors = jobs[index + 1 :]
+            runtime.recovery.begin(job, successors)
+            runtime.active_job = job
+            runtime.queued = list(successors)
+            runtime._finish("stopped", "Cancelled before provider analysis")
+        return LibraryProjectionOwner().reconcile(
+            history_items=[],
+            active_job=None,
+            queued_jobs=[],
+            terminal_jobs=runtime.recovered,
+        )
+    finally:
+        runtime.close()
+
+
 def lifecycle_quit_restart_recovery(
     runner: HeadlessPipelineRunner,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Exercise durable settings, run, process, and staging owners across restart."""
 
-    from yt_downloader.app import DownloaderApp
     from yt_downloader.library_state import (
         ACTIVE_METADATA_RUN_ID_KEY,
         QUEUED_METADATA_RUN_ID_KEY,
@@ -1067,7 +1095,6 @@ def lifecycle_quit_restart_recovery(
     )
     from yt_downloader.run_state import (
         ActiveRunStore,
-        RunRecoveryOwner,
     )
     from yt_downloader.safe_output import create_private_staging_directory
     from yt_downloader.settings_store import load_settings, save_settings
@@ -1177,32 +1204,10 @@ def lifecycle_quit_restart_recovery(
     # then both preserved queued jobs are promoted and stopped before provider
     # analysis has created a preview row. Terminalization must create both
     # Library records instead of relying on a preview that may not exist yet.
-    ui_owner = DownloaderApp.__new__(DownloaderApp)
-    ui_owner._terminal_jobs = [*recovered]
-    ui_owner.library_projection = LibraryProjectionOwner()
-    ui_owner.download_history = []
-    ui_owner.pending_jobs = []
-    ui_owner.video_tree = None
-    ui_owner.metadata_items = ()
-    ui_owner._library_suppressed_run_ids = set()
-    ui_owner._focus_active_thumbnail_source_image = None
-    ui_owner._focus_active_thumbnail_is_placeholder = True
-    ui_owner.run_recovery = RunRecoveryOwner(run_state_path)
-    ui_owner._rebuild_output_dir_index = lambda: None
-    ui_owner._terminal_jobs = [
-        item for item in ui_owner._terminal_jobs if item.run_id != job.run_id
-    ]
-    for queued_job, successors in (
-        (first_queued, [second_queued]),
-        (second_queued, []),
-    ):
-        store.begin(queued_job, successors)
-        ui_owner.active_job = queued_job
-        ui_owner.pending_jobs = list(successors)
-        ui_owner._focus_selected_run_id = queued_job.run_id
-        ui_owner._archive_active_terminal_job(
-            "Stopped", "Cancelled before provider analysis"
-        )
+    stopped_projection = _stop_recovered_queue(
+        state_dir, run_state_path, [first_queued, second_queued]
+    )
+    stopped_rows = stopped_projection.rows
     fast_stop_store_snapshot = store.load()
     durable_fast_stops = ActiveRunStore(run_state_path).load_terminal_jobs()
     durable_fast_stop_ids = [item.run_id for item in durable_fast_stops]
@@ -1211,18 +1216,17 @@ def lifecycle_quit_restart_recovery(
         second_queued.run_id,
     ] and all(item.terminal_status == "Stopped" for item in durable_fast_stops)
     sequential_stop_ids = [
-        str(item.get("vodforge_terminal_run_id") or "")
-        for item in ui_owner.metadata_items
+        str(item.get("vodforge_terminal_run_id") or "") for item in stopped_rows
     ]
     sequential_stops_retained = sequential_stop_ids == [
         second_queued.run_id,
         first_queued.run_id,
     ] and all(
         str(item.get("vodforge_terminal_status") or "") == "Stopped"
-        for item in ui_owner.metadata_items
+        for item in stopped_rows
     )
     retry_source = durable_fast_stops[0] if durable_fast_stops else first_queued
-    retry_row_count_before = len(ui_owner.metadata_items)
+    retry_row_count_before = len(stopped_rows)
     retry_job = build_job(
         url=retry_source.url,
         output_dir=retry_source.output_dir,
@@ -1280,7 +1284,7 @@ def lifecycle_quit_restart_recovery(
     )
     invariant_receipts = [
         queued_projection.receipt,
-        ui_owner._last_library_invariant_receipt,
+        stopped_projection.receipt,
         preparing_projection.receipt,
         downloading_projection.receipt,
         transcoding_projection.receipt,
@@ -1417,7 +1421,7 @@ def lifecycle_quit_restart_recovery(
             "fast_stop_store": fast_stop_store_snapshot,
             "projection_rows": {
                 "queued": list(queued_projection.rows),
-                "stopped": list(ui_owner.metadata_items),
+                "stopped": list(stopped_rows),
                 "preparing": list(preparing_projection.rows),
                 "downloading": list(downloading_projection.rows),
                 "transcoding": list(transcoding_projection.rows),
@@ -2180,8 +2184,9 @@ def lifecycle_staging_transitions(
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Observe staging ownership through skip, successor, completion, and removal."""
 
+    if ui != "qt":
+        raise ValueError("Only the maintained Qt renderer is supported")
     from yt_downloader.download_service import create_staging_dir
-    from yt_downloader.library_state import resolve_library_removal_plan
     from yt_downloader.safe_output import cleanup_private_staging_directory
 
     case_root = runner.run_root / "cases" / "lifecycle-staging-transitions"
@@ -2272,14 +2277,6 @@ def lifecycle_staging_transitions(
     )
     library_stage = create_staging_dir(output_dir)
     (library_stage / "active-owner-sentinel").write_bytes(b"active transaction")
-    terminal_info = {
-        "id": "terminal-staging-fixture",
-        "title": "Skipped staging lifecycle fixture",
-        "vodforge_output_type": "MP4",
-        "vodforge_terminal_run_id": "terminal-staging-run",
-        "vodforge_terminal_status": "Skipped",
-        "vodforge_terminal_message": "Video skipped by user",
-    }
     if ui == "qt":
         from PySide6.QtGui import QGuiApplication
 
@@ -2335,24 +2332,6 @@ def lifecycle_staging_transitions(
         finally:
             bridge.close()
             qt_app.processEvents()
-    else:
-        from yt_downloader.app import DownloaderApp as App
-
-        library_app = App.__new__(App)
-        library_app.download_history = []
-        library_app.metadata_items = [terminal_info]
-        library_app.pending_jobs = []
-        library_app._terminal_jobs = []
-        library_app._completed_jobs = []
-        library_app._reconcile_library_projection = lambda: None
-        library_app._record_feature = lambda *_args: None
-        removal_plan = resolve_library_removal_plan(
-            terminal_info,
-            active_job=None,
-            pending_jobs=(),
-        )
-        library_app._apply_library_removal_plan(terminal_info, 0, removal_plan)
-        removal_completed = True
     active_stage_preserved_by_library_removal = (
         library_stage / "active-owner-sentinel"
     ).is_file()

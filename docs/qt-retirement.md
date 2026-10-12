@@ -1,83 +1,26 @@
-# Qt retirement change set
+# Qt retirement checkpoint
 
-Branch:qt-retirement, canonical checkout only. Frozen signed5854619 is immutable and independently assessed. Source cleanup is a successor change; no new build or publication is authorized by these edits.
+Canonical checkout `/Users/coop/Dev/vodforge`, ordinary `qt-retirement` branch. Frozen signed5854619 and existing receipts remain untouched. Source changes require their own successor qualification. No build, worktree, clone, generated-object deletion or publication occurred.
 
-Completed increments:
+Current source has no Tk imports, including nested imports. Ordinary entry, Qt worker, typed events, material helpers and Library recovery use neutral/current owners. Widget implementation, previews, cache generators, obsolete VLC installers and the nonfunctional `--playback-smoke` workflow are retired. Shared worker/data implementations and useful pure provider tests remain. Git retains the old implementations; small disposition receipts name retired widget tests. Remaining Tk strings are exclusions, historical diagnostic labels/receipts, read-only metric/evidence vocabulary and duck-typed QA serialization compatibility. The current Qt routes use their own geometry writer and explicitly attest renderer=qt; those data helpers construct no Tk widget and import no Tk. No current build/runtime entry supports a Tk frontend.
 
--7ca33fc extracts download_service, worker_events, product_theme, visual_chrome/materials, button_metrics and Library recovery prompt. Qt no longer imports app.py or a Tk presentation module.212 unchanged service definitions have AST provenance;24 existing affected controls pass. Qt entry import fails with Tk blocked on prior source and passes after, without creating GUI.
--142b582 makes main.py and both packaging defaults Qt, excludes Tk/ImageTk/legacy libVLC, removes Tk installer prerequisite and stale docs/comments. Ordinary/explicit imports pass with Tk unavailable; both build-script syntax checks pass. No package built.
+Existing source helpers now use actual Qt runtime terminalization, LibraryHistory and Qt copy handlers. Current scene/recovery selectors point to maintained owners. Historical source-suite catalog/receipts stay at v1; current collected rosters use v2. The new catalog records expected collection, not executed evidence. Each actual source receipt still needs bound original JUnit/command/unchanged-source evidence. No universal aggregate campaign was run, and these optional engineering helpers do not add a prerequisite to the user-approved change-risk release pathway. Existing legacy EQH profile declarations have not been rewritten as a new release policy.
 
-Remaining source retirement:
+Observed checks:188 retained data controls;25 announcement controls;1084 historical receipt/negative controls;16 current roster/recovery/queue-adapter controls;19 release-path controls plus the corrected process-separation control;11 actual current history/publication/startup cases with passing v2 source bindings. Full collection6829cases/zero errors after reconciliation. These are bounded source results, not native or packaged acceptance. Original failures and earlier incomplete/unproven receipts remain in recovery-20261011 logs.
 
-1. Retire legacy app.py widget owner after migrating its pure-helper consumers to download_service. Keep worker, media, history, run-state and durable schemas unchanged. Do not keep a fake DownloaderApp class solely to inflate old test counts.
-2. Version-remove legacy Tk UI modules using their existing Qt owners (Main.qml, LibraryScene/Detail/FolderInspector, WatchScene, PlayerScene/Overlay, RunDeck, update_session, support, Qt native window integration). Preserve source rollback in Git, not extra copies.
-3. Remove Tk-only platform_services functions and Linux Tk font aliases; keep shared filesystem/tool discovery/trash/diagnostics functions. Shared pure layout helpers may stay when used by maintained Qt; stale Tk docs are not a runtime dependency.
-4. Migrate shared service tests and individually review mixed widget/worker tests before retiring widget-only cases. Inventory identifies53 direct Tk source modules,262 legacy widget methods and87 app-consumer testfiles;58 reference legacy widget methods. These counts are an inventory, not a gate or claim of incomplete Qt features. Preserve data-recovery, annotations, cancellation, metadata, updater and privacy invariants in Qt/service tests; no blanket skip or deletion of useful mixed tests.
-5. Retire obsolete Tk/libVLC-only runners/workflows/dependency declarations; redirect maintained harness imports to neutral owners. Do not develop new diagnostics or click/coverage mapping.
-6. Validate static imports and package exclusions with Tk unavailable, affected source regressions and representative Qt scene controls. Native successor validation must use the reviewer-coordinated desktop later; frozen585 review cannot qualify these source changes. Build only after applicable obsolete-output cleanup and explicit release-scope reconciliation.
+The general eight-slide announcement again ends in Done (2495176). Its final folder/download-fixes slide has no settings task. e1ff771's general Try it/settings jump was introduced for an old harness expectation, not a demonstrated product requirement. Existing settings-focused tips retain real Try it behavior and its explicit event. Frozen585 still has its original Done flow; candidate-bound producer applicability is separate.
 
-Known constraint: independent reviewer owns Mac/Genesis GUI. No competing source app launch, build, profile mutation or fixture server. Current committed extraction/default changes are source-only. Full retirement is not claimed until remaining source/tests/packaging consumers are removed or migrated. Historical receipts/logs and user data remain untouched.
+## Confirmed ledger startup defect
 
-Direct-Tk source inventory (not deletion approval for generated artifacts):
+Fix commit6f28b81. The original585 runtime constructor raises HistoryError for malformed main JSON, unsupported main schema999 and malformed pending JSON. The source-bound fixture receipt is `build/recovery-20261011/frozen-history-startup-source-classification.json`; all original bytes survive. This is an availability defect present before retirement, not demonstrated data deletion or a new retirement defect.
 
-- yt_downloader/platform_services.py
-- yt_downloader/forge_activity_ui.py
-- yt_downloader/scene_rail.py
-- yt_downloader/update_recovery.py
-- yt_downloader/scene_components.py
-- yt_downloader/archive_library_ui.py
-- yt_downloader/focus_settings.py
-- yt_downloader/whats_new_activity_demo.py
-- yt_downloader/modal_backdrop.py
-- yt_downloader/ui_chrome.py
-- yt_downloader/media_player_ui.py
-- yt_downloader/ui_widgets.py
-- yt_downloader/whats_new_ui.py
-- yt_downloader/choice_popover.py
-- yt_downloader/ui_styles.py
-- yt_downloader/library_file_actions_ui.py
-- yt_downloader/whats_new_feature_preview.py
-- yt_downloader/playback_surface.py
-- yt_downloader/library_annotation_ui.py
-- yt_downloader/playback_probe.py
-- yt_downloader/ui_transition.py
-- yt_downloader/player_scene_ui.py
-- yt_downloader/library_scene_ui.py
-- yt_downloader/ui_context_menu.py
-- yt_downloader/engagement_ui.py
-- yt_downloader/presentation_diagnostics.py
-- yt_downloader/ui_scrolling.py
-- yt_downloader/ui_button_contract.py
-- yt_downloader/activity_ui.py
-- yt_downloader/local_audio_video_ui.py
-- yt_downloader/analytics_consent_ui.py
-- yt_downloader/ui_canvas_actions.py
-- yt_downloader/run_hover_menu.py
-- yt_downloader/player_presentation_ui.py
-- yt_downloader/whats_new_audio_demo.py
-- yt_downloader/watch_ui.py
-- yt_downloader/analytics_qa_probe.py
-- yt_downloader/archive_artwork.py
-- yt_downloader/archive_browser_ui.py
-- yt_downloader/app.py
-- yt_downloader/ui_events.py
-- yt_downloader/library_search_ui.py
-- yt_downloader/archive_presentation.py
-- yt_downloader/library_collection_ui.py
-- yt_downloader/library_media_recovery_ui.py
-- yt_downloader/ui_theme.py
-- yt_downloader/detail_ui.py
-- yt_downloader/ui_editable_text.py
-- yt_downloader/support_ui.py
-- yt_downloader/analytics_startup.py
-- yt_downloader/ui_materials.py
-- yt_downloader/platforms/macos/surfaces.py
-- yt_downloader/platforms/macos/windowing.py
+Successor LibraryHistory catches the failure, preserves the existing ledgers/media, exposes nonprivate recovery guidance and blocks new durable work. `tests/test_qt_history_startup.py` covers those three damaged cases plus absent/valid history. It does not silently empty/rewrite the damaged file. Recovery requires a compatible valid ledger/pending-journal pair and relaunch; do not delete either to manufacture recovery. Full packaged GUI startup/recovery for these cases remains untested.
 
-Oct 12 incremental checkpoint:
+## Bounded completion checklist
 
-- Widget entry is gone (242510c); LibraryHistory is a neutral durable owner (6f28b81).
-- Explicit announcement Try it source correction is e1ff771; HeyCatch desktop transport removal is f42d6eb. Both affect a successor only.
--54 widget/platform source files and legacy previews/probes are retired in the next incremental commit. Mixed service/data test consumers preserve actual worker, recovery, publication and privacy owners. Disposition receipts name retired definitions; implementation rollback stays in Git.
--Full collection6994/zero import errors; retained affected data suites188pass; Qt entry/diagnostic/package-receipt import controls6pass. These counts describe actual checks, not acceptance parity.
--Remaining: reconcile old EQH scene/recovery selectors and dynamic synthetic Tk producer calls, update source-bound selectors, then verify affected current-owner boundaries. Packaging/native/update/privacy qualification is separate and untested for this successor. No new build until retention cleanup prerequisites resolve.
+- Source retirement and maintained caller/selector reconciliation: completed at this checkpoint; keep prior passes and named limitations.
+- Required before successor promotion: current-source CI/build/signing/platform checks; exact packaged core export/playback/queue/quit-restart; the three ledger fixtures and successful relaunch after compatible restoration; affected privacy/consent/outbox and Update/Repair/data-preservation checks. Scope follows the approved high-risk architecture pathway, not an invented all-vocabulary campaign.
+- Build prerequisite remains unresolved: retain the required frozen/current artifacts and obtain the separately required approval for obsolete generated-object deletion. Do not build until retention/free-space prerequisites resolve.
+- Decide/coordinate two source dependencies: compatible macOS build inputs/support claims (see macos-runtime-support.md), and whether to preserve optional neutral-worker frame-location telemetry. Existing client/server closed location catalogs lack download_service/library_history. No alias to a wrong file or wire-contract expansion was made; reasons/stages retain their existing contract, but a neutral-worker exception can omit optional location. A paired app/backend allowlist change is needed for that fidelity. No production data/schema/deployment change is implied.
+
+Optional: re-running entire historical EQH campaigns, legacy widget counts, native cache plateau generation, broad mutation scores, or every visual/timing observation. An actual failure affecting data, privacy, updating or core operation still needs diagnosis; optional tooling is not a waiver for that failure. Physical timing/native OS matrix claims remain limited to actual observed evidence.

@@ -41,9 +41,7 @@ def test_class_runner_rejects_stale_success_and_records_exact_source(
     production = source / "yt_downloader/app.py"
     production.write_text("# exact candidate\n")
     (source / "tests").mkdir()
-    (source / "tests/test_library_recovery_regressions.py").write_text(
-        "# maintained probes\n"
-    )
+    (source / "tests/test_qt_scene_port.py").write_text("# maintained probes\n")
     output = tmp_path / "evidence"
     output.mkdir()
     report = output / "cases.xml"
@@ -59,7 +57,7 @@ def test_class_runner_rejects_stale_success_and_records_exact_source(
             if failure == "changed_source":
                 production.write_text("# changed during validation\n")
             else:
-                (source / "tests/test_library_recovery_regressions.py").write_text(
+                (source / "tests/test_qt_scene_port.py").write_text(
                     "# probes changed during validation\n"
                 )
         return CommandResult(

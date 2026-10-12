@@ -1,7 +1,7 @@
 """Required regression classes for Library recovery and Forge state authority.
 
 Runs maintained behavioral probes against explicitly bound production sources.
-Tcl traces and controlled projection/provider seams do not constitute native
+Controlled Qt projection/provider seams do not constitute native
 window, network transfer, or packaged application evidence.
 """
 
@@ -28,7 +28,7 @@ REGRESSION_CLASSES = {
             "tests/test_recovery_writer_contract.py::test_new_executable_write_rejects_undurable_source_atomically",
             "tests/test_recovery_writer_contract.py::test_generated_queue_writer_restart_preserves_order_and_all_or_nothing",
             "tests/test_recovery_writer_contract.py::test_serialized_source_reason_is_bounded_and_private_input_not_restored",
-            "tests/test_recovery_writer_contract.py::test_rejected_source_link_guidance_matches_actual_launch_refusal",
+            "tests/test_qt_scene_port.py::test_issue_without_saved_source_requires_new_source_in_same_retry_path",
             "tests/test_recovery_missing_retry_url.py",
             "tests/test_run_recovery_observations.py::test_runtime_journal_refusal_is_observed_without_poisoning_recovery",
             "tests/test_run_recovery_observations.py::test_runtime_journal_observation_cannot_change_refusal_or_consent",
@@ -36,10 +36,9 @@ REGRESSION_CLASSES = {
         ),
     ),
     "canonical_facts": (
-        3,
+        1,
         (
-            _NEW
-            + "test_destination_updates_read_canonical_facts_and_never_reingest_rendered_projection",
+            "tests/test_qt_scene_port.py::test_qt_folder_browser_uses_shared_model_and_preserves_version_context",
         ),
     ),
     "selected_item": (
@@ -47,8 +46,7 @@ REGRESSION_CLASSES = {
         (
             _BASE + "test_missing_item_recovery_downloads_only_captured_video",
             _BASE + "test_missing_identity_never_replays_original_playlist",
-            _NEW
-            + "test_recovery_admission_preserves_history_and_bounded_migration_telemetry",
+            "tests/test_qt_relink.py::test_qt_missing_media_redownload_keeps_card_until_replacement_commits",
         ),
     ),
     "retired_presets": (
@@ -71,12 +69,20 @@ REGRESSION_CLASSES = {
         ),
     ),
     "draft_coherence": (
-        3,
+        2,
         (
-            _NEW
-            + "test_legacy_draft_visible_choice_submission_and_lifetime_match_without_saving_defaults",
+            "tests/test_qt_recovery_draft_retirement.py::test_actual_qml_source_edit_retires_draft_without_reviving_or_saving_defaults",
+            "tests/test_qt_recovery_draft_retirement.py::test_qt_send_retires_only_an_accepted_draft",
         ),
     ),
+}
+# Exact current collection count; historical widget totals are not reused.
+_CURRENT_ROSTER = json.loads(
+    Path(__file__).with_name("source_suite_catalog_qt.json").read_text()
+)
+REGRESSION_CLASSES = {
+    name: (_CURRENT_ROSTER["unit_static.recovery_" + name]["minimum"], selectors)
+    for name, (_minimum, selectors) in REGRESSION_CLASSES.items()
 }
 REQUIRED_SCENARIOS = frozenset(
     "unit_static.recovery_" + name for name in REGRESSION_CLASSES
@@ -158,7 +164,7 @@ def recovery_class_contract(
         "import pathlib,sys; "
         "target=pathlib.Path(sys.argv.pop(1)).resolve(); "
         "sys.path.insert(0,str(target)); "
-        "import yt_downloader.download_service as app; "
+        "import yt_downloader.app as app; "
         "assert pathlib.Path(app.__file__).resolve().is_relative_to(target); "
         "import pytest; raise SystemExit(pytest.main(sys.argv[1:]))"
     )
@@ -232,7 +238,7 @@ def recovery_class_contract(
                 "probe_files": fixtures,
                 "probe_files_after": fixtures_after,
                 "probes_unchanged": probes_unchanged,
-                "scope": "Bound production source, controlled seams and headless Tcl; not packaged or native-window proof",
+                "scope": "Bound production source, controlled Qt/service seams; not packaged or native-window proof",
             },
             indent=2,
         )
@@ -265,7 +271,7 @@ def recovery_class_contract(
         "evidence": [
             f"Regression class: {regression_class}; production tree SHA256: {before['sha256']}",
             f"Cases: {count}; minimum required: {minimum}; complete success: {complete}",
-            "Actual production owners; controlled provider/display seams and headless Tcl traces.",
+            "Actual production owners; controlled provider/display seams.",
             "Native resize and exact packaged journey remain separate required gates.",
         ],
         "artifacts": [str(report), str(raw), str(binding)],
@@ -278,7 +284,7 @@ def recovery_class_contract(
         json.dumps(
             {
                 "scenario_id": scenario["id"],
-                "contract": "bound-source-regression-suite-v1",
+                "contract": "bound-source-regression-suite-v2",
                 "scope": "maintained source regression execution; not native or packaged UX",
                 "selectors": list(selectors),
                 "minimum": minimum,

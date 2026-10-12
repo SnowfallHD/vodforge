@@ -15,7 +15,8 @@ from .pipeline_interaction import _contained, _number, load_observation
 from .transaction_interaction import _file, _trace
 
 CATALOG = json.loads(Path(__file__).with_name("source_suite_catalog.json").read_text())
-SOURCE_SUITE_CONTRACTS = {name: "bound-source-regression-suite-v1" for name in CATALOG}
+SOURCE_SUITE_CONTRACTS = {name: "bound-source-regression-suite-v2" for name in CATALOG}
+LEGACY_CONTRACT = "bound-source-regression-suite-v1"
 
 
 def _read(ref, root, check, phase, name, *, xml=False):
@@ -178,7 +179,7 @@ def _evaluate(raw, root, specification, check):
         typed,
         typed
         and argv[1] == "-c"
-        and "import yt_downloader.download_service as app" in argv[2]
+        and "import yt_downloader.app as app" in argv[2]
         and "is_relative_to(target)" in argv[2]
         and argv[3] == source.get("root")
         and argv[4:]
@@ -244,6 +245,12 @@ def _evaluate(raw, root, specification, check):
     )
 
 
+def current_specification(scenario_id):
+    return json.loads(
+        Path(__file__).with_name("source_suite_catalog_qt.json").read_text()
+    )[scenario_id]
+
+
 def evaluate_source_suite(scenario):
     raw, reason = load_observation(scenario)
     rows = []
@@ -272,11 +279,17 @@ def evaluate_source_suite(scenario):
                 "source_suite_identity",
                 "scenario_id" in raw and "contract" in raw,
                 raw.get("scenario_id") == scenario["id"]
-                and raw.get("contract") == SOURCE_SUITE_CONTRACTS[scenario["id"]],
+                and raw.get("contract")
+                in {LEGACY_CONTRACT, SOURCE_SUITE_CONTRACTS[scenario["id"]]},
                 "Explicit suite domain and source-only contract match",
             )
             _evaluate(
-                raw, Path(scenario["raw_result"]).parent, CATALOG[scenario["id"]], check
+                raw,
+                Path(scenario["raw_result"]).parent,
+                CATALOG[scenario["id"]]
+                if raw.get("contract") == LEGACY_CONTRACT
+                else current_specification(scenario["id"]),
+                check,
             )
         except (KeyError, TypeError, ValueError, AttributeError, IndexError):
             check(
@@ -306,6 +319,8 @@ def evaluate_source_suite(scenario):
         "required_phases": list(phases),
         "phase_review": phases,
         "assertion_mapping": rows,
-        "domain_contract": SOURCE_SUITE_CONTRACTS[scenario["id"]],
+        "domain_contract": raw.get("contract")
+        if raw
+        else SOURCE_SUITE_CONTRACTS[scenario["id"]],
         "reason": "Suite admission/execution/unchanged-authority evidence only; actual native behavior and usability remain separate.",
     }

@@ -34,14 +34,7 @@ def family_material_bypasses(source: str) -> list[int]:
 
 
 def inventory(root: Path) -> dict:
-    names = (
-        "ui_widgets.py",
-        "scene_components.py",
-        "ui_button_contract.py",
-        "ui_context_menu.py",
-        "media_player_ui.py",
-        "library_scene_layout.py",
-    )
+    names = ("qt_quick/main.py", "qt_quick/artwork.py")
     return {
         name: {
             "theme_defaults": theme_default_bypasses(

@@ -43,13 +43,19 @@ def test_semantic_scene_probes_are_enrolled_in_their_required_classes():
         enrolled = {selector.split("::")[0] for selector in SCENE_CLASSES[name][1]}
         assert nodes
         assert {node.split("::")[0] for node in nodes} <= enrolled
-    projection = [
-        node
-        for node in SCENE_REQUIRED_TESTS["bounded_navigation"]
-        if node.startswith("tests/test_scene_projection.py::")
-    ]
-    assert len(projection) == 8
+    import ast
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    for nodes in SCENE_REQUIRED_TESTS.values():
+        for node in nodes:
+            filename, function = node.split("::")
+            names = {
+                getattr(n, "name", None)
+                for n in ast.parse((root / filename).read_text()).body
+            }
+            assert function in names, node
     assert any(
-        "continuous_media_window" in node
+        "restores_back_scroll" in node
         for node in SCENE_REQUIRED_TESTS["bounded_navigation"]
     )

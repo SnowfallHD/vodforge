@@ -83,7 +83,7 @@ def change_surface_probe(
             }
         )
 
-    app_path = repo_root / "yt_downloader" / "app.py"
+    app_path = repo_root / "yt_downloader" / "download_service.py"
     line_count = len(app_path.read_text(encoding="utf-8").splitlines())
     definitions = _definitions(app_path)
     oversized = sorted(
@@ -93,7 +93,7 @@ def change_surface_probe(
     )
     largest = oversized[:20]
     app_class = next(
-        (item for item in definitions if item["name"] == "DownloaderApp"), None
+        (item for item in definitions if item["name"] == "DownloadWorkerCore"), None
     )
     worker = next(
         (
@@ -108,22 +108,22 @@ def change_surface_probe(
         findings.append(
             {
                 "id": "MAINT-MONOLITH-001",
-                "title": "The real pipeline is headless-testable but structurally coupled to a very large Tk module",
+                "title": "The real pipeline is headless-testable but still concentrated in a large neutral service module",
                 "classification": "maintainability risk",
                 "severity": "medium",
-                "area": "yt_downloader/app.py DownloaderApp and _download_worker_single",
+                "area": "yt_downloader/download_service.py DownloadWorkerCore and _download_worker_single",
                 "reproduction": [
                     "Parse production Python definitions with the standard AST.",
                     "Measure module, class, and worker spans.",
                     "Map realistic change anchors across production and tests.",
                 ],
                 "evidence": [
-                    f"app.py lines: {line_count}",
-                    f"DownloaderApp span: {(app_class or {}).get('lines')} lines",
+                    f"download_service.py lines: {line_count}",
+                    f"DownloadWorkerCore span: {(app_class or {}).get('lines')} lines",
                     f"_download_worker_single span: {(worker or {}).get('lines')} lines",
                     f"Definitions >=100 lines: {len(oversized)}",
                 ],
-                "suggested_fix": "After behavior is protected by this harness, extract a UI-independent orchestration service and typed event protocol without changing the existing export/path/history sources of truth.",
+                "suggested_fix": "After behavior is protected by this harness, split the remaining worker orchestration into cohesive neutral services without changing the existing export/path/history sources of truth.",
                 "scenario_id": "maintainability.change_surface",
             }
         )

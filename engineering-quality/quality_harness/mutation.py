@@ -51,19 +51,6 @@ MUTANTS = (
     ),
 )
 
-ARTWORK_MUTANTS = (
-    (
-        "artwork_stale_size_admitted",
-        "if result is not None and self._artwork_submitted_size != self._artwork_size:",
-        "if False and result is not None:",
-    ),
-    (
-        "artwork_hero_size_ignored",
-        'requested_specs.get(\n                        key, (requested_size, "", 8)\n                    )',
-        '(requested_size, "", 8)',
-    ),
-)
-
 
 def _workspace(repo_root: Path, destination: Path) -> Path:
     shutil.copytree(
@@ -79,10 +66,7 @@ def _workspace(repo_root: Path, destination: Path) -> Path:
         "test_history_pending.py",
         "test_archive_relink.py",
         "test_archive_models.py",
-        "test_archive_ui_owners.py",
         "test_archive_work.py",
-        "test_archive_artwork.py",
-        "test_matte_theme.py",
     ):
         shutil.copy2(repo_root / "tests" / name, tests / name)
     return destination
@@ -133,7 +117,6 @@ def run_bounded_mutation_campaign(
         "-q",
         "tests/test_history.py",
         "tests/test_history_pending.py",
-        "tests/test_archive_artwork.py",
         "--junitxml=mutation.xml",
     ]
     started = time.monotonic()
@@ -170,9 +153,7 @@ def run_bounded_mutation_campaign(
         }
     )
     mutant_results: list[dict[str, Any]] = []
-    targets = [(item, "history.py") for item in MUTANTS] + [
-        (item, "archive_artwork.py") for item in ARTWORK_MUTANTS
-    ]
+    targets = [(item, "history.py") for item in MUTANTS]
     for (mutant_id, original, replacement), source_file in targets:
         mutant_root = _workspace(repo_root, case_dir / mutant_id)
         source_path = mutant_root / "yt_downloader" / source_file
@@ -251,13 +232,13 @@ def run_bounded_mutation_campaign(
             "mutants": mutant_results,
         },
         "evidence": [
-            f"Unmodified copied history and artwork tests return code: {baseline.returncode}",
+            f"Unmodified copied history tests return code: {baseline.returncode}",
             f"Bounded explicit mutants killed: {killed_count}/{total}",
             *[
                 f"{item['id']}: {'killed' if item['killed'] else 'survived/invalid'} (rc={item['returncode']})"
                 for item in mutant_results
             ],
-            "This score covers bounded history/privacy/restart-recovery/diagnostic and responsive-artwork regressions and is not a repository-wide mutation score.",
+            "This score covers bounded history/privacy/restart-recovery/diagnostic regressions and is not a repository-wide mutation score.",
         ],
         "artifacts": [str(case_dir)],
         "error": None,
@@ -267,10 +248,10 @@ def run_bounded_mutation_campaign(
         findings.append(
             {
                 "id": "TEST-MUTATION-HISTORY-001",
-                "title": "Existing history and artwork tests did not kill every bounded high-value mutant",
+                "title": "Existing history tests did not kill every bounded high-value mutant",
                 "classification": "maintainability risk",
                 "severity": "medium",
-                "area": "History and Archive artwork production owners and regression tests",
+                "area": "History production owner and regression tests",
                 "reproduction": [
                     "Run ./engineering-quality/run normal --scenario unit_static.bounded_mutation_history.",
                     "Inspect each disposable mutant result under the scenario artifact directory.",
@@ -294,12 +275,12 @@ def run_bounded_mutation_campaign(
         {
             "scenario_id": scenario["id"],
             "contract": "bounded-private-source-mutants-v1",
-            "scope": "nine explicit private-copy history/artwork mutations; not repository-wide quality",
+            "scope": "seven explicit private-copy history mutations; not repository-wide quality",
             "trace": trace,
             "mutants": observations,
             "baseline_sources": {
                 name: file_observation(baseline_root / "yt_downloader" / name)
-                for name in ("history.py", "archive_artwork.py")
+                for name in ("history.py",)
             },
         },
     )

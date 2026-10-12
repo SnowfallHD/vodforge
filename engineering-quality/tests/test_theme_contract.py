@@ -31,13 +31,7 @@ def test_product_controls_do_not_freeze_theme_defaults():
 
 def test_control_adapters_have_no_private_raster_face_clones():
     root = Path(__file__).resolve().parents[2]
-    for name in (
-        "ui_widgets.py",
-        "scene_components.py",
-        "ui_button_contract.py",
-        "ui_context_menu.py",
-        "media_player_ui.py",
-    ):
+    for name in ("qt_quick/main.py", "qt_quick/artwork.py"):
         assert (
             family_material_bypasses(
                 (root / "yt_downloader" / name).read_text(encoding="utf-8")

@@ -643,8 +643,8 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                 # hand-built vocabulary events alone cannot detect cause loss.
                 from types import SimpleNamespace
 
-                from yt_downloader.app import DownloaderApp
                 from yt_downloader.history import pending_history_path
+                from yt_downloader.library_history import LibraryHistory
 
                 producer_events = []
                 for document, raw, cause in (
@@ -661,14 +661,9 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                         else pending_history_path(history_path)
                     )
                     damaged.write_text(raw)
-                    app = SimpleNamespace(
-                        history_path=history_path,
-                        product_telemetry=usage,
-                        status_var=SimpleNamespace(set=lambda value: None),
-                        _append_log=lambda value: None,
-                    )
+                    library = LibraryHistory(history_path, usage)
                     previous = len(delivered)
-                    DownloaderApp._load_download_history(app)
+                    assert not library.load()
                     assert usage.shutdown(10), "History producer did not drain"
                     observed = delivered[previous:]
                     assert [event["action"] for event in observed] == [
@@ -682,7 +677,7 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                     )
                     assert failure["failure_detail"]["source_module"] == "history"
                     assert failure["dimensions"]["operation_step"] == "2"
-                    assert damaged.read_text() == raw and app._history_recovery_blocked
+                    assert damaged.read_text() == raw and library.blocked
                     assert "PRIVATE" not in json.dumps(observed)
                     producer_events.extend(observed)
                 (case_dir / "history-producer-events.json").write_text(
@@ -690,46 +685,68 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                 )
                 # Exercise actual canonical metadata copy producers as well. The
                 # clipboard is controlled; the consent/outbox/HTTP/D1 owners are real.
-                copy_app = object.__new__(DownloaderApp)
-                copy_app.product_telemetry = usage
-                copy_app.metadata_items = [
-                    {
-                        "tags": ["PRIVATE source"],
-                        "description": "PRIVATE description",
-                        "vodforge_user_tags": ["PRIVATE personal"],
-                        "vodforge_user_note": "PRIVATE note",
-                        "thumbnail": "https://example.invalid/PRIVATE.jpg",
-                        "webpage_url": "https://www.youtube.com/watch?v=abcdefghijk",
-                    }
-                ]
-                copy_app.video_tree = SimpleNamespace(selection=lambda: ("0",))
-                copy_app.status_var = SimpleNamespace(set=lambda value: None)
+                from types import MethodType
+
+                from PySide6.QtGui import QGuiApplication
+
+                from yt_downloader.qt_quick.main import Bridge
+
+                row = {
+                    "tags": ["PRIVATE source"],
+                    "description": "PRIVATE description",
+                    "vodforge_user_tags": ["PRIVATE personal"],
+                    "vodforge_user_note": "PRIVATE note",
+                    "thumbnail": "https://example.invalid/PRIVATE.jpg",
+                    "webpage_url": "https://www.youtube.com/watch?v=abcdefghijk",
+                }
+                copy_app = SimpleNamespace(
+                    _library_detail_owner="fixture",
+                    _folder_inspector_owner="",
+                    _playback_record=None,
+                    _saved_item_for_owner=lambda requested: (
+                        row if requested == "fixture" else None
+                    ),
+                    statusChanged=SimpleNamespace(emit=lambda: None),
+                    _analytics=SimpleNamespace(telemetry=usage),
+                )
+                copy_app._record_update_feature = MethodType(
+                    Bridge._record_update_feature, copy_app
+                )
                 copied = []
-                copy_app.clipboard_clear = copied.clear
-                copy_app.clipboard_append = copied.append
+                clipboard = SimpleNamespace(
+                    setText=lambda value: copied.__setitem__(slice(None), [value])
+                )
                 copy_events = []
                 for method, action, expected in (
-                    ("_copy_tags", "source_tags_copied", "PRIVATE source"),
+                    ("source_tags", "source_tags_copied", "PRIVATE source"),
                     (
-                        "_copy_description",
+                        "source_description",
                         "source_description_copied",
                         "PRIVATE description",
                     ),
-                    ("_copy_personal_tags", "personal_tags_copied", "PRIVATE personal"),
-                    ("_copy_personal_note", "personal_note_copied", "PRIVATE note"),
+                    ("tags", "personal_tags_copied", "PRIVATE personal"),
+                    ("note", "personal_note_copied", "PRIVATE note"),
                     (
-                        "_copy_thumbnail_url",
+                        "thumbnail_url",
                         "thumbnail_url_copied",
                         "https://example.invalid/PRIVATE.jpg",
                     ),
                     (
-                        "_copy_youtube_url",
+                        "youtube_url",
                         "youtube_url_copied",
                         "https://www.youtube.com/watch?v=abcdefghijk",
                     ),
                 ):
                     previous = len(delivered)
-                    assert getattr(copy_app, method)() and copied == [expected]
+                    with patch.object(
+                        QGuiApplication, "clipboard", return_value=clipboard
+                    ):
+                        copied_successfully = (
+                            Bridge.copySavedYoutubeUrl(copy_app, "fixture")
+                            if method == "youtube_url"
+                            else Bridge.copyLibraryText(copy_app, "fixture", method)
+                        )
+                    assert copied_successfully and copied == [expected]
                     assert usage.shutdown(10), "Copy producer did not drain"
                     observed = delivered[previous:]
                     assert len(observed) == 1 and observed[0]["action"] == action
@@ -739,125 +756,14 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                 (case_dir / "copy-producer-events.json").write_text(
                     json.dumps(copy_events, indent=2)
                 )
-                from yt_downloader.watch_ui import WatchView
-
-                watch = object.__new__(WatchView)
-                watch._hero_seen_key = ""
-                watch._mode = "playlists"
-                watch._on_usage = copy_app._archive_usage
-                played = []
-                watch._on_play = played.append
-                previous = len(delivered)
-                watch._observe_hero("PRIVATE source identity")
-                watch._observe_hero("PRIVATE source identity")
-                watch._play_hero(7)
-                assert usage.shutdown(10), "Hero producer did not drain"
-                hero_events = delivered[previous:]
-                assert played == [7]
-                assert [event["action"] for event in hero_events] == [
-                    "hero_shown",
-                    "hero_played",
-                ]
-                assert all(
-                    event["dimensions"] == {"watch_mode": "playlists"}
-                    for event in hero_events
-                )
-                assert "PRIVATE" not in json.dumps(hero_events)
-                (case_dir / "hero-producer-events.json").write_text(
-                    json.dumps(hero_events, indent=2)
-                )
-                from yt_downloader.media_player_ui import MediaPlayerWindow
-
-                player = object.__new__(MediaPlayerWindow)
-                player._closed = False
-                player.popup = SimpleNamespace(winfo_ismapped=lambda: True)
-                player._page_surface = SimpleNamespace(
-                    viewport=SimpleNamespace(
-                        winfo_rooty=lambda: 0, winfo_height=lambda: 100
-                    )
-                )
-                player._information_seen = set()
-                player._on_feature = lambda action, **fields: copy_app._record_feature(
-                    "player", action, **fields
-                )
-                previous = len(delivered)
-                targets = ("chapters", "info", "source", "output", "notes", "moments")
-                player._detail_targets = {
-                    f"PRIVATE owned panel {i}": target
-                    for i, target in enumerate(targets)
-                }
-                positions = {key: 200 for key in player._detail_targets}
-                player._information_sections = {
-                    key: SimpleNamespace(
-                        winfo_rooty=lambda key=key: positions[key],
-                        winfo_height=lambda: 40,
-                    )
-                    for key in player._detail_targets
-                }
-                player._observe_information()
-                for panel in player._detail_targets:
-                    positions[panel] = 10
-                    player._observe_information()
-                    player._observe_information()
-                    positions[panel] = 200
-                assert usage.shutdown(10), "Player disclosure producers did not drain"
-                player_events = delivered[previous:]
-                assert [event["action"] for event in player_events] == [
-                    "detail_viewed"
-                ] * 6
-                assert [
-                    event["dimensions"]["detail_target"]
-                    for event in player_events
-                    if event["action"] == "detail_viewed"
-                ] == list(targets)
-                assert all(event["feature"] == "player" for event in player_events)
-                assert "PRIVATE" not in json.dumps(player_events)
-                (case_dir / "player-disclosure-producer-events.json").write_text(
-                    json.dumps(player_events, indent=2)
-                )
-                # Controlled providers exercise real backend, player, app,
-                # consent/outbox and HTTP Worker/D1 producers. This is diagnostic
-                # provenance evidence, not a native or audible-output test.
-                from quality_harness.playback_probe import CASES, run_case
-
-                control_events = []
-                control_results = []
-                for case in CASES:
-                    previous = len(delivered)
-                    result = run_case(case_dir / "playback" / case, usage, case)
-                    assert usage.shutdown(10), "Playback producer did not drain"
-                    observed = delivered[previous:]
-                    assert observed and observed[-1]["action"] == "closed"
-                    assert "PRIVATE" not in json.dumps(observed)
-                    result["event_ids"] = [event["event_id"] for event in observed]
-                    result["outcomes"] = [
-                        event["dimensions"]["volume_outcome"]
-                        for event in observed
-                        if event["action"].startswith("volume_")
-                    ]
-                    control_results.append(result)
-                    control_events.extend(observed)
-                results = {value["case"]: value for value in control_results}
-                assert results["immediate_mute"]["outcomes"] == ["applied"]
-                assert results["delayed_mute"]["outcomes"] == ["pending", "applied"]
-                assert results["pending_at_close"]["outcomes"] == [
-                    "pending",
-                    "pending_at_close",
-                ]
-                assert results["setter_exception"]["outcomes"] == ["failed"]
-                assert results["command_flood"]["outcomes"][-1] == "pending_at_close"
-                assert len(results["command_flood"]["outcomes"]) == 33
-                (case_dir / "playback-control-producer-events.json").write_text(
-                    json.dumps(control_events, indent=2)
-                )
-                (case_dir / "playback-control-results.json").write_text(
-                    json.dumps(control_results, indent=2)
-                )
+                # Widget hero/disclosure/VLC adapter probes were retired with their owners.
+                # Actual Qt ownership/playback producers are covered by the existing
+                # Qt diagnostic pipeline and Qt telemetry/runtime tests separately.
                 assert len(delivered) == len(dimensions) + 2 + len(
                     producer_events
-                ) + len(copy_events) + len(hero_events) + len(player_events) + len(
-                    control_events
-                ), f"Missing or duplicated emitted metrics: {len(delivered)}"
+                ) + len(copy_events), (
+                    f"Missing or duplicated emitted metrics: {len(delivered)}"
+                )
                 for payload in delivered:
                     assert owner.event(payload)
                 process.stdin.write('{"op":"snapshot"}\n')

@@ -1297,3 +1297,52 @@ and its original checks remain historical Git/log evidence, not successor produc
 requirements. Frozen585 is untouched; its candidate-bound producer applicability
 correction459f578 remains separate from this source/product decision. No fabricated
 Done event, schema/data change, gate waiver, build or publication.
+
+## Oct 12 — reconcile remaining retirement callers and preserve historical evidence
+
+Useful restart/staging helpers now use actual Qt runtime/recovery/projection;
+metadata-copy/history producers use actual Qt handlers and LibraryHistory. Retired
+widget-only hero/disclosure/VLC producer adapters and Tk cache generation with
+explicit existing Qt telemetry/player controls retained separately. Removed obsolete
+VLC installers/bootstrap calls and nonfunctional playback-smoke workflow; current
+Qt packaged checks/signing/installer paths remain. Maintainability still reports the
+large neutral worker, rather than falsely passing because app.py became small.
+
+Current scene/recovery rosters resolve to maintained nodes. Collection-only roster
+refresh27domains/618unique nodes is NOT execution evidence or a campaign. Historical
+v1 catalog and original source-suite observations untouched; current v2 receipts
+cannot relabel those passes. Original generic v2 history adapter11cases passed but
+binding unproven due missing exact roster; retained. Separate current v2 run11/11
+and source/constituent binding passes, no backfill. Legacy source-receipt positive
+and negative controls1084pass after restoring the valid modern app entry provenance
+anchor. Initial28fail/1164pass attempt retains old selector/bootstrap failures; its
+negative-only passes were not used to claim current baseline qualification.
+
+Current roster/recovery/real queue adapter16pass; two focused adapter/theme checks
+pass; release-path19pass initially, missing new Qt history/import process separation
+fails then passes after explicit enrollment in build_mac/tests workflow. All20unique
+release checks now pass. No compiler/package invoked (bash syntax only). Full current
+collection6829/zero errors; source AST scan includes nested imports and finds zero
+Tk imports. Modified Python compile/Ruff and diff checks pass. Source results only.
+
+Explicit limits/dependencies: Library fix6f28b81 targets the original585 malformed
+main/schema999/malformed-pending availability defect, preserving bytes and refusing
+new work; actual successor damaged-profile GUI/recovery still untested. Optional
+neutral-worker frame location is omitted because the existing app/server catalog
+has no new module label; actual captured helper exception confirms this without a
+transport. No incorrect alias or production/wire/schema expansion. Required versus
+optional checks and the bounded remaining checklist are in docs/qt-retirement.md.
+No frozen mutation, build, production change, permission expansion or publication.
+
+## Oct 12 — macOS dependency floors, read-only
+
+Site owner's official0.2.5 bounded ZIP evidence confirms primary Python26/15,
+FFmpeg+ffprobe26/14, PySide15/15 and QtCore13/13 (ARM/Intel). This means necessary
+26/15 floors, not an OS support matrix. Existing frozen585 full native-file scan
+460ARM/462Intel finds highest declared15.0 and zero scan errors. Current local
+Python and FFmpeg tools declare26.0, so a local ARM rebuild reusing them would
+retain26. No intentional26 policy/deployment target found; CI uses15 builders.
+Successor floor is undetermined until build inputs/final dependencies/oldest-OS
+execution are qualified. Metadata-only lowering is invalid. Exact receipts under
+recovery-20261011; docs/macos-runtime-support.md describes the packaging choice.
+No build/tool install/environment or package mutation occurred.
