@@ -7031,11 +7031,10 @@ def test_watch_recently_added_and_see_all_preserve_history_recency(tmp_path):
 def test_batch_current_metadata_and_whole_batch_progress(
     tmp_path, monkeypatch, outcome_kind
 ):
-    from yt_downloader.ui_events import job_info_event
-
     from yt_downloader.download_service import DownloadWorkerCore
     from yt_downloader.models import DownloadOutcome
     from yt_downloader.qt_quick.runtime import _WorkerEventQueue
+    from yt_downloader.worker_events import job_info_event
 
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
