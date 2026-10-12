@@ -5774,6 +5774,15 @@ class Bridge(QObject):
         ]
         return matches[0] if len(matches) == 1 else None
 
+    @Slot(str, result=bool)
+    def libraryOwnerHasSavedFile(self, owner: str) -> bool:
+        item = self._saved_item_for_owner(owner)
+        path = history_output_path(item) if item is not None else None
+        try:
+            return path is not None and path.is_file()
+        except OSError:
+            return False
+
     @Slot(str)
     def openLibraryOwner(self, owner: str) -> None:
         item = self._saved_item_for_owner(owner)
@@ -5826,7 +5835,9 @@ class Bridge(QObject):
             self._status = "The saved media folder is unavailable."
             self.statusChanged.emit()
             return
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.parent)))
+        if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.parent))):
+            self._status = "The saved media folder could not be opened."
+            self.statusChanged.emit()
 
     @Slot(str, result=bool)
     def copySavedYoutubeUrl(self, owner: str) -> bool:

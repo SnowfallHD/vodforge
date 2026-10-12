@@ -184,6 +184,8 @@ Item {
     }
 
     property var selectedRecord: ({})
+    readonly property string completedOwner: selectedRecord.kind === "completed" ? (selectedRecord.owner || "") : ""
+    readonly property bool completedFileAvailable: completedOwner.length > 0 && appBridge.libraryOwnerHasSavedFile(completedOwner)
     AnchoredPopup {
         id: actionsPopup
         objectName: "runActionsPopup"
@@ -201,6 +203,31 @@ Item {
         ColumnLayout {
             width: actionsPopup.availableWidth
             spacing: 6
+            StoneButton {
+                objectName: "runCompletedPlay"
+                visible: deck.completedOwner.length > 0
+                enabled: deck.completedFileAvailable
+                label: "Play"
+                Accessible.description: enabled ? "Play this saved media" : "Saved media is unavailable. Open Show in Library for recovery."
+                Layout.fillWidth: true
+                onActivated: { deck.appBridge.openLibraryOwner(deck.completedOwner); actionsPopup.close() }
+            }
+            StoneButton {
+                objectName: "runCompletedShowInLibrary"
+                visible: deck.completedOwner.length > 0
+                label: "Show in Library"
+                Layout.fillWidth: true
+                onActivated: { if (deck.appBridge.openLibraryDetails(deck.completedOwner)) deck.appBridge.select("Library"); actionsPopup.close() }
+            }
+            StoneButton {
+                objectName: "runCompletedShowInFolder"
+                visible: deck.completedOwner.length > 0
+                enabled: deck.completedFileAvailable
+                label: "Show in Folder"
+                Accessible.description: enabled ? "Open this saved media folder" : "Saved media is unavailable. Open Show in Library for recovery."
+                Layout.fillWidth: true
+                onActivated: { deck.appBridge.openLibraryFolder(deck.completedOwner); actionsPopup.close() }
+            }
             StoneButton {
                 objectName: "deckControl0"
                 property var action: deck.selectedRecord.kind === "active" ? ((deck.selectedRecord.controls || [])[0] || ({})) : ({})
