@@ -162,7 +162,9 @@ def test_report_shows_functional_temporal_and_usability_results_together():
         ("maintainability.change_surface", "passed"),
     ],
 )
-def test_release_keeps_usability_as_a_separate_required_decision(scenario_id, expected):
+def test_release_keeps_usability_optional_and_interaction_required(
+    scenario_id, expected
+):
     checks = evaluate_engineering_result(
         {
             "profile": "normal",
@@ -178,4 +180,8 @@ def test_release_keeps_usability_as_a_separate_required_decision(scenario_id, ex
     )
     gate = next(c for c in checks if c["id"] == "normal.usability." + scenario_id)
     assert gate["status"] == expected
-    assert gate["required"] is True and gate["evidence"]
+    assert gate["required"] is False and gate["evidence"]
+    interaction = next(
+        c for c in checks if c["id"] == "normal.interaction." + scenario_id
+    )
+    assert interaction["required"] is True

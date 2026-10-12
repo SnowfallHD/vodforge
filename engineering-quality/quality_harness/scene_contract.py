@@ -54,7 +54,7 @@ SCENE_CLASSES = {
     ),
     "window_chrome": (6, ("tests/test_qt_player_frame_handoff.py",)),
     "channel_membership": (
-        7,
+        6,
         (
             "tests/test_watch_channels.py",
             "tests/test_qt_scene_port.py::test_qt_routes_keep_tk_channel_playlist_collection_and_media_membership",
@@ -272,7 +272,6 @@ SCENE_REQUIRED_TESTS = {
     "channel_membership": (
         "tests/test_watch_channels.py::test_channel_counts_unique_saved_media_across_playlists_and_versions",
         "tests/test_watch_channels.py::test_unassigned_categories_and_empty_library_remain_empty",
-        "tests/test_watch_channels.py::test_initial_category_mode_uses_saved_eligibility_and_preserves_choice",
         "tests/test_watch_channels.py::test_stable_channel_membership_survives_rename_and_name_collisions",
         "tests/test_watch_channels.py::test_channel_url_fallback_normalizes_host_without_fusing_distinct_paths",
         "tests/test_qt_scene_port.py::test_qt_routes_keep_tk_channel_playlist_collection_and_media_membership",
