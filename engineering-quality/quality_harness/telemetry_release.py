@@ -42,7 +42,7 @@ ANNOUNCEMENT_SOURCE_FILES = (
     "yt_downloader/whats_new.py",
     "yt_downloader/qt_quick/main.py",
     "yt_downloader/qt_quick/EditorialPopup.qml",
-    "yt_downloader/whats_new_ui.py",
+    "yt_downloader/qt_quick/Main.qml",
     "yt_downloader/telemetry_features.py",
 )
 
@@ -111,7 +111,7 @@ def candidate_announcement_actions(candidate, data) -> set[str]:
         ):
             raise ValueError("Unsupported candidate announcement slide")
         keys.append(ast.literal_eval(slide.args[0]))
-    # Both the Qt finish label and legacy settings_action use this predicate.
+    # Current Qt finish-label semantics; no retired widget producer dependency.
     return (
         {"shown", "try_it"}
         if mode == "did-you-know" or keys == ["output-settings"]

@@ -195,7 +195,7 @@ def test_blocked_recovery_returns_explicit_failed_receipt(monkeypatch, tmp_path)
 
 
 def test_default_workspace_fits_previously_failed_fixture_paths(monkeypatch, tmp_path):
-    from yt_downloader import app
+    from yt_downloader import download_service as app
 
     monkeypatch.delenv("VODFORGE_QUALITY_WORKSPACE_ROOT", raising=False)
     root = cli._create_quality_workspace(tmp_path / "external-receipt", "budget")

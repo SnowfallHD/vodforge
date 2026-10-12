@@ -575,7 +575,10 @@ def _evaluate(raw: dict[str, Any], specification: tuple, check: Any) -> None:
         bool(job.get("run_id"))
         and job.get("output_type") == output_type
         and raw.get("pipeline_entrypoint")
-        == "yt_downloader.app.DownloadWorkerCore._download_worker_single",
+        in {
+            "yt_downloader.app.DownloadWorkerCore._download_worker_single",
+            "yt_downloader.download_service.DownloadWorkerCore._download_worker_single",
+        },
         "Actual worker entrypoint and requested format/run identity",
     )
     times = (

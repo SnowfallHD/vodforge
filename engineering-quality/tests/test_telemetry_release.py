@@ -521,37 +521,6 @@ def test_applicable_player_action_still_blocks_release(platform):
     assert any("('player', 'fit')" in error for error in validate_journey(data))
 
 
-@pytest.mark.parametrize(
-    "platform, expected", [("win32", []), ("darwin", ["controls_fallback"])]
-)
-def test_real_legacy_overlay_owner_only_emits_fallback_on_macos(
-    monkeypatch, platform, expected
-):
-    import sys
-    from types import ModuleType, SimpleNamespace
-    from unittest.mock import Mock
-
-    from yt_downloader.player_presentation_ui import PlayerPresentationMixin
-
-    overlay = ModuleType("yt_downloader.platforms.macos.player_overlay")
-    overlay.MacOSPlayerOverlay = Mock(
-        side_effect=RuntimeError("controlled overlay refusal")
-    )
-    monkeypatch.setitem(sys.modules, overlay.__name__, overlay)
-    monkeypatch.setattr("yt_downloader.player_presentation_ui.sys.platform", platform)
-    observed = []
-    owner = SimpleNamespace(
-        embedded=True,
-        _surface_owner=object(),
-        _dispatch_overlay_action=Mock(),
-        _on_feature=observed.append,
-        transport=SimpleNamespace(grid=Mock()),
-    )
-    PlayerPresentationMixin._install_native_controls(owner)
-    assert observed == expected
-    assert overlay.MacOSPlayerOverlay.call_count == (1 if platform == "darwin" else 0)
-
-
 QT_LEGACY_ACTIONS = (
     ("help_operation", "popup_returned"),
     ("library", "source_tags_copied"),
@@ -759,34 +728,32 @@ def test_unknown_or_empty_editorial_configuration_fails_closed(
         ("did-you-know", ["tip"], True),
     ],
 )
-def test_actual_legacy_editorial_owner_distinguishes_done_and_try_it(
+def test_actual_qt_editorial_owner_distinguishes_done_and_try_it(
     monkeypatch, mode, keys, try_it
 ):
     from types import SimpleNamespace
-    from unittest.mock import Mock
 
-    from yt_downloader.whats_new import FeatureHighlight, NativePreview, WhatsNewOwner
+    from yt_downloader.qt_quick.main import Bridge
+    from yt_downloader.whats_new import FeatureHighlight, NativePreview
 
-    panel = Mock()
-    monkeypatch.setattr("yt_downloader.whats_new_ui.WhatsNewPanel", panel)
-    observed, opened = [], []
-    owner = WhatsNewOwner(
-        None,
-        SimpleNamespace(get=lambda: "", set=lambda _: None),
-        lambda: True,
-        mode=mode,
-        highlights=tuple(
+    observed = []
+    owner = SimpleNamespace(
+        _editorial_kind=mode,
+        _editorial_slides=tuple(
             FeatureHighlight(key, key, key, NativePreview.OUTPUT_SETTINGS)
             for key in keys
         ),
-        on_feature=observed.append,
-        open_settings=lambda: opened.append(True),
+        _settings={},
+        _schedule_preferences_save=lambda: None,
+        _record_update_feature=lambda feature, action: observed.append(
+            (feature, action)
+        ),
+        _help_observations=SimpleNamespace(panel_closed=lambda: None),
+        editorialChanged=SimpleNamespace(emit=lambda: None),
     )
-    owner.show()
-    assert observed == ["shown"]
-    finish = panel.call_args.kwargs["on_finish"]
-    assert bool(finish) is try_it
-    if finish:
-        finish()
-    assert observed == (["shown", "try_it"] if try_it else ["shown"])
-    assert opened == ([True] if try_it else [])
+    label = Bridge.editorialFinishLabel.fget(owner)
+    assert (label == "Try it") is try_it
+    Bridge.dismissEditorial(owner, label == "Try it")
+    Bridge.dismissEditorial(owner, True)
+    assert observed == ([("announcement", "try_it")] if try_it else [])
+    assert not owner._editorial_kind and not owner._editorial_slides

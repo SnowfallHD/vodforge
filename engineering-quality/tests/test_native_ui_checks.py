@@ -31,11 +31,11 @@ def test_missing_native_evidence_fails(tmp_path):
 
 def test_native_scenario_uses_schema_compatible_evidence(tmp_path, monkeypatch):
     def run(*args, **kwargs):
-        assert "tests/test_archive_actual_playback.py" in args[0]
-        assert "tests/test_watch_queue_native.py" in args[0]
-        assert "tests/test_shared_header_action_native.py" in args[0]
+        assert any(str(part).startswith("tests/test_qt_") for part in args[0])
         assert kwargs["env"]["VODFORGE_ACTUAL_PLAYBACK_TESTS"] == "1"
-        (tmp_path / "native.xml").write_text("<testsuite><testcase /></testsuite>")
+        Path(kwargs["env"]["VODFORGE_NATIVE_EVIDENCE_DIR"], "native.xml").write_text(
+            "<testsuite><testcase /></testsuite>"
+        )
         return CommandResult(args[0], 0, 1.0, "1 passed", "")
 
     monkeypatch.setattr(native_ui_checks, "run_command", run)
@@ -116,11 +116,11 @@ def test_native_timeout_retains_raw_result_and_cannot_reuse_old_success(
     monkeypatch.setattr(native_ui_checks, "run_command", timed_out)
     scenario, _ = native_ui_checks.native_surface_contract(tmp_path, tmp_path)
     assert scenario["status"] == "failed"
-    assert scenario["duration_seconds"] == 1800.1
+    assert scenario["duration_seconds"] == pytest.approx(3 * 1800.1)
     assert scenario["metrics"]["timed_out"]
     assert scenario["error"] == "Native suite exceeded 1800 seconds"
     assert not (tmp_path / "native.xml").exists()
-    raw = json.loads((tmp_path / "native-command.json").read_text())
+    raw = json.loads((tmp_path / "scene/native-command.json").read_text())
     assert raw["timed_out"] and not raw["unavailable"]
     assert raw["stdout"] == "partial native progress"
     assert raw["stderr"] == "last warning"
@@ -144,39 +144,23 @@ def test_actual_command_timeout_retains_both_flushed_output_streams(tmp_path):
 @pytest.mark.parametrize("platform", ["darwin", "win32"])
 def test_common_native_contracts_run_on_both_platforms(tmp_path, monkeypatch, platform):
     monkeypatch.setattr(native_ui_checks.sys, "platform", platform)
+    observed = []
 
     def run(command, **kwargs):
-        for family in (
-            "foundation_acceptance",
-            "library_file_actions",
-            "relink_consent",
-            "relink_navigation",
-            "relink_admission",
-            "relink_layout",
-            "widget_reveal",
-            "button_parity",
-            "inline_description",
-            "player_layout",
-            "startup_update",
-        ):
-            assert f"tests/test_{family}_native.py" in command
-        for family in (
-            "library_restraint",
-            "description_readability",
-            "archive_overlay_reveal",
-            "surface_raster",
-            "surface_memory",
-            "view_transition",
-        ):
-            assert (f"tests/test_{family}_native.py" in command) == (
-                platform == "darwin"
-            )
-        (tmp_path / "native.xml").write_text("<testsuite><testcase /></testsuite>")
-        return CommandResult(command, 0, 1.0, "native fixture passed", "")
+        observed.extend(part for part in command if part.startswith("tests/test_qt_"))
+        assert kwargs["env"]["VODFORGE_UI"] == "qt"
+        Path(kwargs["env"]["VODFORGE_NATIVE_EVIDENCE_DIR"], "native.xml").write_text(
+            "<testsuite><testcase /></testsuite>"
+        )
+        return CommandResult(command, 0, 1.0, "source fixture passed", "")
 
     monkeypatch.setattr(native_ui_checks, "run_command", run)
     scenario, _ = native_ui_checks.native_surface_contract(tmp_path, tmp_path)
     assert scenario["status"] == "passed"
+    assert set(observed) == {
+        node for nodes in native_ui_checks.QT_SELECTOR_GROUPS.values() for node in nodes
+    }
+    assert not scenario["metrics"]["native_window_observed"]
 
 
 def test_native_report_plugin_does_not_require_inherited_pythonpath(
@@ -190,7 +174,9 @@ def test_native_report_plugin_does_not_require_inherited_pythonpath(
             str(tmp_path.resolve()),
             str((tmp_path / "engineering-quality").resolve()),
         ]
-        (tmp_path / "native.xml").write_text("<testsuite><testcase /></testsuite>")
+        Path(kwargs["env"]["VODFORGE_NATIVE_EVIDENCE_DIR"], "native.xml").write_text(
+            "<testsuite><testcase /></testsuite>"
+        )
         return CommandResult(command, 0, 1.0, "passed", "")
 
     monkeypatch.setattr(native_ui_checks, "run_command", run)
@@ -222,7 +208,7 @@ def test_native_child_imports_ignore_inherited_path_and_cwd_contamination(
                 sys.executable,
                 "-c",
                 (
-                    "import json,yt_downloader.app,quality_harness.native_reports; "
+                    "import json,yt_downloader.download_service,quality_harness.native_reports; "
                     "print(json.dumps([yt_downloader.download_service.__file__,quality_harness.native_reports.__file__]))"
                 ),
             ],
@@ -240,7 +226,9 @@ def test_native_child_imports_ignore_inherited_path_and_cwd_contamination(
         assert kwargs["env"]["VODFORGE_NATIVE_HARNESS_ROOT"] == str(
             repo / "engineering-quality"
         )
-        (tmp_path / "native.xml").write_text("<testsuite><testcase /></testsuite>")
+        Path(kwargs["env"]["VODFORGE_NATIVE_EVIDENCE_DIR"], "native.xml").write_text(
+            "<testsuite><testcase /></testsuite>"
+        )
         return CommandResult(command, 0, 1.0, "import probe passed", "")
 
     monkeypatch.setattr(native_ui_checks, "run_command", run)
@@ -275,7 +263,9 @@ def test_native_import_receipt_rejects_wrong_checkout_before_tests(
 def test_native_profile_controls_held_out_exploration(tmp_path, monkeypatch, profile):
     def run(command, **kwargs):
         assert kwargs["env"]["VODFORGE_NATIVE_PROFILE"] == profile
-        (tmp_path / "native.xml").write_text("<testsuite><testcase /></testsuite>")
+        Path(kwargs["env"]["VODFORGE_NATIVE_EVIDENCE_DIR"], "native.xml").write_text(
+            "<testsuite><testcase /></testsuite>"
+        )
         return CommandResult(command, 0, 0.1, "passed", "")
 
     monkeypatch.setattr(native_ui_checks, "run_command", run)

@@ -177,42 +177,6 @@ def test_validation_does_not_invent_a_lower_bitrate_workaround():
     assert "Manual" not in message
 
 
-def test_preview_keeps_friendly_message_separate_from_technical(monkeypatch):
-    from types import SimpleNamespace
-
-    from yt_downloader import ui_events
-    from yt_downloader.download_error_presentation import technical_download_error
-
-    error = RuntimeError("HTTP Error 503")
-    message = download_error_message(error)
-    details = technical_download_error(error)
-    shown = []
-    logged = []
-    request = {"run_id": "preview", "output_type": "MP4"}
-    host = SimpleNamespace(
-        _metadata_preview_request=request,
-        _focus_selected_run_id="preview",
-        _refresh_focus_run_deck=lambda: None,
-        _display_metadata_preview_request=shown.append,
-        status_var=SimpleNamespace(set=lambda _value: None),
-        _append_log=logged.append,
-        _event_app_name="VODForge",
-    )
-    popups = []
-    monkeypatch.setattr(
-        ui_events.messagebox, "showerror", lambda _title, text: popups.append(text)
-    )
-    ui_events.UiEventHandlersMixin._handle_metadata_error(
-        host, {"message": message, "details": details}
-    )
-    assert popups == [message]
-    assert shown[0]["details"] == details
-    assert "HTTP Error 503" in details
-    assert "HTTP Error 503" not in message
-    assert details not in logged
-    assert logged == [f"ERROR: {message}"]
-
-
 def test_nested_http_code_overrides_sign_in_wording():
     from urllib.error import HTTPError
 
@@ -253,8 +217,10 @@ def test_real_audio_selection_failure_keeps_cause_and_correct_media_kind():
 def test_path_budget_error_preserves_approved_message_and_folder_action(wrapped):
     from types import SimpleNamespace
 
-    from yt_downloader.download_service import OutputPathBudgetError, _DownloadItemExecutionError
-
+    from yt_downloader.download_service import (
+        OutputPathBudgetError,
+        _DownloadItemExecutionError,
+    )
 
     error = OutputPathBudgetError()
     presented = download_error_message(
@@ -268,7 +234,6 @@ def test_path_budget_error_preserves_approved_message_and_folder_action(wrapped)
 
 def test_path_budget_recovery_is_typed_not_provider_text():
     from yt_downloader.download_service import OutputPathBudgetError
-
 
     assert not hasattr(
         download_error_message(OutputPathBudgetError.user_message), "action"

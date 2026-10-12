@@ -50,12 +50,12 @@ from yt_downloader.models import ExportMode, OutputType
 from yt_downloader.playback_backend import PlaybackSnapshot
 from yt_downloader.playback_progress import PlaybackProgressOwner, WatchedProgress
 from yt_downloader.playback_progress_binding import PlaybackProgressBinding
+from yt_downloader.product_theme import THEME
 from yt_downloader.qt_quick import main as qt_main
 from yt_downloader.qt_quick.artwork import QtArtwork, thumbnail_path
 from yt_downloader.qt_quick.scene_projection import library_scene, watch_scene
 from yt_downloader.run_state import RunStateError
 from yt_downloader.support_diagnostics import FailureContext
-from yt_downloader.product_theme import THEME
 from yt_downloader.whats_new import NativePreview
 
 _QT_TEST_APP: QGuiApplication | None = None
@@ -6211,8 +6211,8 @@ def test_qt_path_budget_recovery_uses_existing_output_folder_choice(
 ):
     from PySide6.QtCore import QUrl
 
-    from yt_downloader.download_service import OutputPathBudgetError
     from yt_downloader.download_error_presentation import download_error_message
+    from yt_downloader.download_service import OutputPathBudgetError
 
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
@@ -7031,10 +7031,11 @@ def test_watch_recently_added_and_see_all_preserve_history_recency(tmp_path):
 def test_batch_current_metadata_and_whole_batch_progress(
     tmp_path, monkeypatch, outcome_kind
 ):
+    from yt_downloader.ui_events import job_info_event
+
     from yt_downloader.download_service import DownloadWorkerCore
     from yt_downloader.models import DownloadOutcome
     from yt_downloader.qt_quick.runtime import _WorkerEventQueue
-    from yt_downloader.ui_events import job_info_event
 
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
@@ -7424,4 +7425,35 @@ def test_resumed_forge_format_hint_uses_saved_job(
         window.close()
         engine.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+def test_rating_counts_only_actual_current_completed_runtime_events(
+    tmp_path, monkeypatch
+):
+    from tests.worker_fixtures import _worker_test_job
+    from yt_downloader.qt_quick.main import Bridge
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    qt_app()
+    bridge = Bridge(None)
+    try:
+        for kind in ("partial", "error", "stopped", "done", "done", "done"):
+            job = _worker_test_job(tmp_path)
+            bridge._runtime.recovery.begin(job, [])
+            bridge._runtime.active_job = job
+            bridge._runtime.events.put(
+                (
+                    "worker_event",
+                    {"job": job, "event": (kind, "Controlled terminal event")},
+                )
+            )
+            bridge._pump()
+            if kind != "done":
+                assert not bridge._engagement.rating_pending
+                assert not bridge._engagement.snapshot().get("rating_successes", [])
+        assert bridge._engagement.rating_pending
+    finally:
         bridge.close()

@@ -45,35 +45,6 @@ def test_unassigned_categories_and_empty_library_remain_empty():
     )
 
 
-def test_initial_category_mode_uses_saved_eligibility_and_preserves_choice():
-    from types import SimpleNamespace
-
-    from yt_downloader.watch_ui import WatchView
-
-    state = SimpleNamespace(
-        _records=(),
-        _initial_mode_set=False,
-        _mode="playlists",
-        _artwork_attempted=set(),
-        _queue_render=lambda: None,
-        _presentation_change=lambda _trigger: None,
-        _presentation_mode_counts={},
-    )
-    preview = {"id": "preview", "vodforge_user_category": "Travel"}
-    saved = {"id": "saved", "vodforge_output_dir": "/saved"}
-    WatchView.set_records(state, [preview])
-    assert not state._initial_mode_set
-    WatchView.set_records(state, [preview, saved])
-    assert state._mode == "playlists" and state._initial_mode_set
-    # Later projection changes retain the established or user-selected mode.
-    WatchView.set_records(state, [{**saved, "vodforge_user_category": "Travel"}])
-    assert state._mode == "playlists"
-    state._initial_mode_set = False
-    state._records = ()
-    WatchView.set_records(state, [{**saved, "vodforge_user_category": "Travel"}])
-    assert state._mode == "collections"
-
-
 def test_stable_channel_membership_survives_rename_and_name_collisions():
     def row(video, name, channel, provider="youtube.com"):
         return {

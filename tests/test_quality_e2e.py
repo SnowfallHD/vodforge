@@ -8,7 +8,6 @@ from types import SimpleNamespace
 
 import pytest
 
-import yt_downloader.download_service as app_module
 from yt_downloader.quality_e2e import (
     QUALITY_E2E_ATTESTATION_PREFIX,
     QUALITY_E2E_ISOLATION_ROOT_ENV,
@@ -788,32 +787,3 @@ def test_quality_e2e_attestation_rejects_symlinked_isolation_root(
             environ=environment,
             home=home,
         )
-
-
-def test_main_destroys_rejected_quality_e2e_app_before_mainloop(monkeypatch) -> None:
-    class FakeRoot:
-        destroyed = False
-        mainloop_called = False
-
-        def destroy(self) -> None:
-            self.destroyed = True
-
-        def mainloop(self) -> None:
-            self.mainloop_called = True
-
-    root = FakeRoot()
-    monkeypatch.setattr(app_module, "DownloaderApp", lambda: root)
-    monkeypatch.setattr(
-        app_module,
-        "write_quality_e2e_startup_attestation",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            QualityE2EAttestationError("not isolated")
-        ),
-    )
-    monkeypatch.setattr(app_module.sys, "argv", ["VODForge"])
-
-    with pytest.raises(SystemExit, match="quality-E2E startup rejected"):
-        app_module.main()
-
-    assert root.destroyed is True
-    assert root.mainloop_called is False

@@ -444,7 +444,7 @@ def test_activity_log_close_failure_still_clears_cached_handle(
 def test_platform_fonts_use_macos_and_windows_system_families():
     assert platform_font_families("darwin") == ("Helvetica Neue", "Menlo")
     assert platform_font_families("win32") == ("Segoe UI", "Cascadia Mono")
-    assert platform_font_families("linux") == ("TkDefaultFont", "TkFixedFont")
+    assert platform_font_families("linux") == ("Sans Serif", "Monospace")
 
 
 def test_yt_dlp_loader_imports_once_and_reuses_the_module(monkeypatch):

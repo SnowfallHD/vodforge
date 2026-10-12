@@ -114,10 +114,9 @@ def build_job(
     from yt_downloader.download_service import (
         DownloadJob,
         ExportMode,
-        ManualExportSettings,
-        Mp3ExportSettings,
         OutputType,
     )
+    from yt_downloader.models import ManualExportSettings, Mp3ExportSettings
 
     selected_type = OutputType(output_type.upper())
     return DownloadJob(

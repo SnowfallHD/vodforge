@@ -10,7 +10,7 @@ def test_sandbox_initializes_persistent_diagnostics_before_resource_baseline(
 ) -> None:
     from quality_harness.pipeline import configure_production_sandbox
 
-    from yt_downloader import app
+    from yt_downloader import download_service as app
 
     monkeypatch.setattr(app, "DIAGNOSTICS_LOG_PATH", tmp_path / "latest.log")
     monkeypatch.setattr(app, "ACTIVITY_LOG_PATH", tmp_path / "activity.log")

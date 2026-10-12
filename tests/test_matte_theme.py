@@ -119,8 +119,8 @@ def test_shared_hover_is_an_inset_without_a_new_face_or_border(accent):
         _blend_color,
         action_button_image,
         control_material_roles,
+        control_surface_image,
         primary_action_color,
-        ttk_surface_image,
     )
 
     idle = action_button_image(140, 44, accent=accent)
@@ -128,7 +128,7 @@ def test_shared_hover_is_an_inset_without_a_new_face_or_border(accent):
     legacy_fill = _blend_color(
         primary_action_color() if accent else THEME["surface"], THEME["accent"], 0.10
     )
-    legacy_hover = ttk_surface_image(
+    legacy_hover = control_surface_image(
         140,
         height=44,
         fill=legacy_fill,
@@ -161,13 +161,13 @@ def test_shared_hover_is_an_inset_without_a_new_face_or_border(accent):
 def test_shared_field_hover_replaces_the_prior_bright_face_with_an_inset_contour():
     from yt_downloader.visual_chrome import (
         _blend_color,
+        control_surface_image,
         field_border_image,
-        ttk_surface_image,
     )
 
     idle = field_border_image(140, 44)
     hover = field_border_image(140, 44, hovered=True)
-    legacy_hover = ttk_surface_image(
+    legacy_hover = control_surface_image(
         140,
         height=44,
         fill=THEME["surface_2"],
@@ -237,37 +237,3 @@ def test_full_action_keeps_rounded_corner_outside_ttk_stretch_zone(density):
     assert alpha.getpixel((5 * density, 9 * density)) < 200
     assert alpha.getpixel((12 * density, 5 * density)) == 255
     assert alpha.getpixel((5 * density, 12 * density)) == 255
-
-
-@pytest.mark.parametrize(
-    "idle,hover", [("button", "hover"), ("accent", "accent_hover")]
-)
-def test_ttk_owner_renders_raised_to_recessed_hover(monkeypatch, idle, hover):
-    """Exercise the actual default ttk owner, not only the scene renderer."""
-    from types import SimpleNamespace
-
-    from yt_downloader import ui_chrome
-
-    class Bitmap:
-        def __init__(self, image, **_kwargs):
-            self.image = image.copy()
-
-    root = SimpleNamespace(bind=lambda *_args, **_kwargs: "binding")
-    owner = ui_chrome.ProductChromeOwner(root)
-    monkeypatch.setattr(ui_chrome, "surface_backing_scale", lambda _root: 1)
-    monkeypatch.setattr(ui_chrome.ImageTk, "PhotoImage", Bitmap)
-    monkeypatch.setattr(
-        ui_chrome,
-        "create_surface_image",
-        lambda _root, image, *_args, **_kwargs: (Bitmap(image), None),
-    )
-    monkeypatch.setattr(owner, "_install", lambda _style: None)
-    owner.request(None)
-    resting, hovered = owner.images[idle].image, owner.images[hover].image
-    assert ImageChops.difference(
-        resting.convert("RGB"), hovered.convert("RGB")
-    ).getbbox()
-    # Equal role colors require the material direction to provide the response.
-    # The top/bottom contour illumination reverses, with the face preserved.
-    assert resting.getpixel((14, 14)) == hovered.getpixel((14, 14))
-    assert resting.getpixel((14, 2)) != hovered.getpixel((14, 2))

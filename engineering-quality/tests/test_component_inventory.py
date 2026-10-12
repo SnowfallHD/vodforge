@@ -1,14 +1,18 @@
+import re
 from pathlib import Path
 
 import pytest
 from quality_harness.component_inventory import scan_button_sites
 
 
-def test_production_labeled_action_sites_have_no_metric_bypasses():
+def test_production_retires_widget_buttons_and_uses_shared_qt_controls():
     root = Path(__file__).resolve().parents[2]
     result = scan_button_sites(root)
-    assert result["counts"].get("ProductButton", 0) > 0
-    assert result["counts"].get("p.button", 0) > 0
+    assert not result["counts"]
+    assert any(
+        re.search(r"\bStoneButton\s*\{", p.read_text())
+        for p in (root / "yt_downloader/qt_quick").glob("*.qml")
+    )
     assert not result["violations"]
 
 

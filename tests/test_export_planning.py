@@ -104,9 +104,8 @@ def test_auto_fallback_never_exceeds_ceiling_and_prefers_top_tier():
     assert selected is None
 
 
-def test_app_preserves_export_planning_compatibility_exports() -> None:
+def test_worker_uses_canonical_shared_planning_helpers() -> None:
     assert app.QUALITY_OPTIONS is export_planning.QUALITY_OPTIONS
-    assert app.EXPORT_MODES is export_planning.EXPORT_MODES
     assert app.build_auto_export_plan is export_planning.build_auto_export_plan
     assert app.build_mp3_export_plan is export_planning.build_mp3_export_plan
     assert (

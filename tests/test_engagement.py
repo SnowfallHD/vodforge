@@ -86,23 +86,3 @@ def test_diagnostics_only_take_relevant_bounded_job_lines():
     assert len(context.diagnostics) <= 6000
     job.single_video_only = False
     assert failure_context(job, "Playlist partially failed").video_url is None
-
-
-def test_only_completed_operations_count_not_partial_or_cancelled(
-    tmp_path, monkeypatch
-):
-    from yt_downloader.engagement_ui import EngagementUI
-
-    owner = object.__new__(EngagementUI)
-    owner.state = EngagementState(tmp_path / "installation.json")
-    owner.latest_failure = None
-    monkeypatch.setattr(
-        "yt_downloader.engagement_ui.failure_context", lambda *args: "failure"
-    )
-    for status in ("Partial", "Failed", "Cancelled", "Skipped", "Stopped"):
-        owner.finished(SimpleNamespace(run_id=status), status, "done")
-    assert not owner.state.rating_pending
-    assert owner.state.snapshot().get("rating_successes", []) == []
-    for run in ("one", "two", "three"):
-        owner.finished(SimpleNamespace(run_id=run), "Completed", "done")
-    assert owner.state.rating_pending
