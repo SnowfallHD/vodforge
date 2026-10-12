@@ -332,3 +332,64 @@ def test_runasimi_code_and_rate_limit_guidance_preserve_explicit_choice():
     )
     assert "subtitles" in message and "No output was committed" in message
     assert "Off in Options" in message and "Wait before retrying" in message
+
+
+@pytest.mark.parametrize("target", [None, "ru", "en", "qu"])
+def test_worker_subtitle_reporting_matches_requested_tracks(
+    target, monkeypatch, tmp_path
+):
+    from types import SimpleNamespace
+
+    from tests.test_metadata_helpers import (
+        _worker_test_app,
+        _worker_test_export_plan,
+    )
+    from yt_downloader import download_service as service
+
+    worker = _worker_test_app()
+    job = replace(
+        make_job(tmp_path), embed_thumbnail=False, translated_subtitle_language=target
+    )
+    logs, transfers = [], []
+    worker._find_ffmpeg = lambda: "fixture-ffmpeg"
+    worker._build_ydl_options = lambda *args, **kwargs: {"postprocessors": []}
+    worker._emit_job_log = lambda job, line: logs.append(line)
+    monkeypatch.setattr(service, "log_options", lambda *args: None)
+    monkeypatch.setattr(service, "write_diagnostic", lambda *args: None)
+    info = source_info()
+    analyzed = service._AnalyzedDownloadItem(
+        info, info, _worker_test_export_plan(), (), False
+    )
+    item = service._DownloadItemContext(info, 1, 1, job.url, "Fixture")
+
+    def transfer(step):
+        transfers.append(step.args[2])
+        return step.args[2], ()
+
+    def run():
+        return worker._download_item_to_staging(
+            job,
+            object(),
+            SimpleNamespace(run_primary=transfer),
+            item,
+            {},
+            analyzed,
+            tmp_path,
+            control_check=lambda: None,
+            progress_callback=lambda _: None,
+        )
+
+    if target == "qu":
+        with pytest.raises(
+            RuntimeError, match="Selected translated subtitles are unavailable"
+        ):
+            run()
+        assert transfers == []
+    else:
+        result = run()
+        assert len(transfers) == 1
+        assert [
+            track["language"] for track in result.metadata["vodforge_subtitle_tracks"]
+        ] == (["ru", "en"] if target == "en" else ["ru"])
+    assert not any("subtitles unavailable" in line for line in logs)
+    assert job.translated_subtitle_language == target

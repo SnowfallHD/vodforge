@@ -6283,14 +6283,6 @@ class DownloadWorkerCore:
                     job,
                     f"{item.label}: original-language captions unavailable or language unverified; no translated track selected.",
                 )
-            if job.translated_subtitle_language and not any(
-                track.get("role") == "translated"
-                for track in transfer_info.get("vodforge_subtitle_tracks", [])
-            ):
-                self._emit_job_log(
-                    job,
-                    f"{item.label}: selected translated subtitles unavailable; exporting available original captions only.",
-                )
         options["noplaylist"] = True
         # Preflight already loaded the selected cookie source. Reuse its
         # in-memory session jar instead of reopening a browser profile or file.
