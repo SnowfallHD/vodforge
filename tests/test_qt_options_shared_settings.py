@@ -1,22 +1,62 @@
 """Quick Options and Settings bind the same existing preference owner."""
 
+import json
+
 import pytest
-from PySide6.QtCore import QMetaObject, QObject, QPointF
+from PySide6.QtCore import QMetaObject, QObject, QPointF, Qt
 from PySide6.QtTest import QTest
 
 from tests.test_qt_interaction_invariants import _close, _launch
-from tests.test_qt_scene_port import visual_item
+from tests.test_qt_scene_port import polish_scene, visual_item
 from yt_downloader.settings_store import load_settings
+
+
+def _subtitle_anchor_geometry(button, viewport):
+    point = button.mapToItem(viewport, QPointF(0, 0))
+    return {
+        "anchor": [point.x(), point.y(), button.width(), button.height()],
+        "viewport": [viewport.width(), viewport.height()],
+        "contentY": viewport.property("contentY"),
+        "contentHeight": viewport.property("contentHeight"),
+    }
+
+
+def _scroll_subtitle_button_into_view(app, root, button, viewport):
+    polish_scene(root)
+    app.processEvents()
+    point = button.mapToItem(viewport, QPointF(0, button.height() / 2))
+    maximum = max(0, viewport.property("contentHeight") - viewport.height())
+    viewport.setProperty(
+        "contentY",
+        min(
+            maximum,
+            max(0, viewport.property("contentY") + point.y() - viewport.height() / 2),
+        ),
+    )
+    polish_scene(root)
+    app.processEvents()
+    geometry = _subtitle_anchor_geometry(button, viewport)
+    x, y, width, height = geometry["anchor"]
+    assert width > 0 and height > 0 and button.isVisible() and button.isEnabled(), (
+        geometry
+    )
+    assert 0 <= x + width / 2 < viewport.width(), geometry
+    assert 0 <= y and y + height <= viewport.height(), geometry
+    return geometry
 
 
 @pytest.mark.parametrize("size", [(1100, 740), (820, 560)])
 @pytest.mark.parametrize("custom", [False, True])
+@pytest.mark.parametrize("reduced_motion", [False, True])
 def test_options_subtitle_menu_remains_open_in_its_scroll_owner(
-    tmp_path, monkeypatch, size, custom
+    tmp_path, monkeypatch, size, custom, reduced_motion
 ):
     from tests.test_qt_composer_custom_options import wait_for_reveal
+    from yt_downloader.qt_quick import main
 
+    monkeypatch.setattr(main, "_system_reduced_motion", lambda: reduced_motion)
     app, bridge, engine, window = _launch(tmp_path, monkeypatch, [])
+    geometry = {}
     try:
         window.resize(*size)
         if custom:
@@ -31,12 +71,26 @@ def test_options_subtitle_menu_remains_open_in_its_scroll_owner(
             else "composerOptionsScroll",
         )
         viewport = body.property("contentItem")
+        polish_scene(popup.property("contentItem"))
+        app.processEvents()
         viewport.setProperty(
             "contentY", max(0, viewport.property("contentHeight") - viewport.height())
         )
         app.processEvents()
         button = window.findChild(QObject, "composerTranslatedSubtitleButton")
-        assert QMetaObject.invokeMethod(button, "activated")
+        geometry["bottom_before_targeting"] = _subtitle_anchor_geometry(
+            button, viewport
+        )
+        geometry["trigger"] = _scroll_subtitle_button_into_view(
+            app, popup.property("contentItem"), button, viewport
+        )
+        QTest.mouseClick(
+            window,
+            Qt.LeftButton,
+            pos=button.mapToScene(
+                QPointF(button.width() / 2, button.height() / 2)
+            ).toPoint(),
+        )
         QTest.qWait(150)
         menu = window.findChild(QObject, "translatedSubtitleMenu")
         assert menu.property("visible")
@@ -44,19 +98,51 @@ def test_options_subtitle_menu_remains_open_in_its_scroll_owner(
         assert not window.findChild(QObject, "downloadSettingsPopup").property(
             "visible"
         )
-        assert QMetaObject.invokeMethod(
-            visual_item(menu.property("contentItem"), "translatedSubtitleChoice_el"),
-            "activated",
+        choice = visual_item(
+            menu.property("contentItem"), "translatedSubtitleChoice_el"
+        )
+        choice_viewport = choice.parentItem()
+        while choice_viewport.property("contentY") is None:
+            choice_viewport = choice_viewport.parentItem()
+            assert choice_viewport is not None
+        geometry["choice"] = _scroll_subtitle_button_into_view(
+            app, menu.property("contentItem"), choice, choice_viewport
+        )
+        QTest.mouseClick(
+            window,
+            Qt.LeftButton,
+            pos=choice.mapToScene(
+                QPointF(choice.width() / 2, choice.height() / 2)
+            ).toPoint(),
         )
         app.processEvents()
         assert bridge.translatedSubtitleLanguage == "el"
         assert "Greek" in button.property("label")
         assert not menu.property("visible")
-        assert QMetaObject.invokeMethod(button, "activated")
+        geometry["reopen_trigger"] = _scroll_subtitle_button_into_view(
+            app, popup.property("contentItem"), button, viewport
+        )
+        QTest.mouseClick(
+            window,
+            Qt.LeftButton,
+            pos=button.mapToScene(
+                QPointF(button.width() / 2, button.height() / 2)
+            ).toPoint(),
+        )
         QTest.qWait(150)
         assert menu.property("visible")
         menu.close()
         popup.close()
+        print(
+            "SUBTITLE_GEOMETRY "
+            + json.dumps({"size": size, "custom": custom, **geometry})
+        )
+    except Exception:
+        (tmp_path / "subtitle-menu-geometry.json").write_text(
+            json.dumps(geometry, indent=2)
+        )
+        print("SUBTITLE_FAILURE_GEOMETRY " + json.dumps(geometry))
+        raise
     finally:
         _close(bridge, engine, window)
 
