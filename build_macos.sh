@@ -50,6 +50,7 @@ fi
     --ignore=tests/test_qt_library_playlist_art.py \
     --ignore=tests/test_qt_overflow_action_pointer.py \
     --ignore=tests/test_qt_completed_run_menu.py \
+    --ignore=tests/test_qt_update_check_guidance.py \
     --ignore=tests/test_qt_options_shared_settings.py \
     --ignore=tests/test_qt_watch_scroll_extent.py \
     --ignore=tests/test_qt_player_responsive_stage.py \
@@ -140,6 +141,7 @@ fi
     tests/test_qt_library_playlist_art.py \
     tests/test_qt_overflow_action_pointer.py \
     tests/test_qt_completed_run_menu.py \
+    tests/test_qt_update_check_guidance.py \
     tests/test_qt_options_shared_settings.py \
     tests/test_qt_watch_scroll_extent.py \
     tests/test_qt_player_responsive_stage.py \
