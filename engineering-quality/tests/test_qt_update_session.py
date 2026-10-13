@@ -85,8 +85,16 @@ def test_repair_refuses_downgrade_and_failed_helper_keeps_recovery(
         "download_verified_update",
         lambda *_args: (_ for _ in ()).throw(AssertionError("downgrade downloaded")),
     )
-    session._download_worker(None)
+
+    def start_inline(target, _name):
+        session.busy = True
+        target()
+        return True
+
+    monkeypatch.setattr(session, "_start", start_inline)
+    assert session.download(repair=True)
     assert session.poll() and session.recovery and session.ready is None
+    assert not session.check_failed
 
     installer = tmp_path / "verified.exe"
     session.ready = installer
@@ -264,7 +272,9 @@ def test_update_worker_preserves_machine_cause_before_friendly_copy(
         ),
     )
     session._check_worker()
-    assert session.poll() and session.recovery
+    assert session.poll() and session.check_failed and not session.recovery
+    assert "unavailable" in session.status
+    assert "Repair" not in session.status
     assert "PRIVATE" not in session.status
     events = _stored(owner, tmp_path / "telemetry")
     assert [e["action"] for e in events] == ["check_started", "failed"]

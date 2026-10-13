@@ -38,7 +38,7 @@ fi
   # create live Qt bridges and telemetry owners in the same process.
   unset VODFORGE_UI VODFORGE_BUILD_TELEMETRY VODFORGE_BUILD_VERSION VODFORGE_DIST_DIR
   QT_QUICK_CONTROLS_STYLE=Basic QT_QUICK_BACKEND=software "$python_bin" -m pytest -q \
-    tests engineering-quality/tests \
+    tests engineering-quality/tests fine-tuning/tests \
     --ignore=tests/test_qt_action_feedback_ownership.py \
     --ignore=tests/test_qt_file_recovery_actions.py \
     --ignore=tests/test_qt_floating_player_chrome.py \
