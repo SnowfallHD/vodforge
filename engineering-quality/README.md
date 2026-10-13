@@ -4,6 +4,22 @@ Consult [the change and test log](change-and-test-log.md) before assigning or
 repeating qualification work. Retain valid prior passes; record a concrete
 affected change or evidence defect before repeating a check.
 
+## Background results remain discoverable — 2026-10-13
+
+A successful background availability check must leave a visible main-window
+entry without interrupting active work or opening a modal automatically. Closing
+the offer with Later retains that entry while the existing updater owner still
+reports availability. Opening the entry must not initiate a check, download or
+restart; repeated clicks cannot create duplicate work or offer exposure.
+
+Existing updater popup tests opened the modal directly and missed the hidden
+automatic offer. `tests/test_qt_update_check_guidance.py` now exercises automatic
+check/poll transitions, all four main routes at narrow/normal widths, pointer
+repeat/Later/reopen, keyboard activation, preserved active/queued jobs and 11
+owner states. It captures the existing operation boundary without sending events.
+These offscreen checks do not establish packaged native visibility or adoption
+improvement; those remain distinct qualification tasks.
+
 ## Native decoration respects public view ownership — 2026-10-12
 
 A native decoration may attach only inside an accessible content owner. It must

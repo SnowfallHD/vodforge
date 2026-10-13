@@ -1188,6 +1188,36 @@ Window {
             color: theme.border
         }
 
+        RowLayout {
+            objectName: "updateNoticeRow"
+            Layout.fillWidth: true
+            Layout.preferredHeight: 40
+            visible: bridge.updateAvailable || bridge.updateManualAvailable ||
+                bridge.updateRecovery || bridge.updateCheckFailed ||
+                bridge.updateReady || bridge.updateRestartPending ||
+                (bridge.updateBusy && bridge.updateStage !== "check")
+            Item { Layout.fillWidth: true }
+            StoneButton {
+                objectName: "updateNoticeButton"
+                label: bridge.updateBusy ?
+                    (bridge.updateStage === "check" ? "Checking for updates" : "Updating VODForge") :
+                    bridge.updateRestartPending ?
+                        (bridge.updateReady ? "Update ready" : "Restarting VODForge") :
+                    bridge.updateRecovery ? "Update needs attention" :
+                    bridge.updateCheckFailed ? "Update check unavailable" :
+                    bridge.updateReady ? "Update ready" : "Update available"
+                emphasized: true
+                Layout.preferredHeight: 36
+                onActivated: {
+                    if (!updatePopup.visible) {
+                        settingsPopup.close()
+                        window.closeDownloadSettings()
+                        updatePopup.toggleFrom(this)
+                    }
+                }
+            }
+        }
+
         ScrollView {
             id: forgeViewport
             objectName: "forgeViewport"
