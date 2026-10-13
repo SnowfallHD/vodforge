@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from yt_downloader.archive_observations import bind_operation, operation
-from yt_downloader.failure_diagnostics import capture_failure
+from yt_downloader.failure_diagnostics import FailureDiagnostic, capture_failure
 from yt_downloader.history import application_data_dir
 from yt_downloader.platform_services import is_macos, is_windows
 from yt_downloader.product_telemetry import BoundProductOperation, ProductTelemetryOwner
@@ -31,6 +31,26 @@ from yt_downloader.updates import (
     semantic_version_key,
     verify_windows_authenticode,
 )
+
+
+def _check_failure_status(detail: FailureDiagnostic | None) -> str:
+    """Use only machine categories; provider exception messages stay private."""
+    if isinstance(detail, FailureDiagnostic):
+        if detail.http_status == 429 or detail.reason == "rate_limited":
+            return (
+                "The update service is limiting requests. Wait and check again later."
+            )
+        if detail.http_status in {401, 403}:
+            return "The update service declined the check. Try again later or open the download page."
+        if detail.http_status is not None and detail.http_status >= 500:
+            return "The update service is temporarily unavailable. Try again later."
+        if detail.http_status == 404:
+            return "Update information is unavailable. Check again later or open the download page."
+        if detail.tls_verify_code is not None:
+            return "The secure connection to the update service could not be verified. Try again later."
+        if detail.reason == "network":
+            return "Could not check for updates. Check your connection and try again."
+    return "Could not check for updates. The cause is unknown. Try again or open the download page."
 
 
 class QtUpdateSession:
@@ -53,6 +73,7 @@ class QtUpdateSession:
         self.available = False
         self.manual = False
         self.recovery = False
+        self.check_failed = False
         self.busy = False
         self.stage = "check"
         self.pending_install = False
@@ -128,6 +149,7 @@ class QtUpdateSession:
     def check(self, *, automatic: bool = False) -> bool:
         if self.busy or self.pending_install or self.handoff_started:
             return False
+        self.check_failed = False
         self._begin_observation("automatic" if automatic else "manual")
         self.stage = "check"
         self.release = None
@@ -181,6 +203,7 @@ class QtUpdateSession:
         ):
             return False
         self.repair = repair
+        self.check_failed = False
         self.pending_install = install_when_ready
         self.ready = None
         self.stage = "downloading_repair" if repair else "download"
@@ -266,14 +289,19 @@ class QtUpdateSession:
             else:
                 self.ready = None
                 self.pending_install = False
-                self.recovery = True
-                self.status = (
-                    "Update needs attention. Try Repair or open the download page."
-                )
                 detail = (
                     payload[1]
                     if isinstance(payload, tuple) and len(payload) == 2
                     else None
+                )
+                # Failure to obtain release metadata says nothing about the
+                # installed app. Retain repair for download/handoff recovery.
+                self.check_failed = self.stage == "check"
+                self.recovery = not self.check_failed
+                self.status = (
+                    _check_failure_status(detail)
+                    if self.check_failed
+                    else "Update needs attention. Try Repair or open the download page."
                 )
                 operation(
                     self.telemetry,

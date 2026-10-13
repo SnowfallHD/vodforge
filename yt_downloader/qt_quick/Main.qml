@@ -2972,6 +2972,7 @@ Window {
         property bool explicitDeferral: false
         readonly property bool inProgress: bridge.updateBusy || bridge.updateRestartPending
         readonly property string heading: bridge.updateRecovery ? "Update needs attention" :
+            bridge.updateCheckFailed ? "Update check unavailable" :
             bridge.updateBusy ? (bridge.updateStage === "check" ? "Checking for updates" :
                 bridge.updateStage === "downloading_repair" ? "Repairing VODForge" : "Downloading update") :
             bridge.updateRestartPending ? (bridge.updateReady ? "Waiting to restart" : "Restarting VODForge") :
@@ -3071,7 +3072,7 @@ Window {
                 spacing: 10
                 StoneButton {
                     objectName: "updateDownloadPage"
-                    visible: !updatePopup.inProgress && (bridge.updateRecovery || bridge.updateManualAvailable)
+                    visible: !updatePopup.inProgress && (bridge.updateRecovery || bridge.updateCheckFailed || bridge.updateManualAvailable)
                     label: "Download page"
                     Layout.preferredWidth: 140
                     Layout.preferredHeight: 40

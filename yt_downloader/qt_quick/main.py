@@ -844,6 +844,10 @@ class Bridge(QObject):
     def updateRecovery(self) -> bool:
         return self._updates.recovery
 
+    @Property(bool, notify=updateChanged)
+    def updateCheckFailed(self) -> bool:
+        return self._updates.check_failed
+
     @Property(str, notify=fileActionChanged)
     def fileActionStatus(self) -> str:
         message = self._files.status
