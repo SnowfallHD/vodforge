@@ -334,3 +334,33 @@ def test_artifact_only_dispatch_skips_all_release_mutation():
 def test_builds_collect_impersonation_runtime():
     for name in ("build_macos.sh", "build_windows.ps1"):
         assert "--collect-all curl_cffi" in (ROOT / name).read_text()
+
+
+def test_private_windows_qa_skips_mac_without_changing_release_gate():
+    workflow = (ROOT / ".github/workflows/release.yml").read_text()
+    mac = workflow.split("  macos:\n", 1)[1].split("    steps:", 1)[0]
+    assert "if: ${{ !(inputs.artifacts_only && inputs.qa_windows_only) }}" in mac
+    draft = workflow.split("  draft:\n", 1)[1].split("    steps:", 1)[0]
+    assert "if: ${{ !inputs.artifacts_only }}" in draft
+    assert "needs: [windows, macos]" in draft
+
+
+def test_windows_source_pin_is_exact_and_ignored_outside_private_windows_mode():
+    workflow = (ROOT / ".github/workflows/release.yml").read_text()
+    windows = workflow.split("  windows:\n", 1)[1].split("  macos:\n", 1)[0]
+    validation = windows.split("name: Validate private Windows source pin", 1)[1]
+    assert (
+        "if: ${{ inputs.artifacts_only && inputs.qa_windows_only && inputs.qa_source_commit != '' }}"
+        in validation
+    )
+    assert "QA_SOURCE_COMMIT: ${{ inputs.qa_source_commit }}" in validation
+    assert "'^[0-9a-f]{40}$'" in validation
+    assert (
+        "ref: ${{ inputs.artifacts_only && inputs.qa_windows_only && inputs.qa_source_commit || github.ref }}"
+        in windows
+    )
+    assert windows.index("Validate private Windows source pin") < windows.index(
+        "actions/checkout@v4"
+    )
+    assert "azure/login@v3" in windows
+    assert "azure/artifact-signing-action@v2" in windows

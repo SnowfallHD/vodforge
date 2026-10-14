@@ -12,6 +12,16 @@ on:
         required: false
         default: false
         type: boolean
+      qa_windows_only:
+        description: Build only Windows QA artifacts; honored only with artifacts_only
+        required: false
+        default: false
+        type: boolean
+      qa_source_commit:
+        description: Optional exact commit for private Windows QA; ignored outside artifacts-only Windows mode
+        required: false
+        default: ""
+        type: string
       qa_macos_only:
         description: Build only Mac QA artifacts; honored only with artifacts_only
         required: false
@@ -33,7 +43,16 @@ jobs:
     runs-on: windows-latest
     environment: release
     steps:
+      - name: Validate private Windows source pin
+        if: ${{ inputs.artifacts_only && inputs.qa_windows_only && inputs.qa_source_commit != '' }}
+        shell: pwsh
+        env:
+          QA_SOURCE_COMMIT: ${{ inputs.qa_source_commit }}
+        run: |
+          if ($env:QA_SOURCE_COMMIT -notmatch '^[0-9a-f]{40}$') { throw 'Private Windows QA source must be an exact commit SHA.' }
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.artifacts_only && inputs.qa_windows_only && inputs.qa_source_commit || github.ref }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -148,6 +167,7 @@ jobs:
           if-no-files-found: error
 
   macos:
+    if: ${{ !(inputs.artifacts_only && inputs.qa_windows_only) }}
     strategy:
       matrix:
         include: ${{ fromJSON(inputs.artifacts_only && inputs.qa_macos_only && inputs.qa_intel_only && '[{"os":"macos-15-intel","architecture":"x64"}]' || '[{"os":"macos-15","architecture":"arm64"},{"os":"macos-15-intel","architecture":"x64"}]') }}
