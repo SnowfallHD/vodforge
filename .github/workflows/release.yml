@@ -126,7 +126,18 @@ jobs:
       - name: Execute Windows updater fault cases
         shell: pwsh
         run: .\.venv\Scripts\python.exe -m pytest engineering-quality/tests/test_update_handoff_runtime.py engineering-quality/tests/test_windows_update_visibility.py engineering-quality/tests/test_windows_update_diagnostics.py -q
+      - name: Preserve signed private Windows candidate before native gates
+        if: ${{ inputs.artifacts_only && inputs.qa_windows_only }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-private-candidate-pending-acceptance
+          retention-days: 7
+          path: |
+            dist/release/*.exe
+            dist/release/*.zip
+          if-no-files-found: error
       - name: Verify running Windows upgrade before publishing artifacts
+        timeout-minutes: ${{ inputs.artifacts_only && inputs.qa_windows_only && 40 || 360 }}
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}

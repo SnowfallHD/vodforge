@@ -364,3 +364,26 @@ def test_windows_source_pin_is_exact_and_ignored_outside_private_windows_mode():
     )
     assert "azure/login@v3" in windows
     assert "azure/artifact-signing-action@v2" in windows
+
+
+def test_private_candidate_is_preserved_before_bounded_upgrade_without_release_bypass():
+    workflow = (ROOT / ".github/workflows/release.yml").read_text()
+    windows = workflow.split("  windows:\n", 1)[1].split("  macos:\n", 1)[0]
+    preserve = windows.split(
+        "name: Preserve signed private Windows candidate before native gates", 1
+    )[1].split("- name: Verify running Windows upgrade", 1)[0]
+    assert "if: ${{ inputs.artifacts_only && inputs.qa_windows_only }}" in preserve
+    assert "windows-private-candidate-pending-acceptance" in preserve
+    assert "if-no-files-found: error" in preserve
+    assert (
+        windows.index("Verify installer and package signed portable")
+        < windows.index("Preserve signed private Windows candidate")
+        < windows.index("Verify running Windows upgrade")
+    )
+    upgrade = windows.split("name: Verify running Windows upgrade", 1)[1]
+    assert (
+        "timeout-minutes: ${{ inputs.artifacts_only && inputs.qa_windows_only && 40 || 360 }}"
+        in upgrade
+    )
+    assert "-LegacyHandoff" in upgrade
+    assert upgrade.index("-LegacyHandoff") < upgrade.index("name: vodforge-windows")
