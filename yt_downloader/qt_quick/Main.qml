@@ -41,6 +41,10 @@ Window {
     minimumWidth: 820
     minimumHeight: 560
     title: "VODForge"
+    flags: Qt.platform.os === "windows" ? Qt.Window | Qt.WindowSystemMenuHint |
+           Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint |
+           Qt.WindowCloseButtonHint | Qt.FramelessWindowHint : Qt.Window
+    WindowsFrame { id: mainFrame; appWindow: window }
     color: Qt.platform.os === "osx" ? "transparent" : theme.bg
     property real backgroundOpacity: 1.0
     readonly property color glassSurfaceColor: theme.bg
@@ -1000,7 +1004,7 @@ Window {
         anchors.fill: parent
         anchors.leftMargin: window.gutter
         anchors.rightMargin: window.gutter
-        anchors.topMargin: 5
+        anchors.topMargin: 5 + mainFrame.headerHeight
         anchors.bottomMargin: window.width < 960 ? 10 : 14
         spacing: 2
 

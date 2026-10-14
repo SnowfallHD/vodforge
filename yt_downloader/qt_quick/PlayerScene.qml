@@ -291,7 +291,9 @@ Item {
         flags: Qt.Window | Qt.WindowTitleHint | Qt.WindowSystemMenuHint |
                Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint |
                Qt.WindowCloseButtonHint |
+               (Qt.platform.os === "windows" ? Qt.FramelessWindowHint : 0) |
                (scene.presentationMode === "floating" ? Qt.WindowStaysOnTopHint : 0)
+        WindowsFrame { id: playerFrame; appWindow: presentationWindow }
         onClosing: scene.setPresentation("embedded")
         Shortcut {
             sequence: "Escape"
@@ -302,6 +304,7 @@ Item {
             id: presentationVideo
             objectName: "watchPresentationVideoSurface"
             anchors.fill: parent
+            anchors.topMargin: playerFrame.headerHeight
             fillMode: scene.videoFill ? VideoOutput.PreserveAspectCrop : VideoOutput.PreserveAspectFit
             endOfStreamPolicy: VideoOutput.KeepLastFrame
             onContentRectChanged: Qt.callLater(presentationWindow.applyNaturalInitialSize)

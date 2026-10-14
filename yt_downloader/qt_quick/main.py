@@ -224,6 +224,7 @@ from yt_downloader.qt_quick.scene_projection import (
 from yt_downloader.qt_quick.subtitle_session import SubtitleSession
 from yt_downloader.qt_quick.support import QtSupportSession
 from yt_downloader.qt_quick.update_session import QtUpdateSession
+from yt_downloader.qt_quick.windows_windowing import integrate_windows_frames
 from yt_downloader.quality_e2e import (
     QualityE2EAttestationError,
     quality_e2e_mode_enabled,
@@ -7423,6 +7424,8 @@ def create_engine(bridge: Bridge) -> QQmlApplicationEngine:
         "assetUrl", QUrl.fromLocalFile(str(assets) + "/").toString()
     )
     engine.load(QUrl.fromLocalFile(str(Path(__file__).with_name("Main.qml"))))
+    if engine.rootObjects():
+        engine._windows_frames = integrate_windows_frames(engine)  # type: ignore[attr-defined]
     return engine
 
 
