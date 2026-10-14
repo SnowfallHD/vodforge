@@ -38,3 +38,42 @@ def test_non_windows_owner_is_unchanged():
 
     if sys.platform != "win32":
         assert integrate_windows_frames(None) is None
+
+
+@pytest.mark.parametrize("foreign_handle", [0xABC, 0xDEF])
+def test_native_dispatch_does_not_create_main_or_player_handles(foreign_handle):
+    # Run the production callback's foreign-message path without a Windows UI.
+    # A hidden window's winId getter is creation, not a harmless lookup.
+    import ast
+    import ctypes
+    from ctypes import wintypes
+    from pathlib import Path
+    from types import CodeType, FunctionType, SimpleNamespace
+
+    from yt_downloader.qt_quick import windows_windowing
+
+    tree = ast.parse(Path(windows_windowing.__file__).read_text())
+    method = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "nativeEventFilter"
+    )
+    method.decorator_list = []
+    namespace = {"w": wintypes, "Any": object}
+    compiled = compile(
+        ast.Module(body=[method], type_ignores=[]), "production-native-dispatch", "exec"
+    )
+    method_code = next(
+        value for value in compiled.co_consts if isinstance(value, CodeType)
+    )
+    dispatch = FunctionType(method_code, namespace)
+
+    class HiddenOwner:
+        def winId(self):
+            raise AssertionError("Native dispatch attempted window creation")
+
+    owner = SimpleNamespace(handles={}, windows=[HiddenOwner(), HiddenOwner()])
+    msg = wintypes.MSG()
+    msg.hWnd = foreign_handle
+    msg.message = 0x0084
+    assert dispatch(owner, b"windows_generic_MSG", ctypes.addressof(msg)) == (False, 0)

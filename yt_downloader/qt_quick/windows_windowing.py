@@ -89,6 +89,9 @@ def integrate_windows_frames(engine: Any) -> Any:
             player = self.windows[0].findChild(QWindow, "watchPresentationWindow")
             if player is not None:
                 self.windows.append(player)
+            # Acquire handles before native dispatch starts: winId() can create
+            # a hidden player window and recursively enter this callback.
+            self.handles = {int(window.winId()): window for window in self.windows}
             for window in self.windows:
                 window.visibilityChanged.connect(
                     lambda _state, owner=window: QTimer.singleShot(
@@ -98,6 +101,10 @@ def integrate_windows_frames(engine: Any) -> Any:
 
         def configure(self, window: Any) -> None:
             hwnd = int(window.winId())
+            self.handles = {
+                key: value for key, value in self.handles.items() if value is not window
+            }
+            self.handles[hwnd] = window
             # Frameless rendering must not retire the native lifetime owner.
             style = get_style(hwnd, -16)
             set_style(
@@ -109,7 +116,7 @@ def integrate_windows_frames(engine: Any) -> Any:
 
         def nativeEventFilter(self, event_type: Any, message: int) -> tuple[bool, int]:
             msg = w.MSG.from_address(int(message))
-            window = next((x for x in self.windows if int(x.winId()) == msg.hwnd), None)
+            window = self.handles.get(msg.hWnd)
             if window is None:
                 return False, 0
             fullscreen = window.visibility() == QWindow.Visibility.FullScreen
@@ -117,22 +124,22 @@ def integrate_windows_frames(engine: Any) -> Any:
                 msg.message == 0x0083 and msg.wParam
             ):  # WM_NCCALCSIZE, first RECT in params
                 rect = w.RECT.from_address(msg.lParam)
-                if api.IsZoomed(msg.hwnd) and not fullscreen:
+                if api.IsZoomed(msg.hWnd) and not fullscreen:
                     info = MonitorInfo()
                     info.size = ctypes.sizeof(info)
                     if api.GetMonitorInfoW(
-                        api.MonitorFromWindow(msg.hwnd, 2), ctypes.byref(info)
+                        api.MonitorFromWindow(msg.hWnd, 2), ctypes.byref(info)
                     ):
                         rect.left, rect.top = info.work.left, info.work.top
                         rect.right, rect.bottom = info.work.right, info.work.bottom
                 return True, 0
             if msg.message == 0x0084 and not fullscreen:  # WM_NCHITTEST
                 rect = w.RECT()
-                if not api.GetWindowRect(msg.hwnd, ctypes.byref(rect)):
+                if not api.GetWindowRect(msg.hWnd, ctypes.byref(rect)):
                     return False, 0
                 x = ctypes.c_short(msg.lParam & 0xFFFF).value - rect.left
                 y = ctypes.c_short((msg.lParam >> 16) & 0xFFFF).value - rect.top
-                dpi = api.GetDpiForWindow(msg.hwnd) or 96
+                dpi = api.GetDpiForWindow(msg.hWnd) or 96
                 border = api.GetSystemMetricsForDpi(
                     32, dpi
                 ) + api.GetSystemMetricsForDpi(92, dpi)
@@ -143,7 +150,7 @@ def integrate_windows_frames(engine: Any) -> Any:
                     rect.bottom - rect.top,
                     border,
                     round(32 * window.devicePixelRatio()),
-                    bool(api.IsZoomed(msg.hwnd)),
+                    bool(api.IsZoomed(msg.hWnd)),
                 )
                 return True, hit
             return False, 0
