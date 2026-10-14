@@ -229,7 +229,8 @@ Item {
         width: 780
         height: 480
         minimumWidth: Math.ceil(presentationOverlay.minimumControlsWidth)
-        minimumHeight: presentationOverlay.height
+        minimumHeight: presentationOverlay.height + playerFrame.headerHeight
+        readonly property int integratedHeaderHeight: playerFrame.headerHeight
         function enforceMinimumSize() {
             if (width < minimumWidth) width = minimumWidth
             if (height < minimumHeight) height = minimumHeight

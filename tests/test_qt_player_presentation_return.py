@@ -123,7 +123,9 @@ def test_initial_popout_uses_actual_rotated_frame_and_media_reset(player_scene):
         loop.exec()
     flush(app)
     assert floating.property("displayedAspect") == pytest.approx(9 / 16)
-    assert floating.width() / floating.height() == pytest.approx(9 / 16, abs=0.01)
+    assert floating.width() / (
+        floating.height() - floating.property("integratedHeaderHeight")
+    ) == pytest.approx(9 / 16, abs=0.01)
     assert not floating.property("naturalSizePending")
     # A deliberate manual crop remains available; no global aspect lock/gesture inference.
     scene.setProperty("videoFill", True)

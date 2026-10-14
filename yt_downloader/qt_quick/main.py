@@ -6210,14 +6210,16 @@ class Bridge(QObject):
             return {}
         available = window.screen().availableGeometry()
         margins = window.frameMargins()
+        header_height = int(window.property("integratedHeaderHeight") or 0)
         try:
             width, height, overflow = initial_player_client_size(
                 window.width(),
                 aspect,
-                (available.width(), available.height()),
+                (available.width(), available.height() - header_height),
                 (margins.left() + margins.right(), margins.top() + margins.bottom()),
-                (window.minimumWidth(), window.minimumHeight()),
+                (window.minimumWidth(), window.minimumHeight() - header_height),
             )
+            height += header_height
         except ValueError:
             return {}
         x, y = clamp_player_origin(

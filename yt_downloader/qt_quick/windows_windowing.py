@@ -92,6 +92,7 @@ def integrate_windows_frames(engine: Any) -> Any:
             # Acquire handles before native dispatch starts: winId() can create
             # a hidden player window and recursively enter this callback.
             self.handles = {int(window.winId()): window for window in self.windows}
+            self.max_pressed = None
             for window in self.windows:
                 window.visibilityChanged.connect(
                     lambda _state, owner=window: QTimer.singleShot(
@@ -120,6 +121,32 @@ def integrate_windows_frames(engine: Any) -> Any:
             if window is None:
                 return False, 0
             fullscreen = window.visibility() == QWindow.Visibility.FullScreen
+            # Qt's frameless mouse adapter consumes nonclient button events.
+            # Keep HTMAXBUTTON for the shell's hover flyout, but queue the same
+            # maximize/restore action as the QML button outside native dispatch.
+            if msg.message == 0x00A1 and msg.wParam == 9 and not fullscreen:
+                self.max_pressed = msg.hWnd
+                return True, 0
+            if msg.message == 0x00A2 and msg.wParam == 9:
+                pressed = self.max_pressed == msg.hWnd
+                self.max_pressed = None
+                if pressed:
+
+                    def toggle() -> None:
+                        if (
+                            not window.isVisible()
+                            or window.visibility() == QWindow.Visibility.FullScreen
+                        ):
+                            return
+                        if window.visibility() == QWindow.Visibility.Maximized:
+                            window.showNormal()
+                        else:
+                            window.showMaximized()
+
+                    QTimer.singleShot(0, toggle)
+                return True, 0
+            if msg.message in (0x001F, 0x0215, 0x0202, 0x00A2):
+                self.max_pressed = None
             if (
                 msg.message == 0x0083 and msg.wParam
             ):  # WM_NCCALCSIZE, first RECT in params
