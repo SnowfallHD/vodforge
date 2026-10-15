@@ -41,7 +41,16 @@ try {
   $result.installer_sha256 = (Get-FileHash $CandidateInstaller).Hash
   if ($baselineHash -eq $candidateHash) { throw 'Upgrade requires distinct baseline and candidate executables' }
   $result.phase = 'baseline_startup'
-  $old = Start-Process $exe -PassThru
+  # Preserve startup diagnostics from the unmodified published baseline. Its
+  # existing ready-file callback runs only after Qt loads the root and enters
+  # the event loop; it supplements, never replaces, exact native visibility.
+  $startupDiagnostics = Join-Path $run 'failure-diagnostics'
+  New-Item -ItemType Directory -Force $startupDiagnostics | Out-Null
+  $baselineReady = Join-Path $startupDiagnostics 'baseline-ready.json'
+  $result.baseline_ready_file = $baselineReady
+  $result.baseline_stdout = Join-Path $startupDiagnostics 'baseline-stdout.log'
+  $result.baseline_stderr = Join-Path $startupDiagnostics 'baseline-stderr.log'
+  $old = Start-Process $exe -ArgumentList @('--ready-file', ('"'+$baselineReady+'"')) -RedirectStandardOutput $result.baseline_stdout -RedirectStandardError $result.baseline_stderr -PassThru
   $result.old_pid = $old.Id
   # Cold signed-app startup must satisfy the same exact-PID/path bounded
   # visibility contract as relaunch; a four-second snapshot was too early.
