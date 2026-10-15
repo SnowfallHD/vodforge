@@ -20,6 +20,7 @@ $new = $null
 $visibilityStarted = $null
 $baselineVisibilityStarted = $null
 try {
+  $result.phase = 'baseline_install'
   $env:VODFORGE_DISABLE_TELEMETRY = '1'
   $env:LOCALAPPDATA = Join-Path $run 'profile'
   $env:APPDATA = Join-Path $run 'roaming'
@@ -34,13 +35,20 @@ try {
   $exe = Join-Path $installRoot 'VODForge.exe'
   $baselineHash = (Get-FileHash $exe).Hash
   $candidateHash = (Get-FileHash $CandidateExecutable).Hash
+  $result.baseline_sha256 = $baselineHash
+  $result.baseline_version = (Get-Item $exe).VersionInfo.ProductVersion
+  $result.candidate_sha256 = $candidateHash
+  $result.installer_sha256 = (Get-FileHash $CandidateInstaller).Hash
   if ($baselineHash -eq $candidateHash) { throw 'Upgrade requires distinct baseline and candidate executables' }
+  $result.phase = 'baseline_startup'
   $old = Start-Process $exe -PassThru
+  $result.old_pid = $old.Id
   # Cold signed-app startup must satisfy the same exact-PID/path bounded
   # visibility contract as relaunch; a four-second snapshot was too early.
   $baselineVisibilityStarted = Get-Date
-  $old = Wait-VODForgeUpdatedWindow -TargetProcessId $old.Id -ExpectedPath $exe
+  $old = Wait-VODForgeUpdatedWindow -TargetProcessId $old.Id -ExpectedPath $exe -Phase baseline
   $result.baseline_visibility_wait_ms = [int]((Get-Date) - $baselineVisibilityStarted).TotalMilliseconds
+  $result.phase = 'candidate_handoff'
   if ($LegacyHandoff) {
     # Match flags sent by already-installed older updaters. Inno's saved install
     # directory comes from the baseline installation in this isolated QA account.
@@ -71,10 +79,12 @@ try {
   $result.handoff_status = $outcome.status
   $result.handoff_receipt = $handoff
   $visibilityStarted = Get-Date
+  $result.phase = 'updated_startup'
   $new = Wait-VODForgeUpdatedWindow -TargetProcessId $outcome.pid -ExpectedPath $exe
   $result.visibility_wait_ms = [int]((Get-Date) - $visibilityStarted).TotalMilliseconds
   if ((Get-FileHash $exe).Hash -ne $candidateHash -or $outcome.executable_sha256 -ne $candidateHash) { throw 'Updated executable does not match candidate' }
   $result.status = 'passed'
+  $result.phase = 'complete'
   $result.legacy_handoff = [bool]$LegacyHandoff
   $result.baseline_sha256 = $baselineHash
   $result.candidate_sha256 = $candidateHash

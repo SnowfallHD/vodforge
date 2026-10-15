@@ -59,6 +59,15 @@ try {{
   if ($_.Exception.Message -notlike '*within 1 seconds') {{ throw }}
 }}
 Write-Output 'WINDOW_VISIBILITY_CONTRACT_OK'
+$state.tick = 0
+$state.pauses = 0
+try {{
+  $null = Wait-VODForgeUpdatedWindow -TargetProcessId 1234 -ExpectedPath $expected -Phase baseline -TimeoutSeconds 1 -ReadProcess $readNeverVisible -Now $now -Pause $pause
+  throw 'invisible baseline was accepted'
+}} catch {{
+  if ($_.Exception.Message -ne 'Baseline app did not show a window from the expected target within 1 seconds') {{ throw }}
+}}
+Write-Output 'BASELINE_PHASE_VISIBLE_GATE_UNCHANGED'
 """
     result = subprocess.run(
         [shell, "-NoProfile", "-NonInteractive", "-Command", script],
@@ -69,3 +78,4 @@ Write-Output 'WINDOW_VISIBILITY_CONTRACT_OK'
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "WINDOW_VISIBILITY_CONTRACT_OK" in result.stdout
+    assert "BASELINE_PHASE_VISIBLE_GATE_UNCHANGED" in result.stdout
