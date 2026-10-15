@@ -491,9 +491,13 @@ class ProductTelemetryOwner:
             )
             if callable(recorder) and recorder(event):
                 return True
-            self._diagnostic("PostHog mirror not confirmed; bounded retry retained")
+            self._diagnostic(
+                "Additional analytics delivery not confirmed; bounded retry retained"
+            )
         except Exception:  # noqa: BLE001 - optional sink must never stop custom delivery
-            self._diagnostic("PostHog mirror failed; bounded retry retained")
+            self._diagnostic(
+                "Additional analytics delivery failed; bounded retry retained"
+            )
         return False
 
     def _provider_context(self) -> dict[str, Any]:
@@ -576,7 +580,8 @@ class ProductTelemetryOwner:
             return True
         except (OSError, ValueError, RuntimeError):
             self._diagnostic(
-                "PostHog first-run admission failed; custom acknowledgement retained"
+                "Additional analytics first-run admission failed; "
+                "usage acknowledgement retained"
             )
             return False
 

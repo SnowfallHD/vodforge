@@ -747,7 +747,7 @@ Window {
             StoneCheckBox {
                 id: analyticsExtra
                 objectName: "analyticsPosthogOptIn"
-                text: "Also share optional PostHog usage, performance and error categories (no desktop recording)"
+                text: "Also share additional usage, performance and error analytics (no desktop recording)"
                 visible: bridge.posthogAvailable
                 checked: false
                 Layout.fillWidth: true
@@ -2999,7 +2999,7 @@ Window {
                     RowLayout {
                         objectName: "settingsPosthogRow"
                         Layout.fillWidth: true
-                        Text { text: "Additional analytics (PostHog)"; color: theme.text; font.pixelSize: 15; Layout.fillWidth: true }
+                        Text { text: "Additional analytics"; color: theme.text; font.pixelSize: 15; Layout.fillWidth: true }
                         StoneButton {
                             objectName: "settingsPosthogToggle"
                             label: bridge.posthogAllowed ? "On" : "Off"
@@ -3013,26 +3013,10 @@ Window {
                         objectName: "settingsPosthogDescription"
                         text: bridge.posthogAvailable
                             ? "Usage, session, performance and error categories. On by default only where the regional policy permits; your saved choice takes priority. No media links, titles, paths, private text or desktop recording. Share usage analytics must also be on."
-                            : "Additional analytics is off in this build. No data is sent to PostHog."
+                            : "Additional analytics is off for this session. No additional analytics data is sent."
                         color: theme.muted; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true
                     }
-                    StoneButton {
-                        objectName: "settingsInstallationLink"
-                        label: bridge.installationLinkStatus === "linked" ? "Installation linked" : "Link this installation"
-                        visible: bridge.analyticsAvailable
-                        enabled: bridge.installationLinkStatus !== "linked" &&
-                                 bridge.installationLinkStatus !== "preparing" && bridge.installationLinkStatus !== "checking"
-                        Layout.preferredHeight: 40
-                        Layout.fillWidth: true
-                        onActivated: bridge.requestInstallationLink()
-                    }
-                    Text {
-                        objectName: "settingsInstallationLinkDescription"
-                        visible: bridge.analyticsAvailable
-                        text: bridge.installationLinkMessage ||
-                              "Automatic browser referral check."
-                        color: theme.muted; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true
-                    }
+
                     }
                 }
             }
