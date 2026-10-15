@@ -4,6 +4,10 @@ Consult [the change and test log](change-and-test-log.md) before assigning or
 repeating qualification work. Retain valid prior passes; record a concrete
 affected change or evidence defect before repeating a check.
 
+## Rendered checks follow the intended owner — 2026-10-15
+
+Component pixel checks must isolate the component's surface: an application caption painted above a synthetic icon probe contaminated the old top-left crop with title glyphs. The strict connected-silhouette and extent assertions now sample a separate96x96 window containing the actual SceneIcon. Main-scene coordinate assertions retain exact bounds while explicitly including the integrated Windows32px caption; its button height is independently asserted. Actual prior native Windows pixels and byte-identical frame source establish that origin. Continuous-inset endpoint expectations must match the accepted layout rather than reintroduce removed breakpoint padding. Original CI failures, real rendered scenes, isolated icon pixels and focused outcomes are retained under `build/recovery-20261011/posthog-release-20261015/composer-render-evidence/`. These checks do not substitute for physical drag/timing or new frozen-native acceptance.
+
 ## Runtime compatibility follows every bundled dependency — 2026-10-13
 
 An older-target bootloader or Qt framework does not establish a bundle's minimum OS. The ordinary local889 package declared27 through Homebrew OpenSSL/libvmaf, while Python/FFmpeg declared26. Existing source/native current-host tests passed because they do not test an older host or inspect every transitive load command. The first compatible-input successor still collected SQLite26 through host dependency discovery; inspecting only its chosen Python and FFmpeg would have missed that instance.

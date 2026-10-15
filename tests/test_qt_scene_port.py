@@ -36,6 +36,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtQml import QQmlComponent
+from PySide6.QtQuick import QQuickWindow
 from PySide6.QtTest import QSignalSpy, QTest
 
 from tests.test_library_media_recovery import _job, _missing_record
@@ -2138,6 +2139,11 @@ def test_transport_arrow_and_arc_have_one_connected_silhouette(
     bridge = qt_main.Bridge(None)
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
+    # This pixel contract belongs to the icon, not the application's caption.
+    # Windows' integrated caption intentionally paints above main-window items.
+    probe_window = QQuickWindow()
+    probe_window.resize(96, 96)
+    probe_window.setColor(QColor("black"))
     component = QQmlComponent(engine)
     component.setData(
         b'import QtQuick\nRectangle { width: 96; height: 96; color: "black"; '
@@ -2147,7 +2153,8 @@ def test_transport_arrow_and_arc_have_one_connected_silhouette(
     probe = component.create()
     try:
         assert probe is not None, component.errorString()
-        probe.setParentItem(window.contentItem())
+        probe.setParentItem(probe_window.contentItem())
+        probe_window.show()
         icon = probe.findChild(QObject, "transportIcon")
         painted = QSignalSpy(icon.painted)
         icon.setProperty("name", direction)
@@ -2159,7 +2166,7 @@ def test_transport_arrow_and_arc_have_one_connected_silhouette(
             QTest.qWait(10)
             if not painted.count():
                 continue
-            frame = window.grabWindow()
+            frame = probe_window.grabWindow()
             scale = frame.devicePixelRatio()
             side = round(96 * scale)
             # Ignore the readable central numeral. Every remaining stroke must
@@ -2198,6 +2205,8 @@ def test_transport_arrow_and_arc_have_one_connected_silhouette(
     finally:
         if probe is not None:
             probe.deleteLater()
+        probe_window.close()
+        probe_window.deleteLater()
         window.close()
         engine.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
@@ -4924,7 +4933,11 @@ def test_qt_shared_header_keeps_navigation_next_to_brand_on_every_tab(
     bridge = qt_main.Bridge(None)
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
+    caption_height = 32 if sys.platform == "win32" else 0
     try:
+        if caption_height:
+            caption = visual_item(window.contentItem(), "windowMinimize")
+            assert caption.isVisible() and caption.height() == caption_height
         bridge.select("Library")
         for width, height, margin in (
             (820, 560, 12),
@@ -4944,7 +4957,7 @@ def test_qt_shared_header_keeps_navigation_next_to_brand_on_every_tab(
             assert (
                 round(header.mapToItem(None, 0, 0).x()),
                 round(header.mapToItem(None, 0, 0).y()),
-            ) == (margin, 5)
+            ) == (margin, 5 + caption_height)
             assert round(header.height()) == 44
             assert drag_area.property("width") == pytest.approx(window.width())
             assert drag_area.mapToItem(None, 0, 0).x() == pytest.approx(0)
@@ -4994,15 +5007,15 @@ def test_qt_shared_header_keeps_navigation_next_to_brand_on_every_tab(
                 bridge.selectHome(tab)
                 app.processEvents()
                 assert abs(nav.mapToItem(None, 0, 0).x() - expected_nav_x) < 0.5
-                assert round(nav.mapToItem(None, 0, 0).y()) == 5
+                assert round(nav.mapToItem(None, 0, 0).y()) == 5 + caption_height
             bridge.selectHome("Library")
             app.processEvents()
-            assert round(nav.mapToItem(None, 0, 0).y()) == 5
+            assert round(nav.mapToItem(None, 0, 0).y()) == 5 + caption_height
             assert (
                 search.mapToScene(QPointF(0, 0)).x()
                 >= nav.mapToScene(QPointF(nav.width(), 0)).x() + 8
             )
-            assert round(scene.mapToItem(None, 0, 0).y()) == 54
+            assert round(scene.mapToItem(None, 0, 0).y()) == 54 + caption_height
     finally:
         window.close()
         engine.deleteLater()
@@ -5327,6 +5340,7 @@ def test_qt_forge_composer_keeps_bounds_with_download_before_options(
     bridge = qt_main.Bridge(None)
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
+    caption_height = 32 if sys.platform == "win32" else 0
     try:
         for (
             width,
@@ -5346,6 +5360,7 @@ def test_qt_forge_composer_keeps_bounds_with_download_before_options(
             window.resize(width, height)
             for _ in range(3):
                 app.processEvents()
+            command_y += caption_height
 
             def bounds(name):
                 item = window.findChild(QObject, name)
