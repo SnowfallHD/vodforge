@@ -51,6 +51,7 @@ class QtAnalyticsSession:
         self._presented = False
         self._opened = False
         self._closed = False
+        self._choice_save_failed = False
         self._next_telemetry_flush = time.monotonic() + 30.0
         self._app_version = app_version
         self._attribution_path = installation_state_path(data_dir=directory)
@@ -72,6 +73,10 @@ class QtAnalyticsSession:
                 self._refresh_installation_link()
             return
         owner = AnalyticsConsentOwner(directory)
+        try:
+            owner.migrate_data_sharing_choice()
+        except (OSError, RuntimeError, ValueError):
+            return  # An unreadable/unwritable migration cannot enable collection.
         initial_allowed = owner.allowed
         initial_epoch = owner.snapshot().get("collection_epoch")
         telemetry = ProductTelemetryOwner(
@@ -95,7 +100,11 @@ class QtAnalyticsSession:
 
     @property
     def allowed(self) -> bool:
-        return bool(self.owner is not None and self.owner.allowed)
+        return bool(
+            not self._choice_save_failed
+            and self.owner is not None
+            and self.owner.allowed
+        )
 
     @property
     def settled(self) -> bool:
@@ -170,10 +179,12 @@ class QtAnalyticsSession:
         if self.owner is None or self.telemetry is None:
             return False
         try:
-            self.owner.choose(enabled)
+            self.owner.choose_data_sharing(enabled)
         except (OSError, RuntimeError, ValueError):
+            self._choice_save_failed = True
             self.telemetry.set_enabled(False)
             return False
+        self._choice_save_failed = False
         self.telemetry.set_enabled(self.owner.allowed)
         self._record_opened_if_allowed()
         self._refresh_installation_link()

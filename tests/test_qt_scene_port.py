@@ -6039,7 +6039,7 @@ def test_qt_consent_keeps_four_icon_summaries_and_actions_inside_surface(
 
 
 @pytest.mark.parametrize("width", [1100, 860, 820])
-def test_qt_enabled_provider_consent_stays_explicit_and_fits(
+def test_qt_unified_consent_has_no_provider_control_and_fits(
     tmp_path, monkeypatch, width
 ):
     from yt_downloader.analytics_consent import AnalyticsConsentOwner
@@ -6062,9 +6062,8 @@ def test_qt_enabled_provider_consent_stays_explicit_and_fits(
         QTest.qWait(150)
         popup = window.findChild(QObject, "analyticsConsentPopup")
         content = popup.property("contentItem")
-        extra = visual_item(content, "analyticsPosthogOptIn")
-        assert bridge.posthogAvailable and extra.isVisible()
-        assert not extra.property("checked") and not owner.posthog_allowed
+        assert visual_item(content, "analyticsPosthogOptIn") is None
+        assert not owner.allowed and not owner.posthog_allowed
         actions = [
             item
             for item in popup.findChildren(QObject)
@@ -6072,15 +6071,13 @@ def test_qt_enabled_provider_consent_stays_explicit_and_fits(
             in {"Privacy details", "No thanks", "Share analytics"}
         ]
         assert len(actions) == 3
-        for item in (extra, *actions):
+        for item in actions:
             assert item.isVisible()
             pos = item.mapToItem(content, QPointF(0, 0))
             assert pos.y() >= 0
             assert pos.y() + item.height() <= content.height() + 1
         assert popup.property("height") <= window.height()
-        extra.setProperty("checked", True)
-        app.processEvents()
-        # Editing a choice is not consent until the explicit submit action.
+        # Opening the prompt grants no collection before explicit submission.
         assert not owner.posthog_allowed
         assert owner.snapshot().get("posthog_choice") != "granted"
     finally:

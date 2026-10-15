@@ -76,7 +76,8 @@ def test_automatic_browser_claim_preserves_independent_usage_choice(
         assert state.attribution_claim_confirmed is (response == "claimed")
         assert not state.first_launch_confirmed
         assert not state.product_telemetry_allowed
-        assert consent.allowed is allowed
+        # The historical provider refusal conservatively migrates the unified choice.
+        assert not consent.allowed
         assert consent.snapshot()["posthog_choice"] == "denied"
         assert not _load_outbox(tmp_path / "product-telemetry.json")
         session.close()

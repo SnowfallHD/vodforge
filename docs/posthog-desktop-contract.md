@@ -54,3 +54,18 @@ Actual914 manual-journey acceptance and its denied cold-label failure remain imm
 The earlier three explicitly authorized comprehensive/live fixtures exercised production D1 and PostHog; provider labels did not route or classify first-party events. This was an intentional endpoint choice for the requested deployed dual-pipeline proof, not a preview-key bypass. Missing preregistered D1 exclusions for the first two was a classification error; external health mappings were also insufficient for the central CRM owner. Site owner now owns exact central exclusions; Cooper personally deleted three QA installation rows, so this lane must not repeat deletion or launch more production QA.
 
 Local successor policy treats existing QUALITY_E2E, QA_PREVIEW_TELEMETRY, QA_PROFILE and POSTHOG_QA_RUN/HOME markers as QA. They cannot fall through to production even in a production-marked frozen app. Existing explicit preview routing still requires its bounded key/profile and mode flags; missing prerequisites mean OFF. Ordinary marked QA/preview also disables production PostHog ingestion; labels alone are not transport approval. No new production override or provider project/settings change is introduced. Production release behavior without QA markers is unchanged. Disabled transport still presents existing local link facts without creating a fresh identity or sending a request. Prior production receipts remain historical, not instructions to repeat their environment.
+
+## Unified app control — 2026-10-15
+
+Cooper's current app UI uses one **Share usage analytics** On/Off control for
+first-party and provider analytics. There is no separate provider switch or
+installation-association status/control in Settings or onboarding. The privacy
+policy continues to disclose the processor; internal identifiers are unchanged.
+A new explicit On/Off atomically saves both preferences. At Qt startup, any
+historical explicit refusal conservatively migrates both preferences to denied;
+migration never grants consent. Missing choices continue through the existing
+regional-default checks, with no expansion of default-on coverage. Provider/build
+availability remains an internal capability restriction. Failed preference saves
+disable the session's collection and report Off, with the existing save warning.
+Automatic browser-owned attribution remains independent of app usage permission;
+no automatic operational request is evidence of consent or a successful link.

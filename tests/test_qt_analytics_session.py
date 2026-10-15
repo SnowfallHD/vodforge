@@ -211,3 +211,19 @@ def test_disabled_session_display_does_not_create_identity_or_open_browser(
         lambda url: pytest.fail("Disabled session opened a browser")
     )
     session.close()
+
+
+def test_unified_failed_choice_disables_session_and_reports_off(tmp_path, monkeypatch):
+    monkeypatch.setattr(analytics, "telemetry_collection_allowed", lambda: True)
+    owner = AnalyticsConsentOwner(tmp_path)
+    owner.choose_data_sharing(True)
+    session = analytics.QtAnalyticsSession(tmp_path, "0.2.6", Mock())
+    telemetry = session.telemetry
+    session.telemetry = Mock()
+    assert session.allowed
+    monkeypatch.setattr(session.owner, "choose_data_sharing", Mock(side_effect=OSError))
+    assert not session.choose(False)
+    assert not session.allowed
+    session.telemetry.set_enabled.assert_called_once_with(False)
+    session.telemetry = telemetry
+    session.close()

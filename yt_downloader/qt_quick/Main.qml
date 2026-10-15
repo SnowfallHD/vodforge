@@ -744,20 +744,12 @@ Window {
                     }
                 }
             }
-            StoneCheckBox {
-                id: analyticsExtra
-                objectName: "analyticsPosthogOptIn"
-                text: "Also share additional usage, performance and error analytics (no desktop recording)"
-                visible: bridge.posthogAvailable
-                checked: false
-                Layout.fillWidth: true
-            }
             RowLayout {
                 Layout.fillWidth: true
                 StoneButton { label: "Privacy details"; Layout.preferredWidth: 160; Layout.preferredHeight: 38; onActivated: bridge.openPrivacy() }
                 Item { Layout.fillWidth: true }
                 StoneButton { label: "No thanks"; Layout.preferredWidth: 115; Layout.preferredHeight: 40; onActivated: { if (bridge.chooseAnalytics(false)) analyticsPopup.close() } }
-                StoneButton { label: "Share analytics"; Layout.preferredWidth: 150; Layout.preferredHeight: 40; onActivated: { if (bridge.chooseAnalyticsOptions(true, analyticsExtra.checked)) analyticsPopup.close() } }
+                StoneButton { label: "Share analytics"; Layout.preferredWidth: 150; Layout.preferredHeight: 40; onActivated: { if (bridge.chooseAnalytics(true)) analyticsPopup.close() } }
             }
         }
     }
@@ -2972,49 +2964,20 @@ Window {
                         Layout.fillWidth: true
                         spacing: 10
                     Text { objectName: "settingsPrivacyHeading"; text: "PRIVACY"; color: theme.accent; font.pixelSize: 13; font.bold: true }
-                    Text {
-                        objectName: "settingsAnalyticsUnavailable"
-                        visible: !bridge.analyticsAvailable
-                        text: "Usage analytics is disabled for this session."
-                        color: theme.muted
-                        font.pixelSize: 13
-                        wrapMode: Text.WordWrap
-                        Layout.fillWidth: true
-                    }
                     RowLayout {
-                objectName: "settingsAnalyticsRow"
-                visible: bridge.analyticsAvailable
-                Layout.fillWidth: true
-                Layout.preferredHeight: visible ? 40 : 0
-                Text { text: "Share usage analytics"; color: theme.text; font.pixelSize: 15; Layout.fillWidth: true }
-                StoneButton {
-                    objectName: "settingsAnalyticsToggle"
-                    label: bridge.analyticsAllowed ? "On" : "Off"
-                    selected: bridge.analyticsAllowed
-                    Layout.preferredWidth: 74
-                    Layout.preferredHeight: 36
-                    onActivated: bridge.chooseAnalytics(!bridge.analyticsAllowed)
-                }
-                    }
-                    RowLayout {
-                        objectName: "settingsPosthogRow"
+                        objectName: "settingsAnalyticsRow"
                         Layout.fillWidth: true
-                        Text { text: "Additional analytics"; color: theme.text; font.pixelSize: 15; Layout.fillWidth: true }
+                        Layout.preferredHeight: 40
+                        Text { text: "Share usage analytics"; color: theme.text; font.pixelSize: 15; Layout.fillWidth: true }
                         StoneButton {
-                            objectName: "settingsPosthogToggle"
-                            label: bridge.posthogAllowed ? "On" : "Off"
-                            selected: bridge.posthogAllowed
-                            enabled: bridge.posthogAvailable && bridge.analyticsAllowed
-                            Layout.preferredWidth: 74; Layout.preferredHeight: 36
-                            onActivated: bridge.choosePosthogAnalytics(!bridge.posthogAllowed)
+                            objectName: "settingsAnalyticsToggle"
+                            label: bridge.analyticsAllowed ? "On" : "Off"
+                            selected: bridge.analyticsAllowed
+                            enabled: bridge.analyticsAvailable
+                            Layout.preferredWidth: 74
+                            Layout.preferredHeight: 36
+                            onActivated: bridge.chooseAnalytics(!bridge.analyticsAllowed)
                         }
-                    }
-                    Text {
-                        objectName: "settingsPosthogDescription"
-                        text: bridge.posthogAvailable
-                            ? "Usage, session, performance and error categories. On by default only where the regional policy permits; your saved choice takes priority. No media links, titles, paths, private text or desktop recording. Share usage analytics must also be on."
-                            : "Additional analytics is off for this session. No additional analytics data is sent."
-                        color: theme.muted; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true
                     }
 
                     }

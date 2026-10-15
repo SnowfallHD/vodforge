@@ -219,3 +219,51 @@ def test_old_generic_default_and_explicit_refusals_are_never_upgraded(
     )
     assert not owner.posthog_allowed
     assert owner.snapshot()["choice"] == "denied"
+
+
+@pytest.mark.parametrize("general", [None, "granted", "denied"])
+@pytest.mark.parametrize("provider", [None, "granted", "denied"])
+def test_unified_choice_migration_preserves_refusals_without_grants(
+    tmp_path, general, provider
+):
+    owner = AnalyticsConsentOwner(tmp_path)
+    prior = {
+        key: value
+        for key, value in (("choice", general), ("posthog_choice", provider))
+        if value is not None
+    }
+    consent.update_analytics_settings(owner.path, prior)
+    owner.update(mode="default-on")
+    owner.migrate_data_sharing_choice()
+    state = owner.snapshot()
+    if "denied" in (general, provider):
+        assert state["choice"] == state["posthog_choice"] == "denied"
+        assert not owner.allowed and not owner.posthog_allowed
+    else:
+        assert state.get("choice") == general
+        assert state.get("posthog_choice") == provider
+    before = owner.path.read_bytes()
+    owner.migrate_data_sharing_choice()
+    assert owner.path.read_bytes() == before
+    owner.choose_data_sharing(True)  # A new explicit user action, never migration.
+    assert owner.allowed and owner.posthog_allowed
+    owner.choose_data_sharing(False)
+    assert not owner.allowed and not owner.posthog_allowed
+    reopened = AnalyticsConsentOwner(tmp_path)
+    assert not reopened.allowed and not reopened.posthog_allowed
+
+
+def test_unified_preference_write_failure_never_partially_grants(tmp_path, monkeypatch):
+    owner = AnalyticsConsentOwner(tmp_path)
+    owner.choose_data_sharing(False)
+    original = consent.update_analytics_settings
+
+    def fail_choices(path, changes, **kwargs):
+        if "posthog_choice" in changes:
+            raise OSError("Controlled atomic preference failure")
+        return original(path, changes, **kwargs)
+
+    monkeypatch.setattr(consent, "update_analytics_settings", fail_choices)
+    with pytest.raises(OSError):
+        owner.choose_data_sharing(True)
+    assert not owner.allowed and not owner.posthog_allowed

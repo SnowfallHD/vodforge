@@ -151,6 +151,30 @@ class AnalyticsConsentOwner:
     def choose(self, enabled: bool) -> None:
         self.update(choice="granted" if enabled else "denied", prompted=True)
 
+    def migrate_data_sharing_choice(self) -> None:
+        """Collapse any explicit prior refusal without granting another sink."""
+        with _LOCK:
+            state = self.snapshot()
+            if "denied" in {state.get("choice"), state.get("posthog_choice")} and (
+                state.get("choice") != "denied"
+                or state.get("posthog_choice") != "denied"
+            ):
+                self.choose_data_sharing(False)
+
+    def choose_data_sharing(self, enabled: bool) -> None:
+        """Persist one explicit user choice for all optional app analytics."""
+        with _LOCK:
+            changes: dict[str, Any] = {
+                "choice": "granted" if enabled else "denied",
+                "posthog_choice": "granted" if enabled else "denied",
+                "posthog_epoch": str(uuid.uuid4()),
+            }
+            if not enabled:
+                changes["collection_epoch"] = str(uuid.uuid4())
+            # Finish onboarding metadata before the atomic preference commit.
+            self.update(prompted=True)
+            update_analytics_settings(self.path, changes)
+
     @property
     def posthog_allowed(self) -> bool:
         """Preserve choices; only fresh explicit provider policy can default on."""
