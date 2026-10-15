@@ -68,3 +68,81 @@ def test_idle_session_retries_same_pending_event_without_user_input(
     else:
         assert len(attempts) == 1
     session.close()
+
+
+@pytest.mark.parametrize(
+    "interruption", [None, "denied", "reenrolled", "closed", "browser_failed"]
+)
+@pytest.mark.parametrize("legacy", [False, True])
+def test_explicit_link_uses_gui_dispatch_and_only_canonical_claim_ack(
+    tmp_path, monkeypatch, interruption, legacy
+):
+    import threading
+    import time
+
+    from yt_downloader.cloud_funnel import load_or_create_installation_state
+    from yt_downloader.install_attribution import (
+        ClaimIssueResult,
+        InstallationAttributionOwner,
+    )
+
+    monkeypatch.setattr(analytics, "telemetry_collection_allowed", lambda: True)
+    consent = AnalyticsConsentOwner(tmp_path)
+    consent.choose(True)
+    monkeypatch.setattr(
+        analytics,
+        "ProductTelemetryOwner",
+        lambda **kwargs: ProductTelemetryOwner(**kwargs, d1_recorder=lambda e: True),
+    )
+    session = analytics.QtAnalyticsSession(tmp_path, "0.2.6", Mock())
+    if legacy:
+        from yt_downloader.cloud_funnel import update_onboarding
+
+        update_onboarding(
+            tmp_path / "installation.json", storage_version=1, browser_eligible=False
+        )
+    session._attribution = InstallationAttributionOwner(
+        tmp_path / "installation.json",
+        first_party_recorder=lambda *args, **kwargs: True,
+        claim_issuer=lambda install, token: ClaimIssueResult(
+            f"https://getvodforge.com/claim#token={token}"
+        ),
+        claim_reader=lambda token: "claimed",
+        browser_opener=lambda *args, **kwargs: pytest.fail(
+            "Startup must not open browser"
+        ),
+    )
+    dispatched = []
+    gui_thread = threading.get_ident()
+
+    def open_browser(url):
+        assert threading.get_ident() == gui_thread
+        dispatched.append(url)
+        return interruption != "browser_failed"
+
+    assert session.request_installation_link(open_browser)
+    assert not session.request_installation_link(open_browser)
+    assert not dispatched  # Never opens from preparation's worker thread.
+    if interruption in {"denied", "reenrolled"}:
+        consent.choose(False)
+        if interruption == "reenrolled":
+            consent.choose(True)
+    elif interruption == "closed":
+        session.close()
+    deadline = time.monotonic() + 3
+    while session._attribution_work is not None and time.monotonic() < deadline:
+        session.poll_first_launch_delivery()
+        time.sleep(0.005)
+    state = load_or_create_installation_state(tmp_path / "installation.json")
+    if interruption is None:
+        assert len(dispatched) == 1
+        assert state.attribution_claim_opened and state.attribution_claim_confirmed
+        assert state.attribution_claim_token is None
+        assert session.installation_link_status == "linked"
+    else:
+        assert (
+            not state.attribution_claim_opened and not state.attribution_claim_confirmed
+        )
+        assert len(dispatched) == (1 if interruption == "browser_failed" else 0)
+    session.close()
+    assert session.telemetry.shutdown(2)

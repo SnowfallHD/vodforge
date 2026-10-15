@@ -3620,3 +3620,9 @@ Qt consent and existing processing producers are checked separately. Native visu
 replay is not inferred from web SDK support; Qt's alternative is a content-free
 semantic timeline. Source and mock transport checks do not prove production
 provider ingestion, native consent rendering, physical Intel behavior or adoption.
+
+### Explicit browser handoff and asynchronous acknowledgement identity
+
+The comprehensive analytics pass exposed an adapter gap: the canonical first-party claim owner worked in isolation, while Qt intentionally disabled automatic browser opening and exposed no explicit alternative. A successful browser-only claim therefore did not establish app-local completion. Preserve the startup no-browser policy; expose an explicit consent-gated action, prepare off-thread, dispatch only on the GUI owner and poll the canonical status. Never backfill flags to make acceptance pass.
+
+Existing attribution tests covered a synchronous opener and a happy claim response, missing permission withdrawal during dispatch, replacement capabilities during acknowledgement, and the Qt user-action boundary. Both independent owner races fail on the predecessor. Token-conditioned atomic transitions now preserve a newer capability; withdrawn/replaced consent epochs and closed/cancelled work suppress deferred dispatch and acknowledgement. Representative coverage spans the shared owner, migrated/new profiles, worker-to-GUI scheduling, real QML button activation/scroll reach, failed browser dispatch, permission regrant and closed callbacks. The analogous website guard must be acquired before awaiting initialization; its retained controller regression demonstrated duplicate admission before correction. This is bounded owner-boundary evidence, not proof of every interleaving, real browser/OS success or a new frozen candidate.

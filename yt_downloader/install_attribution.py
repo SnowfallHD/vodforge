@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from .analytics_consent import analytics_allowed
+from .analytics_consent import AnalyticsConsentOwner, analytics_allowed
 from .cloud_funnel import (
     CLAIM_TOKEN_PATTERN,
     InstallationState,
@@ -194,16 +194,83 @@ class InstallationAttributionOwner:
             return False
         return bool(state.attribution_claim_token) or not state.attribution_claim_opened
 
+    def prepare_browser_link(
+        self, *, cancelled: Callable[[], bool] = lambda: False
+    ) -> ClaimIssueResult | None:
+        """Prepare a capability on a worker; never opens a browser itself."""
+        consent = AnalyticsConsentOwner(self._state_path.parent)
+        epoch = consent.snapshot().get("collection_epoch")
+
+        def permitted() -> bool:
+            return (
+                not cancelled()
+                and telemetry_collection_allowed()
+                and consent.allowed
+                and consent.snapshot().get("collection_epoch") == epoch
+            )
+
+        if not permitted():
+            return None
+        state = load_or_create_installation_state(self._state_path)
+        if state.attribution_claim_confirmed:
+            return None
+        token = state.attribution_claim_token
+        if token is None:
+            token = secrets.token_urlsafe(32)
+            issued = self._claim_issuer(state.install_id, token)
+            if (
+                issued is None
+                or issued.claim_url != f"{telemetry_site_origin()}/claim#token={token}"
+                or not permitted()
+            ):
+                return None
+            state = mark_attribution_claim_issued(
+                self._state_path, state.install_id, token, if_unclaimed=True
+            )
+            if state.attribution_claim_token != token:
+                return None
+        if not permitted() or not CLAIM_TOKEN_PATTERN.fullmatch(token):
+            return None
+        return ClaimIssueResult(f"{telemetry_site_origin()}/claim#token={token}")
+
+    def record_browser_opened(self, claim_url: str, *, epoch: Any) -> bool:
+        """Called only after an explicit UI action's real browser dispatch."""
+        consent = AnalyticsConsentOwner(self._state_path.parent)
+        if (
+            not telemetry_collection_allowed()
+            or not consent.allowed
+            or consent.snapshot().get("collection_epoch") != epoch
+        ):
+            return False
+        state = load_or_create_installation_state(self._state_path)
+        token = state.attribution_claim_token
+        if not token or claim_url != f"{telemetry_site_origin()}/claim#token={token}":
+            return False
+        saved = mark_attribution_claim_opened(
+            self._state_path, state.install_id, claim_token=token
+        )
+        return saved.attribution_claim_opened and saved.attribution_claim_token == token
+
     def deliver_first_launch(
         self,
         state: InstallationState,
         *,
         app_version: str,
         platform_name: str | None = None,
+        cancelled: Callable[[], bool] = lambda: False,
     ) -> InstallationState:
-        if not telemetry_collection_allowed() or not analytics_allowed(
-            self._state_path.parent
-        ):
+        consent = AnalyticsConsentOwner(self._state_path.parent)
+        epoch = consent.snapshot().get("collection_epoch")
+
+        def permitted() -> bool:
+            return (
+                not cancelled()
+                and telemetry_collection_allowed()
+                and analytics_allowed(self._state_path.parent)
+                and consent.snapshot().get("collection_epoch") == epoch
+            )
+
+        if not permitted():
             return state
         current = load_or_create_installation_state(self._state_path)
         if (
@@ -217,6 +284,8 @@ class InstallationAttributionOwner:
             app_version=app_version,
             platform_name=platform_name,
         ):
+            if not permitted():
+                return load_or_create_installation_state(self._state_path)
             current = mark_first_launch_confirmed(self._state_path, current.install_id)
 
         if current.attribution_claim_confirmed:
@@ -225,22 +294,28 @@ class InstallationAttributionOwner:
         onboarding = current.onboarding or {}
         # Migrated existing users may retry telemetry delivery, but must
         # never enroll a fresh browser claim as a side effect of that retry.
-        if onboarding.get("storage_version") == 1 and not onboarding.get(
-            "browser_eligible"
+        if (
+            onboarding.get("storage_version") == 1
+            and not onboarding.get("browser_eligible")
+            and not current.attribution_claim_opened
         ):
             return current
 
+        if not permitted():
+            return load_or_create_installation_state(self._state_path)
         claim_token = current.attribution_claim_token
         if claim_token is None:
             if current.attribution_claim_opened:
                 return current
             claim_token = secrets.token_urlsafe(32)
             issued = self._claim_issuer(current.install_id, claim_token)
-            if issued is None:
-                return current
+            if issued is None or not permitted():
+                return load_or_create_installation_state(self._state_path)
             current = mark_attribution_claim_issued(
                 self._state_path, current.install_id, claim_token
             )
+            if not permitted():
+                return load_or_create_installation_state(self._state_path)
             try:
                 opened = bool(
                     self._browser_opener(
@@ -251,10 +326,10 @@ class InstallationAttributionOwner:
                 )
             except Exception:  # noqa: BLE001 - platform browser adapters vary
                 opened = False
-            if not opened:
-                return current
+            if not opened or not permitted():
+                return load_or_create_installation_state(self._state_path)
             current = mark_attribution_claim_opened(
-                self._state_path, current.install_id
+                self._state_path, current.install_id, claim_token=claim_token
             )
         elif not current.attribution_claim_opened:
             # A prior process persisted the capability before it could hand it
@@ -264,23 +339,27 @@ class InstallationAttributionOwner:
                 opened = bool(self._browser_opener(claim_url, new=2, autoraise=False))
             except Exception:  # noqa: BLE001 - platform browser adapters vary
                 opened = False
-            if not opened:
-                return current
+            if not opened or not permitted():
+                return load_or_create_installation_state(self._state_path)
             current = mark_attribution_claim_opened(
-                self._state_path, current.install_id
+                self._state_path, current.install_id, claim_token=claim_token
             )
 
         for attempt in range(self._poll_attempts):
-            if not analytics_allowed(self._state_path.parent):
+            if not permitted():
                 return current
             status = self._claim_reader(claim_token)
+            if not permitted():
+                return load_or_create_installation_state(self._state_path)
             if status == "claimed":
                 current = mark_attribution_claim_confirmed(
-                    self._state_path, current.install_id
+                    self._state_path, current.install_id, claim_token=claim_token
                 )
                 return current
             if status in {"expired", "unknown"}:
-                return clear_attribution_claim(self._state_path, current.install_id)
+                return clear_attribution_claim(
+                    self._state_path, current.install_id, claim_token=claim_token
+                )
             if attempt + 1 < self._poll_attempts:
                 self._sleep(POLL_INTERVAL_SECONDS)
         return current

@@ -3013,6 +3013,23 @@ Window {
                             : "Additional analytics is off in this build. No data is sent to PostHog."
                         color: theme.muted; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true
                     }
+                    StoneButton {
+                        objectName: "settingsInstallationLink"
+                        label: bridge.installationLinkStatus === "linked" ? "Installation linked" : "Link this installation"
+                        visible: bridge.analyticsAvailable
+                        enabled: bridge.analyticsAllowed && bridge.installationLinkStatus !== "linked" &&
+                                 bridge.installationLinkStatus !== "preparing" && bridge.installationLinkStatus !== "checking"
+                        Layout.preferredHeight: 40
+                        Layout.fillWidth: true
+                        onActivated: bridge.requestInstallationLink()
+                    }
+                    Text {
+                        objectName: "settingsInstallationLinkDescription"
+                        visible: bridge.analyticsAvailable
+                        text: bridge.installationLinkMessage ||
+                              "Opens your browser to connect this installation to a website download. Usage analytics must be on. PostHog identities stay separate."
+                        color: theme.muted; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true
+                    }
                 }
             }
             RowLayout {

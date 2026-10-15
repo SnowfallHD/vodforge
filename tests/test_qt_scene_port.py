@@ -7574,3 +7574,113 @@ def test_rating_counts_only_actual_current_completed_runtime_events(
         assert bridge._engagement.rating_pending
     finally:
         bridge.close()
+
+
+@pytest.mark.parametrize("width", [1100, 820])
+def test_explicit_installation_link_is_visible_consent_gated_and_acknowledged(
+    tmp_path, monkeypatch, width
+):
+    from yt_downloader import install_attribution
+    from yt_downloader.analytics_consent import AnalyticsConsentOwner
+    from yt_downloader.cloud_funnel import load_or_create_installation_state
+    from yt_downloader.install_attribution import (
+        ClaimIssueResult,
+        InstallationAttributionOwner,
+    )
+
+    app = qt_app()
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    monkeypatch.setattr(
+        install_attribution, "telemetry_collection_allowed", lambda: True
+    )
+    monkeypatch.setattr(
+        install_attribution,
+        "analytics_allowed",
+        lambda directory: AnalyticsConsentOwner(directory).allowed,
+    )
+    bridge = qt_main.Bridge(None)
+    session = bridge._analytics
+    profile = session._attribution_path.parent
+    consent = AnalyticsConsentOwner(profile)
+    consent.choose(True)
+    session.owner = consent
+    session._started = session._presented = session._attribution_attempted = True
+    session._attribution = InstallationAttributionOwner(
+        session._attribution_path,
+        first_party_recorder=lambda *args, **kwargs: True,
+        claim_issuer=lambda install, token: ClaimIssueResult(
+            f"https://getvodforge.com/claim#token={token}"
+        ),
+        claim_reader=lambda token: "claimed",
+        browser_opener=lambda *args, **kwargs: pytest.fail(
+            "No automatic browser launch"
+        ),
+    )
+    opened = []
+    monkeypatch.setattr(
+        qt_main.QDesktopServices,
+        "openUrl",
+        lambda url: opened.append(url.toString()) or True,
+    )
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        window.setWidth(width)
+        window.setHeight(560)
+        window.show()
+        popup = window.findChild(QObject, "downloadSettingsPopup")
+        popup.open()
+        QTest.qWait(100)
+        viewport = window.findChild(QObject, "settingsBodyViewport").property(
+            "contentItem"
+        )
+        viewport.setProperty(
+            "contentY", max(0, viewport.property("contentHeight") - viewport.height())
+        )
+        app.processEvents()
+        button = window.findChild(QObject, "settingsInstallationLink")
+        description = window.findChild(QObject, "settingsInstallationLinkDescription")
+        assert button.isVisible() and button.property("enabled")
+        assert "Opens your browser" in description.property("text")
+        point = button.mapToItem(viewport, QPointF(0, 0))
+        assert point.y() >= -1 and point.y() + button.height() <= viewport.height() + 1
+        import os
+
+        if directory := os.environ.get("VODFORGE_TEST_SCREENSHOT_DIR"):
+            image = window.grabWindow()
+            assert not image.isNull()
+            assert image.save(str(Path(directory) / f"installation-link-{width}.png"))
+        assert not opened
+        consent.choose(False)
+        bridge.analyticsChanged.emit()
+        app.processEvents()
+        assert not button.property("enabled")
+        assert not bridge.requestInstallationLink() and not opened
+        consent.choose(True)
+        bridge.analyticsChanged.emit()
+        app.processEvents()
+        point = button.mapToScene(
+            QPointF(button.width() / 2, button.height() / 2)
+        ).toPoint()
+        QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, point)
+        deadline = time.monotonic() + 3
+        while (
+            session.installation_link_status != "linked" and time.monotonic() < deadline
+        ):
+            bridge._pump()
+            QTest.qWait(10)
+        saved = load_or_create_installation_state(session._attribution_path)
+        assert saved.attribution_claim_opened and saved.attribution_claim_confirmed
+        assert len(opened) == 1
+        assert button.property(
+            "label"
+        ) == "Installation linked" and not button.property("enabled")
+        assert saved.attribution_claim_token is None
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        app.processEvents()
+        bridge.close()

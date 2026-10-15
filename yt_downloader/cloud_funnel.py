@@ -293,6 +293,8 @@ def mark_attribution_claim_issued(
     path: Path,
     install_id: str,
     claim_token: str,
+    *,
+    if_unclaimed: bool = False,
 ) -> InstallationState:
     token = _parse_claim_token(claim_token)
     if token is None:
@@ -300,36 +302,67 @@ def mark_attribution_claim_issued(
     return _update_state(
         path,
         install_id,
-        lambda state: replace(state, attribution_claim_token=token),
-    )
-
-
-def mark_attribution_claim_opened(path: Path, install_id: str) -> InstallationState:
-    return _update_state(
-        path,
-        install_id,
-        lambda state: replace(state, attribution_claim_opened=True),
-    )
-
-
-def mark_attribution_claim_confirmed(path: Path, install_id: str) -> InstallationState:
-    return _update_state(
-        path,
-        install_id,
-        lambda state: replace(
-            state,
-            attribution_claim_confirmed=True,
-            attribution_claim_token=None,
-            product_telemetry_allowed=True,
+        lambda state: (
+            state
+            if state.attribution_claim_confirmed
+            or (if_unclaimed and state.attribution_claim_token is not None)
+            else replace(
+                state,
+                attribution_claim_token=token,
+                attribution_claim_opened=(
+                    state.attribution_claim_opened
+                    if state.attribution_claim_token == token
+                    else False
+                ),
+            )
         ),
     )
 
 
-def clear_attribution_claim(path: Path, install_id: str) -> InstallationState:
+def mark_attribution_claim_opened(
+    path: Path, install_id: str, *, claim_token: str | None = None
+) -> InstallationState:
     return _update_state(
         path,
         install_id,
-        lambda state: replace(state, attribution_claim_token=None),
+        lambda state: (
+            state
+            if claim_token is not None and state.attribution_claim_token != claim_token
+            else replace(state, attribution_claim_opened=True)
+        ),
+    )
+
+
+def mark_attribution_claim_confirmed(
+    path: Path, install_id: str, *, claim_token: str | None = None
+) -> InstallationState:
+    return _update_state(
+        path,
+        install_id,
+        lambda state: (
+            state
+            if claim_token is not None and state.attribution_claim_token != claim_token
+            else replace(
+                state,
+                attribution_claim_confirmed=True,
+                attribution_claim_token=None,
+                product_telemetry_allowed=True,
+            )
+        ),
+    )
+
+
+def clear_attribution_claim(
+    path: Path, install_id: str, *, claim_token: str | None = None
+) -> InstallationState:
+    return _update_state(
+        path,
+        install_id,
+        lambda state: (
+            state
+            if claim_token is not None and state.attribution_claim_token != claim_token
+            else replace(state, attribution_claim_token=None)
+        ),
     )
 
 

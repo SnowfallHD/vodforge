@@ -361,3 +361,56 @@ def test_native_owner_observes_each_session_even_with_completed_attribution(
         assert not owner.needs_delivery(state)
         assert len(calls) == count
     assert calls == ["enroll", "launch", "launch"]
+
+
+def test_browser_ack_cannot_commit_after_permission_withdrawal(tmp_path):
+    from yt_downloader.analytics_consent import AnalyticsConsentOwner
+
+    path = _state_path(tmp_path)
+    original = load_or_create_installation_state(path)
+
+    def open_then_withdraw(*args, **kwargs):
+        AnalyticsConsentOwner(tmp_path).choose(False)
+        return True
+
+    owner = InstallationAttributionOwner(
+        path,
+        first_party_recorder=lambda *args, **kwargs: True,
+        claim_issuer=lambda install, token: ClaimIssueResult(
+            f"https://getvodforge.com/claim#token={token}"
+        ),
+        browser_opener=open_then_withdraw,
+        claim_reader=lambda token: "claimed",
+    )
+    owner.deliver_first_launch(original, app_version="0.2.6")
+    saved = load_or_create_installation_state(path)
+    assert not saved.attribution_claim_opened
+    assert not saved.attribution_claim_confirmed
+
+
+def test_old_claim_ack_cannot_confirm_a_replacement_capability(tmp_path):
+    from yt_downloader.cloud_funnel import mark_attribution_claim_issued
+
+    path = _state_path(tmp_path)
+    original = load_or_create_installation_state(path)
+    replacement = "B" * 43
+
+    def replace_before_ack(token):
+        assert token != replacement
+        mark_attribution_claim_issued(path, original.install_id, replacement)
+        return "claimed"
+
+    owner = InstallationAttributionOwner(
+        path,
+        first_party_recorder=lambda *args, **kwargs: True,
+        claim_issuer=lambda install, token: ClaimIssueResult(
+            f"https://getvodforge.com/claim#token={token}"
+        ),
+        browser_opener=lambda *args, **kwargs: True,
+        claim_reader=replace_before_ack,
+    )
+    owner.deliver_first_launch(original, app_version="0.2.6")
+    saved = load_or_create_installation_state(path)
+    assert saved.attribution_claim_token == replacement
+    assert not saved.attribution_claim_confirmed
+    assert not saved.attribution_claim_opened

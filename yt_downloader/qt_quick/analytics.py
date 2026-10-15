@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 from yt_downloader.analytics_consent import AnalyticsConsentOwner
@@ -18,7 +19,10 @@ from yt_downloader.cloud_funnel import (
     installation_state_path,
     load_or_create_installation_state,
 )
-from yt_downloader.install_attribution import InstallationAttributionOwner
+from yt_downloader.install_attribution import (
+    ClaimIssueResult,
+    InstallationAttributionOwner,
+)
 from yt_downloader.product_telemetry import (
     PRODUCT_TELEMETRY_STATE_FILENAME,
     ProductTelemetryOwner,
@@ -50,6 +54,10 @@ class QtAnalyticsSession:
         )
         self._attribution_work: ArchiveWorkOwner | None = None
         self._attribution_attempted = False
+        self.installation_link_status = "unavailable"
+        self.installation_link_message = ""
+        self._link_opener: Callable[[str], bool] | None = None
+        self._link_epoch: object = None
         if not telemetry_collection_allowed():
             return
         owner = AnalyticsConsentOwner(directory)
@@ -169,7 +177,12 @@ class QtAnalyticsSession:
 
     def start_first_launch_delivery(self) -> None:
         """Use Tk's consent-gated attribution owner once per Qt session."""
-        if not self.allowed or self._attribution_attempted:
+        if (
+            not self.allowed
+            or self._attribution_attempted
+            or self._attribution_work is not None
+            or self._closed
+        ):
             return
         self._attribution_attempted = True
         try:
@@ -177,15 +190,17 @@ class QtAnalyticsSession:
         except (OSError, ValueError):
             return
         if not self._attribution.needs_delivery(state):
+            self._refresh_installation_link()
             return
         self._attribution_work = ArchiveWorkOwner()
+        self.installation_link_status = "checking"
 
         telemetry = self.telemetry
         epoch = telemetry.posthog_admission_epoch() if telemetry is not None else None
 
         def deliver(_cancelled: threading.Event) -> bool:
             result = self._attribution.deliver_first_launch(
-                state, app_version=self._app_version
+                state, app_version=self._app_version, cancelled=_cancelled.is_set
             )
             if (
                 result.first_launch_confirmed
@@ -199,6 +214,49 @@ class QtAnalyticsSession:
 
         self._attribution_work.submit("first_launch", deliver)
 
+    def _refresh_installation_link(self) -> None:
+        if self._attribution_work is not None:
+            return
+        if not self.allowed:
+            self.installation_link_status = "off"
+            return
+        try:
+            state = load_or_create_installation_state(self._attribution_path)
+            self.installation_link_status = (
+                "linked"
+                if state.attribution_claim_confirmed
+                else "waiting"
+                if state.attribution_claim_opened and state.attribution_claim_token
+                else "ready"
+                if state.attribution_claim_token
+                else "unavailable"
+            )
+            if state.attribution_claim_confirmed:
+                self.installation_link_message = (
+                    "Installation linked to a browser download."
+                )
+        except (OSError, ValueError, RuntimeError):
+            self.installation_link_status = "unavailable"
+
+    def request_installation_link(self, opener: Callable[[str], bool]) -> bool:
+        """Explicit GUI action only; preparation is off-thread, opening on poll."""
+        if self._closed or not self.allowed or self._attribution_work is not None:
+            return False
+        self._link_opener = opener
+        self._link_epoch = (
+            self.owner.snapshot().get("collection_epoch") if self.owner else None
+        )
+        self.installation_link_status = "preparing"
+        self.installation_link_message = "Preparing the installation link…"
+        self._attribution_work = ArchiveWorkOwner()
+        self._attribution_work.submit(
+            "browser_link",
+            lambda cancelled: self._attribution.prepare_browser_link(
+                cancelled=cancelled.is_set
+            ),
+        )
+        return True
+
     def poll_first_launch_delivery(self) -> None:
         """Poll startup work and retry the existing outbox while Qt is idle."""
         if self._closed:
@@ -206,9 +264,41 @@ class QtAnalyticsSession:
         if self.lifecycle is not None and self._presented:
             self.lifecycle.tick()
         work = self._attribution_work
-        if work is not None and work.poll() is not None:
-            work.close()
-            self._attribution_work = None
+        if work is not None:
+            result = work.poll()
+            if result is not None:
+                work.close()
+                self._attribution_work = None
+                if result.kind == "browser_link":
+                    opener, self._link_opener = self._link_opener, None
+                    epoch, self._link_epoch = self._link_epoch, None
+                    claim = result.value
+                    opened = False
+                    if (
+                        not result.error
+                        and isinstance(claim, ClaimIssueResult)
+                        and opener is not None
+                        and self.allowed
+                        and self.owner is not None
+                        and self.owner.snapshot().get("collection_epoch") == epoch
+                    ):
+                        try:
+                            opened = bool(opener(claim.claim_url))
+                        except (OSError, ValueError, RuntimeError):
+                            opened = False
+                        if opened:
+                            opened = self._attribution.record_browser_opened(
+                                claim.claim_url, epoch=epoch
+                            )
+                    self.installation_link_message = (
+                        "Browser opened. Waiting for confirmation."
+                        if opened
+                        else "Installation link could not be opened. Try again."
+                    )
+                    if opened:
+                        self._attribution_attempted = False
+                        self.start_first_launch_delivery()
+                self._refresh_installation_link()
         now = time.monotonic()
         if (
             self.allowed
@@ -224,6 +314,7 @@ class QtAnalyticsSession:
         if self.lifecycle is not None:
             self.lifecycle.close()
         self._closed = True
+        self._link_opener = None
         if self._attribution_work is not None:
             self._attribution_work.close()
             self._attribution_work = None
