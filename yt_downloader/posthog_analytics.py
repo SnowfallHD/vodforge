@@ -22,6 +22,7 @@ from .telemetry_features import (
     FEATURE_ACTIONS,
     system_dimensions,
 )
+from .telemetry_policy import qa_transport_requested
 
 if TYPE_CHECKING:
     from .product_telemetry import ProductTelemetryEvent
@@ -91,6 +92,7 @@ class PosthogConfig:
             public.get("project_id") == 664300
             and public.get("capture_enabled") is True
             and environment.get("VODFORGE_POSTHOG_ENABLED", "true") == "true"
+            and not qa_transport_requested(environment)
             and re.fullmatch(r"phc_[A-Za-z0-9]{10,200}", key) is not None
             and host in HOSTS
             and host == public.get("ingest_host")

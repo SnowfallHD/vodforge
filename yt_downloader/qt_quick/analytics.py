@@ -66,6 +66,10 @@ class QtAnalyticsSession:
         self._automatic_browser_opener = browser_opener
         self._automatic_browser_checked = False
         if not telemetry_collection_allowed():
+            # Offline/preview QA must still show saved local facts. Never
+            # create a new identity merely to render this disabled surface.
+            if self._attribution_path.is_file():
+                self._refresh_installation_link()
             return
         owner = AnalyticsConsentOwner(directory)
         initial_allowed = owner.allowed

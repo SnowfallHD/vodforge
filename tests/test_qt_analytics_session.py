@@ -13,8 +13,9 @@ pytestmark = pytest.mark.usefixtures("production_telemetry_contract")
 
 @pytest.mark.parametrize("allowed", [False, True])
 @pytest.mark.parametrize("claim", ["confirmed", "pending", "absent"])
+@pytest.mark.parametrize("transport_allowed", [False, True])
 def test_cold_link_display_preserves_durable_fact_without_authorizing_delivery(
-    tmp_path, monkeypatch, allowed, claim
+    tmp_path, monkeypatch, allowed, claim, transport_allowed
 ):
     from yt_downloader.cloud_funnel import (
         load_or_create_installation_state,
@@ -23,7 +24,9 @@ def test_cold_link_display_preserves_durable_fact_without_authorizing_delivery(
         mark_attribution_claim_opened,
     )
 
-    monkeypatch.setattr(analytics, "telemetry_collection_allowed", lambda: True)
+    monkeypatch.setattr(
+        analytics, "telemetry_collection_allowed", lambda: transport_allowed
+    )
     path = tmp_path / "installation.json"
     state = load_or_create_installation_state(path)
     if claim != "absent":
@@ -52,7 +55,7 @@ def test_cold_link_display_preserves_durable_fact_without_authorizing_delivery(
     for _ in range(2):
         session = analytics.QtAnalyticsSession(tmp_path, "0.2.6", Mock())
         assert session.installation_link_status == expected
-        assert session.allowed is allowed
+        assert session.allowed is (allowed and transport_allowed)
         assert session._attribution_work is None
         assert session._automatic_browser_opener is None
         assert path.read_bytes() == before
@@ -194,3 +197,17 @@ def test_explicit_link_uses_gui_dispatch_and_only_canonical_claim_ack(
         assert len(dispatched) == (1 if interruption == "browser_failed" else 0)
     session.close()
     assert session.telemetry.shutdown(2)
+
+
+def test_disabled_session_display_does_not_create_identity_or_open_browser(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(analytics, "telemetry_collection_allowed", lambda: False)
+    session = analytics.QtAnalyticsSession(tmp_path, "0.2.6", Mock())
+    assert session.installation_link_status == "unavailable"
+    assert session.owner is None and session.telemetry is None
+    assert not (tmp_path / "installation.json").exists()
+    assert not session.request_installation_link(
+        lambda url: pytest.fail("Disabled session opened a browser")
+    )
+    session.close()

@@ -9,9 +9,24 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 
 PREVIEW_ORIGIN = "https://vodforge-preview.little-mountain-f558.workers.dev"
+
+
+def qa_transport_requested(environment: Mapping[str, str] = os.environ) -> bool:
+    """QA labels are not production permission or a preview credential."""
+    return any(
+        environment.get(key)
+        for key in (
+            "VODFORGE_QUALITY_E2E",
+            "VODFORGE_QA_PREVIEW_TELEMETRY",
+            "VODFORGE_QA_PROFILE",
+            "VODFORGE_POSTHOG_QA_RUN",
+            "VODFORGE_POSTHOG_QA_HOME",
+        )
+    )
 
 
 def preview_telemetry_allowed() -> bool:
@@ -47,11 +62,7 @@ def telemetry_site_origin() -> str:
 
 
 def production_telemetry_allowed() -> bool:
-    if (
-        os.environ.get("VODFORGE_DISABLE_TELEMETRY")
-        or os.environ.get("VODFORGE_QUALITY_E2E")
-        or os.environ.get("VODFORGE_QA_PREVIEW_TELEMETRY")
-    ):
+    if os.environ.get("VODFORGE_DISABLE_TELEMETRY") or qa_transport_requested():
         return False
     root = getattr(sys, "_MEIPASS", None)
     if not root:
