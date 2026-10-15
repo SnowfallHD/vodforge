@@ -372,6 +372,13 @@ def test_custom_resize_relocates_extras_and_keeps_scroll_owners_independent(
         )
         preset.setProperty("expanded", True)
         wait_for_reveal(preset, 1)
+        # Ensure real overflow on every platform's font metrics, rather than
+        # assuming the preset choices alone exceed this viewport's height.
+        rate = window.findChild(QObject, "composerManualMp4").findChild(
+            QObject, "manualRateControlSelector"
+        )
+        rate.setProperty("expanded", True)
+        wait_for_reveal(rate, 1)
         QTest.qWait(40)
         assert left.property("contentHeight") > left.height()
         assert right.property("contentHeight") > right.height()

@@ -138,7 +138,9 @@ def test_custom_single_column_scrolls_with_expanded_choices(run_scene):  # noqa:
 def test_rate_control_hides_unused_field_and_preserves_values(run_scene):  # noqa: F811
     _app, bridge, window, _button, _popup = run_scene
     bridge.setExportMode("Manual Override")
-    window.findChild(QObject, "optionsMenu").open()
+    popup = window.findChild(QObject, "optionsMenu")
+    popup.open()
+    wait_for_reveal(popup, 1, "customReveal")
     manual = window.findChild(QObject, "composerManualMp4")
     crf = manual.findChild(QObject, "manualCrfGroup")
     cbr = manual.findChild(QObject, "manualCbrGroup")

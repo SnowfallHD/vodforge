@@ -20,11 +20,16 @@ from yt_downloader.qt_quick import main as qt_main
 
 
 @pytest.mark.parametrize("width", [820, 1100])
-def test_file_action_paths_are_separate_selectable_blocks(scene, tmp_path, width):
+def test_file_action_paths_are_separate_selectable_blocks(
+    scene, tmp_path, width, monkeypatch
+):
     from tests.test_archive_trash_hierarchy import canonical_legacy_fixture
+    from yt_downloader.qt_quick import library_files
 
     app, bridge, window = scene
-    directory = tmp_path / ("Long nested fixture path " * 3)
+    # Review only: no host Trash service or file deletion is needed for layout.
+    monkeypatch.setattr(library_files, "system_trash_available", lambda: True)
+    directory = tmp_path / "Long nested fixture path"
     _root, _folder, record = canonical_legacy_fixture(directory)
     bridge._runtime.history = [record]
     save_history(bridge._runtime.history_path, [record])

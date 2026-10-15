@@ -32,6 +32,7 @@ class _Telemetry:
         self.installation = kwargs["installation_state_path"]
         self.enabled = kwargs["enabled"]
         self.opens = 0
+        self.first_run_mirrors: list[tuple[str, object]] = []
         self.instances.append(self)
 
     def set_enabled(self, enabled: bool) -> None:
@@ -45,6 +46,12 @@ class _Telemetry:
 
     def record_operation(self, *_args: Any, **_kwargs: Any) -> None:
         pass
+
+    def posthog_admission_epoch(self) -> None:
+        return None  # This fixture grants no separate provider consent.
+
+    def mirror_first_run_confirmed(self, install_id: str, epoch: object) -> None:
+        self.first_run_mirrors.append((install_id, epoch))
 
 
 def _await_resolution(session: analytics.QtAnalyticsSession) -> None:
@@ -147,7 +154,11 @@ def test_qt_first_launch_uses_existing_attribution_owner_once_after_consent(
 
     monkeypatch.setattr(analytics, "InstallationAttributionOwner", Attribution)
     monkeypatch.setattr(
-        analytics, "load_or_create_installation_state", lambda _path: object()
+        analytics,
+        "load_or_create_installation_state",
+        lambda _path: SimpleNamespace(
+            first_launch_confirmed=False, install_id="fixture-installation"
+        ),
     )
     session = analytics.QtAnalyticsSession(tmp_path, "0.2.3", _Recovery())
     try:
@@ -160,6 +171,11 @@ def test_qt_first_launch_uses_existing_attribution_owner_once_after_consent(
             session.poll_first_launch_delivery()
             time.sleep(0.005)
         assert calls == ["needs", "0.2.3"]
+        deadline = time.monotonic() + 1
+        while not session.telemetry.first_run_mirrors and time.monotonic() < deadline:
+            session.poll_first_launch_delivery()
+            time.sleep(0.005)
+        assert session.telemetry.first_run_mirrors == [("fixture-installation", None)]
         session.start_first_launch_delivery()
         assert calls == ["needs", "0.2.3"]
     finally:
