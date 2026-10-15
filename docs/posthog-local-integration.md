@@ -1,3 +1,11 @@
+## Current comprehensive successor — October15 evening
+
+The new authorized implementation is additive. See [desktop contract](posthog-desktop-contract.md) for the exact current schema, privacy boundaries, supported native alternatives and QA classification. Historical acceptance notes below retain their original scope. Earlier packages do not contain these successor changes.
+
+Fresh separately resolved provider policy may default ordinary analytics on only where the parent-reviewed regional service permits it; explicit general/provider refusals always win. Old generic cached defaults cannot enable PostHog. Product event names and the authoritative first-party owner/outbox/acknowledgements remain unchanged. PostHog additionally receives safe session context and lifecycle events, standard screen events, categorized manual error tracking and existing processing/UI-performance categories. Qt-native visual replay is unsupported by the documented SDK set; the supported alternative is a semantic event timeline, without content capture. QA uses explicit test labels and independent first-party/provider readback; no adoption is inferred.
+
+The earlier “separate explicit choice everywhere” statements below describe the previous candidate, not the jurisdiction-aware successor. No negative preference is migrated to permission. No prior provider proof is relabeled as successor packaged verification.
+
 # PostHog integration and release qualification
 
 Project 664300 (VODForge), US ingestion, is bound to the authorized public ingestion key. This is not a management credential. Desktop capture is enabled in the reviewed configuration after Cooper’s release authorization; `VODFORGE_POSTHOG_ENABLED=false` remains an emergency opt-out. Separate provider consent is still required; no existing permission is upgraded. Replay and experiments remain off. Website activation and deployment are owned by the canonical site lane.

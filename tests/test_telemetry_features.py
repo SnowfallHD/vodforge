@@ -101,9 +101,17 @@ def test_all_feature_actions_persist_and_are_deduplicated_in_session(tmp_path):
     }
     for feature, actions in legacy_features.items():
         for action in actions:
-            assert owner.record_feature(feature, action)
+            dimensions = (
+                {"exception_kind": "other", "exception_origin": "main_thread"}
+                if feature == "application_lifecycle"
+                and action == "unhandled_exception"
+                else {}
+            )
+            if feature == "application_lifecycle" and action == "screen_viewed":
+                dimensions = {"view": "forge"}
+            assert owner.record_feature(feature, action, dimensions=dimensions)
             if feature != "updater":
-                assert owner.record_feature(feature, action)
+                assert owner.record_feature(feature, action, dimensions=dimensions)
     owner.shutdown(2)
     events = _load_outbox(path)
     assert len(events) == sum(map(len, legacy_features.values()))

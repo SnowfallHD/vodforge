@@ -22,8 +22,15 @@ from .telemetry_transport import telemetry_urlopen
 
 POLICY_URL = "https://getvodforge.com/api/analytics/policy"
 _LOCK = threading.RLock()
-_ONBOARDING_KEYS = ("mode", "region_checked", "prompted", "welcome_attempted")
-REGION_POLICY_VERSION = 1
+_ONBOARDING_KEYS = (
+    "mode",
+    "region_checked",
+    "prompted",
+    "welcome_attempted",
+    "posthog_mode",
+    "posthog_region_resolved",
+)
+REGION_POLICY_VERSION = 2
 ANALYTICS_BENEFITS = (
     ("shield-check", "No content or credentials"),
     ("activity", "Fix errors without support"),
@@ -122,6 +129,17 @@ class AnalyticsConsentOwner:
                 if onboarding.get("region_checked") is True:
                     onboarding["region_policy_version"] = REGION_POLICY_VERSION
                 update_onboarding(self.path.parent / "installation.json", **onboarding)
+                current = self.snapshot()
+                if (
+                    current.get("posthog_region_resolved") is True
+                    and current.get("mode") == "default-on"
+                    and current.get("posthog_mode") == "default-on"
+                    and current.get("posthog_choice") not in {"granted", "denied"}
+                    and not current.get("posthog_epoch")
+                ):
+                    update_analytics_settings(
+                        self.path, {"posthog_epoch": str(uuid.uuid4())}
+                    )
 
     @property
     def allowed(self) -> bool:
@@ -135,8 +153,20 @@ class AnalyticsConsentOwner:
 
     @property
     def posthog_allowed(self) -> bool:
-        """Existing/default consent never opts someone into a new provider."""
-        return self.allowed and self.snapshot().get("posthog_choice") == "granted"
+        """Preserve choices; only fresh explicit provider policy can default on."""
+        state = self.snapshot()
+        choice = state.get("posthog_choice")
+        return self.allowed and (
+            choice == "granted"
+            or (
+                choice != "denied"
+                and state.get("posthog_region_resolved") is True
+                and state.get("region_policy_version") == REGION_POLICY_VERSION
+                and state.get("region_checked") is True
+                and state.get("mode") == "default-on"
+                and state.get("posthog_mode") == "default-on"
+            )
+        )
 
     def choose_posthog(self, enabled: bool) -> None:
         with _LOCK:
@@ -173,7 +203,9 @@ class AnalyticsConsentOwner:
         """No install ID, cookie, credential or analytics payload in this request."""
         if not telemetry_collection_allowed():
             return "unknown"
-        self.update(mode="unknown")
+        self.update(
+            mode="unknown", posthog_mode="opt-in", posthog_region_resolved=False
+        )
         remaining = 1.5 if deadline is None else deadline - time.monotonic()
         if remaining <= 0:
             return "unknown"
@@ -195,7 +227,17 @@ class AnalyticsConsentOwner:
             # A late response must not enable analytics after the fallback prompt.
             if deadline is not None and time.monotonic() >= deadline:
                 return "unknown"
-            self.update(mode=mode)
+            self.update(
+                mode=mode,
+                posthog_mode=(
+                    "default-on"
+                    if value.get("resolved") is True
+                    and mode == "default-on"
+                    and value.get("posthog_mode") == "default-on"
+                    else "opt-in"
+                ),
+                posthog_region_resolved=value.get("resolved") is True,
+            )
             return mode
         except (OSError, ValueError):
             return "unknown"

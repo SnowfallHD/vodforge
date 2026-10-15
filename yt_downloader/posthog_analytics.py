@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import time
 import urllib.request
 import uuid
 from collections.abc import Mapping
@@ -14,8 +15,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from .failure_diagnostics import FAILURE_REASONS, FAILURE_STAGES
-from .telemetry_features import DIMENSION_CHOICES, FEATURE_ACTIONS, system_dimensions
+from .failure_diagnostics import FAILURE_CODES, FAILURE_REASONS, FAILURE_STAGES
+from .telemetry_features import (
+    DIMENSION_CHOICES,
+    DIMENSION_RANGES,
+    FEATURE_ACTIONS,
+    system_dimensions,
+)
 
 if TYPE_CHECKING:
     from .product_telemetry import ProductTelemetryEvent
@@ -37,6 +43,23 @@ SAFE_DIMENSIONS = frozenset(
         "update_stage",
     }
 )
+
+
+def valid_qa_run_id(value: str) -> str | None:
+    try:
+        parsed = uuid.UUID(value)
+        return str(parsed) if parsed.version == 4 else None
+    except (ValueError, AttributeError, TypeError):
+        return None
+
+
+def new_session_id() -> str:
+    """UUIDv7 compatible with supported Python 3.11+, without a new SDK."""
+    random_bits = uuid.uuid4().int
+    value = (int(time.time() * 1000) << 80) | (random_bits & ((1 << 80) - 1))
+    value = (value & ~(15 << 76)) | (7 << 76)
+    value = (value & ~(3 << 62)) | (2 << 62)
+    return str(uuid.UUID(int=value))
 
 
 @dataclass(frozen=True)
@@ -72,6 +95,10 @@ class PosthogConfig:
             and host in HOSTS
             and host == public.get("ingest_host")
             and key == public.get("public_key")
+            and (
+                not environment.get("VODFORGE_POSTHOG_QA_RUN")
+                or valid_qa_run_id(environment["VODFORGE_POSTHOG_QA_RUN"]) is not None
+            )
         )
         return cls(enabled, key if enabled else "", host if enabled else "")
 
@@ -114,7 +141,39 @@ def capture_payload(event: ProductTelemetryEvent) -> dict[str, Any] | None:
         "$geoip_disable": True,
         "$ip": "0.0.0.0",
         "$process_person_profile": False,
+        "schema_version": "2",
+        "measurement_scope": "production",
+        "environment": "production",
+        "is_test": event.release_channel != "production",
     }
+    try:
+        session = uuid.UUID(event.posthog_session_id or "")
+        if session.version == 7:
+            properties["$session_id"] = str(session)
+    except (ValueError, TypeError, AttributeError):
+        pass
+    for name, value, maximum in (
+        ("event_sequence", event.posthog_sequence, 1000000),
+        ("session_elapsed_ms", event.posthog_elapsed_ms, 86400000),
+    ):
+        if type(value) is int and 0 <= value <= maximum:
+            properties[name] = value
+    qa = valid_qa_run_id(event.posthog_qa_run_id or "")
+    if qa:
+        properties.update(
+            qa_run_id=qa,
+            measurement_scope="qa",
+            release_channel="test",
+            validation_id=qa,
+            is_test=True,
+            build_release_channel=event.release_channel,
+        )
+    for name, value in (("attempt_id", event.attempt_id), ("retry_of", event.retry_of)):
+        try:
+            if value and uuid.UUID(value).version == 5:
+                properties[name] = value
+        except (ValueError, AttributeError, TypeError):
+            pass
     if event.feature is not None:
         if (
             event.feature not in FEATURE_ACTIONS
@@ -128,12 +187,46 @@ def capture_payload(event: ProductTelemetryEvent) -> dict[str, Any] | None:
         properties["output_type"] = event.output_type
     if event.failure_reason in FAILURE_REASONS:
         properties["failure_reason"] = event.failure_reason
-    for name in SAFE_DIMENSIONS:
+    for name in DIMENSION_CHOICES:
         value = event.dimensions.get(name)
         if isinstance(value, str) and value in DIMENSION_CHOICES[name]:
             properties[name] = value
+    for name in (
+        "item_count",
+        "committed_count",
+        "reused_count",
+        "failed_count",
+        "skipped_count",
+        "sidecar_failure_count",
+        "observation_drop_count",
+        "verified_count",
+        "unresolved_count",
+        "collision_count",
+        "identity_mismatch_count",
+        "missing_count",
+        "unavailable_count",
+    ):
+        value = event.dimensions.get(name, "")
+        if isinstance(value, str) and re.fullmatch(r"0|[1-9][0-9]{0,5}", value):
+            low, high = DIMENSION_RANGES[name]
+            if low <= int(value) <= high:
+                properties[name] = int(value)
+    revision = event.dimensions.get("build_revision", "")
+    if isinstance(revision, str) and re.fullmatch(r"[0-9a-f]{40}", revision):
+        properties["build_revision"] = revision
+    operation_id = event.dimensions.get("operation_id", "")
+    try:
+        if uuid.UUID(operation_id).version in {4, 5}:
+            properties["operation_id"] = operation_id
+            step = event.dimensions.get("operation_step", "")
+            if re.fullmatch(r"[1-9][0-9]{0,5}", step):
+                properties["operation_step"] = int(step)
+    except (ValueError, AttributeError, TypeError):
+        pass
     if event.failure_detail and event.failure_detail.stage in FAILURE_STAGES:
         properties["failure_stage"] = event.failure_detail.stage
+        if event.failure_detail.failure_code in FAILURE_CODES:
+            properties["failure_code"] = event.failure_detail.failure_code
     # Raw messages, stacks, metadata, media paths and all arbitrary dimensions
     # are excluded, even when an injected caller supplies them.
     return {
@@ -176,6 +269,58 @@ class PosthogEventSink:
             return False
         if first_run:
             payload["event"] = "vf_app_first_run_confirmed"
+        delivered = self._send(payload)
+        if (
+            event.feature == "application_lifecycle"
+            and event.action == "screen_viewed"
+            and event.dimensions.get("view")
+            in {"forge", "library", "watch", "activity"}
+        ):
+            screen_id = str(uuid.uuid5(uuid.UUID(event.event_id), "screen"))
+            screen = {
+                **payload,
+                "event": "$screen",
+                "uuid": screen_id,
+                "properties": {
+                    **payload["properties"],
+                    "$insert_id": screen_id,
+                    "$screen_name": event.dimensions["view"],
+                },
+            }
+            return self._send(screen) and delivered
+        if (
+            event.feature == "application_lifecycle"
+            and event.action == "unhandled_exception"
+            and event.dimensions.get("exception_kind")
+            in DIMENSION_CHOICES["exception_kind"]
+            and event.dimensions.get("exception_origin")
+            in DIMENSION_CHOICES["exception_origin"]
+        ):
+            kind = event.dimensions["exception_kind"]
+            origin = event.dimensions["exception_origin"]
+            exception = {
+                **payload,
+                "event": "$exception",
+                "uuid": str(uuid.uuid5(uuid.UUID(event.event_id), "exception")),
+                "properties": {
+                    **payload["properties"],
+                    "$exception_list": [
+                        {
+                            "type": "VODForge_" + kind,
+                            "value": "Unhandled application exception (content omitted)",
+                            "mechanism": {"handled": False, "synthetic": False},
+                            "stacktrace": {"type": "raw", "frames": []},
+                        }
+                    ],
+                    "$exception_fingerprint": "vodforge:" + kind + ":" + origin,
+                    "$exception_level": "error",
+                },
+            }
+            exception["properties"]["$insert_id"] = exception["uuid"]
+            return self._send(exception) and delivered
+        return delivered
+
+    def _send(self, payload: dict[str, Any]) -> bool:
         request = urllib.request.Request(
             self.config.host + "/i/v0/e/",
             data=json.dumps({"api_key": self.config.project_key, **payload}).encode(),

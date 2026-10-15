@@ -86,6 +86,13 @@ def telemetry_fixture(candidate, platform="macos"):
     for event in events:
         event["schema_version"] = 2
         event["dimensions"] = "{}"
+        if event.get("feature") == "application_lifecycle":
+            if event["action"] == "unhandled_exception":
+                event["dimensions"] = json.dumps(
+                    {"exception_kind": "other", "exception_origin": "main_thread"}
+                )
+            elif event["action"] == "screen_viewed":
+                event["dimensions"] = json.dumps({"view": "forge"})
         if str(event.get("feature", "")).endswith("_operation"):
             event["dimensions"] = json.dumps(
                 {

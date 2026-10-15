@@ -150,7 +150,7 @@ def owner(tmp_path, sink, d1):
 
 
 @pytest.mark.parametrize("result", [False, RuntimeError("PRIVATE")])
-def test_provider_failure_never_prevents_primary_ack(tmp_path, result):
+def test_provider_failure_never_prevents_primary_ack(tmp_path, result, monkeypatch):
     consent = permitted(tmp_path)
     consent.choose_posthog(True)
     sink = Sink(result)
@@ -158,16 +158,34 @@ def test_provider_failure_never_prevents_primary_ack(tmp_path, result):
     o = owner(tmp_path, sink, lambda e: primary.append(e.event_id) is None)
     assert o.record_app_opened() and o.shutdown(3)
     assert len(sink.events) == len(primary) == 1
+    pending = _load_outbox(tmp_path / "events.json")
+    assert len(pending) == 1 and pending[0].d1_delivered
+    assert not pending[0].posthog_attempted and pending[0].posthog_failures == 1
+    assert o.record("playback_started") and o.shutdown(3)
+    assert len(primary) == len(sink.events) == 2
+    assert (
+        len(set(primary)) == 2
+    )  # Provider backlog did not block/resend custom events.
+    retry_at = max(e.posthog_retry_at for e in _load_outbox(tmp_path / "events.json"))
+    monkeypatch.setattr(
+        "yt_downloader.product_telemetry.time.time", lambda: retry_at + 1
+    )
+    sink.result = True
+    o.flush_async()
+    assert o.shutdown(3)
+    assert len(primary) == 2 and len(sink.events) == 4
+    assert sink.events[0].event_id == sink.events[2].event_id
     assert not (tmp_path / "events.json").exists()
 
 
-def test_primary_retry_never_repeats_secondary_attempt(tmp_path):
+def test_primary_retry_respects_provider_backoff(tmp_path):
     consent = permitted(tmp_path)
     consent.choose_posthog(True)
     sink = Sink(False)
     o = owner(tmp_path, sink, lambda e: False)
     assert o.record_app_opened() and o.shutdown(3)
-    assert _load_outbox(tmp_path / "events.json")[0].posthog_attempted
+    queued = _load_outbox(tmp_path / "events.json")[0]
+    assert not queued.posthog_attempted and queued.posthog_failures == 1
     o.flush_async()
     assert o.shutdown(3)
     assert len(sink.events) == 1
@@ -252,6 +270,7 @@ def test_first_run_requires_new_ack_current_consent_and_open_owner(
         if session._attribution_work.poll() is not None:
             break
         time.sleep(0.01)
+    assert session.telemetry.shutdown(3)
     assert len(sink.events) == expected
     session.close()
 
@@ -264,3 +283,70 @@ def test_optional_first_run_admission_error_is_fail_closed(tmp_path, monkeypatch
         o, "_consent_epoch", lambda: (_ for _ in ()).throw(ValueError("PRIVATE"))
     )
     assert o.posthog_admission_epoch() is None
+
+
+def test_revocation_discards_provider_retry_without_replaying_it(tmp_path):
+    consent = permitted(tmp_path)
+    consent.choose_posthog(True)
+    sink = Sink(False)
+    primary = []
+    o = owner(tmp_path, sink, lambda e: primary.append(e.event_id) is None)
+    assert o.record_app_opened() and o.shutdown(3)
+    consent.choose_posthog(False)
+    consent.choose_posthog(True)
+    o.flush_async()
+    assert o.shutdown(3)
+    assert len(primary) == len(sink.events) == 1
+    assert not (tmp_path / "events.json").exists()
+
+
+def test_provider_backlog_capacity_cannot_block_custom_admission(tmp_path, monkeypatch):
+    consent = permitted(tmp_path)
+    consent.choose_posthog(True)
+    monkeypatch.setattr("yt_downloader.product_telemetry.MAX_OUTBOX_EVENTS", 2)
+    sink = Sink(False)
+    primary = []
+    diagnostics = []
+    o = ProductTelemetryOwner(
+        state_path=tmp_path / "events.json",
+        installation_state_path=tmp_path / "installation.json",
+        app_version="0.2.6",
+        d1_recorder=lambda e: primary.append(e.event_id) is None,
+        posthog_recorder=sink,
+        diagnostic=diagnostics.append,
+    )
+    for name in ["app_opened", "playback_started", "run_started"]:
+        assert o.record(name) and o.shutdown(3)
+    assert len(primary) == len(set(primary)) == 3
+    assert len(_load_outbox(tmp_path / "events.json")) == 2
+    assert any("provider retry backlog at capacity" in item for item in diagnostics)
+
+
+def test_first_run_provider_retry_is_durable_and_never_reposts_custom_first_launch(
+    tmp_path, monkeypatch
+):
+    consent = permitted(tmp_path)
+    consent.choose_posthog(True)
+    sink = Sink(False)
+    sink.first_run_confirmed = sink
+    primary = []
+    o = owner(tmp_path, sink, lambda e: primary.append(e.event_id) is None)
+    install_id = load_or_create_installation_state(
+        tmp_path / "installation.json"
+    ).install_id
+    assert o.mirror_first_run_confirmed(install_id, o.posthog_admission_epoch())
+    assert o.shutdown(3)
+    pending = _load_outbox(tmp_path / "events.json")[0]
+    assert pending.posthog_first_run and pending.d1_delivered
+    assert primary == [] and len(sink.events) == 1
+    sink.result = True
+    monkeypatch.setattr(
+        "yt_downloader.product_telemetry.time.time",
+        lambda: pending.posthog_retry_at + 1,
+    )
+    restarted = owner(tmp_path, sink, lambda e: primary.append(e.event_id) is None)
+    restarted.flush_async()
+    assert restarted.shutdown(3)
+    assert not (tmp_path / "events.json").exists()
+    assert primary == [] and len(sink.events) == 2
+    assert sink.events[0].event_id == sink.events[1].event_id

@@ -23,6 +23,19 @@ from .failure_diagnostics import FAILURE_CODES, FAILURE_REASONS
 from .source_selection import SELECTION_CHOICES, SELECTION_RANGES, selection_observation
 
 FEATURE_ACTIONS: dict[str, frozenset[str]] = {
+    "application_lifecycle": frozenset(
+        {
+            "session_started",
+            "session_ended",
+            "startup_ready",
+            "unclean_previous_exit",
+            "unhandled_exception",
+            "heartbeat",
+            "foreground",
+            "background",
+            "screen_viewed",
+        }
+    ),
     "settings": frozenset({"snapshot"}),
     "archive": frozenset(
         {
@@ -333,6 +346,17 @@ DIMENSION_RANGES.update(
     }
 )
 DIMENSION_CHOICES: dict[str, frozenset[str]] = {
+    "exception_kind": frozenset(
+        {
+            "type_error",
+            "value_error",
+            "os_error",
+            "runtime_error",
+            "memory_error",
+            "other",
+        }
+    ),
+    "exception_origin": frozenset({"main_thread", "worker_thread", "qt_callback"}),
     "run_control_action": frozenset(["cancel", "skip_item", "skip_source"]),
     "run_control_origin": frozenset(["run_menu"]),
     "run_control_owner": frozenset(["current", "retired"]),
@@ -1013,6 +1037,18 @@ LIBRARY_REQUIRED_DIMENSIONS = frozenset(
 def validate_operation_fields(
     feature: str | None, dimensions: Mapping[str, str], action: str | None = None
 ) -> None:
+    exception_fields = {"exception_kind", "exception_origin"} & dimensions.keys()
+    if (
+        feature == "application_lifecycle"
+        and action == "screen_viewed"
+        and dimensions.get("view") not in {"forge", "library", "watch", "activity"}
+    ):
+        raise ValueError("a closed application view is required")
+    if feature == "application_lifecycle" and action == "unhandled_exception":
+        if exception_fields != {"exception_kind", "exception_origin"}:
+            raise ValueError("exception category and origin are required")
+    elif exception_fields:
+        raise ValueError("unexpected exception context")
     if feature in OPERATION_FEATURES:
         required = {
             "operation_id",

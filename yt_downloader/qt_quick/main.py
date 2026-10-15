@@ -3434,6 +3434,8 @@ class Bridge(QObject):
         if name == "Library" and self._selection != "Library":
             self._record_update_feature("library", "opened")
         self._selection = name
+        if self._analytics.lifecycle is not None:
+            self._analytics.lifecycle.viewed(name.lower())
         self.selectionChanged.emit()
         self._record("select", name)
 
@@ -7529,7 +7531,12 @@ def main() -> int:
     parser.add_argument("--event-log", type=Path)
     parser.add_argument("--ready-file", type=Path)
     parser.add_argument("--runtime-smoke", action="store_true")
+    parser.add_argument("--analytics-qa-receipt", type=Path)
     args = parser.parse_args()
+    if args.analytics_qa_receipt is not None:
+        from yt_downloader.analytics_qa import validate_qa_receipt
+
+        validate_qa_receipt(args.analytics_qa_receipt)
     smoke_home = (
         tempfile.TemporaryDirectory(prefix="vodforge-qt-smoke-")
         if args.runtime_smoke
@@ -7569,6 +7576,21 @@ def main() -> int:
             smoke_home.cleanup()
         raise SystemExit(f"VODForge Qt quality-E2E startup rejected: {exc}") from exc
     bridge.startSession()
+    lifecycle = bridge._analytics.lifecycle
+    if lifecycle is not None and not args.runtime_smoke:
+        lifecycle.install_exception_hooks()
+        application.applicationStateChanged.connect(
+            lambda state: lifecycle.foreground(
+                state == Qt.ApplicationState.ApplicationActive
+            )
+        )
+        QTimer.singleShot(0, lifecycle.ready)
+    if args.analytics_qa_receipt is not None:
+        from yt_downloader.analytics_qa import schedule_qa
+
+        application._analytics_qa_timer = schedule_qa(  # type: ignore[attr-defined]
+            application, bridge, args.analytics_qa_receipt
+        )
     if bridge._analytics.telemetry is not None and not args.runtime_smoke:
         bridge._presentation_probe = QtPresentationProbe(
             bridge, bridge._window, bridge._analytics.telemetry

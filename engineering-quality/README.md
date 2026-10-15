@@ -3593,3 +3593,30 @@ invalid/private fields, consent withdrawal and failure independence. This is
 bounded transport proof, not packaged/native user adoption or every crash retry.
 Source changes require a new sealed candidate; never relabel the immutable
 recovery.5 binaries as analytics-enabled release artifacts.
+
+## Additive provider telemetry keeps independent outcomes — 2026-10-15
+
+The comprehensive PostHog audit exposed two owner-boundary gaps: projecting an
+allowlisted custom event did not retain a semantic session/QA classification,
+and a custom acknowledgement discarded a failed provider attempt. Earlier
+coverage verified payload exclusion and one-shot provider independence, which
+missed durable secondary failure and production/QA misclassification.
+
+The existing event owner now retains independent custom/provider acknowledgements
+and bounded provider backoff in its current outbox. Stable event and companion
+UUIDs survive retries; custom-acknowledged events are not reposted to the custom
+endpoint, and provider backlog cannot block new custom admission. Consent epoch
+changes discard pending provider observations rather than replay them after a new
+choice. First-launch provider mirrors follow a new canonical acknowledgement and
+retain retry context without reposting first launch. No existing custom names,
+credential owner or endpoint were replaced.
+
+Representative checks cover provider false/exception, acknowledgement/restart,
+backoff, revocation, capacity, immutable session context, QA-only properties,
+real dead/live/unreadable process markers, closed screen/exception categories,
+hook chaining and restored ownership. Actual prior-source negative controls fail
+at session/QA projection and provider-loss assertions; successor controls pass.
+Qt consent and existing processing producers are checked separately. Native visual
+replay is not inferred from web SDK support; Qt's alternative is a content-free
+semantic timeline. Source and mock transport checks do not prove production
+provider ingestion, native consent rendering, physical Intel behavior or adoption.

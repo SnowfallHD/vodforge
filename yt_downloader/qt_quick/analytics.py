@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 
 from yt_downloader.analytics_consent import AnalyticsConsentOwner
+from yt_downloader.application_lifecycle import ApplicationLifecycle
 from yt_downloader.archive_work import ArchiveWorkOwner
 from yt_downloader.cloud_funnel import (
     installation_state_path,
@@ -32,6 +33,7 @@ class QtAnalyticsSession:
     ) -> None:
         self.owner: AnalyticsConsentOwner | None = None
         self.telemetry: ProductTelemetryOwner | None = None
+        self.lifecycle: ApplicationLifecycle | None = None
         self._mode = "unknown"
         self._deadline = 0.0
         self._resolved = threading.Event()
@@ -61,6 +63,7 @@ class QtAnalyticsSession:
         )
         self.owner = owner
         self.telemetry = telemetry
+        self.lifecycle = ApplicationLifecycle(telemetry, directory)
         recovery.bind_observer(
             telemetry.record_operation,
             report_startup=(
@@ -200,6 +203,8 @@ class QtAnalyticsSession:
         """Poll startup work and retry the existing outbox while Qt is idle."""
         if self._closed:
             return
+        if self.lifecycle is not None and self._presented:
+            self.lifecycle.tick()
         work = self._attribution_work
         if work is not None and work.poll() is not None:
             work.close()
@@ -216,6 +221,8 @@ class QtAnalyticsSession:
             self.telemetry.flush_async()
 
     def close(self) -> None:
+        if self.lifecycle is not None:
+            self.lifecycle.close()
         self._closed = True
         if self._attribution_work is not None:
             self._attribution_work.close()

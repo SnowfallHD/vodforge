@@ -747,7 +747,7 @@ Window {
             StoneCheckBox {
                 id: analyticsExtra
                 objectName: "analyticsPosthogOptIn"
-                text: "Also share optional PostHog feature and failure counts (no desktop recording)"
+                text: "Also share optional PostHog usage, performance and error categories (no desktop recording)"
                 visible: bridge.posthogAvailable
                 checked: false
                 Layout.fillWidth: true
@@ -3009,7 +3009,7 @@ Window {
                     Text {
                         objectName: "settingsPosthogDescription"
                         text: bridge.posthogAvailable
-                            ? "Optional feature usage and failure categories. No media links, titles, file paths, private text or desktop recording. Share usage analytics must also be on."
+                            ? "Usage, session, performance and error categories. On by default only where the regional policy permits; your saved choice takes priority. No media links, titles, paths, private text or desktop recording. Share usage analytics must also be on."
                             : "Additional analytics is off in this build. No data is sent to PostHog."
                         color: theme.muted; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true
                     }

@@ -122,6 +122,13 @@ class ProductTelemetryEvent:
     consent_epoch: str | None = None
     posthog_epoch: str | None = None
     posthog_attempted: bool = False
+    posthog_session_id: str | None = None
+    posthog_sequence: int | None = None
+    posthog_elapsed_ms: int | None = None
+    posthog_qa_run_id: str | None = None
+    posthog_retry_at: float = 0.0
+    posthog_failures: int = 0
+    posthog_first_run: bool = False
 
     def public_payload(self) -> dict[str, Any]:
         return {
@@ -269,6 +276,23 @@ def _parse_event(value: Any) -> ProductTelemetryEvent:
         d1_delivered=value.get("d1_delivered") is True,
         posthog_epoch=_optional_posthog_epoch(value.get("posthog_epoch")),
         posthog_attempted=value.get("posthog_attempted") is True,
+        posthog_session_id=value.get("posthog_session_id"),
+        posthog_sequence=value.get("posthog_sequence"),
+        posthog_elapsed_ms=value.get("posthog_elapsed_ms"),
+        posthog_qa_run_id=value.get("posthog_qa_run_id"),
+        posthog_retry_at=(
+            float(value["posthog_retry_at"])
+            if type(value.get("posthog_retry_at")) in {int, float}
+            and 0 <= value["posthog_retry_at"] <= 4102444800
+            else 0.0
+        ),
+        posthog_failures=(
+            value["posthog_failures"]
+            if type(value.get("posthog_failures")) is int
+            and 0 <= value["posthog_failures"] <= 30
+            else 0
+        ),
+        posthog_first_run=value.get("posthog_first_run") is True,
     )
 
 
@@ -402,6 +426,10 @@ class ProductTelemetryOwner:
         )
         self._diagnostic = diagnostic or (lambda _message: None)
         self._session_id = _valid_uuid(session_id or uuid.uuid4())
+        self._provider_session_epoch: str | None = None
+        self._provider_session_id: str | None = None
+        self._provider_sequence = 0
+        self._provider_started = time.monotonic()
         self._recorded_dedupe_ids: set[str] = set()
         self._attempt_started: dict[str, float] = {}
         self._attempt_queued: dict[str, float] = {}
@@ -447,22 +475,52 @@ class ProductTelemetryOwner:
 
     def _mirror_posthog(self, event: ProductTelemetryEvent, generation: int) -> bool:
         if event.posthog_attempted or event.posthog_epoch is None:
-            return event.posthog_attempted
+            return True
         if (
             not self._delivery_permitted(event, generation)
             or event.posthog_epoch != self._posthog_epoch()
         ):
             return True  # Provider revocation/reenrollment cannot replay old events.
+        if event.posthog_retry_at > time.time():
+            return False
         try:
-            if not self._posthog_recorder(event):
-                self._diagnostic(
-                    "PostHog mirror not confirmed; custom telemetry retained"
-                )
+            recorder = (
+                getattr(self._posthog_recorder, "first_run_confirmed", None)
+                if event.posthog_first_run
+                else self._posthog_recorder
+            )
+            if callable(recorder) and recorder(event):
+                return True
+            self._diagnostic("PostHog mirror not confirmed; bounded retry retained")
         except Exception:  # noqa: BLE001 - optional sink must never stop custom delivery
-            self._diagnostic("PostHog mirror failed; custom telemetry retained")
-        # Best effort, with stable insert ID. No new retry/outbox owner and no
-        # dependence of custom telemetry acknowledgement on PostHog availability.
-        return True
+            self._diagnostic("PostHog mirror failed; bounded retry retained")
+        return False
+
+    def _provider_context(self) -> dict[str, Any]:
+        """Immutable local outbox context; never added to the first-party envelope."""
+        from .posthog_analytics import new_session_id, valid_qa_run_id
+
+        epoch = self._posthog_epoch()
+        if epoch is None:
+            return {}
+        with self._lock:
+            if epoch != self._provider_session_epoch:
+                self._provider_session_epoch = epoch
+                self._provider_session_id = new_session_id()
+                self._provider_sequence = 0
+                self._provider_started = time.monotonic()
+            self._provider_sequence += 1
+            return {
+                "posthog_session_id": self._provider_session_id,
+                "posthog_sequence": self._provider_sequence,
+                "posthog_elapsed_ms": min(
+                    86400000,
+                    max(0, int((time.monotonic() - self._provider_started) * 10) * 100),
+                ),
+                "posthog_qa_run_id": valid_qa_run_id(
+                    os.environ.get("VODFORGE_POSTHOG_QA_RUN", "")
+                ),
+            }
 
     def posthog_admission_epoch(self) -> tuple[str, str | None] | None:
         try:
@@ -495,12 +553,30 @@ class ProductTelemetryOwner:
             app_version=self._app_version,
             platform=self._platform,
             release_channel=self._release_channel,
+            **self._provider_context(),
+            consent_epoch=self._consent_epoch(),
+            posthog_epoch=epoch[0],
+            posthog_first_run=True,
+            d1_delivered=True,  # Canonical first-launch endpoint already acknowledged.
         )
         try:
-            return bool(callback(event))
-        except Exception:  # noqa: BLE001 - optional provider cannot fail first-party delivery
+            with self._lock:
+                if epoch != self.posthog_admission_epoch():
+                    return False
+                events = _load_outbox(self._state_path)
+                if any(item.event_id == event.event_id for item in events):
+                    return True
+                if len(events) >= MAX_OUTBOX_EVENTS:
+                    self._diagnostic(
+                        "first-run provider mirror not admitted: outbox full"
+                    )
+                    return False
+                _save_outbox(self._state_path, [*events, event])
+            self.flush_async()
+            return True
+        except (OSError, ValueError, RuntimeError):
             self._diagnostic(
-                "PostHog first-run mirror failed; custom acknowledgement retained"
+                "PostHog first-run admission failed; custom acknowledgement retained"
             )
             return False
 
@@ -514,6 +590,7 @@ class ProductTelemetryOwner:
                 self._consent_generation += 1
             self._enabled = bool(enabled)
             if not self._enabled:
+                self._provider_session_epoch = None
                 self._feature_observed.clear()
                 self._operation_steps.clear()
                 self._observation_drops = 0
@@ -659,6 +736,7 @@ class ProductTelemetryOwner:
             feature=feature,
             action=action,
             dimensions=clean_dimensions,
+            **self._provider_context(),
         )
         with self._lock:
             if generation != self._consent_generation or not self._permitted()[0]:
@@ -685,6 +763,18 @@ class ProductTelemetryOwner:
                     self._recorded_dedupe_ids.add(event_id)
                 self.flush_async()
                 return True
+            if len(events) >= MAX_OUTBOX_EVENTS:
+                # A provider outage cannot consume all custom admission slots.
+                # Retire only an already custom-acknowledged provider backlog
+                # item, with an explicit diagnostic rather than a false ack.
+                retired = next((item for item in events if item.d1_delivered), None)
+                if retired is not None:
+                    events = [
+                        item for item in events if item.event_id != retired.event_id
+                    ]
+                    self._diagnostic(
+                        "provider retry backlog at capacity; oldest custom-acknowledged item discarded"
+                    )
             if len(events) >= MAX_OUTBOX_EVENTS:
                 self._diagnostic(
                     "product telemetry outbox is full; event was not retained"
@@ -939,6 +1029,7 @@ class ProductTelemetryOwner:
                 return False
 
     def _flush(self) -> None:
+        visited: set[str] = set()
         while True:
             permitted, _install_id = self._permitted()
             if not permitted:
@@ -953,12 +1044,36 @@ class ProductTelemetryOwner:
                     return
                 if not events:
                     return
-                event = events[0]
+                provider_epoch = self._posthog_epoch()
+                event = next(
+                    (
+                        item
+                        for item in events
+                        if item.event_id not in visited
+                        and (
+                            not item.d1_delivered
+                            or item.posthog_attempted
+                            or item.posthog_epoch != provider_epoch
+                            or item.posthog_retry_at <= time.time()
+                        )
+                    ),
+                    None,
+                )
+                if event is None:
+                    return
+                visited.add(event.event_id)
                 generation = self._consent_generation
                 try:
                     epoch = self._consent_epoch()
                     if event.consent_epoch != epoch:
-                        _save_outbox(self._state_path, events[1:])
+                        _save_outbox(
+                            self._state_path,
+                            [
+                                item
+                                for item in events
+                                if item.event_id != event.event_id
+                            ],
+                        )
                         self._diagnostic(
                             "pre-revocation telemetry discarded; not delivered"
                         )
@@ -974,7 +1089,10 @@ class ProductTelemetryOwner:
                     datetime.now(timezone.utc)
                     - datetime.fromisoformat(event.occurred_at.replace("Z", "+00:00"))
                 ).total_seconds() > 30 * 86400:
-                    _save_outbox(self._state_path, events[1:])
+                    _save_outbox(
+                        self._state_path,
+                        [item for item in events if item.event_id != event.event_id],
+                    )
                     self._diagnostic("expired telemetry event discarded after 30 days")
                     continue
             if not self._delivery_permitted(event, generation):
@@ -997,17 +1115,30 @@ class ProductTelemetryOwner:
             posthog_attempted = self._mirror_posthog(event, generation)
             if not self._delivery_permitted(event, generation):
                 return
+            failures = event.posthog_failures
+            retry_at = event.posthog_retry_at
+            if not posthog_attempted and retry_at <= time.time():
+                failures = min(30, failures + 1)
+                retry_at = time.time() + min(3600, 30 * (2 ** min(7, failures - 1)))
             updated = replace(
-                event, d1_delivered=d1_delivered, posthog_attempted=posthog_attempted
+                event,
+                d1_delivered=d1_delivered,
+                posthog_attempted=posthog_attempted,
+                posthog_failures=failures,
+                posthog_retry_at=retry_at,
             )
             with self._lock:
                 latest = _load_outbox(self._state_path)
-                if not latest or latest[0].event_id != event.event_id:
+                if not any(item.event_id == event.event_id for item in latest):
                     continue
-                delivery_complete = d1_delivered
-                remaining = latest[1:] if delivery_complete else [updated, *latest[1:]]
+                delivery_complete = d1_delivered and posthog_attempted
+                remaining = [
+                    updated if item.event_id == event.event_id else item
+                    for item in latest
+                    if not (delivery_complete and item.event_id == event.event_id)
+                ]
                 _save_outbox(self._state_path, remaining)
-            if not delivery_complete:
+            if not d1_delivered:
                 return
 
     def shutdown(self, timeout_seconds: float = 1.0) -> bool:

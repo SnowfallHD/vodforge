@@ -149,3 +149,73 @@ def test_late_region_response_cannot_enable_analytics(tmp_path, monkeypatch):
     owner = AnalyticsConsentOwner(tmp_path)
     assert owner.resolve(opener=opener, deadline=1.0) == "unknown"
     assert not owner.allowed
+
+
+@pytest.mark.parametrize(
+    "provider_mode,resolved,expected",
+    [
+        ("default-on", True, True),
+        ("default-on", False, False),
+        ("default-on", None, False),
+        ("opt-in", True, False),
+        (None, True, False),
+        ("unknown", True, False),
+    ],
+)
+def test_only_fresh_explicit_provider_policy_can_default_on(
+    tmp_path, monkeypatch, provider_mode, resolved, expected
+):
+    monkeypatch.setattr(consent, "telemetry_collection_allowed", lambda: True)
+    owner = AnalyticsConsentOwner(tmp_path)
+
+    class Response:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def read(self, size):
+            return json.dumps(
+                {
+                    "mode": "default-on",
+                    "posthog_mode": provider_mode,
+                    "resolved": resolved,
+                }
+            ).encode()
+
+    owner.resolve(opener=lambda *args, **kwargs: Response())
+    owner.update(region_checked=True)
+    assert owner.posthog_allowed is expected
+    assert AnalyticsConsentOwner(tmp_path).posthog_allowed is expected
+    if expected:
+        import uuid
+
+        assert uuid.UUID(owner.snapshot()["posthog_epoch"]).version == 4
+    owner.choose_posthog(False)
+    owner.resolve(opener=lambda *args, **kwargs: Response())
+    owner.update(region_checked=True)
+    assert not AnalyticsConsentOwner(tmp_path).posthog_allowed
+    assert owner.snapshot()["posthog_choice"] == "denied"
+
+
+def test_old_generic_default_and_explicit_refusals_are_never_upgraded(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(consent, "telemetry_collection_allowed", lambda: True)
+    owner = AnalyticsConsentOwner(tmp_path)
+    owner.update(mode="default-on", region_checked=True)
+    assert owner.allowed and not owner.posthog_allowed
+    owner.choose_posthog(True)
+    assert owner.posthog_allowed
+    owner.choose(False)
+    owner.update(
+        mode="default-on",
+        posthog_mode="default-on",
+        posthog_region_resolved=True,
+        region_checked=True,
+    )
+    assert not owner.posthog_allowed
+    assert owner.snapshot()["choice"] == "denied"
