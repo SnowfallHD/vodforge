@@ -346,10 +346,34 @@ def mark_attribution_claim_confirmed(
                 state,
                 attribution_claim_confirmed=True,
                 attribution_claim_token=None,
-                product_telemetry_allowed=True,
             )
         ),
     )
+
+
+def take_automatic_browser_claim_attempt(path: Path) -> bool:
+    """Admit one operational browser handoff per new installation, atomically."""
+    state = load_or_create_installation_state(path)
+    admitted = False
+
+    def take(current: InstallationState) -> InstallationState:
+        nonlocal admitted
+        onboarding = current.onboarding or {}
+        if (
+            onboarding.get("browser_eligible") is not True
+            or onboarding.get("browser_claim_auto_attempted") is True
+            or current.attribution_claim_opened
+            or current.attribution_claim_confirmed
+        ):
+            return current
+        admitted = True
+        return replace(
+            current,
+            onboarding={**onboarding, "browser_claim_auto_attempted": True},
+        )
+
+    _update_state(path, state.install_id, take)
+    return admitted
 
 
 def clear_attribution_claim(

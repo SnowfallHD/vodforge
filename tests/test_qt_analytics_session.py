@@ -45,8 +45,6 @@ def test_cold_link_display_preserves_durable_fact_without_authorizing_delivery(
     expected = (
         "linked"
         if claim == "confirmed"
-        else "off"
-        if not allowed
         else "waiting"
         if claim == "pending"
         else "unavailable"
@@ -56,10 +54,7 @@ def test_cold_link_display_preserves_durable_fact_without_authorizing_delivery(
         assert session.installation_link_status == expected
         assert session.allowed is allowed
         assert session._attribution_work is None
-        if not allowed:
-            assert not session.request_installation_link(
-                lambda url: pytest.fail("Denied display opened browser")
-            )
+        assert session._automatic_browser_opener is None
         assert path.read_bytes() == before
         session.close()
 
@@ -187,7 +182,7 @@ def test_explicit_link_uses_gui_dispatch_and_only_canonical_claim_ack(
         session.poll_first_launch_delivery()
         time.sleep(0.005)
     state = load_or_create_installation_state(tmp_path / "installation.json")
-    if interruption is None:
+    if interruption in {None, "denied", "reenrolled"}:
         assert len(dispatched) == 1
         assert state.attribution_claim_opened and state.attribution_claim_confirmed
         assert state.attribution_claim_token is None

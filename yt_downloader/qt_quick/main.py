@@ -517,7 +517,10 @@ class Bridge(QObject):
             + datetime.now(timezone.utc).isoformat(timespec="seconds")
         )
         self._analytics = QtAnalyticsSession(
-            application_data_dir(), __version__, self._runtime.recovery
+            application_data_dir(),
+            __version__,
+            self._runtime.recovery,
+            browser_opener=lambda url: QDesktopServices.openUrl(QUrl(url)),
         )
         self._runtime.product_telemetry = self._analytics.telemetry
         self._analytics_allowed = self._analytics.allowed

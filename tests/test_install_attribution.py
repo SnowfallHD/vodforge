@@ -73,7 +73,13 @@ class PayloadResponse:
         return json.dumps(self._payload).encode("utf-8")
 
 
-def test_claim_client_accepts_only_the_expected_https_fragment_url():
+@pytest.mark.parametrize("usage_allowed", [False, True])
+def test_claim_client_accepts_only_the_expected_https_fragment_url(
+    tmp_path, usage_allowed
+):
+    from yt_downloader.analytics_consent import AnalyticsConsentOwner
+
+    AnalyticsConsentOwner(tmp_path).choose(usage_allowed)
     requests: list[tuple[str, dict[str, str]]] = []
 
     def opener(request: Any, *, timeout: float) -> PayloadResponse:

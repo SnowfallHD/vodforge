@@ -71,6 +71,7 @@ fi
     --ignore=tests/test_qt_terminal_dismissal.py \
     --ignore=tests/test_qt_worker_control_context.py \
     --ignore=tests/test_qt_analytics_session.py \
+    --ignore=tests/test_qt_automatic_attribution.py \
     --ignore=tests/test_qt_artwork_continuity.py \
     --ignore=tests/test_qt_card_material_bounds.py \
     --ignore=tests/test_qt_click_reliability.py \
@@ -163,6 +164,7 @@ fi
     tests/test_qt_terminal_dismissal.py \
     tests/test_qt_worker_control_context.py \
     tests/test_qt_analytics_session.py \
+    tests/test_qt_automatic_attribution.py \
     tests/test_qt_artwork_continuity.py \
     tests/test_qt_card_material_bounds.py \
     tests/test_qt_click_reliability.py \
@@ -277,7 +279,10 @@ if [[ -z "$ffmpeg" || -z "$ffprobe" || -z "$deno" ]]; then
 fi
 vlc_args=(--exclude-module vlc --exclude-module tkinter --exclude-module PIL.ImageTk)
 
-"$python_bin" -m PyInstaller \
+# --clean only clears the selected cache; candidate-specific caches otherwise
+# accumulate. This wrapper owns and retires only this invocation's binary cache,
+# including command failure. PyInstaller work diagnostics and dist stay intact.
+"$python_bin" scripts/run_with_ephemeral_pyinstaller_cache.py "$python_bin" -m PyInstaller \
   --noconfirm \
   --clean \
   --windowed \

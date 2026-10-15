@@ -49,7 +49,10 @@ def _post_json_object(
     *,
     opener: Callable[..., Any] = telemetry_urlopen,
 ) -> dict[str, Any] | None:
-    if not telemetry_collection_allowed() or not analytics_allowed():
+    # This capability-only protocol is operational, not an app usage event.
+    # The website must authorize browser consent and eligible referral before
+    # creating attribution. Build/QA transport policy remains authoritative.
+    if not telemetry_collection_allowed():
         return None
     request = urllib.request.Request(
         url,
@@ -198,15 +201,34 @@ class InstallationAttributionOwner:
         self, *, cancelled: Callable[[], bool] = lambda: False
     ) -> ClaimIssueResult | None:
         """Prepare a capability on a worker; never opens a browser itself."""
-        consent = AnalyticsConsentOwner(self._state_path.parent)
-        epoch = consent.snapshot().get("collection_epoch")
+        return self._prepare_browser_link(cancelled=cancelled, usage_required=True)
+
+    def prepare_browser_attribution(
+        self, *, cancelled: Callable[[], bool] = lambda: False
+    ) -> ClaimIssueResult | None:
+        """Website-owned browser permission is separate from app usage choice."""
+        return self._prepare_browser_link(cancelled=cancelled, usage_required=False)
+
+    def _prepare_browser_link(
+        self, *, cancelled: Callable[[], bool], usage_required: bool
+    ) -> ClaimIssueResult | None:
+        consent = (
+            AnalyticsConsentOwner(self._state_path.parent) if usage_required else None
+        )
+        epoch = consent.snapshot().get("collection_epoch") if consent else None
 
         def permitted() -> bool:
             return (
                 not cancelled()
                 and telemetry_collection_allowed()
-                and consent.allowed
-                and consent.snapshot().get("collection_epoch") == epoch
+                and (
+                    not usage_required
+                    or (
+                        consent is not None
+                        and consent.allowed
+                        and consent.snapshot().get("collection_epoch") == epoch
+                    )
+                )
             )
 
         if not permitted():
@@ -251,6 +273,53 @@ class InstallationAttributionOwner:
         )
         return saved.attribution_claim_opened and saved.attribution_claim_token == token
 
+    def record_browser_attribution_opened(
+        self, claim_url: str, *, cancelled: Callable[[], bool] = lambda: False
+    ) -> bool:
+        """Record genuine dispatch only; this never grants app usage consent."""
+        if cancelled() or not telemetry_collection_allowed():
+            return False
+        state = load_or_create_installation_state(self._state_path)
+        token = state.attribution_claim_token
+        if not token or claim_url != f"{telemetry_site_origin()}/claim#token={token}":
+            return False
+        saved = mark_attribution_claim_opened(
+            self._state_path, state.install_id, claim_token=token
+        )
+        return saved.attribution_claim_opened and saved.attribution_claim_token == token
+
+    def poll_browser_attribution(
+        self, *, cancelled: Callable[[], bool] = lambda: False
+    ) -> bool:
+        """Poll only a dispatched capability; never enroll or send usage."""
+        state = load_or_create_installation_state(self._state_path)
+        token = state.attribution_claim_token
+        if state.attribution_claim_confirmed:
+            return True
+        if not token or not state.attribution_claim_opened:
+            return False
+        for attempt in range(self._poll_attempts):
+            if cancelled() or not telemetry_collection_allowed():
+                return False
+            current = load_or_create_installation_state(self._state_path)
+            if current.attribution_claim_token != token:
+                return current.attribution_claim_confirmed
+            status = self._claim_reader(token)
+            if cancelled() or not telemetry_collection_allowed():
+                return False
+            if status == "claimed":
+                return mark_attribution_claim_confirmed(
+                    self._state_path, state.install_id, claim_token=token
+                ).attribution_claim_confirmed
+            if status in {"expired", "unknown"}:
+                clear_attribution_claim(
+                    self._state_path, state.install_id, claim_token=token
+                )
+                return False
+            if attempt + 1 < self._poll_attempts:
+                self._sleep(POLL_INTERVAL_SECONDS)
+        return False
+
     def deliver_first_launch(
         self,
         state: InstallationState,
@@ -258,7 +327,10 @@ class InstallationAttributionOwner:
         app_version: str,
         platform_name: str | None = None,
         cancelled: Callable[[], bool] = lambda: False,
+        browser_handoff: bool = True,
     ) -> InstallationState:
+        if cancelled() or not telemetry_collection_allowed():
+            return state
         consent = AnalyticsConsentOwner(self._state_path.parent)
         epoch = consent.snapshot().get("collection_epoch")
 
@@ -288,7 +360,7 @@ class InstallationAttributionOwner:
                 return load_or_create_installation_state(self._state_path)
             current = mark_first_launch_confirmed(self._state_path, current.install_id)
 
-        if current.attribution_claim_confirmed:
+        if current.attribution_claim_confirmed or not browser_handoff:
             return current
 
         onboarding = current.onboarding or {}

@@ -2968,6 +2968,9 @@ Window {
                         StoneButton { label: "Choose"; Layout.preferredWidth: 90; Layout.preferredHeight: 40; onActivated: accentColorDialog.open() }
                     }
                     Text { text: "Choose Custom accent to use a #RRGGBB color. Appearance updates immediately."; color: theme.muted; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
                     Text { objectName: "settingsPrivacyHeading"; text: "PRIVACY"; color: theme.accent; font.pixelSize: 13; font.bold: true }
                     Text {
                         objectName: "settingsAnalyticsUnavailable"
@@ -3017,7 +3020,7 @@ Window {
                         objectName: "settingsInstallationLink"
                         label: bridge.installationLinkStatus === "linked" ? "Installation linked" : "Link this installation"
                         visible: bridge.analyticsAvailable
-                        enabled: bridge.analyticsAllowed && bridge.installationLinkStatus !== "linked" &&
+                        enabled: bridge.installationLinkStatus !== "linked" &&
                                  bridge.installationLinkStatus !== "preparing" && bridge.installationLinkStatus !== "checking"
                         Layout.preferredHeight: 40
                         Layout.fillWidth: true
@@ -3027,8 +3030,9 @@ Window {
                         objectName: "settingsInstallationLinkDescription"
                         visible: bridge.analyticsAvailable
                         text: bridge.installationLinkMessage ||
-                              "Opens your browser to connect this installation to a website download. Usage analytics must be on. PostHog identities stay separate."
+                              "Automatic browser referral check."
                         color: theme.muted; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true
+                    }
                     }
                 }
             }
