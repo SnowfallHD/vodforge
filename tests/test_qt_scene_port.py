@@ -5339,7 +5339,9 @@ def test_qt_forge_composer_keeps_bounds_with_download_before_options(
         ) in (
             (820, 560, 32, 70, 499, 240, 170),
             (1100, 740, 62, 78, 719, 270, 210),
-            (1180, 790, 120, 94, 683, 328, 240),
+            # Spacious content retains the accepted continuous outer inset;
+            # crossing the density breakpoint must not add blank margins.
+            (1180, 790, 62, 78, 799, 270, 240),
         ):
             window.resize(width, height)
             for _ in range(3):
