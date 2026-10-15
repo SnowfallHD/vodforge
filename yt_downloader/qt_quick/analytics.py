@@ -72,6 +72,7 @@ class QtAnalyticsSession:
         self.owner = owner
         self.telemetry = telemetry
         self.lifecycle = ApplicationLifecycle(telemetry, directory)
+        self._refresh_installation_link()
         recovery.bind_observer(
             telemetry.record_operation,
             report_startup=(
@@ -164,6 +165,7 @@ class QtAnalyticsSession:
             return False
         self.telemetry.set_enabled(self.owner.allowed)
         self._record_opened_if_allowed()
+        self._refresh_installation_link()
         return self.owner.allowed == enabled
 
     def _record_opened_if_allowed(self) -> None:
@@ -217,14 +219,15 @@ class QtAnalyticsSession:
     def _refresh_installation_link(self) -> None:
         if self._attribution_work is not None:
             return
-        if not self.allowed:
-            self.installation_link_status = "off"
-            return
         try:
             state = load_or_create_installation_state(self._attribution_path)
+            # Saved completion is a local fact, independent of permission to
+            # issue/open/poll another link. Showing it must not grant consent.
             self.installation_link_status = (
                 "linked"
                 if state.attribution_claim_confirmed
+                else "off"
+                if not self.allowed
                 else "waiting"
                 if state.attribution_claim_opened and state.attribution_claim_token
                 else "ready"
@@ -235,6 +238,8 @@ class QtAnalyticsSession:
                 self.installation_link_message = (
                     "Installation linked to a browser download."
                 )
+            elif not self.allowed:
+                self.installation_link_message = ""
         except (OSError, ValueError, RuntimeError):
             self.installation_link_status = "unavailable"
 

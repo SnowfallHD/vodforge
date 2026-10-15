@@ -11,6 +11,59 @@ from yt_downloader.qt_quick import analytics
 pytestmark = pytest.mark.usefixtures("production_telemetry_contract")
 
 
+@pytest.mark.parametrize("allowed", [False, True])
+@pytest.mark.parametrize("claim", ["confirmed", "pending", "absent"])
+def test_cold_link_display_preserves_durable_fact_without_authorizing_delivery(
+    tmp_path, monkeypatch, allowed, claim
+):
+    from yt_downloader.cloud_funnel import (
+        load_or_create_installation_state,
+        mark_attribution_claim_confirmed,
+        mark_attribution_claim_issued,
+        mark_attribution_claim_opened,
+    )
+
+    monkeypatch.setattr(analytics, "telemetry_collection_allowed", lambda: True)
+    path = tmp_path / "installation.json"
+    state = load_or_create_installation_state(path)
+    if claim != "absent":
+        token = "a" * 43
+        mark_attribution_claim_issued(path, state.install_id, token)
+        mark_attribution_claim_opened(path, state.install_id, claim_token=token)
+        if claim == "confirmed":
+            mark_attribution_claim_confirmed(path, state.install_id, claim_token=token)
+    consent = AnalyticsConsentOwner(tmp_path)
+    consent.choose(allowed)
+    before = path.read_bytes()
+    monkeypatch.setattr(
+        analytics,
+        "ProductTelemetryOwner",
+        lambda **kwargs: ProductTelemetryOwner(
+            **kwargs, d1_recorder=lambda e: pytest.fail("Display sent telemetry")
+        ),
+    )
+    expected = (
+        "linked"
+        if claim == "confirmed"
+        else "off"
+        if not allowed
+        else "waiting"
+        if claim == "pending"
+        else "unavailable"
+    )
+    for _ in range(2):
+        session = analytics.QtAnalyticsSession(tmp_path, "0.2.6", Mock())
+        assert session.installation_link_status == expected
+        assert session.allowed is allowed
+        assert session._attribution_work is None
+        if not allowed:
+            assert not session.request_installation_link(
+                lambda url: pytest.fail("Denied display opened browser")
+            )
+        assert path.read_bytes() == before
+        session.close()
+
+
 @pytest.mark.parametrize("kind", ["app_opened", "feature_used"])
 @pytest.mark.parametrize("interruption", [None, "denied", "closed"])
 def test_idle_session_retries_same_pending_event_without_user_input(
