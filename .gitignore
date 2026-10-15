@@ -15,6 +15,9 @@ dist/
 *.spec
 *.zip
 
+# Local generated review references, separate from packaged assets/
+/generated_images/
+
 # Downloaded native dependencies
 vendor/
 
