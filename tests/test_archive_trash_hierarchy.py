@@ -261,6 +261,112 @@ def test_unknown_empty_sibling_branch_is_preserved(tmp_path):
     assert unknown.is_dir() and root.is_dir()
 
 
+def canonical_legacy_fixture(tmp_path, *, playlist=True, root_record=False):
+    from yt_downloader.download_service import video_output_dir
+
+    root = tmp_path / "Library"
+    record = {
+        "id": "fixture",
+        "title": "Selected video",
+        "channel": "Channel",
+        "vodforge_run_id": "legacy-fixture-run",
+        "vodforge_output_type": "MP4",
+    }
+    if playlist:
+        record.update(playlist_id="playlist", playlist_title="Playlist")
+    folder = video_output_dir(root, record)
+    folder.mkdir(parents=True)
+    media = folder / "video.mp4"
+    media.write_bytes(b"fixture media")
+    (folder / "metadata.json").write_text(json.dumps({"id": "fixture"}))
+    (folder / "thumbnail.jpg").write_bytes(b"fixture thumbnail")
+    record.update(vodforge_output_path=str(media), vodforge_output_dir=str(folder))
+    if root_record:
+        record["vodforge_retry_job"] = {"output_dir": str(root)}
+    return root, folder, record
+
+
+@pytest.mark.parametrize("playlist", [False, True])
+def test_legacy_durable_canonical_path_prunes_to_retained_root(tmp_path, playlist):
+    root, folder, record = canonical_legacy_fixture(tmp_path, playlist=playlist)
+    result, _ = execute(tmp_path, record)
+    assert result.outcomes[0][1] == "completed"
+    assert root.is_dir() and list(root.iterdir()) == []
+    assert not folder.exists()
+
+
+@pytest.mark.parametrize("remaining", ["metadata.json", "thumbnail.jpg", "none"])
+@pytest.mark.parametrize("root_record", [False, True])
+def test_partial_missing_selected_media_cleans_verified_empty_hierarchy(
+    tmp_path, remaining, root_record
+):
+    root, folder, record = canonical_legacy_fixture(tmp_path, root_record=root_record)
+    for child in folder.iterdir():
+        if child.name != remaining:
+            child.unlink()
+    result, _ = execute(tmp_path, record)
+    assert result.outcomes[0][1] == "entry_removed"
+    if remaining == "thumbnail.jpg":
+        # A generic thumbnail without its ownership metadata is not ours to trash.
+        assert (folder / remaining).read_bytes() == b"fixture thumbnail"
+        assert root.is_dir()
+    else:
+        assert root.is_dir() and list(root.iterdir()) == []
+
+
+def test_unindexed_empty_canonical_video_branches_are_cleaned(tmp_path):
+    from yt_downloader.download_service import video_output_dir
+
+    root, _folder, record = canonical_legacy_fixture(tmp_path, root_record=True)
+    peer = dict(record, id="older", title="Older video", playlist_title="Other list")
+    video_output_dir(root, peer).mkdir(parents=True)
+    result, _ = execute(tmp_path, record)
+    assert result.outcomes[0][1] == "completed"
+    assert root.is_dir() and list(root.iterdir()) == []
+
+
+@pytest.mark.parametrize("root_record", [False, True])
+@pytest.mark.parametrize(
+    "bucket", ["playlists", "videos - no playlist", "path-safe videos"]
+)
+def test_empty_reserved_channel_bucket_does_not_strand_sole_video_channel(
+    tmp_path, root_record, bucket
+):
+    root, folder, record = canonical_legacy_fixture(
+        tmp_path, root_record=root_record, playlist=bucket != "playlists"
+    )
+    channel = folder.parents[2] if record.get("playlist_id") else folder.parents[1]
+    empty_bucket = channel / bucket
+    empty_bucket.mkdir()
+    result, _ = execute(tmp_path, record)
+    assert result.outcomes[0][1] == "completed"
+    assert root.is_dir() and list(root.iterdir()) == []
+
+
+@pytest.mark.parametrize("remaining", ["other.mp4", "metadata.json", "thumbnail.jpg"])
+def test_legacy_partial_other_video_preserves_shared_channel(tmp_path, remaining):
+    from yt_downloader.download_service import video_output_dir
+
+    root, folder, record = canonical_legacy_fixture(tmp_path)
+    peer = dict(record, id="other", title="Other video", playlist_title="Other list")
+    other = video_output_dir(root, peer)
+    other.mkdir(parents=True)
+    (other / remaining).write_bytes(b"must remain")
+    result, _ = execute(tmp_path, record)
+    assert result.outcomes[0][1] == "completed"
+    assert not folder.exists() and folder.parent.is_dir()
+    assert (other / remaining).read_bytes() == b"must remain"
+
+
+def test_legacy_root_reconstruction_requires_exact_durable_metadata(tmp_path):
+    root, folder, record = canonical_legacy_fixture(tmp_path)
+    record["channel"] = "Different channel"
+    result, _ = execute(tmp_path, record)
+    assert result.outcomes[0][1] == "completed"
+    assert folder.is_dir() and list(folder.iterdir()) == []
+    assert root.is_dir()
+
+
 def test_unreadable_channel_scan_only_prunes_selected_empty_leaf(tmp_path, monkeypatch):
     root, folder, record = fixture(tmp_path)
     original = ops.os.scandir

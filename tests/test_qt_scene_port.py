@@ -6762,6 +6762,54 @@ def test_qt_recovery_ui_loads_and_create_footer_fits(tmp_path, monkeypatch):
             app.processEvents()
             assert popup.property("height") <= height - 40
             assert popup.property("height") > 310
+            content = popup.property("contentItem")
+            footer_buttons = []
+
+            def inspect_footer(item, buttons=footer_buttons):
+                if (
+                    item.property("label") in {"Close", "Create MP4"}
+                    and item.isVisible()
+                ):
+                    buttons.append(item)
+                for child in item.childItems():
+                    inspect_footer(child, buttons)
+
+            inspect_footer(content)
+            assert len(footer_buttons) == 2
+            for button in footer_buttons:
+                bottom = button.mapToItem(content, QPointF(0, button.height())).y()
+                assert content.height() - bottom >= 8 - 0.5
+            # Prove this oracle rejects a flush footer rather than only the
+            # popup's outer height. Mutate only this disposable scene and restore.
+            from PySide6.QtQml import QQmlEngine, QQmlExpression
+
+            footer = footer_buttons[0].parentItem()
+
+            def footer_margin(value=None, item=footer):
+                expression = QQmlExpression(
+                    QQmlEngine.contextForObject(item),
+                    item,
+                    "Layout.bottomMargin"
+                    + ("" if value is None else f" = {float(value)}"),
+                )
+                result = expression.evaluate()
+                assert not expression.hasError(), expression.error().toString()
+                return result[0] if isinstance(result, tuple) else result
+
+            original_margin = footer_margin()
+            try:
+                footer_margin(0)
+                QTest.qWait(20)
+                assert (
+                    min(
+                        content.height()
+                        - button.mapToItem(content, QPointF(0, button.height())).y()
+                        for button in footer_buttons
+                    )
+                    < 8 - 0.5
+                )
+            finally:
+                footer_margin(original_margin)
             popup.close()
     finally:
         for window in engine.rootObjects():

@@ -67,6 +67,8 @@ Item {
     }
     property string groupMenuKind: ""
     property string groupMenuKey: ""
+    readonly property string groupMenuLabel: groupMenuKind === "channel" ? "channel" :
+        (route === "home" || route === "collections" || groupMenuKind === "collection" ? "collection" : "playlist")
     property alias browseViewport: viewport
     function currentMenuGroup() {
         return scene.groups.find(function(group) {
@@ -486,6 +488,18 @@ Item {
                                     scene.toggleGroup(modelData)
                                 } else scene.appBridge.navigateLibraryGroup(modelData.kind, modelData.key)
                             }
+                            function openContextMenu(anchor) {
+                                scene.groupMenuKind = modelData.kind
+                                scene.groupMenuKey = modelData.key
+                                groupMenu.anchorItem = anchor
+                                groupMenu.toggleFrom(anchor)
+                            }
+                            MouseArea {
+                                objectName: "libraryGroupContextArea"
+                                anchors.fill: parent
+                                acceptedButtons: Qt.RightButton
+                                onClicked: groupCard.openContextMenu(groupCard)
+                            }
                             ArtworkImage {
                                 objectName: "libraryGroupArtworkImage"
                                 x: groupCard.modelData.kind === "channel" ? (parent.width - 96) / 2 : groupCard.artworkFaceInset
@@ -539,10 +553,7 @@ Item {
                                 size: "inline"
                                 accessibilityLabel: "More actions for " + groupCard.modelData.title
                                 onActivated: {
-                                    scene.groupMenuKind = groupCard.modelData.kind
-                                    scene.groupMenuKey = groupCard.modelData.key
-                                    groupMenu.anchorItem = this
-                                    groupMenu.toggleFrom(this)
+                                    groupCard.openContextMenu(this)
                                 }
                             }
                         }
@@ -951,7 +962,7 @@ Item {
         preferAbove: true
         alignRight: true
         width: 200
-        height: 100
+        height: scene.groupMenuLabel === "collection" ? 147 : 100
         padding: 3
         Column {
             anchors.fill: parent
@@ -959,7 +970,7 @@ Item {
             StoneButton {
                 objectName: "libraryGroupOpenButton"
                 width: parent.width; height: 44
-                label: "Open " + (scene.groupMenuKind === "channel" ? "channel" : scene.groupMenuKind)
+                label: "Open " + scene.groupMenuLabel
                 onActivated: {
                     const group = scene.currentMenuGroup()
                     groupMenu.close()
@@ -969,7 +980,7 @@ Item {
             StoneButton {
                 objectName: "libraryGroupSelectButton"
                 width: parent.width; height: 44
-                label: "Select " + scene.groupMenuKind
+                label: "Select " + scene.groupMenuLabel
                 onActivated: {
                     const group = scene.currentMenuGroup()
                     groupMenu.close()
@@ -977,6 +988,19 @@ Item {
                         scene.startSelection("groups")
                         scene.selectedGroups = [{kind: group.kind, key: group.key}]
                     }
+                }
+            }
+            StoneButton {
+                objectName: "libraryGroupDeleteButton"
+                visible: scene.groupMenuLabel === "collection"
+                width: parent.width; height: 44
+                label: "Delete " + scene.groupMenuLabel + "…"
+                onActivated: {
+                    const group = scene.currentMenuGroup()
+                    groupMenu.close()
+                    if (!group) return
+                    const owners = scene.appBridge.resolveScopedLibrarySelection("groups", [{kind: group.kind, key: group.key}])
+                    if (owners.length) scene.selectionActionRequested("delete", owners)
                 }
             }
         }

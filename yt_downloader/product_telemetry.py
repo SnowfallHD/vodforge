@@ -120,6 +120,8 @@ class ProductTelemetryEvent:
     dimensions: dict[str, str] = field(default_factory=dict)
     d1_delivered: bool = False
     consent_epoch: str | None = None
+    posthog_epoch: str | None = None
+    posthog_attempted: bool = False
 
     def public_payload(self) -> dict[str, Any]:
         return {
@@ -265,7 +267,17 @@ def _parse_event(value: Any) -> ProductTelemetryEvent:
         failure_reason=failure_reason,
         failure_detail=validate_failure_detail(detail) if detail is not None else None,
         d1_delivered=value.get("d1_delivered") is True,
+        posthog_epoch=_optional_posthog_epoch(value.get("posthog_epoch")),
+        posthog_attempted=value.get("posthog_attempted") is True,
     )
+
+
+def _optional_posthog_epoch(value: Any) -> str | None:
+    try:
+        return _valid_uuid(value, version=4) if value is not None else None
+    except (ValueError, TypeError, AttributeError):
+        # Corrupt optional mirror state cannot disable the primary telemetry.
+        return None
 
 
 def _load_outbox(path: Path) -> list[ProductTelemetryEvent]:
@@ -370,7 +382,11 @@ class ProductTelemetryOwner:
         d1_recorder: Callable[[ProductTelemetryEvent], bool] = _post_d1_event,
         diagnostic: Callable[[str], None] | None = None,
         session_id: str | None = None,
+        posthog_recorder: Callable[[ProductTelemetryEvent], bool] | None = None,
     ) -> None:
+        from .posthog_analytics import PosthogEventSink
+
+        self._posthog_recorder = posthog_recorder or PosthogEventSink()
         self._state_path = state_path
         self._installation_state_path = installation_state_path
         self._app_version = str(app_version)
@@ -414,6 +430,79 @@ class ProductTelemetryOwner:
             .get("collection_epoch")
         )
         return _valid_uuid(value, version=4) if value is not None else None
+
+    def _posthog_epoch(self) -> str | None:
+        if not getattr(self._posthog_recorder, "enabled", False):
+            return None
+        try:
+            owner = AnalyticsConsentOwner(self._installation_state_path.parent)
+            value = owner.snapshot().get("posthog_epoch")
+            return (
+                _valid_uuid(value, version=4)
+                if owner.posthog_allowed and value
+                else None
+            )
+        except (OSError, ValueError, RuntimeError):
+            return None
+
+    def _mirror_posthog(self, event: ProductTelemetryEvent, generation: int) -> bool:
+        if event.posthog_attempted or event.posthog_epoch is None:
+            return event.posthog_attempted
+        if (
+            not self._delivery_permitted(event, generation)
+            or event.posthog_epoch != self._posthog_epoch()
+        ):
+            return True  # Provider revocation/reenrollment cannot replay old events.
+        try:
+            if not self._posthog_recorder(event):
+                self._diagnostic(
+                    "PostHog mirror not confirmed; custom telemetry retained"
+                )
+        except Exception:  # noqa: BLE001 - optional sink must never stop custom delivery
+            self._diagnostic("PostHog mirror failed; custom telemetry retained")
+        # Best effort, with stable insert ID. No new retry/outbox owner and no
+        # dependence of custom telemetry acknowledgement on PostHog availability.
+        return True
+
+    def posthog_admission_epoch(self) -> tuple[str, str | None] | None:
+        try:
+            provider = self._posthog_epoch() if self.permitted() else None
+            return (provider, self._consent_epoch()) if provider is not None else None
+        except (OSError, ValueError, RuntimeError):
+            return None  # Optional mirror admission cannot block first-party startup.
+
+    def mirror_first_run_confirmed(
+        self, install_id: str, epoch: tuple[str, str | None] | None
+    ) -> bool:
+        """Only called after a new first-party first-run acknowledgement."""
+        permitted, current_install_id = self._permitted()
+        if not permitted or current_install_id != install_id:
+            return False
+        callback = getattr(self._posthog_recorder, "first_run_confirmed", None)
+        if (
+            not callable(callback)
+            or epoch is None
+            or epoch != self.posthog_admission_epoch()
+        ):
+            return False
+        event = ProductTelemetryEvent(
+            event_id=str(
+                uuid.uuid5(uuid.NAMESPACE_URL, "vodforge:first-run:" + install_id)
+            ),
+            install_id=install_id,
+            event_name="app_opened",
+            occurred_at=datetime.now(timezone.utc).isoformat(),
+            app_version=self._app_version,
+            platform=self._platform,
+            release_channel=self._release_channel,
+        )
+        try:
+            return bool(callback(event))
+        except Exception:  # noqa: BLE001 - optional provider cannot fail first-party delivery
+            self._diagnostic(
+                "PostHog first-run mirror failed; custom acknowledgement retained"
+            )
+            return False
 
     def permitted(self) -> bool:
         """Expose the current privacy decision for detached operation handoffs."""
@@ -550,6 +639,7 @@ class ProductTelemetryOwner:
         event = ProductTelemetryEvent(
             event_id=event_id,
             consent_epoch=consent_epoch,
+            posthog_epoch=self._posthog_epoch(),
             install_id=install_id,
             event_name=event_name,
             occurred_at=datetime.now(timezone.utc).isoformat(),
@@ -904,7 +994,12 @@ class ProductTelemetryOwner:
                 continue
             if not self._delivery_permitted(event, generation):
                 return
-            updated = replace(event, d1_delivered=d1_delivered)
+            posthog_attempted = self._mirror_posthog(event, generation)
+            if not self._delivery_permitted(event, generation):
+                return
+            updated = replace(
+                event, d1_delivered=d1_delivered, posthog_attempted=posthog_attempted
+            )
             with self._lock:
                 latest = _load_outbox(self._state_path)
                 if not latest or latest[0].event_id != event.event_id:

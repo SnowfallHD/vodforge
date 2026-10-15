@@ -134,6 +134,21 @@ class AnalyticsConsentOwner:
         self.update(choice="granted" if enabled else "denied", prompted=True)
 
     @property
+    def posthog_allowed(self) -> bool:
+        """Existing/default consent never opts someone into a new provider."""
+        return self.allowed and self.snapshot().get("posthog_choice") == "granted"
+
+    def choose_posthog(self, enabled: bool) -> None:
+        with _LOCK:
+            update_analytics_settings(
+                self.path,
+                {
+                    "posthog_choice": "granted" if enabled else "denied",
+                    "posthog_epoch": str(uuid.uuid4()),
+                },
+            )
+
+    @property
     def saved_region_mode(self) -> str | None:
         """Reuse completed policy decisions, including pre-marker installations."""
         state = self.snapshot()

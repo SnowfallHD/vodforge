@@ -813,6 +813,21 @@ class Bridge(QObject):
     def analyticsAllowed(self) -> bool:
         return self._analytics.allowed
 
+    @Property(bool, notify=analyticsChanged)
+    def posthogAvailable(self) -> bool:
+        from yt_downloader.posthog_analytics import PosthogConfig
+
+        return self.analyticsAvailable and PosthogConfig.from_environment().enabled
+
+    @Property(bool, notify=analyticsChanged)
+    def posthogAllowed(self) -> bool:
+        owner = self._analytics.owner
+        return bool(
+            self.posthogAvailable
+            and owner is not None
+            and getattr(owner, "posthog_allowed", False)
+        )
+
     @Property(str, notify=updateChanged)
     def updateStatus(self) -> str:
         return self._updates.status
@@ -848,6 +863,24 @@ class Bridge(QObject):
     @Property(bool, notify=updateChanged)
     def updateCheckFailed(self) -> bool:
         return self._updates.check_failed
+
+    @Property(str, notify=fileActionChanged)
+    def fileActionSummary(self) -> str:
+        message = self._files.status
+        if self._files.phase == "preview" and self._remove_run_request:
+            message += "\n\nThe run is removed only after all selected entries are cleared. Unverified files and unrelated folders are kept."
+        return message
+
+    @Property("QVariantList", notify=fileActionChanged)
+    def fileActionPaths(self) -> list[str]:
+        if self._files.phase != "preview" or self._files.plan is None:
+            return []
+        return [
+            str(artifact.path)
+            for item in self._files.plan.items
+            if item.state == "ready"
+            for artifact in item.artifacts
+        ]
 
     @Property(str, notify=fileActionChanged)
     def fileActionStatus(self) -> str:
@@ -1550,6 +1583,31 @@ class Bridge(QObject):
         else:
             QTimer.singleShot(6000, self._record_update_telemetry_receipt)
         return saved
+
+    @Slot(bool, bool, result=bool)
+    def chooseAnalyticsOptions(self, enabled: bool, extra: bool) -> bool:
+        owner = self._analytics.owner
+        if owner is None:
+            return False
+        try:
+            owner.choose_posthog(bool(enabled and extra and self.posthogAvailable))
+        except (OSError, ValueError, RuntimeError):
+            return False
+        return self.chooseAnalytics(enabled)
+
+    @Slot(bool, result=bool)
+    def choosePosthogAnalytics(self, enabled: bool) -> bool:
+        owner = self._analytics.owner
+        if owner is None or (
+            enabled and (not self.posthogAvailable or not owner.allowed)
+        ):
+            return False
+        try:
+            owner.choose_posthog(enabled)
+        except (OSError, ValueError, RuntimeError):
+            return False
+        self.analyticsChanged.emit()
+        return owner.posthog_allowed == enabled
 
     @Slot()
     def recordCloudCtaSeen(self) -> None:

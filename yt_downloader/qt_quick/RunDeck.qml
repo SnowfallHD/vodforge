@@ -7,6 +7,7 @@ Item {
     id: deck
     property var appBridge
     property bool compact: false
+    implicitHeight: deckLayout.implicitHeight
     readonly property var projection: appBridge.runDeck
     // Keep interrupted work visible even after newer runs complete.
     readonly property var workRecords: (projection.records || []).filter(
@@ -63,6 +64,7 @@ Item {
     }
 
     ColumnLayout {
+        id: deckLayout
         anchors.fill: parent
         spacing: 8
         RowLayout {

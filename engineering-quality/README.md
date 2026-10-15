@@ -4,6 +4,12 @@ Consult [the change and test log](change-and-test-log.md) before assigning or
 repeating qualification work. Retain valid prior passes; record a concrete
 affected change or evidence defect before repeating a check.
 
+## Runtime compatibility follows every bundled dependency — 2026-10-13
+
+An older-target bootloader or Qt framework does not establish a bundle's minimum OS. The ordinary local889 package declared27 through Homebrew OpenSSL/libvmaf, while Python/FFmpeg declared26. Existing source/native current-host tests passed because they do not test an older host or inspect every transitive load command. The first compatible-input successor still collected SQLite26 through host dependency discovery; inspecting only its chosen Python and FFmpeg would have missed that instance.
+
+The bounded correction supplies verified compatible dependency inputs, audits all runtime Mach-O files and unexpected external absolute links after packaging, and makes bundle minimum metadata match the highest declared runtime target. The failed SQLite26 audit remains the real negative outcome; the corrected384-file audit passes15 with zero errors. Independent affected updater, real encode/probe/decode, SQLite transaction and frozen-tool checks verify representative outcomes across those owners. Complete dependency targets remain necessary conditions, not older-OS/architecture/ABI runtime proof. Receipt: `build/recovery-20261011/macos-floor-20261013/REPORT.md`. Public support claims require the exact compatible package on the intended oldest OS and architecture. No blanket broad campaign restart or target-load-command lowering.
+
 ## Background results remain discoverable — 2026-10-13
 
 A successful background availability check must leave a visible main-window
@@ -3093,6 +3099,30 @@ Mac artifacts while skipping the entire release-mutating job. A workflow contrac
 asserts that no release mutation lives in the artifact jobs and that the default
 draft behavior remains review-only. No existing release/tag/assets are altered.
 
+For the bounded 0.2.6 recovery, use
+`engineering-quality/release-026-recovery-checklist.md` as the single current
+decision list. Before scheduling a build or check, map the changed runtime,
+dependency, configuration and observation method to the saved change-and-test
+receipts. Carry forward each unaffected bounded result under its original source
+and artifact identity. A wrapper failure, QA script, label, timing-only assertion
+or documentation change does not invalidate completed queue/Skip, data/privacy or
+updater transactions. Correct and reevaluate a defective evidence reader against
+the original immutable observations first; rerun only if necessary evidence is
+missing or contradictory. Do not require nonexistent product actions.
+
+A new regression check must reject the known bad source/behavior before its pass
+is accepted. Preserve failures and mark missing native/pixel observations
+untested; a source or offscreen pass cannot close a native gate. Changed runtime
+bytes still require one exact-binary packaged smoke and affected native checks.
+This reuse policy retains safety-critical core/update/data gates and their actual
+limits; it does not relabel old binaries as successor acceptance.
+
+`build_macos.sh` now checks interpreter/native inputs and discovered sidecars
+against the declared floor before its source campaign and packaging. This cheap
+input check cannot replace the sealed-bundle dependency audit, architecture
+verification or actual target-OS execution. Do not lower Mach-O commands to make
+an incompatible dependency pass.
+
 ### Final updater animation evidence across Mac CI — 2026-09-30
 
 Two Mac source CI jobs exposed a test's 60 ms single-sample assumption: a live
@@ -3541,3 +3571,21 @@ Qt popup remains, with OS-native and packaged right-click acceptance explicitly
 unproven. Native tool transport loss is not a user cancellation or a passed
 normal-exit result. Preserve original failed source/CI/probe receipts; do not
 promote counters or renderer screenshots to signed package/native proof.
+
+
+## Secondary analytics transports preserve safe facts and event identity — 2026-10-15
+
+A provider mirror must rebuild a closed payload, retain useful existing coarse
+performance/outcome/failure-stage enums, and reject arbitrary dimensions or
+private diagnostics. Separate consent and immutable admission epochs remain
+necessary even when the release enables the provider. Do not upgrade existing
+consent or backfill old first-launch acknowledgements.
+
+Mock requests and an insert-ID property alone do not prove remote deduplication.
+The real synthetic PostHog test produced two rows before adding its top-level
+UUID. The corrected stable UUID5 payload, sent twice, read back once. Retain both
+receipts; source tests check the actual provider envelope plus representative
+invalid/private fields, consent withdrawal and failure independence. This is
+bounded transport proof, not packaged/native user adoption or every crash retry.
+Source changes require a new sealed candidate; never relabel the immutable
+recovery.5 binaries as analytics-enabled release artifacts.

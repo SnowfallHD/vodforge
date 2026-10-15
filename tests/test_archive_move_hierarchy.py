@@ -72,6 +72,18 @@ def test_missing_root_is_explicitly_blocked(tmp_path):
     assert plan.items[0].reason == "hierarchy_root_unknown"
 
 
+def test_legacy_canonical_media_moves_full_hierarchy_without_root_metadata(tmp_path):
+    from tests.test_archive_trash_hierarchy import canonical_legacy_fixture
+
+    root, folder, record = canonical_legacy_fixture(tmp_path)
+    destination, result = execute(tmp_path, [record])
+    assert result.outcomes[0][1] == "completed"
+    relative = folder.relative_to(root)
+    assert (destination / relative / "video.mp4").read_bytes() == b"fixture media"
+    assert root.is_dir() and list(root.iterdir()) == []
+    assert result.records[0]["vodforge_archive_root"] == str(destination)
+
+
 def test_existing_nested_destination_never_overwritten(tmp_path):
     record = fixture(tmp_path / "old", "channel/playlist/video", "a")
     destination = tmp_path / "new"

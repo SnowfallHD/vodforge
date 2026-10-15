@@ -1,0 +1,8 @@
+{
+  "project_id": 664300,
+  "public_key": "phc_AZbroeEiaZra7PxaGPUoxAiM6QjQ6CfU23uPdjUwjgN7",
+  "ingest_host": "https://us.i.posthog.com",
+  "capture_enabled": true,
+  "replay_enabled": false,
+  "experiments_enabled": false
+}

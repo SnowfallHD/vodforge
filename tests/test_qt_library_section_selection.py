@@ -1,7 +1,7 @@
 """Section switching and bulk dispatch cannot retain hidden Library targets."""
 
 import pytest
-from PySide6.QtCore import QObject, QUrl
+from PySide6.QtCore import QObject, QPointF, Qt, QUrl
 from PySide6.QtTest import QTest
 
 from tests.test_qt_scene_port import qt_app, saved, visual_item
@@ -169,6 +169,69 @@ def test_group_delete_dispatch_contains_only_selected_members(library, monkeypat
     assert requested == [("delete", expected)]
     click(window, "librarySelectButton", app)
     assert values(scene, "selectedGroups") == []
+
+
+def test_collection_context_delete_uses_existing_guard_without_selection(
+    library, monkeypatch
+):
+    app, bridge, window, scene = library
+    requested = []
+    monkeypatch.setattr(
+        bridge._files,
+        "begin",
+        lambda action, owners, *args, **kwargs: (
+            requested.append((action, list(owners))) or False
+        ),
+    )
+    context = visual_item(window.contentItem(), "libraryGroupContextArea")
+    assert context is not None
+    position = context.mapToScene(QPointF(context.width() / 2, context.height() / 2))
+    QTest.mouseClick(window, Qt.RightButton, Qt.NoModifier, position.toPoint())
+    QTest.qWait(40)
+    popup = window.findChild(QObject, "libraryGroupMenu")
+    menu_position = scene.mapToScene(QPointF(popup.property("x"), popup.property("y")))
+    card_position = context.mapToScene(QPointF(0, 0))
+    assert menu_position.x() <= card_position.x() + context.width()
+    assert menu_position.x() + popup.property("width") >= card_position.x()
+    group = next(
+        group
+        for group in bridge.libraryScene["groups"]
+        if group["key"] == scene.property("groupMenuKey")
+    )
+    for name, label in [
+        ("Open", "Open collection"),
+        ("Select", "Select collection"),
+        ("Delete", "Delete collection…"),
+    ]:
+        assert (
+            window.findChild(QObject, "libraryGroup" + name + "Button").property(
+                "label"
+            )
+            == label
+        )
+    assert not scene.property("selectionMode")
+    click(window, "libraryGroupDeleteButton", app)
+    assert requested == [("delete", group["owners"])]
+    assert not scene.property("selectionMode")
+    # The collection presentation must not rename genuine source-playlist actions.
+    bridge._runtime.history[0].update(
+        playlist_id="source-list", playlist_title="Source list"
+    )
+    bridge.historyChanged.emit()
+    bridge.navigateLibrary("playlists")
+    app.processEvents()
+    click(window, "libraryGroupMore", app)
+    assert (
+        window.findChild(QObject, "libraryGroupOpenButton").property("label")
+        == "Open playlist"
+    )
+    assert not window.findChild(QObject, "libraryGroupDeleteButton").property("visible")
+    # Removed/stale popup targets must never dispatch a broader selection.
+    bridge._runtime.history = []
+    bridge.historyChanged.emit()
+    window.findChild(QObject, "libraryGroupDeleteButton").activated.emit()
+    app.processEvents()
+    assert len(requested) == 1
 
 
 def test_backend_rejects_mixed_malformed_duplicate_and_stale_targets(library):

@@ -12,6 +12,7 @@ import errno
 import hashlib
 import json
 import os
+import re
 import stat
 import unicodedata
 import uuid
@@ -340,7 +341,16 @@ def plan_file_operation(
         ):
             items.append(FileOperationItem(owner, snapshot[index], None, "ambiguous"))
             continue
-        items.append(_observe(records[index], source))
+        items.append(
+            _observe(
+                records[index],
+                source,
+                companions_when_missing=(
+                    not _loose_import(records[index])
+                    and _move_root(records[index], Path(str(source))) is not None
+                ),
+            )
+        )
     return FileOperationPlan(snapshot, tuple(items))
 
 
@@ -358,6 +368,8 @@ def _move_root(record: Mapping[str, Any], source: Path) -> Path | None:
     value = record.get("vodforge_archive_root")
     if value is None:
         value = job.get("output_dir") if isinstance(job, Mapping) else None
+    if value is None:
+        return _legacy_archive_root(record, source)
     if not isinstance(value, str) or not value:
         return None
     try:
@@ -370,6 +382,43 @@ def _move_root(record: Mapping[str, Any], source: Path) -> Path | None:
     if not root.is_absolute() or root == source.parent:
         return None
     return root if source.parent.is_relative_to(root) else None
+
+
+def _legacy_archive_root(record: Mapping[str, Any], source: Path) -> Path | None:
+    """Recover an old provider boundary from an exact layout, never current settings."""
+    if (
+        not source.is_absolute()
+        or not isinstance(record.get("title"), str)
+        or not record["title"].strip()
+        or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", str(record.get("id") or ""))
+        or not any(
+            isinstance(record.get(key), str) and record[key].strip()
+            for key in ("channel", "uploader", "channel_id")
+        )
+    ):
+        return None
+    from .download_service import (
+        compact_video_output_dir,
+        legacy_shallow_video_output_dir,
+        video_output_dir,
+    )
+
+    matches = set()
+    info = dict(record)
+    # Supported channel/group/video layouts have at most four levels below root.
+    # This is a pure durable-metadata comparison, not a filesystem label search.
+    for root in tuple(source.parent.parents)[:4]:
+        candidates = {
+            video_output_dir(root, info),
+            legacy_shallow_video_output_dir(root, info),
+        }
+        try:
+            candidates.add(compact_video_output_dir(root, info, source.name))
+        except ValueError:
+            pass
+        if source.parent in candidates:
+            matches.add(root)
+    return next(iter(matches)) if len(matches) == 1 else None
 
 
 def _move_target(record: Mapping[str, Any], source: Path, destination: Path) -> Path:
@@ -495,12 +544,41 @@ def _prune_trash_source(
         return
     else:
         return
-    # Sibling folders need independent durable ownership, not merely an empty
-    # directory name. Current/history-indexed empty branches are recoverable;
-    # unindexed empty folders remain unknown and are deliberately retained.
+    # Durable peers and recognized provider video layouts acquire empty-only
+    # cleanup authority. Arbitrary personal directories remain unknown.
     owned = {
         path for path in proofs if path.is_relative_to(channel) and path in directories
     }
+    for path in directories:
+        parts = path.relative_to(channel).parts
+        if not parts:
+            continue
+        group = parts[0].casefold()
+        empty_bucket = (
+            len(parts) == 1
+            and group in {"playlists", "videos - no playlist", "path-safe videos"}
+            and not any(other.parent == path for other in directories)
+        )
+        video = (
+            len(parts) == 3
+            and group == "playlists"
+            or len(parts) == 2
+            and group == "videos - no playlist"
+        ) and re.fullmatch(
+            r".+ \[[A-Za-z0-9_-]{1,32}\](?: - [A-Za-z0-9 _-]{1,40} \[[0-9a-f]{16}\])?",
+            parts[-1],
+        )
+        compact = (
+            len(parts) == 2
+            and group == "path-safe videos"
+            and re.fullmatch(r"[A-Za-z0-9_-]{1,32}", parts[-1])
+        )
+        if video or compact or empty_bucket:
+            owned.update(
+                ancestor
+                for ancestor in (path, *path.parents)
+                if ancestor.is_relative_to(channel) and ancestor in directories
+            )
     for peer in records:
         try:
             source = recorded_artifact(peer)
@@ -1984,11 +2062,19 @@ def delete_files(
     except (OSError, ValueError) as journal_error:
         raise FileOperationUncertain(journal.path) from journal_error
     # Never remove source directories before both the durable history and the
-    # complete receipt acknowledge the Trash/delete transaction. Missing-only
-    # entries and partial/uncertain transfers do not acquire cleanup authority.
+    # complete receipt acknowledge the Trash/delete transaction. A durable
+    # missing-media row may own a verified empty folder; partial/uncertain
+    # transactions still acquire no cleanup authority.
     if journal.document["state"] == "completed":
         for item in plan.items:
-            if item.state == "ready" and (item.owner, "completed") in outcomes:
+            if (
+                item.state in {"ready", "missing"}
+                and (
+                    item.owner,
+                    "entry_removed" if item.state == "missing" else "completed",
+                )
+                in outcomes
+            ):
                 source_record = next(
                     row
                     for row in records

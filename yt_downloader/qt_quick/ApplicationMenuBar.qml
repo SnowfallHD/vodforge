@@ -39,12 +39,19 @@ MenuBar {
     }
     Menu {
         title: qsTr("View")
-        enabled: menuBar.navigationAllowed
         Action { text: qsTr("Forge"); enabled: menuBar.navigationAllowed; shortcut: "Ctrl+1"; onTriggered: controller.select("Forge") }
         Action { text: qsTr("Library"); enabled: menuBar.navigationAllowed; shortcut: "Ctrl+2"; onTriggered: controller.select("Library") }
         Action { text: qsTr("Watch"); enabled: menuBar.navigationAllowed; shortcut: "Ctrl+3"; onTriggered: controller.select("Watch") }
         Action { text: qsTr("Activity"); enabled: menuBar.navigationAllowed; shortcut: "Ctrl+4"; onTriggered: controller.select("Activity") }
-
+        MenuSeparator {}
+        Action {
+            objectName: "mainFullscreenAction"
+            text: appWindow.visibility === Window.FullScreen ? qsTr("Exit Full Screen") : qsTr("Enter Full Screen")
+            shortcut: StandardKey.FullScreen
+            // Window controls remain available while a modal surface blocks
+            // navigation, including when fullscreen was entered natively.
+            onTriggered: appWindow.visibility === Window.FullScreen ? appWindow.showNormal() : appWindow.showFullScreen()
+        }
     }
     Menu {
         title: qsTr("Window")

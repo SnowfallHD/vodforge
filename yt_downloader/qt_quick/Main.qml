@@ -744,12 +744,20 @@ Window {
                     }
                 }
             }
+            StoneCheckBox {
+                id: analyticsExtra
+                objectName: "analyticsPosthogOptIn"
+                text: "Also share optional PostHog feature and failure counts (no desktop recording)"
+                visible: bridge.posthogAvailable
+                checked: false
+                Layout.fillWidth: true
+            }
             RowLayout {
                 Layout.fillWidth: true
                 StoneButton { label: "Privacy details"; Layout.preferredWidth: 160; Layout.preferredHeight: 38; onActivated: bridge.openPrivacy() }
                 Item { Layout.fillWidth: true }
                 StoneButton { label: "No thanks"; Layout.preferredWidth: 115; Layout.preferredHeight: 40; onActivated: { if (bridge.chooseAnalytics(false)) analyticsPopup.close() } }
-                StoneButton { label: "Share analytics"; Layout.preferredWidth: 150; Layout.preferredHeight: 40; onActivated: { if (bridge.chooseAnalytics(true)) analyticsPopup.close() } }
+                StoneButton { label: "Share analytics"; Layout.preferredWidth: 150; Layout.preferredHeight: 40; onActivated: { if (bridge.chooseAnalyticsOptions(true, analyticsExtra.checked)) analyticsPopup.close() } }
             }
         }
     }
@@ -925,13 +933,16 @@ Window {
         color: Qt.rgba(0.12, 0.26, 0.40, 0.02)
     }
 
-    property int gutter: width < 960 ? 12 : 20
+    readonly property real gutter: 12 + 8 * Math.max(0, Math.min(1, (width - 920) / 40))
     property bool compactHeight: height < 640
     property int rowGap: compactHeight ? 8 : 14
     readonly property string forgeDensity: width < 920 || height < 690 ? "compact" :
         width < 1080 || height < 760 ? "balanced" : "wide"
-    readonly property int forgeHorizontalPad: forgeDensity === "compact" ? 20 : forgeDensity === "balanced" ? 42 : 100
-    readonly property int forgeTopPad: forgeDensity === "compact" ? 18 : forgeDensity === "balanced" ? 26 : 42
+    // Insets follow the frame continuously. Density may change which controls
+    // fit, but must never remove working width when the frame grows taller.
+    // Keep the accepted 1100x740 insets and bounded narrow-window spacing.
+    readonly property real forgeHorizontalPad: 20 + 22 * Math.max(0, Math.min(1, (width - 920) / 180))
+    readonly property real forgeTopPad: 18 + 8 * Math.max(0, Math.min(1, (height - 640) / 100))
     property string outputFormat: bridge.outputFormat
     property string selectedSavedOwner: ""
     property var pendingFileOwners: []
@@ -1005,7 +1016,7 @@ Window {
         anchors.leftMargin: window.gutter
         anchors.rightMargin: window.gutter
         anchors.topMargin: 5 + mainFrame.headerHeight
-        anchors.bottomMargin: window.width < 960 ? 10 : 14
+        anchors.bottomMargin: 10 + 4 * Math.max(0, Math.min(1, (window.width - 920) / 40))
         spacing: 2
 
         Item {
@@ -1730,7 +1741,8 @@ Window {
                 appBridge: bridge
                 compact: window.compactHeight
                 Layout.fillWidth: true
-                Layout.preferredHeight: window.compactHeight ? 115 : 139
+                Layout.preferredHeight: implicitHeight
+                Layout.minimumHeight: implicitHeight
             }
         }
         }
@@ -2093,7 +2105,7 @@ Window {
                 objectName: "fileActionBodyScroll"
                 Layout.fillWidth: true
                 // Long reports scroll inside the same shared shell; footer stays visible.
-                Layout.preferredHeight: Math.min(fileActionMessage.implicitHeight,
+                Layout.preferredHeight: Math.min(fileActionBodyContent.implicitHeight,
                     Math.max(48, window.height - 40 - fileActionPopup.topPadding -
                         fileActionPopup.bottomPadding - fileActionHeading.implicitHeight -
                         fileActionFooter.implicitHeight -
@@ -2101,14 +2113,51 @@ Window {
                         fileActionContent.spacing * (fileActionReviewRow.visible ? 3 : 2)))
                 clip: true
                 ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-                Text {
-                    id: fileActionMessage
-                    objectName: "fileActionBodyMessage"
-                    text: bridge.fileActionStatus
-                    color: theme.muted
-                    font.pixelSize: 15
-                    wrapMode: Text.WordWrap
+                Column {
+                    id: fileActionBodyContent
                     width: fileActionBody.availableWidth
+                    spacing: 14
+                    SelectableText {
+                        id: fileActionMessage
+                        objectName: "fileActionBodyMessage"
+                        width: parent.width
+                        text: bridge.fileActionSummary
+                        color: theme.muted
+                        font.pixelSize: 15
+                    }
+                    Text {
+                        visible: bridge.fileActionPaths.length > 0
+                        text: "Verified owned files"
+                        color: theme.text; font.pixelSize: 15; font.bold: true
+                    }
+                    Repeater {
+                        model: bridge.fileActionPaths
+                        Column {
+                            required property string modelData
+                            required property int index
+                            objectName: "fileActionPathBlock_" + index
+                            width: fileActionBodyContent.width
+                            spacing: 6
+                            Text {
+                                objectName: "fileActionPathName_" + index
+                                width: parent.width
+                                text: modelData.split(/[\\/]/).pop()
+                                color: theme.text; font.pixelSize: 14; font.bold: true
+                                wrapMode: Text.Wrap
+                            }
+                            SelectableText {
+                                objectName: "fileActionPath_" + index
+                                width: parent.width
+                                text: modelData
+                                color: theme.text; font.pixelSize: 13
+                                wrapMode: TextEdit.Wrap
+                            }
+                            Rectangle {
+                                width: parent.width; height: 1
+                                color: theme.border
+                            }
+                        }
+                    }
                 }
             }
             RowLayout {
@@ -2944,6 +2993,26 @@ Window {
                     onActivated: bridge.chooseAnalytics(!bridge.analyticsAllowed)
                 }
                     }
+                    RowLayout {
+                        objectName: "settingsPosthogRow"
+                        Layout.fillWidth: true
+                        Text { text: "Additional analytics (PostHog)"; color: theme.text; font.pixelSize: 15; Layout.fillWidth: true }
+                        StoneButton {
+                            objectName: "settingsPosthogToggle"
+                            label: bridge.posthogAllowed ? "On" : "Off"
+                            selected: bridge.posthogAllowed
+                            enabled: bridge.posthogAvailable && bridge.analyticsAllowed
+                            Layout.preferredWidth: 74; Layout.preferredHeight: 36
+                            onActivated: bridge.choosePosthogAnalytics(!bridge.posthogAllowed)
+                        }
+                    }
+                    Text {
+                        objectName: "settingsPosthogDescription"
+                        text: bridge.posthogAvailable
+                            ? "Optional feature usage and failure categories. No media links, titles, file paths, private text or desktop recording. Share usage analytics must also be on."
+                            : "Additional analytics is off in this build. No data is sent to PostHog."
+                        color: theme.muted; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true
+                    }
                 }
             }
             RowLayout {
@@ -3495,6 +3564,20 @@ Window {
                     y: optionsMenu.sideBySideExtras ? 0 : composerQuickChoices.height + (composerQuickChoices.visible ? 12 : 0)
                     width: parent.width
                     spacing: 8
+                    Item {
+                        visible: optionsMenu.sideBySideExtras
+                        width: parent.width
+                        // Match the other headings' 32px row + 3px gap while
+                        // retaining the settings controls' existing 8px gaps.
+                        height: 27
+                        Text {
+                            objectName: "composerSettingsHeading"
+                            text: "SETTINGS"; color: theme.accent
+                            font.pixelSize: 12; font.bold: true; font.letterSpacing: 1
+                            width: parent.width; height: 32; leftPadding: 8
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                    }
                     StoneButton {
                         objectName: "composerYouTubeAccessButton"
                         width: parent.width - (optionsMenu.sideBySideExtras || window.outputFormat !== "MP4" ? 36 : 0); height: 40

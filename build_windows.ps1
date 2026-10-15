@@ -79,6 +79,7 @@ if (-not (Test-Path $iconFile) -or -not (Test-Path $iconPng) -or -not (Test-Path
 }
 $iconArgs = @("--icon", $iconFile)
 $addData += @("--add-data", "$iconFile;assets", "--add-data", "$iconPng;assets", "--add-data", "$iconAssetDir;assets/icons/lucide")
+$addData += @("--add-data", "assets/posthog-public-config.json;assets")
 $addData += @("--add-data", "assets/brand;assets/brand")
 $addData += @("--add-data", "assets/materials;assets/materials")
 $addData += @("--add-data", "assets/watch-welcome-scenic.png;assets")

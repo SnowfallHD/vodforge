@@ -177,10 +177,21 @@ class QtAnalyticsSession:
             return
         self._attribution_work = ArchiveWorkOwner()
 
+        telemetry = self.telemetry
+        epoch = telemetry.posthog_admission_epoch() if telemetry is not None else None
+
         def deliver(_cancelled: threading.Event) -> bool:
             result = self._attribution.deliver_first_launch(
                 state, app_version=self._app_version
             )
+            if (
+                result.first_launch_confirmed
+                and not state.first_launch_confirmed
+                and not self._closed
+                and not _cancelled.is_set()
+                and telemetry is not None
+            ):
+                telemetry.mirror_first_run_confirmed(state.install_id, epoch)
             return result.first_launch_confirmed
 
         self._attribution_work.submit("first_launch", deliver)

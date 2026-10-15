@@ -273,7 +273,7 @@ Item {
                     spacing: 14
                     StoneButton {
                         visible: groupHeader.channel || scene.videos.length > 1
-                        label: groupHeader.channel ? "Play Channel" : "Play playlist"
+                        label: groupHeader.channel ? "Play Channel" : scene.projection.groupKind === "collection" ? "Play collection" : "Play playlist"
                         emphasized: true
                         width: groupHeader.channel ? 155 : 154
                         height: 40

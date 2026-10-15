@@ -1536,6 +1536,20 @@ Predecessor cff Intel build original failure is customReveal0.99077 after fixed3
 
 Responsive follow-up: source285225f geometry/bindings/wheel checks passed but covered only customReveal/width motion. Added independent height-change sampling reproduces an introduced instant height jump (normal1fail/reduced1pass, height-morph-before.log); expanded groups made the height cap apply immediately. Popup now interpolates separately bounded collapsed/expanded heights with the SAME liquid reveal, preserving frame intermediates and reduced-motion endpoints. All22affected cases pass37.05s in height-layout-final.log, Ruff/format/diff pass. This actual runtime sizing change invalidates285 packaging for final UI acceptance; artifact-only38286439356 cancelled early and preserved, no artifact download/signing/native launch from it. d171 opened candidate all Build38280794882 platform jobs nowPASS/draftskipped and Tests38280798036 allsixPASS; these remain exact d171 proof, not successor proof. Open user apps were untouched; final responsive+height successor requires its own private build/sign/brieflaunch checks.
 
+## Oct 12 — exact f961 private launches, review hold retained
+
+Exact f96149759b66a79f0a34e4d74b09ae70fa261c85 artifact-only workflow38287312757 Windows and ARM jobs pass; Intel remains in progress. Windows all4258package entries match sealed ZIP eafb944544b749dd92ee5a40f219c7a465e357a815c84907c01f68c286f0f556; signed executable eb689eeabfaf398331500fa4167d43dbb4bf1e19b47216a6233064cc90791bd8. Fresh strict idle/queue/children guards and40file backup before visible PID56632/session1 at18:20:59UTC. Initial Get-FileHash receipt flags3media companions; preserved original. Independent Python18:21:20 readback confirms all40files unchanged, no restoration. Cause of original discrepancy remains unknown. History unchanged. App left open; no SW_RESTORE or duplicate download.
+
+ARM444MachO runtime floors<=15/noerrors; exact DeveloperID strict signature/notarization/stapling/Gatekeeper pass. Frozen candidate engineering-quality/candidates/mac-f961497-arm64/20261012T182718Z-15ae08e1/candidate-artifact.json archive1f601d0de3ca40d57ee2b6db1c30f75dab4399cb52b8abc925d0f21734f98eec, executable521461e6130bf4c67d4649de9f0b470cde218ba57f9de0a86ab5dcced9efb4d5. Fresh ordinary idle/noapp guard, backup115profile+16media/companions verified. PID36284 launched18:27:41UTC, actual exact-path CUA AX/window/screenshot verified; initial premature getApp procNotFound retained, ready observation succeeds. Cocoa ready visible/nativeheaderintegrated/frameTop0/1100x740. Independent18:28:35readback all131files unchanged. App left open for user review, no preferences/UI mutation. Receipts under build/recovery-20261011/private-review-f961497: windows-visible-launch.json, windows-preservation-readback.json, mac-visible-launch.json, mac-preservation-readback.json, arm-sign-notarize.log, arm-freeze.log. Earlier d171 Mac normalexit0 at18:01:11; Windows readback18:01 noapp with exitcause/code unproved, so historical launches never imply continuously open.
+
+Both exact f961 private launches now delivered; bounded affected native Options/context-menu and Windows fullframe checks remain separate from launch proof. No expanded core/privacy/ledger/Update+Repair campaign. Public0.2.5 unchanged;0.2.6 publication HELD. Candidate signing-policy eligibility does not lift hold or imply global release acceptance. Runasimi/qu provider429 unresolved. No credentials/security/access changes.
+
+## Oct 12 — read-only production backend checkpoint
+
+Authenticated20:39:37UTC intervalfrom15:08:28Workerrequests/0runtimeerrors/1clientDisconnected; internalstatusnotcustomerHTTPfailureproof.17D1readsonly/0rowswritten/quick_checkok/noFKviolations. Accepted4630 vsreconstructedcutoff4623(+7):Windows0.1.8+4/0.2.5+3, nonewfailure/rejectionaggregates; acceptedtimestampdifferences483.998–557.621s remainclock/outboxambiguous.34schemaentries/28migrations, changesvsOct11historyexactmatchlocalmigration27/28; deploy/migrationtimesbeforecutoff. Exact15:08savedreceiptunavailablelocally, notclaimedcompared/equal; reconstructedcutoffandOct11historyscopedexplicitly. Publicsite/feed20020:40:21–22UTC/v0.2.5.8downloadrecords/assetcountincreasesnotadoption, monitoringnotexcluded. KnowncustomerHTTP/rejectionvisibilitygapdeduplicated. Sanitizeddatedbaselineandhashes: build/recovery-20261011/backend-monitor-20261012T2039/REPORT.md, backend.json, supplement.json, comparison.json, schema-baseline.json, public.json, SHA256.json. No secrets/events/mutations/access/subscription/GUIinputs/publication. Privateapps/reviewuntouched.
+
+Monitoring clarification: priorOct11morning/night REPORT.md explicitly retaincustomerHTTP/rejectionvisibilitylimit; notnewlylostcoverage. Missingexact15:08receiptislocalcomparisonavailability, notauthenticatedaccess/monitoringloss (currentreadsallpassed). OneclientDisconnected/0errorsisobservedoutcome, noestablishedmeaningfulregression. SavedCOVERAGE-CLARIFICATION.md; noproductionqueriesrerun.
+
 ## Oct 12 — same-original subtitle warning correction (local source only)
 
 Removed only obsolete unavailable-translation/original-only fallback log branch in DownloadWorkerCore._download_item_to_staging. apply_original_caption_options already refuses any genuinely missing explicit target before transfer; the remaining reachable false warning was when selected target equals evidenced original language. Selection, options, transfer, validation, commit, settings and failure guidance unchanged. Diagnostic invariant: report the actual selected outcome, not infer failure from absence of a second translated track. Earlier selector/stream/error checks covered track integrity but did not traverse worker reporting. New bounded real-worker fixture covers Off, same-original, available translation, and absentRunasimi: captured logs/track metadata/unchanged choice plus zero transfer on true unavailable error. Before:1fail(same-original)/3pass0.84s; after62affected subtitle/error tests pass0.84s including existing real local subtitle roundtrip. Ruff/format/diff pass; no duplicate broad campaign. Receipts build/recovery-20261011/private-review-successor/same-original-warning-before.log and same-original-warning-after.log. No live network/download/build/app launch/UI action. Open f961497 private apps do NOT contain this later source patch. Runasimi/qu HTTP429 remains upstream refusal, not fixed; public0.2.5 unchanged/0.2.6held. Preexisting uncommitted launch/backend-monitor log entries preserved separately from this scoped commit.
@@ -1548,11 +1562,38 @@ Language labels previouslyQLocale.nativeLanguageName:Greekscript/Russianscript/R
 
 Morph width/height/280ms/reducedmotion/quickselectdesign retained. Existing synchronous material renderer generatedlargepopupborder/blurredshadow perintermediate geometry. Popupopts into fixedexpandedrasterdimensions onlywhilecustomRevealintermediate, stretchescachedmaterials then restores actualendpointdimensions. StoneField/StonePopup optionalmaterialdimensions defaulttophysicalbounds everywhereelse. Existingnormal/reducedwidth+heightmorph test nowboundsactualshadow source changes:priornormal12uniqueupdatesfails/reducedpasses4.18s,afteratmost2.29affected Options/morph/preferences tests pass45.51s; finalstrengthenedmenu4pass andnewlabels3pass asabove. Sharedvisiblepixel/hiddenmaterialadmission2pass3.72s. Ruff/format/diff pass. Thisboundsmaterialwork, not a nativeframe-time/fluidityacceptanceclaim; no nativeprobe/download/build/launch/publish. No selection/export/providerchanges, locala24d076 preserved; currentlyopenf961497 apps doNOTcontain thissourcebatch. Native review of exactlatercombinedprivateartifact stillneeded, public0.2.5unchanged/0.2.6held. Receipts private-review-successor/subtitle-popup-before.log,morph-material-before.log,options-subtitle-morph-after.log,options-subtitle-binding-final.log(failedreader),options-subtitle-binding-v2.log,subtitle-labels-final.log,morph-shared-material-parity.log.
 
+Combinedprivatef26cdb8 workflow38321698194: Windowssuccess/all4258localsealedfiles/sourceexact/archive80fc702b27252f3a163798a903a590858d86b2fcc542242772ee794cbaab11b7. ARMfailedbeforepackaging2Customsubmenuvisible assertions (True1100/820);754pass9skip1103.53s;originalbuild-failed-original.log retained. Intelcancelled/draftskipped. ARMwatcher3867 exit1/noartifact;Windows66563exit0. Notclaimedfixtureflakiness/rootcause;source/geometrydiagnosisneeded. No duplicatebuild/sign/nativeactions, foregroundreviewholdretained.
+
 ## Oct 13 — geometry-aware subtitle menu test, runtime unchanged
 
 Cooper explicitly approved updating failedARMCustomsubtitle test/rebuildingprivateMacartifact. Controlledoriginaltest with instant/reducedmotion reproduces same2Customfailures/2normalpasses6.66s: originalanchor y566/546 vsviewport heights524/504 (40pxbutton), stalecontentY17/37 althoughsettledcontentHeight873. Animationendpoint didnotguarantee nestedpositioner/content geometrysettled; programmatic signalactivatedoffscreenanchor, which existingpopupguardcorrectlycloses. CIreceiptitselfhadnogeometry/reducedmotionstate, so controlledboundaryprovesdefectiveprecondition withoutinventing exactCIenvironmentcause. Noactualproductregressiondemonstrated; correctednormalowner productguard retained.
 
 Testreusespolish_scene, scrollstargettrigger/languagechoice/reopentriggerintoview, assertsfullverticalbounds/centerhorizontalintersection/enabledvisibility, usesactualQTestpointerclicks (notactivatedsignal), retains150msmenu-persistence/Greekselectedcode/sharedlabel/close/reopen/Settingsabsencechecks. Snapshotgeometryprinted/saveonfailure. Normal/reducedmotion xnormal/Custom x1100/820 eightcases pass13.50s. Firstnewfixturechoiceparentwasnon-Flickable andfailed4TypeError; originalretained, readernowwalkstoactualcontentYowner; second4casespass7.26s before8matrix. Sourceproductsunchanged/Ruff/format/diffpass. Receipts private-review-f26cdb8/original-zero-motion.log/test_original_zero_motion.py,geometry-aware-first.log,geometry-aware-v2.log,geometry-aware-final.log. ExistingWindowsf26artifact runtimevalid4258sealed; do notrenameasnewtestcommit. OnlyMacARM/Intelprivateartifactrebuildneeded, existingpriorworkflowfailure/Intelcancel retained. No liveproviderdownloads/nativeinput/ordinaryappclosure/replacement/publication. Krydenheadlesspackage slotreleased/coordinateincomingARMsign; foregroundholdstillapplies.
+
+Exactccb14edARMworkflow38325728703passed5924repository/37skip,760Qtcomponent/9skip,209scene,frozenruntimeSmoke.444MachOruntimefloors<=15/noerrors. DeveloperIDstrict/notary/staple/Gatekeeperpassed; immutablecandidate20261013T004254Z-6327f53a archivec33fa0dfb048ad6152676daf051c8bb373a15df4823832b62f096a3411035256. Factoryclean-commitrequires temporarily preserved documentationonlyinrecoverablestash506201f17448857b1baa81eaab70fd2166cc0dbd+bytecopy;finallyrestorebyte-identicalverified. Signer95581/freeze66487exit0/localslotreleased. Intelstillinprogress;existingWindowsf26artifactretained/no relabel. Noappclosure/replacement/nativeinput/publication; signing-policyeligibilitydoesnotliftholdorglobalreleasegate. Receipts private-review-ccb14ed/arm-job-original.log,arm-sign-notarize.log,arm-freeze.log,arm-qualified-summary.json,freeze-documentation-preservation.json.
+
+Intelccb14edjob115063825876/workflow38325728703TERMINALPASS.5924repository/37skip673.07s,760Qt/9skip2156.00s,209scene527.37s,runtimeSmokeOK01:16:48.998UTC. Longelapsedphaseprogressed, no stuck-processblockerremains; priorlive-log404BlobNotFoundpreserved/notauthenticationloss. Exactartifact11783151106 downloaded; all6328regularfile/linkbytesmatchZIP/noextras/mismatch; archive62caf33163c4a8dd4b51ac01f9b902c7dab0e5254243c15e560d3e45fc09e04c, executable1a1297770c26bf284fe493c6bf4151907d2991793a73b3e22363833fb8605952.446runtimeMachOx86_64/floors<=15/noerrors;ad-hocdeepstrictsignaturevalid/TeamIdentifierunset, NOTDeveloperID/notarized/nativeIntelacceptance. EntireMac-onlyworkflowSUCCESS/Windowsanddraftskipped, no duplicatebuilds. ARMDeveloperIDcandidate retained/Windowsf26separatevalidruntimeartifact/notrelabeled. Receipts private-review-ccb14ed/intel-job-original.log,intel-job-terminal.json,intel-complete-binding.json,intel-runtime-floor-audit.json,intel-ad-hoc-verification.log,intel-qualified-summary.json. No appclosure/replacement/foregroundinput/publication;Krydenvoice-reviewholdretained.
+
+Readonlybackend02:21–02:24UTC vs20:39UTC:176Workerrequests/0errors, D1quick_checkok/noFK/34schema+28migrations+deployment/settingsidentical/18reads0writes. Accepted4630→4664(+34,Mac0.2.3+13/Windows+21). NEWoneMac0.2.3attempt HTTPError403/downloadstage00:56:22UTC,2correlatedacceptedfailureevents/1attempt, no sameattemptlatercompletion; endpoint/rootcauseunproved, notbackendoutage. Publicsite/feed200/0.2.5;oneARMdownloadnotadoption. Knownvisibility/clock/outboxlimitsdeduped. InitialmonitorSQL102variable7500readererrorpreserved/correctedread-only, notprod-ingestion/accessfailure. Sanitizedbaseline build/recovery-20261011/backend-monitor-20261013T0221/REPORT.md/comparison.json/failure-diagnostics.json/alert-ledger.json/SHA256.json. No builds/nativeactions/dataproduction/deploy/access/credentialschanges;publicationholdretained.
+
+
+## Oct 13 — Windows main-window drag-corrected displacement follow-up
+
+Cooper confirmed Windows main window. Original25b full-frame pixels were inspected: native caption overlaps content/right-bottom paint stops short at96DPI; same-process resize and fresh same-binary launch correct it. Original blocked SW_RESTORE control remains blocked/unproved, no causal relabel. Current read-only SSH inventory03:52:30UTC finds exact privatef961 PID56632/session1. Direct HWND owner queries from SSH return0 and refuse further reads; initial signed-handle reader and pointer-corrected attempt preserved, current geometry/pixels/idle unverified. Qt Windows entry uses ordinary Window/content-fill, Cocoa-only backdrop does not explain this platform. Existing offscreen/logical/player-resize checks omit first native composed main frame/client origin; no redundant pass reruns or speculative product patch. Bounded disposable-profile first-visible-before-move/restore/resize and separate move/resize/restore controls documented in build/recovery-20261011/windows-frame-20261013/REPORT.md. Awaiting requested Windows availability; no native input, app close/restart, build, provider download, profile/display/security change. Kryden owned operations released but human review/prompts remain preserved. Sourceccb14ed/runtimeunchanged; public0.2.5/0.2.6 hold retained.
+
+
+Independent frame source diagnostics: exact-incident user clarification directly says “Windows main window”; not inferred from Mac client or prior photograph. Private candidate windows-frame-20261013/test_qt_initial_frame_candidate.py uses actual Bridge/Main.qml, isolated profiles/offscreen/software;20cases pass across scale1/1.25/1.5/2 (9.27/7.34/10.60/7.71s). Initial pre-expose0x0 content reconciles after event delivery; resize exposes new QWindow/raster dimensions before content event delivery, then reconciles without drag; move-only and hidden/show restore pass. Injected X/Y/stale-width/stale-height controls are rejected. Original5failed candidate asserted before expose and remains preserved as fixture-precondition failure, not product reproduction. Signals/geometry/raster/DPR receipts retained. Ruff/format pass. Header drag only callsstartSystemMove; no Windows custom-frame source override found. No forced-resize/timer/DPI productpatch or source-fixclaim; nativeWin32/D3D/fullframe beforedrag/control remains pending Windowsavailability. No runtime/app/profile/publication changes.
+
+
+Readonly production backend08:43–08:44UTC/Oct13 03:43–03:44CDT vs02:21baseline:28Workerinvocations/0runtimeerrors, D1quick_checkok/noFK/34schema+28migrations+deploymentidentical/16reads0writes. Accepted4664 unchanged/allversiongroupsidentical/no new acceptedfailureorrefusalaggregates; absence notfailed-delivery/rejected-event proof. KnownMac0.2.3download403same2events/1attempt/1installation, no later same-attempt outcome; dedupkeyretained/notify_againfalse. Site/feedGET200/public0.2.5/samecontentbindings;feedcounterbodyonlydelta5assetdownloads,12unattributeddownloadrowsnotadoption. ExistingHTTP/pre-ingestionrejection/clientoutboxcoveragegapsretained, no newaccessloss/outageclaim. Evidence backend-monitor-20261013T0843/REPORT.md,comparison.json,alert-ledger.json,SHA256.json. No secrets/events/mutations/deploy/access/GUIinputs/builds/publication;Windowsnativeholdretained.
+
+Deployment comparison scope: current snapshotcontains10historicalentriesvspriornormalizedcurrentobject; initialaggregatefalse comparison preserved in comparison-first-full-list.json. Latestactiveid/versionpercentages/created_on exactlymatchbaseline; no deploymentchange. Reader-shape difference only; initial local normalization KeyError retained in tooloutput, no API mutation.
+
+
+Readonly production backend14:57–14:58UTC/Oct13 09:57–09:58CDT vs08:43baseline:268Workerinvocations/0runtimeerrors, D1quick_checkok/noFK/34schema+28migrations+latestdeploymentidentical/19reads0writes. Accepted4664→4829(+165Windows0.2.5/2installationIDsnotpeople), maxclient/serverdifference575.725sclock/outboxambiguous. NEWsameinstallation updater check_started12:53:32UTC→URLError/network/analysisfailed12:53:33→genericupdaterfailed12:53:36, bothfailureattempt_idabsent; exactattemptcount/linkageunverified, no subsequentupdateroutcome. Appsidefailureacceptedbytelemetry, notbackendoutage/rejection/systemiccauseproof; parent singleevidenceepisode candidate. KnownMac0.2.3download403unchanged/deduped. Site/feed200/public0.2.5/samecontentbindings,5assetcounterdelta notadoption. Evidence backend-monitor-20261013T1457/REPORT.md,comparison.json,failure-diagnostics.json,alert-ledger.json,SHA256.json. No secrets/syntheticevents/mutations/deploy/access/GUI/builds/publication;Windowsnativeholdretained.
+
+
+Bounded readonly updater investigation15:02:58UTC: automaticcheck/under10s, RuntimeError>URLError>other, sourceupdates.py102, networkreason; HTTP/errno/Winerror/TLSverify/failurecodeabsent. dimensions.update_attempt internallylinks1check_started+failed operation despiteattempt_idNULL; genericsummarydimensionabsent/directlinkunverified, sourceemitsadjacent summary. No recurrence/later updater outcome recorded. DefaultpublicpathGitHublatestrelease; actualURLnotserialized. Errorwrapperpreservesreasonclassmessage/raise-from; inspect_textfalse skipsfailurecodeclassification/unknownclassother; poll replacespreparedmessagewithgenericRepairguidance. Exactunderlyingreason/networkcategory/clientrequestcontextmissing, no DNS/TLS/outageguess. FourSELECTs0writes, threefilesunchangedvs0.2.5source850e19e (notclienthashbinding). Evidence backend-monitor-20261013T1457/updater-investigation/REPORT.md,metadata.json,source-excerpts.txt,SHA256.json; existingalertledgeraugmented/no duplicatealert. No fixes/tests/apps/permissions/deploy/publication; holdsretained.
 
 
 ## Oct 13 — failed update checks retain safe retry guidance
@@ -1564,6 +1605,21 @@ Existing popup state tests manually set recovery on a download error and did not
 Receipts: build/recovery-20261011/updater-guidance-20261013/before.log,after.log,guidance-final.log,local-feed-socket-retry.log,qualification.json,SHA256.json. Source/offscreen/local-fixture evidence only: exact successor package/native popup/retry acceptance remains pending. Existing open binaries are unchanged, Windows/native holds remain, public0.2.5/0.2.6 publication HELD. No build/sign/deploy/publication or GUI input. Unrelated earlier log entries preserved unstaged; scoped commit includes only this new evidence section.
 
 
+## Oct 13 — private packaged updater retry acceptance and separate subtitle/adoption evidence
+
+Runtime fix f258221 is qualified in exact local ARM 9227134. Follow-ups 7b21989, 861ae92 and 9227134 change tests/build integration only: register the new Qt test in its partition, retain all maintained test roots including fine-tuning/tests, and correct stale owner-test preconditions. The first build was mistakenly interrupted after buffered progress (3,285 passed / nine skipped, exit 2); its partial receipt remains. The next build passed 5,919 backend checks / 38 skips but exposed two old Qt assumptions among 776 passes / nine skips. Tests now use actual repair admission and distinguish metadata failure from download recovery, retaining downgrade refusal, no-download, privacy, HTTP 503 and failed-helper assertions. An initially mis-targeted edit failed two tests among 34 passes; it was corrected, and all 36 affected checks pass. Runtime remains unchanged. Final maintained build: 5,923 backend passes / 38 skips, 778 Qt passes / nine skips, 209 scene passes, packaged runtime smoke passed.
+
+Developer ID signing, notarization, stapling and Gatekeeper passed. Archive SHA-256 4c723723b34bff012b3db79955d85946541a62b21379d4d74985198e5beecf18; executable SHA-256 165b5a522c33263eabb31d741f7db99f54778da84927a62998058379ff507951. All 6,327 sealed files/links bind without extras. Actual isolated, denied-consent native PID 78842 received automatic then manual 503 responses. The popup rendered Update check unavailable, constant service-unavailable guidance, Download page, Close and Check again, with no Repair. After the disposable feed returned 200, one pointer click on Check again rendered up-to-date. Normal popup Close/Cmd-Q exited 0 at 16:40:51 UTC; zero owned private/signing/fixture processes remain, and bundle tree is unchanged. Production telemetry was attested false; consent stayed denied and no outbox was created. This is metadata retry proof, not install/Repair transactions or Windows network-cause proof.
+
+All 444 runtime Mach-O files were readable, but local Homebrew dependencies declare a highest minimum of macOS 27 on the current 27.0.1 host. The <=15 assertion FAILED and remains preserved. This package supports private current-host acceptance only; public supported-floor qualification requires a hosted successor. No binary minimum commands were altered. Public remains 0.2.5 and 0.2.6 publication is HELD. Previously uncommitted documentation was restored byte-for-byte after build provenance was recorded; recovery stash remains. Receipts: build/recovery-20261011/private-review-f258221/REPORT.md, qualification.json, SHA256.json, original build/sign/floor logs, failure/success screenshots and AX, feed requests, launch/exit/startup attestation/process/bundle proof.
+
+Separate signed ccb14ed subtitle lane, with unchanged subtitle pipeline, is not f258 packaged acceptance. French manual fr (The Egg) and Spanish manual es (vaccines) produced playable 360p H264/AAC outputs with original/translated mov_text streams, 152 French and 87 Spanish cues; full AV decode passed and native playback was observed. German automatic de (Rick Astley) subtitle fetch returned 429 and truthfully Failed with no output, retry or substitute; specific Issues guidance was visible. Three actual media attempts, once each; the previous Runasimi source was not retried. Normal exit 0 at 16:09:55 UTC; no VOD process remained. Onscreen selected-track rendering and automatic-translation success are unproved. subtitle-sample/REPORT.md, media-verification.json, sample-results.json and SHA256.json bind results and retain earlier harness errors.
+
+Read-only production update-adoption snapshot: 5,406 accepted events / 63 identities, September 5–October 13 at 15:38:43 UTC. Seven-day active consenting denominator: 10 identities, six old (two Mac/four Windows), four current 0.2.5 Windows; not people or customer conversion. Five old identities with latest availability report resolvable revisions c6684b2, 410dddc and 55e4073. All support shown/update_attempt telemetry and keep automatic offers hidden in Settings. No shown/later-download evidence on the five; this does not establish refusal or loss. Strongest source-supported recommendation is a persistent non-blocking Update available entry opening the existing updater and preserving active work/Later. No adoption UI was implemented. Customer/private-QA classification, independent binary binding and session-to-operation linkage are unknown; population causality is unmeasured. update-adoption-20261013/REPORT.md and API/SQL/source/SHA256 receipts preserve the analysis; zero SQL writes.
+
+Native/heavy resources are released and Kryden owner was notified. No ordinary app control, permission/security change or prompt interaction. Windows frame reproduction hold remains unchanged.
+
+
 ## Oct 13 — persistent non-blocking updater entry, locally approved
 
 Cooper explicitly approved local implementation after the read-only adoption diagnosis. Main.qml now places an Update available entry beneath the shared header, outside page scrolling. It follows existing availability/manual/recovery/check-failure/download/ready/handoff state, does not open automatically, and disappears when a successful check says current. Explicit opening uses the existing popup without invoking a check, download or restart. Later retains the entry; repeated clicks while open do not reopen or create duplicate work. No new updater owner, telemetry schema or network route.
@@ -1571,3 +1627,488 @@ Cooper explicitly approved local implementation after the read-only adoption dia
 Existing popup tests manually opened the offer and missed ordinary discovery. New bounded cross-owner coverage verifies automatic check/poll availability and current transitions, all four routes at 620/1100 widths, actual pointer repeat/Later/reopen, Return/Space activation, existing operation-boundary shown deduplication, unchanged active/queued jobs and 11 owner states. Prior source failed two discovery cases in 8.03s. First implementation run: 29 passed / four failed in 21.52s retained: reader used wrong settings object name and unused observations list; corrected to actual object and operation boundary, not product assertion removal. Focused: 33 passed in 27.07s; strengthened discovery/keyboard: four passed in 6.32s (two strengthened cases plus two new), 35 unique affected guidance/notice checks. Existing popup/recovery/verified handoff: 42 passed in 21.70s; 77 total unique affected passes. Ruff/format/diff pass. No broad build/CI campaign repeated.
 
 Tests use isolated HOME, disabled telemetry, stubbed metadata and no provider/paid calls. All GUI tests are offscreen: no native foreground input, packaging/signing, ordinary app closure, permission/settings change or deployment. Kryden notified of source/offscreen-only scope. No native/B.Edit lease needed or taken. Exact successor package, native visual/physical input and measured adoption effect remain untested. Existing signed 922 artifact lacks this entry; no predecessor relabel. Public 0.2.5 remains; 0.2.6 publication HELD. Evidence build/recovery-20261011/update-notice-20261013/before.log,after-first.log,after-v2.log,discovery-keyboard-final.log,recovery-affected.log,REPORT.md,qualification.json,SHA256.json. Earlier uncommitted documentation remains preserved and unstaged.
+
+
+## Oct 13 — exact update-entry private package ready, native lease pending
+
+Parent requested continuing889c046 through private package/native qualification. Kryden explicitly released headless slot; maintained packaging segment reused with77 valid affected checks, without broad campaign restart or predecessor-test relabel. Exact embedded889 revision and packaged Main.qml bytes match. Runtime smoke, DeveloperID strict signing, notarization, stapling and Gatekeeper pass. All6327 sealed files/links bind/no mismatches/extras; archive6b0843c42c8f97ef5c4cc24dab5ba361a6f63a2d335969467488f3e1cfd386fc, executable738ab0e02b027a8bc5ca09d401b3b7b0079e072e5dcfc2570d350e86bf1d4dbd. Fresh444 MachO audit remains highestfloor27, <=15FAILED/preserved; current-host private artifact only, public held. Uncommitted log preserved recoverably for clean provenance and restored byte-for-byte; stash retained.
+
+Original B.Edit owner had no native lease. Parent identified new collector01a13648-c504-74e6-8d3c-cf10f63bc0e2, which explicitly requested protected bounded Messages/Bebe review. VOD native launch/input is HELD until its explicit release, then Kryden short identity interval, then VOD fixture. Owner coordination acknowledged; headless VOD slot released. Existing app/profile/prompts untouched; no actual new native observations claimed. Prepared denied-consent loopback fixture serves availability metadata/prerecorded local media and controlled metadata/verification failure, never an installer. Report/checkpoint/binding at build/recovery-20261011/private-review-889c046/.
+
+
+## Oct 13 — bounded packaged update-entry acceptance complete
+
+Exact 889c046 signed/notarized/stapled ARM package verified actual visible automatic entry, no automatic modal, Shift-Tab/Return/Space, Later persistence, reopening and repeated-click stability. Controlled checksum 503 retained existing Repair recovery; metadata 503 kept safe retry without Repair; current retry removed entry. Initial direct-MP4 fixture failed format admission before download and remains preserved. Corrected localhost HLS explicit stream metadata admitted one real run; it stayed active through offer interactions and verification refusal, then naturally completed under the same run ID. Output 640x360 H264/AAC, 486.040s, full AV decode exit 0, SHA-256 cf39adb14f51a9a37880d16d8999ddd8c872e7867376d465514f8850fe1550e5; zero staging. Both app instances normal Cmd-Q/exit 0; final 13:11:11 CDT, zero survivors, signed tree unchanged. Native interval released to B.Edit/Kryden notified; ordinary apps/profiles/security untouched.
+
+Stale AX capture index opened Window menu, cancelled and Later repeated correctly. Late active-ledger assertion raced natural completion; original idle ledger retained, independent active/transcoding snapshots and completed same-run history bind outcome. No relabeled generic E2E/installer/Repair-success proof. Public 0.2.5/0.2.6 held; runtime floor 27 and Windows/Intel/narrow native/interleaving/adoption limitations remain. REPORT.md/qualification.json/SHA256 and original evidence under build/recovery-20261011/private-review-889c046. After completed verification, unified exec command transport disconnected; final receipts were written via filesystem-only native runtime, no further GUI input.
+
+
+## Oct 13 — compatible-input macOS private ARM qualification
+
+Parent authorized independent compatible build diagnosis with Windows explicitly unauthorized. Original889 local runtime floor27 comes from Homebrew OpenSSL/libvmaf, with Python/FFmpeg26; no intentional support policy selects26/27. Existing pinned PySide/CI builder baseline makes15 the engineering target, not older-OS support acceptance. Isolated existing standalone Python3.11.15 plus retained immutable-CI-verified FFmpeg dependency inputs and pinned PyPI requirements produced fresh889 private ARM packaging. First final audit found host SQLite26 despite other inputs<=15; originalfailed audit/library retained. Explicit immutable-CI-verified SQLite input corrected fresh package:384 Mach-O/max15/zero scan errors/no external non-system absolute links, matching LSMinimumSystemVersion15. No load-command target lowering.54 affected updater pass/18 platform skips;6 real encode/probe/decode pass; Python+Qt SQLite transaction checks pass after retained missing-QCoreApplication fixture error; frozen smoke and packaged High H264/AAC export/probe/full decode pass.6256 sealed files/links bind/no extras, strict ad-hoc signature pass. Current-host only/no GUI/olderOS/Intel/Windows acceptance. Original accepted bundle intact; all owned jobs terminal/no process matches.
+
+Automatic approval review REJECTED Apple notarization disclosure using existing credentials before execution; no upload/retry/workaround. Explicit user approval question pending; bounded local ad-hoc package ready. Exact compatible artifact archive25807153130071aac597441cc07e6b172c7f4b7c09144a754f0d8fa9274d8b24/executable63e62427aab9b82b2145d0cb7e0b7be33e74ec4bbd64c92354b4af9e385a8a44. REPORT.md/qualification/input/failed+passingfloor/media/archive/approval/SHA receipts at build/recovery-20261011/macos-floor-20261013. No public release/deploy, permissions/security changes, native input, provider/paid calls or unauthorized Windows access. Public0.2.5/0.2.6 HELD. Exact remaining native Mac15/Intel/Windows main-frame/update/Repair/physical interaction tests documented; no broad campaign repetition. Earlier uncommitted documentation preserved.
+
+
+## Oct 13 — authorized compatible private Apple notarization complete
+
+Cooper explicitly approved the exact private Apple upload18:38UTC. Preserved ad-hoc archive/tree hashes verified before one approved retry; no approval text injected into the tool request and no bypass. Existing secure identity/profile only: Developer ID strict signature, Apple terminalAccepted (767661de-140a-4b7c-9d1e-ec45b701eecb), staple validation and GatekeeperNotarizedDeveloperID pass. Signed384-file audit remainsmax15/zero errors; marker889/QML unchanged. Final6257 sealed files/links bind/no extras; archivec605fc2529de91fa8e7d432c7b417eb28320b222a5fa916b78cd533836d6941e/executable100d1fff6e22d4471fb300a60742b41c91a14ae7865f06a3f3c71f6eb03d1054. Isolated hardened-runtime smoke exits0; exact signed/stapled bundle tree unchanged afterward. Read-only process check no owned package/sign/notary/smoke processes; slot released. Original rejected-review receipt, ad-hoc archive/binding, failedSQLite26 audit and original failures preserved; REPORT/qualification/checkpoint/SHA updated under macos-floor-20261013. No native launch/input/ordinary app or profile replacement, new credentials/security changes, Windows access/public deploy/release. Mac15/Intel/Windows actual runtime and signed Update/Repair transaction/physical interaction gaps remain; public0.2.5/0.2.6 HELD.
+
+
+## Oct 13 — scheduled20:38UTC read-only production backend check
+
+Actual authenticated observations20:40:38–20:46:17UTC, public20:41:17–18 vs14:57 baseline. Worker1251 invocations/all success/0 runtime errors; D1quick_checkok/noFK/34exact schema/28migrations/latestdeployment+releaseadmission unchanged;25 SELECT/PRAGMA/0rowswritten/changed_dbfalse. Accepted4829→6055(+1226:Mac0.2.3+1201,Mac0.2.4+13,Windows0.2.5+12), identifiers not people/adoption. NEW Mac15:44:29–15:45:11receipt HTTP403/download13diagnostics under1attempt/1installation; no same-attempt completion, later16exports+1completed underanotherattempt notrecoveryproof. NEW Windows17:28:39–41receipt DownloadError operation+run_failed under1attempt; reasontranscoding/stagedownload, HTTP/causeunknown, no later same-attempt completion. Both app failures accepted, notWorker/ingestionrejection. OldMac00:56:22 unchanged/deduped; oldWinupdaterURLError alreadyreported, NEW later independent same-installation check_started/current16:48:40/47 receipts, no originalcause/sameattemptrecoveryclaim. Latestaccepted17:28:41→3h11m57absenceatprimaryread; expectedactivity/requeststatus/outbox unavailable, notfailed-deliveryproof. Newmaxclock/outbox offset492.619s withinprior575.725. Site/feed200/public0.2.5/sitebytes+artifactbindings unchanged, +8assetcounters/8trackedrows notadoption; no binary/trackedroute GET. Raw tool schema/versionarray truncation preserved, bounded34SQLexactcomparison+compact15-groupcounts correctedreceiptdefect; no schemachangeinference. Evidence backend-monitor-20261013T2040/REPORT.md,comparison.json,API/SQL/public/diagnostic/ledger/SHA receipts. No usernotification/externalmessage, secrets/events/writes/deploy/access/UI/build/publication/Windowsinput; parent ownsnotification. Earlier log/uncommitted work preserved.
+
+
+Oct13 media-incident clarification20:52:31–20:55:29UTC:3successful scoped aggregate SELECTs/0writes, no rawIDs/privateURL/title/message/content/secrets. BOTH media downloads, provider categoryYouTube fromsame-attempt intent, notappupdates; exactfailinghostnameunrecorded. Mac0.2.3MP3/cookiesdisabled/CPU,13HTTP403failures across13operationIDs under1outerattempt/1installation, client15:40:44–15:41:30/server15:44:29–15:45:11Oct13; not13users/retries/outerruns. Windows0.2.5MP4CTV/cookiesdisabled/CPU,1operation+run_failed/sameattempt, client17:20:32/server17:28:39–41Oct13; DownloadError>other/reasontranscoding/stagedownload, noHTTP/failurecode/toolExit/cookieerror; encoder/causeunproved. Known850e19e callbackapp2787 processespreflightmedia; FailureDiagnostic sourceunchanged inprivate889. Noevidence eitherfixed; updaterchangesunrelated, no recordsubtitle/429/unavailabletargetmatch, MacMP3notMP4subtitleissue. Cookiesoffnotcausalproof/nosettingchange. Sourcecomparisonnotindependentclientbinarybinding. Evidence backend-monitor-20261013T2040/incident-clarification/REPORT.md/metadata/counts/source/SHA. No newincidentnotification/message, productionmutation, retry/download/UI or publication. Earlierrecords/workpreserved.
+
+
+## Oct 13 — scoped release checklist and Air SSH route inspection
+
+Current889 compatible package changes the Python/Qt/SQLite/media dependency inputs,
+so retained ledger source checks were rerun only in that isolated runtime:
+tests/test_qt_history_startup.py11pass1.39s (offscreen/software), preserving
+malformed main/schema999/malformed pending refusal bytes and valid absence
+behavior. Original log release-checklist-20261013/compatible-ledger-source-original.log.
+No GUI/platform acceptance substituted; older0b validated unaffected invariants
+remain scoped predecessor evidence, while current compatible final-binary native
+acceptance remains pending. No broad campaign restart.
+
+Air inspection confirms Windows SSH transports commands/files into an Interactive
+Limited scheduled task with locked/session guards. Maintained macOS native_input
+and native Intel startup runner provide the QA layer; a remote SSH-to-Aqua route
+still needs reachable authorized authentication, logged-in/unlocked session and
+actual responsible-process Accessibility/capture permission verification. Offline
+Codex environment is not proof SSH unavailable; no Air network/auth/UI attempt,
+key/RemoteLogin/grant/agent/credential change. Intel requires fresh current889 x64
+artifact; ARM cannot qualify it. Evidence air-ssh-route-20261013/REPORT.md.
+
+Parent authorized exact compatible ARM acceptance after B.Edit/GLU native release.
+Separate disposable compatible-native-889c046 fixture/plan prepared; no native
+launch/input yet, signed artifact untouched. Existing local media/localhost only,
+installer deliberately refused; ordinary profiles preserved. Windows20offscreen
+passes and before/after pixel reproduction remain valid but do not establish
+DWM/client-origin cause. No speculative DPI/forced-resize edit or duplicate test.
+Public0.2.5/0.2.6 publication HELD; earlier uncommitted documentation preserved.
+
+Compatible-runtime player follow-up:11resize-continuity/presentation-return source checks PASS14.29s under isolated compatiblePython/Qt offscreen/software; two existing rotation deprecation warnings. New dependency inputs justify this bounded repeat; not native final-binary/fullscreenSpace proof. Original player-compatible-source-original.log under compatible-native-889c046. No product edits or foreground input.
+
+
+## Oct13 — exact compatible ARM partial native acceptance; tool interruption
+
+Actual signed compatible889 startup/Options shared metadata summary/update offer
+Later/checksum503Repair recovery pass. Controlledmetadata503Checkagain/current
+retry pass while actuallocalHLSMP3active+MP4queued; actualMP4cancelStopped and
+independentMP3automaticqueuehandoff pass. Nativecorecompletion/playback/fullscreen/
+restart/installtransactions remainUNPROVED: tool/sessionreset interrupted24351,
+exec86759unknown/noexitreceipt. OriginalfailedQAcontainment/directMP4preflight/
+HLSoutputguard attempts retained; correctedfixtures do notrelaxproductguards.
+CUApostquitobservation/resetreattachment reopenedcandidateordinaryprofile23595/
+25051; bothidle normallyCmdQclosed, nosetting/mediaactions, ordinaryprofilehash
+preservation notattested. Exactbundle/exe unchanged; originalscreenshots/logs/
+journals retained. NoownedVOD/fixtureprocess remains; explicitnativerelease toCTV
+owner01a13648, nofurtherVODinput.12seclocalstreamcopyfixture independentlyprobe/
+decode0/hashbound forremainingbriefcorequalification, notnativelyusedyet.
+Evidence compatible-native-889c046/REPORT.md,qualification.json,fixture-errors.json,
+bundle-after-interrupted-native.json,originalpartialandpassingreceipts. Public
+0.2.5/0.2.6HELD; no source/security/production edits ornewproviderdownloads.
+
+
+## Oct 13 — fresh exact compatible ARM native core acceptance passed
+
+After CTV's explicit release, fresh isolated PID26610 completed CPU H264High/AAC
+640x360 MP4 and independently queued MP3. Probe and full decode both pass for
+both outputs (12.12s MP4;12.010667s MP3). Actual native MP3 advanced288→5736ms/
+paused6048ms; MP4 rendered6337ms and retained natural-end frame. Fullscreen
+retained-frame presentation→Escape embedded return12120ms passes. Native zoom
+changes2200x1480→2880x1636→2200x1480 with retained frame/layout; corner drag
+unchanged dimensions is NOT resize proof. Initial fixed-PNG-header audit was
+invalid because CUA captures JPEG; failed interpretation retained, actual formats
+and dimensions independently validated without changing image bytes.
+
+Cmd-Q26610exit0; normal restart27436/same isolated profile shows two Completed
+runs; four history/media/metadata hashes match across restart/final quit and zero
+staging files remain. Cmd-Q27436exit0; read-only process check no owned app/feed.
+Exact sealed bundle/executable unchanged. Original interrupted journey/fixture
+errors/ordinary-profile tool side effects remain separately preserved, never
+backfilled or adopted as isolated acceptance. Native slot explicitly RELEASED
+to CTV/Kryden; no further input/build/sign job. No product regression established.
+
+Evidence compatible-native-889c046/REPORT.md,qualification.json, native-output-
+verification.json, native-image-geometry.json,bundle-after-fresh-native.json and
+raw two-launch AX/pixels/feed/exit/preservation receipts. Compatible payload
+successful Update/Repair, older OS/Intel/Windows and physical timing remain
+untested; no broader release claim. Public0.2.5/0.2.6 HELD. No product source edit,
+external provider download, grants/security change or deployment/publication.
+Existing uncommitted documents and original failed receipts preserved.
+
+
+## Oct13 — compatible889 actual Update/Repair transactions
+
+Private retained official0.2.5 Update→exact compatible signed889 PASS: originalhelper repairfalse relaunch/exe/treeexact, sevenhistory/media/metadata/thumbnail hashesunchanged. ActualsamepayloadRepair PASS afterfresh normalparent022 launch/newhelper repairtrue/exactexe+tree/sevenhashes. FirstRepairexacttreefailure preserved: QAhelper direct executable inherited077 changed1737symlinkmodes755→700;sealedbytes/targets anddataunchanged. No manualbundle normalization. Prior0b normalenvironmentreceipt motivatedboundedrepeat; no broadcampaign. Firstobserverhandoffracefailed; independentcompletedrelaunchpass. Finalapp visiblyverified thenCmdQ/processabsent (finalexitcodeunobserved), ownedfeedSIGINTstopped; frozenarchive/exe/treeunchanged. Native/heavyslotsreleased. Evidence compatible-update-repair-889c046/REPORT.md, after-update.json,after-repair-normal-environment.json,final-release.json.
+
+Airexplicitjulie@100.84.96.112 strictreadonlySSH reachedserver butfirst-seenED25519unknownhosttrustblocked beforeauthentication. Advertisedunverifiedfingerprint SHA256:yhz4A4VDiG56DcVGv7FL5rB+pACW/Pwcf2asWsioVZ8; no trustedexpected fingerprint/knownhostwrite/securitychange. Userlocalcomparison/securefirstconnection approvalneeded; remoteOS/session/TCC/Intelbuildnotreached. Evidence air-ssh-route-20261013/preflight/result.json. Windowsframecauseremainsunconfirmed. Public0.2.5/0.2.6HELD; no sourceedits/publication. Earlieruncommitteddocumentationpreserved.
+
+
+## Oct14 — Windows first-frame readiness audit; no repeated source tests
+
+Read-only retainedreceipt/scriptaudit at889c046 found originalbeforecapture
+skipped (anotherforegroundPID) and originallaunchalreadySW_RESTORE; fresh
+correctfocus-onlylaunchstillraises; restorecontrolrefusedactivework. Existing
+20logicalgeometrypassesremainvalid/unrepeated, noaffectedsource/envchange.
+Sourcecandidate/nativeprotocolprepared; historicalordinaryprofilelaunchers
+arecontrols/reference, notdisposablepre-activationfirstframeprotocol. Precise
+gateinwindows-frame-20261013/first-frame-readiness-audit-20261014.json andREPORT.
+Causeunconfirmed/noproductfix; noWindowsoperation/Macforeground/sourcepatch/
+frozenARMchange. Nativepre-controlfullpixels+Qt/Win32bounds/eventorderrequired
+beforeminimalcorrection. Parentrefinement honored; duplicateworkstopped.
+Public0.2.5/0.2.6HELD.
+
+
+## Oct14 — Windows route access dependency
+
+Local retained scripts verify SSH→Interactive/Limited console task route with
+account/session/unlocked/idle/native-owner guards. Coordinator00:37UTC reports
+connected but taskauthorizationfalse; no independent environment-list tool here.
+No remote attempt/denial bypass/access change. Current explicit environment/route
+authorization is first dependency, then existing authentication/session and idle
+checks. Source20checks unrepeated; fresh-firstframeprotocol held. Evidence
+windows-frame-20261013/windows-route-access-dependency-20261014.json.
+
+
+## Oct14 — actual Windows SSH first-launch/restore controls completed
+
+Cooper corrected route: allWindowsworkviaexistingSSH/Krydenreleasekey. Actual
+strict-hostSSH succeeds COOPS-PC\Coop activeconsole1. Previous desktopflag
+blockerinference incorrect; priorreceipt preserved. StandingworkflowAGENTS
+recorded; no credentials/security/accesschange. Idlejournalstateidle/queue0
+verified despitepresence-only oldguardfalse; noUIbusy/children. Existingf961
+56632neverclosed/operated. Exactsigned25b private57600firstvisibleblanknative
+capture thencorrectcomposedheader/fullclient BEFOREnativecontrol; lateRestore/
+move/resizecorrect. Private56560earlyRestore beforefirstsettledQtframe also
+correct. Both96DPI/1100x740/offset8,31/Qtframetop31; pixelsSHA/dimensionspass.
+Normalclose/WaitForExittrue, exitcodeobjectsnull (no0claim); independentonly
+ordinary56632remains, ownedtasksretired. NineordinaryJSONhashesunchangedboth.
+Causeunconfirmed/notfixed; restorehypothesisnotreproduced. Originalbadframe
+retained. LimitsfirstblanknotQtpaint/subframeunmeasured/privateprofilecontext/
+old25bnot889qualification/onephysicalscale. No20sourcecasesrerun/sourcepatch/
+Macforeground/frozenARMchange. Evidencewindows-frame-20261013/ssh-native-20261014/
+REPORT.md,qualification.json,native-result.json,early-restore,normal-release.json.
+Public0.2.5/0.2.6HELD. Nativeownedslotsreleased.
+
+
+## Oct14 — exact889 Windows-only signed qualification started
+
+No exact889 Windowsartifact existed. Added narrowly scoped privateWindows-only
+selector and optional40hex sourcepin to maintainedreleaseworkflow; existing
+signer unchanged, non-privatecheckout/publishingguard unchanged.22workflow
+checks pass;2newcases failagainstpriorworkflow;Ruff/format/diffpass. Workflowonly
+commit0eac7fc pushedexistingqt-retirement; payloadsourcepinned889c046. Private
+run38492450524 active actualBuildWindowsinstaller; Macjobconfirmedskipped,
+artifacts_onlytrue/publicreleaseHELD. No broadsource/Maccampaignrestart.
+PreparingexistingguardedWindowsnative/UI/updateharness withisolatedprofile/
+localHLS, preservingrunningordinaryf96156632. No exact889nativeinput yet.
+Evidence windows-private-889c046/execution-plan.json/workflow-prior-failure.json.
+Earlieruncommitteddocs preserved; no source/runtimeedit/frozenARMchange.
+
+
+## Oct14 — architecture aggregate/support assessment and website OS CTA
+
+Four authorized readonlyaggregateSELECTs reusesnapshotrowid5406/Sept5–Oct13
+15:38:43UTC:63observedinstallations42Windows/21Mac. Mac2arm64process-only,
+19missing/0x64observed; NOT0Intelusers. Windows14x64/28missing. Newer0.2.3+
+app-openOS+archpresent;oldversionsmissing. process.machine cannotdistinguish
+Intel/Rosetta;proposeboundedhardware/translationfacts only,notimplemented.
+No rawIDs/IPs/secrets/messages/schema/deploy/events;rows_written0/changed_dbfalse.
+Evidencearchitecture-usage-20261014/REPORT.md+rawaggregatequeries. Global
+latestreleaseexactversionx64filenamecouplingmeansARM/Windows-onlypromotion
+wouldremoveIntelautomaticpath;independentqualificationrecommended,nopolicy/
+feed/publicationchange. AppleWWDC25TahoeIntelphaseoutprimaryreferenceread.
+
+UserselectedhomepageOSforegroundCTA implementedincanonicalvodforge-site
+throughapprovedfilesystemescalation (delegatedwebsite_os_download). Windows
+installer/Macexplicitchipchooser+AboutThisMac/mobileemail/unknownfallback;
+allbelowfoldchoices preserved.13focusedOS cases,Astro82filescheck/build,8
+headlessactualfull-pagecontexts/dialogfocus/responsiverestorationpass. External
+APIunavailablemock/noPOST/noexecutabledownloads;allownedheadlessprocessesclosed.
+Fourcanonicalsitefiles uncommitted, no sync-release/commit/push/deploy/feed/
+publication. Liveemaildeliveryuntested. Report+canonical-final.patch under
+website-os-download-20261014. Macforegroundnever taken. Exact889Windows
+CI38492450524 updaterjourneyawaited independently;no889nativeresultyet.
+
+
+## Oct14 — Windows signed artifact recovery after unavailable hosted gate
+
+Original38492450524 updater began01:01:12UTC, stillactive01:40:37. Officialgh logs unavailableuntilcompletion;originalerrorretained;no889nativeacceptance/artifact. Workflow-only1ba2653 addsprivatepre-gate signedupload and40minute privategatebound, preservesproduction+legacy/publicguards.23affectedchecks pass/newcasefailsprior/Ruffformatdiffpass. Recovery38497177265 pinned889 started01:42;Macskipped/publichold. Necessaryrebuild becauseoriginalsignedbytes inaccessible, notvalidacceptancerepeat. Originalnotcancelled. Nativeharness/privateprofile/media staged;ordinaryf96156632 untouched. Evidencewindows-private-889c046/CHECKPOINT-20261014-0144.md;noMacownednative/heavywork.
+
+
+## Oct14 — exact889 Windows artifact and native acceptance underway
+
+Recovery38497177265 terminalsuccess;production+legacy updaterreceipts bindinstaller3140af51/exe700c2825/source889 andvisibility1530/254ms. Original38492450524 terminalfailure: officialannotationhostedrunnerlostcommunication;underlyingreasonunknown,lognotfound/noactualinstallerstallclaim. ExactZIP7d7efa5f resource889/version0.2.6;PC4258memberbytebinding andbothKrydentimestampedValid signaturespassed. Native53788 launched01:57:34; earliest+settleduntouched96DPIframesnormal/notshiftfix. ActualquickOptions+YouTubechoices,MP4/MP3exports,MP4frame,mute/fullscreenEscape/mainmaximize-restorepass. OwnedscheduledPowerShellfocus refusals retained;harness distinguishesexactworker/selfinputticks fromhuman/foreignforeground;10secondprior-taskwaitavoidscommandoverwrite. Ordinaryf96156632untouched/9JSONfreshbaseline. Captionfilespairedbyte-for-bytewithgenuineoriginal-rolemetadata+localthumbnails/noproviderduplicate. Nativecontinuing;noMacforeground/publicchanges. Evidencewindows-private-889c046/*.json/ci-update-evidence.
+
+
+## Oct14 — exact889 Windows native core, restart, Update/Repair and normal release
+
+Completed 2026-10-14T03:21:41.138779+00:00. Four actual exports + one saved-caption import fullprobe/decodepass; nativeOptions/cookiechooser/playback/mute/fullscreenEscape/maxrestore/English+Frenchseek/cancelStopped+automaticqueue pass. ExplicitquunavailableFailed/nooutput; sameURL OffCompleted. Sevenruns/fivecompleted retainednormalrestart; all14durablehashes unchanged restart+actualofficial0.2.5Update+samepayloadRepair. Originalhelperreceipts bothinstaller0/relaunched exact700c/source889, repairfalse/true; actualupdated/repairedGUI visible.4258sealedmembersmatch;931byte-identicaloldbaselinefiles+2uninstallerextrasretained, notexactdirectorytree. Core/restart/finalnormalclose0; bothservers0;3ownedReady tasksremoved/no survivors/staging. Ordinaryf96156632 unchanged/open;9JSONsame/39profilefiles+normalbinary unchanged;registration/shortcuts restored. Historicalshiftnotreproduced96DPI, nofixclaim; initialbaseline081firstframecapture refused/retained. RecoveryCI38497177265 success; originalrunnercommunicationfailure retained/underlyingcauseunknown. No broad rerun/source edit/publication. Public0.2.5,0.2.6HELD. Evidence windows-private-889c046/REPORT.md+qualification.json+originalhandoffs+finalcleanup. Scheduledhealth latest20:46monitorreused, no duplicatefailurealert;two laterWindowsupdatercheck/current, Worker0errors/D1integrityschema+migrationssame/public200. Website reference patch9headlesscontexts qualifiedunpublished;IntelAirtrust/supportfeeddecision unresolved. All owned resources released; noMacforeground used.
+
+
+## Oct14 — IntelAir authenticated Tailscale route correction
+
+SavedserverbannerTailscale;OpenSSH/etc/sshfingerprintrequestwrongroute/withdrawn. ActualauthenticatedstatusbindsonlineJulies-MacBook-Air100.84.96.112;existingtailscalesshcoordination-serverhostverificationpassed/nohostcheckdisable/noACLkeycredentialchange.03:37:44–45actualreadonlyremotejulie/x86_64/macOS15.8.1/consolejulie/exited0noreauth. ExistingCLT/Python3.9.6/Aqua/425GiB;systemPythonSSHSDKfalseAX/screen/zero requests,notfuture-app proof. PrivateIntelonlyrun38507530444 at1ba2653(workflow/test-onlydiffsince889runtime)started/noARMWindows/publiccampaign;Intelgatepassed,packagepending. Evidenceair-tailscale-route-20261014/REPORT.md+originalstatus/connect/SDKreceipts. PreviousunverifiedOpenSSHreceiptpreserved,nativeinputpausedpendingexactroutepermission.
+
+
+## Oct14 — bounded dashboard claim reconciliation
+
+Saved receipts plus one authorized aggregate zero-write SELECT reconcile fixed rowid5406/Oct13 15:38:43UTC: 10 seven-day identities (4 latest/6 older), 44 thirty-day (4 latest/40 older),37 no-event registry identities unknown.59 historical latest-event older identities is supported,25 specifically0.2.2; CRM actual query absent/no first-run mislabel established. Four updater_failed events/2repair_started/no observedrepair_completed; recent Windows diagnostics oneattempt. Click-to-launch cohorts unjoined; intent/WAU/waitlist/monthly claims unverified without originalqueries. Saved publicARM primaryfloor26/archive270.44MiB and nearbycardrequirements documented; unpublished OS choices qualified separately. Minimalbrowser/claimtransport recommendation only/no newcollection/Pro/deploy. Evidence dashboard-claims-20261014/REPORT.md+originalboundreceipts. Intel38507530444 stillsingleactiveunsignedbuild; novalidcheckrepeated.
+
+
+## Oct14 — exact private Intel sign and physical Air bounded qualification
+
+Intel38507530444 terminalsuccess52m30s:9hover/5927repository37skip/795Qt9skip/209scene/frozensmokepass; source1ba/workflowtest-onlydifffromruntime889. All446runtimeIntelMachOfloors<=15.0. ExistingDeveloperID/notaryaccepted64bff5b6/staple/Gatekeeperpass. Finalarchive9e92404a/exee23f1365/all7290sealedentries verified onphysicalx86_64Air15.8.1. Frozenruntime+ffmpeg/ffprobe/deno+actualHighAAC/320kMP3encode/probe/full decode pass. Firstdirectnative20secwindowreceiptFAILEDpreserved, normalexit0; actualSSHCGSessionnull/allwindowcounts0, notproductcause/permissioncure. JustifiedordinaryLaunchServices followup(noheadlessrepeat) attests3.82sec/exactapp/AppKitfinished-active-not-hidden; normalclose/open-W0. Profilesunchanged;final7290entries/archive same/noownedapps. Windowpixels/input remainunqualified; earlierSSHSDKfalse isnotGUIgrantrecipientproof/no grants. Report intel-private-1ba2653/REPORT.md+originalreceipts. Userrequestedlocalwebsite/newChromehttp127.0.0.1:4323 visiblyAX+pixels loaded, canonicaluncommittedOSpatch/server3775retained,CTVtabs/profile preserved/nativelease released. Dashboardcohorts separatelyready; public0.2.5/0.2.6HELD/no pushdeploy.
+
+
+## Oct14 — authorized Intel graphical-context boundary
+
+Existing gui/501 disposable observer bootstrap/normal retirement passed; nativeSDK session present/11on-screenwindows, ScreenRecordingpreflightfalse/AXfalse/no requests. JXA absentSDKexport and earlier driver pre-execution quoting failure preserved; corrected ctypes observation worked without permission change. Actual idle-guarded isolated signed1ba LaunchServices startup5.08sec/PID9602; independent GUIWindowServer owned327 at1100x740, exactAppKit active/not-hidden owner. No pixelcapture/input; essential rendering unmet because currentobserver capturepreflightfalse. Normal terminate/open-W0; profilehashsame. Three ephemeral services absent/readback113 and six script/plist files removed; noownedapps; all7290signedentries/archive same. Functional/build checks reused. REPORT.md/qualification.json and air-gui-receipts-original bind limits. Cooper localpreview/CTV/Kryden preserved; public0.2.5/0.2.6HELD/no grants/settings/publish.
+
+
+## Oct14 — authorized full local website theme extension
+
+Canonical site main cf872207 remains unpublished/uncommitted. Current accepted split mono hero retained and existing VODForge violet/dark tokens applied through shared reference-theme.css/BaseLayout on all18page routes; five guides get same split opening, standalone verification imports theme. Existing copy/scripts/data bindings, OS chooser, fourdownloads, links, accessibility owners and nativeimage bytes preserved. DevToolbar disabled after actual local overlay blocked mobileconsent controls; no analytics/privacy behavior change. Final82file Astrocheck zero diagnostics/direct QAbuildpass. Independent headless36desktop/mobile cases,32internal targets,18additional320/768/1440breakpoint checks and tabkeyboard/disclosure/menu/emailclose-focus pass; no backend writes/download/provider submits, all owned browsers closed. Original stalecache/hiddenimage/404/hiddendisclosure oracle and devToolbar failures retained; invalid checks corrected, valid desktop/source evidence reused. Six sourcepaths changed thisbatch; three preexisting OS newfiles preserved. Evidence /tmp/vodforge-theme-20261014/qualification.json/results.json/source-preservation.json/screenshots. Physicalpreview show pendingfreshcallguard (existing lowusagepopup maskscontrols), no Krydeninput/dismissal. Local18576server retained/URL4323; CTV/userprofiles preserved. No commit/push/deploy/publication; public0.2.5/0.2.6HELD.
+
+- Website theme handoff 2026-10-14: implementation and 36 route + 18 breakpoint cases complete; 32 internal targets and final Astro check/build pass. Seven final screenshots uploaded successfully to ChatGPT Library; receipt /tmp/vodforge-theme-20261014/library-deliverables.json. Existing Chrome selection/refresh pending only: usage popup obscures live call controls; persisted lifecycle/jobs clear at 06:06:18 UTC does not establish human inactivity. Parent requests screenshots now. No popup dismissal/native input/publication; preview PID18576 retained on port4323.
+
+## Oct14 — user-requested Windows integrated frame source
+
+Shared application-painted Windows frame for main/player uses existing StoneButton controls; native Windows caption/thickframe/system/minmax retained beneath nonclient layout removal, signed current-DPI hit testing and monitor-work-area maximize.21 affected checks/Ruff/format/diff/scopedadaptermypy pass. Original209scene run208pass/1sharedrenderer violation preserved; correctedproduct tosharedStoneButton, affectedcasepasses; no testdisable. Native successor/build and actualresize/drag/system/snap/fullscreen/popout remainpending; no shiftedbugcause claim. User supersededMac-image draft withgenuineWindowscontrols/captures anddisposablefictionaldemo. No websiteassets replaced/nativeapp/profile touched. Receipt windows-frame-20261014/source-checks.json and engineering-quality/windows-integrated-frame-20261014.md.
+
+- Windows frame024c2ae committedlocal; automaticreview rejectedexistingbranchpush firstforunverifieddestination, thenafterreadonlyownerADMINverificationforpublicsourcepublicationnotexplicitlyauthorizedbyprivatebuildrequest. Bothpushesunsent; exacthumanapprovalquestionpending. No indirectsourceexport/pushworkaround. Recognizedhostedprivatebuild/nativeacceptance/capturesheld; unrelateddemo fixturepreparationcontinues. Evidence windows-frame-20261014/approval-blocker.json.
+
+- Windows frame024c2ae interim:8/8generalizedhitregions rejectHTCLIENT-only mutation(no runtimeedit);21affectedpass/208unaffectedscenevalid. Nine isolatedlocalfictionalmedia actualdurationprobe pass(6MP4/3MP3); separatetmpHOME/deniedconsent/noURLs submitted/no customeraudio; notcopiedtoPC. ExistingWindowsimg0wallpaper exactSHAa63ed4cf copiedread-only, settingsunchanged. Ordinaryf96156632 idle/0queue confirmed. No successorbuild/nativeacceptance/capture yet becausepublicbranchpushapprovalpending afterautomaticreview rejection.
+
+- Source8406ce7 actualWindows continuation: localsourcecompile/import Qt6.11.2/Python3.13.1 fromrecognized889runtime(no dependencydownload/globalinstall/publicupload). Actualmainpaint/fullclient1100x740at96DPI, maximize to3440x1400workarea, restore/minimize, captiondrag30,30→130,90 andactualClose pass.33affectedlocalchecks pass. Firstblank/behindbrowser image andfailednative maximize retained; MSGhWnd/cache andnonclientgesture fixes added.008guardfailedafterprocessstart(57104rootownedpid), soexistingowner reused by009, no duplicate launch. Demo/private/tmp pathmapping corrected; Playnowenabled. NormalcheckpointClose012; ownedtaskretired, ordinaryf96156632preserved. Signedpackage/nativeplayer/resize/doubleclick/system/snap/MultiMonitor/changedDPI remainunqualified. Librarysourceproof libfile_bd8a4212cdf0819196aac940db87e95e, metadata receiptpending. Websiteimagesunchanged/public0.2.5/0.2.6HELD; publicpushapprovalpending.
+
+
+## Oct14 — Windows source frame native continuation and clean capture checkpoint
+
+Exact840source mainresize1220x820/captiondoublemax3440x1400+restore/nativeAltSpace menu/WinLeft1720x1400pass; floating780x471header32/maxrestore/fullscreen3440x1440/Escape/samevideoClose-returnreadbackpass. Originalobserver022/034retiredHWND screenshotfailuresretained/captureownerfixed;015/019recentinputrefusalsretained.043 ordinaryworkguard stoppedRecoveryclick; followoncapturewronglylabelledRecovery actuallyMyFiles hashidentical/excluded. SixunalteredactualQtwindowPNGs hashboundcapture-manifest-840.json; noUIredraw/normalprofilecopy/downloads. Source53008 normallyretired046/exit0readback047, Readyownedtaskremoved048 at08:03:33UTC; ordinaryf96156632 preserved/latestidle0queue. NoMacinput/heavyjob/publicpushretry. Remainingfloatingresize/min/directReturn/physicalDPI-monitor/Win11flyout/signedsuccessor; websitecomposition+responsiveQA+Maccleanups pending. Evidencewindows-frame-20261014/CHECKPOINT-20261014-0804.md.
+
+
+## Oct14 — finished local Windows website imagery
+
+At2026-10-14T08:26:58.660100+00:00, canonicalvodforge-site/URL4323/PID30431 retains seven actualsource840Windows Qt windows over verifiedWindowswallpaper viaCSS, unalteredPNGs; homepage/genericWindowsguides/claim/MP4/press updated. GenuineMacguide/14historicassetbindings unchanged.83Astrozero diagnostics/directfinalQAbuildpass;18desktop-mobile+6narrowtablet cases/sixworkspacetabinteractionspass,allbrowsersclosed,API mocked/no downloads. Fourinline-scriptowners preserved; originalregexselfclosingtagfalsefailure retained/corrected. Windowspreviewkit7nativehashes/provenancebound;public0.2.5unchanged/no publication. RecoveryfictionalStopped ownerseed/actualnativeexpandedchoices052–054 captured/no retry/download. Floatingremaining056and061guardrefusedordinarywork; stopped. Demo45704 normal059/exit0readback060/sourceabsent+taskremoved066; ordinaryf96156632preserved.13Libraryfiles saved/metadata13pass; preparedhelper unavailablebeforereservation, availabledirectcreate ordered/no duplicate. Evidencewindows-frame-20261014/WEBSITE-FINISHED-20261014.md+website-final-qualification.json; /tmp/vodforge-windows-site-20261014. NoMacinput/signjob/pushretry. Platformlimits untestedfloatingresize/min/directReturn/physicalDPI-monitor/Win11flyout/signed840successor, notlocalwebsitedeliveryblockers.
+
+- Directpeerrelease notice rejectedbyautomaticapprovalreview: lackofdirectend-userauthorization, delegatedmessages insufficient. Not sent/retried/indirectlyrouted; automaticparentoutcome only. Localwebsitefinish unaffected.
+
+
+## Oct14 — scheduled read-only health check after03:23 baseline
+
+At2026-10-14T08:35:19.270006+00:00, actualCloudflare/D1 authreads succeed. Exact03:22:16→2026-10-14T08:32:18.473Z workerwindow56invocations/allstatussuccess/0runtimeerrors; noallcustomerHTTPstatusclaim. D1server2026-10-14T08:32:24.521Z/quick_checkok/noFKviolations/34schema+28migrations+15versiongroups exactbaselineequal;6057accepted/latestOct13 22:48:43, zero newevent/failuregroups. Eightactualreadstatementsrows_written0/changed_dbfalse. Publicsite+establishedreleasefeed200/v0.2.5; no trackeddownload/syntheticevent/deploy/credential/access/monitorchange. Existingpre-ingest/outbox/customerHTTPstatusgaps deduplicated, no-trafficnotdeliveryfailure. Nativefloatingresize/minimizeguardreason056/061retained/no inputretried/publicpushunapproved. Evidencebuild/recovery-20261011/backend-monitor-20261014T0832/REPORT.md+originalfullresponses+comparison+hashes.
+
+## Oct14 — local PostHog integration qualification in progress
+
+User-authorized project664300/public ingestion binding staged with capture/replay/experiments disabled. New separate provider opt-in and epoch-bound best-effort desktop mirror preserve custom telemetry; website manual closed-vocabulary events, replay masking and installation-help route are local/unpublished. First Astro check retained six genuine SDK/API type errors in /tmp/vodforge-posthog-20261014/astro-check-first.log; corrections invalidate only that failed compile pass. Python compileall passed; affected behavior/privacy tests and responsive checks pending. No production event, replay, flag, billing/access mutation, deployment, public push or native foreground input. Project IP anonymization and capture caps remain parent acceptance blockers. Existing historical functional checks reused.
+
+## Oct14 — local PostHog and installation-help qualification
+
+Source-only/unpublished optional project664300 integration qualified; capture/replay/experiments allfalse inbothconfigs.68affecteddesktop+59attribution/build/privacy pass; final27first-run/epoch/idle/admission casespass;36webtests/87Astrozero diagnostics/finalQAbuildpass.28responsivecases/zeroexternaltraffic/12text-fixturedownloadrequests; actualSDKpositive3interceptedbatches plusGPCzero/withdrawal/private-sentinel/envelopechecks pass. Generalizeddimensionsleakmutationdetected/noruntimeedit. OriginalsixSDKtypefailures, dataclassfixturefailure, fivefirst-runpolicyfixturefailures, twoobsoletewebassertions and enabledSDKfailures retained. ActualSDKrequiredpublicroutingtokenwasstripped: repairedonlyverifiedpublictokenretention, closedenvelope/personfieldsremoved. Remoteconfigwasstillrequestedbyfeature-onlydisable: actualadvanced_disable_flagsnowpreventswhenexperimentsoff. StaleViteprebundle andheadlessbotfixtures corrected/noSDKbotprotectionrelaxation; verifiedownedpreviewnormallyrestarted/same4323. Existingfunctional/nativechecksreused, no broad campaign. Sourcehashes/report build/recovery-20261011/posthog-local-20261014/qualification.json+REPORT.md; originals/screenshots /tmp/vodforge-posthog-20261014. IPprojectfalse/capsunreadable/replayutility/flag/privateprovideracceptance and signeddesktopsuccessor remainheld. No liveproviderrequest/nativeinput/accessbillingchange/commitpushdeploy/publication. Public0.2.5/0.2.6HELD;Krydenvoice/CTVprofilespreserved.
+
+## Oct14 — authorized capture-disabled private PostHog successor
+
+Parent/user authorized recognized local package/sign independently of remaining provider activation. Separate posthog-private-20261014 output and PyInstallerwork preserve installed dist/rollback; current runtime inputs hashbound, dirtysource revisionhonestlyunknown/HEAD8406basis. Existing package-only maintained recipe uses localPython3.13.14/installedtools, no dependency download/fullcampaign/nativeinput. Candidate0.2.6-dev.posthog.1 retainsproductioncustompolicy but providerconfig capture/replay/experimentsfalse; isolatedoffscreen smoke planned. No notarization upload/publication authorized/needed for private signing. Ownedprocess preflight showsnoVODsign/buildconflict, currentKrydenuntouched. Budgetapproval10:47:48UTC supersedes earliercapsblocker: useracceptsdefaults, no budgetchanges/$0caprequirement/access expansion; parenthandlesprivacyread independently.
+
+## Oct14 — signed PostHog private artifact and precise privacy alignment
+
+Recognized package-only source build0.2.6-dev.posthog.1 succeeded; separateapp/rollbackretained; existingDeveloperID76G5W4954G/hardened/timestamp/deepstrictpass.444MachO actualfloor27/current27.0.1/plist27, noolderOSclaim. Actualsignedoffscreenisolatedsmoke0;4compiledPYZboundarycasespass(providerfalsebeatenvtrue/zeroHTTP/customack/privateprojection).6328archivefiles+links equal;archive22171cca/sourcehashes+rollbackexesame. OriginalspecrelativepathandmissingplistSetfailuresretained/corrected; no broadcampaign/normalreplacement/nativeinput/notaryupload. Artifact/reportposthog-private-20261014. ParentprivacyverifiedanonymizeIPstrue/inputs+private-text masks/consolefalse/bodyheadersfalse/replaydisabled/noevent; defaultbudgetsaccepted unchanged. Websitealignment preserves reviewedpubliccopy/controlattrs, rejectsunapprovedtext/attrs, addsactualnon-inputphmask statuses+challengephblock. FirstmanifestoraclecaughtwrongdistinsteadQA dist-preview; corrected/37tests+87Astrozeropass. Replay/providerliveacceptance remainsuntested andcapturefalse; no pendingIPconfiguration/budgetblocker.
+
+- Final replay scope alignment after userclarification passes38websitechecks/87Astrozero/finalQAbuild. Explicitphmask addedbeforewaitlistmembershiptext, email/server-status/claimtext tagged, challengephblock; reviewedpublicDOMcopy+attrs retained/unknownvisitorvalues dropped. ProjectIPprivacy nowverifiedtrue byparent/defaultbudgetsaccepted; thoseearlierblockerssuperseded. No liveproviderrecordingacceptance/activationclaim. Signedprivate6328entry22171ccaartifact remainsunchanged;allownedheavy/sign/smokejobsended;localhostpreviewrestored/noforegroundinput.
+
+## Oct14 — PostHog compatibility regression diagnosis and correction
+
+Parent rejects macOS27 testingcandidate as compatibility successor. Actualaudit75runtimebinariesabove15 matchesknownordinaryHomebrew contamination:Python/FFmpeg/SQLite26,OpenSSL/libvmaf27; zeroPostHognativebinaries orrequirementschanges. Myordinary-toolchain selection wasincorrectfor established15 lane; 27artifact22171cca retaineddiagnostic-only/notrelease-ready. Read macos-floor-20261013 REPORT/inputreceipts/SQLitefailure; retainedPython3.11.15+21-file ownCItoolgraph+explicitcompatibleSQLite hashesallmatch.75affectedPostHog/product/consent/Qt tests passactualcompatibilityenvironment; pipcheckpass. Samecanonicalsource hashes retained/dirtyrevisionunknown; separateposthog-private-macos15-20261014 packagingstarted usingmaintainedrecipe andverifiedinputs/no downloads/no minloadcommandlowering/no ordinaryapp replacement/nativeinput/providercapture. Fullbundle<=15audit/sign/currenthostsmoke andarchivebinding pending; actualMac15nativeacceptance remainsseparate.
+
+## Oct14 — macOS15 PostHog private successor qualified
+
+Correction completed usingestablishedretainedcompatibleinputs/no downloads/oldcode reuse/mincommand lowering. ActualPython3.11.15 affected75pass/pipcheckpass; finalDeveloperID/hardened/timestamp/deepstrictpass; signed384MachO max15.0/errors0/no nonsystemabsolute dependencies. Exactsignedisolatedoffscreen smoke0 +4compiledmirrorboundaries +actualbundledH264High/AACencode/probe/fullAVdecodepass.6258archiveentries match/noextras; archivebcc069ce/exe90880f59; currentruntime sourcehashes androllbackexeunchanged. PostHog allfalse/customproductionpolicyretained; dirtyrevisionhonestlyunknown. Report/artifactposthog-private-macos15-20261014;27candidate22171cca remainsdiagnostic-only. No currentbuild/sign/nativejobs; ordinaryKryden/CTV/foreground andallrollbackbundlespreserved. Actualmac15native/notarization/staple/Gatekeeper/IntelWindows/liveprovider remainuntested; nobuildtoolchainblocker. Public0.2.5/0.2.6HELD/no publication.
+
+## Oct14 — authorized scheduled production health check14:27UTC
+
+Comparedsaved08:32baseline. ExistingmanagedCloudflareauthenticatedreads succeeded/no secret orcredential access. Worker08:32:18.473→14:27:18.017UTC347invocations/allstatussuccess/0runtimeerrors; notHTTPstatus/telemetry-endpoint counts. D1server14:27:25.775/quick_checkok/noFK/34schema+28migrations+15versiongroups exactsame;6057accepted/latestOct13 22:48:43/no newaccepted orfailuregroups. Eight SQLPRAGMAreads rows_written0/changed_dbfalse. Publicsite/feed14:26:33HTTP200/version0.2.5/allpublishedassetdigests same. No meaningful newalert;quietdoesnotprovefailed/abnormaldelivery without activeclient attempt context. Pre-ingest refusals/outboxes/customerHTTPstatus gaps unchanged/deduplicated. REPORT/comparison/originals/SHA256 backend-monitor-20261014T1424. No synth event/trackeddownload/deploy/data/settings/access/monitoring change/native input orreleaseactivationwork.
+
+
+## Production backend read-only health — 2026-10-14 20:50 UTC
+
+No meaningful new alert. Exact prior receipts confirm 347 Worker invocations/zero runtime errors, 6,057 accepted events, 34 schema entries, 28 migrations and 15 version/platform/channel groups. The compressed schema60/57events figures were incorrect.
+
+Authenticated Worker window 14:27:18.017–20:49:46.594 UTC has 16 invocations, all success, zero runtime errors. This is general Worker traffic, not customer adoption or telemetry-endpoint delivery evidence. Monitor availability requests may contribute; this run's public GET occurred after that window. Lower volume alone is not a failure.
+
+D1 server check 20:49:52.448 UTC: quick_check ok, foreign_key_check empty; exact schema, migrations and all accepted app-version/platform/channel aggregates unchanged. Still 6,057 accepted events, latest October 13 22:48:43 UTC; no new accepted events or failure/rejection-action groups. All eight statements report zero rows written and changed_db false. Quiet accepted telemetry does not prove failed delivery without expected consented-client attempts; client outboxes, pre-ingest refusals and individual customer HTTP statuses remain unobserved. Other customer tables were not equality audited.
+
+Public checks completed 20:50:13 UTC: https://getvodforge.com/ HTTP200, full 32,421-byte body identical; established update metadata https://api.github.com/repos/SnowfallHD/vodforge/releases/latest HTTP200, v0.2.5, draft/prerelease false, all five asset names/sizes/digests unchanged. No binary downloads or tracked download routes. Initial restricted-network DNS failures are retained separately; authorized external-network public GETs succeeded.
+
+Original managed authenticated responses, exact read-only SQL batch/window and public bodies are retained in this directory. No synthetic events, database writes, deployments, credential/permission/subscription/monitoring changes, desktop GUI input or foreground interference. No new jobs created. User notices remain parent-owned.
+
+Receipt: `build/recovery-20261011/backend-monitor-20261014-latest/REPORT.md` and `comparison.json`.
+
+
+## User-requested private Mac launch — 2026-10-14T21:35:39.029365+00:00
+
+Verified archive SHA256 bcc069ce3925630bc6e0c4b7e23d9292f305c504046c9b2183600efebf6b3a59, executable90880f597aa3824cbd32ae3eb124fea092a4d2b9aa009089da95fc7a4ba1ce0b and all6,258 sealed entries before launch. Deep strict Developer ID signature passes outside sandbox; initial sandbox verification falsely reported invalid signature, retained as verification-context limitation; no bundle modification/re-signing/security bypass performed.
+
+No existing VODForge process before launch. Exact qualified private0.2.6-dev.posthog.2 bundle opened through LaunchServices. Native NSWorkspace confirms PID49905, exact bundle path, finished-launching/active/not-hidden; CGWindowList confirms actual on-screen main window VODForge,1100x740,alpha1/layer0. This is native window-presence evidence, not a screenshot/pixel or comprehensive functional review. Existing installed executable and all nine normal profile JSON files remain byte-identical after launch. Product telemetry permission remains false; private provider flags remain disabled. App left open for Cooper's review; no automated UI journey/download or synthetic analytics.
+
+No installation replacement, privacy/credentials/security changes, deployment/publication or Air operation. Actual macOS15 acceptance remains separate and parent-coordinated; current Mac observation does not satisfy it. No owned build/sign job or further native input remains.
+
+Receipt: `build/recovery-20261011/posthog-private-macos15-20261014/native-review/launch-observation.json`.
+
+
+## Air existing-route readiness — 2026-10-14T21:37:54.275094+00:00
+
+Fresh existing Tailscale SSH read-only connection succeeds; julie/x86_64/macOS15.8.1 build24H32, consolejulie, activegui/501. No VODForge/FFmpeg process observed. Retained executable e23f13656e98a44b349afd6afbdcbe04cc25c27d47e85668b734995a737bb43f and embedded source1ba2653895bc2e0023cc3a736cbc7fe22fc50d6c match original qualified Intel receipt. Desktop environment offline listing does not establish Air unreachable.
+
+Current qualified Intel artifact: version0.2.6 at exact1ba2653, archive9e92404afd58d293cec34bf501f88e08521652ea580e4def91c3558ac3aa6138, runtimebasis889c046, signed/notarized/stapled/Gatekeeperpass. Existing valid physicalAir frozenruntime/tool/H264HighAAC/320kbpsMP3 encode/probe/full decode, native5.08sec startup/owned1100x740WindowServerwindow, normalclose/exit0/profilepreservation receipts remain valid and were not repeated. See ../intel-private-1ba2653/REPORT.md.
+
+For that exact Intel artifact, essential rendered-content inspection remains unmet. Last GUI-bound systemPython observer CGPreflightScreenCaptureAccess=false, AXIsProcessTrusted=false. No screen-access/capture/permission request or native input was retried now. Screen Recording permission for the actual gui/501 observation route (systemPython launched by disposable LaunchAgent) is missing; exact user-visible TCC recipient/label is not established, so do not tell the user to grant VODForge or a guessed Settings row. Accessibility also denied for that observer; required only if proceeding to AX-controlled interaction. An already-supported permitted visual observation route could satisfy rendering without that grant; none is currently established.
+
+Build distinction: Intel1ba2653 predates local PostHog work. Current openedMacBookPro candidate0.2.6-dev.posthog.2/archivebcc069ce is ARM-only and dirty-source-hash-bound; it is not a matching Intel artifact and cannot validate IntelAir. No matching PostHogIntel package identified in maintained receipts. Therefore permission is the remaining rendering gate for existing1ba; it is not the sole prerequisite for accepting the latestPostHogsource onIntelAir, which additionally needs a source-bound Intel successor qualification. No broad campaign/build initiated or old proof relabeled.
+
+No new credentials/keys/access/security changes, remote checkout/install/profile mutation, screen capture, localPro input/restart or publication. User's Pro review app remains untouched. Parent coordination needed for a permitted visual route and, if latestPostHogIntel acceptance is required, exact successor packaging scope.
+
+Receipt: `build/recovery-20261011/air-readiness-20261014-evening/readiness.json`.
+
+
+## 0.2.6 finite resize/Options scope recovery — 2026-10-14T22:03:07.369220+00:00
+
+ActualQML five density/gutter boundary regressions fail before; six resize+nine Options15pass after continuousinsets preserving1100x740. Supplied3LibraryPNGs inspected. Acceptedf961 source matchingmode popup endpoints pixelidentical; controlledmidpoint smallcache delta, nativeuserreport remainsopen. Edgefirstdragrootunresolved/no OSsettingsguess. Existingworkflow reusepolicy clarified; cheapinputpreflightrejects actualincompatible HomebrewPython/passes boundIntelinputs. No broadchecks/nativeinput/reviewreplacement. ExistingIntelnotaryfinishedAccepted/archive6bd8511b heldlocally/predatesfix/noAirtransfer. Exactsource/method/OS/hash bindings,scopeauthorizationmap,originalfailed andafterreceipts in `build/recovery-20261011/resize-scope-audit-20261014/REPORT.md`; singlefinitegate list `engineering-quality/release-026-recovery-checklist.md`. No release-ready claim.
+
+
+## Finite recovery — legacy hierarchy/partial ownership — 2026-10-14T22:29:07.144151+00:00
+
+ActualreviewPYZ contains25bcleanup/call; sourcehash7e0fb414 matches. Ordinaryreadonlyaggregate15of27nonimportrecords lackroot/all15exactcanonicalmatches; incidentlastrecordjoinunknown. Addeduniquedurablecanonicalrootrecovery, missingmediaownedcompanions/emptyfoldercleanup, recognizedemptyvideopeers; arbitraryemptydirs/unknownfiles/symlinks/otheritems/rootprotected. Finalbadbaseline11fail47pass then58pass;159affectedboundaries/7failed-runroutes/1strengthenedfooterpass; compatiblePython3.11hierarchy+resize64pass. Original13andintermediate5failure/oraclecorrectionsretained. ActualMacTrash3fixtures8ownedfictionalfiles hashverified; sourceAPI only/no frozenUI orWindowsclaim. No realmedia/profile/app input. Report `build/recovery-20261011/delete-hierarchy-20261014/REPORT.md`; newARMrecoverycandidatequalifiedseparately, existingProreviewpreserved. No broadcampaign/release.
+
+
+## Isolated recovery ARM candidate — 2026-10-14T22:33:27.477188+00:00
+
+Boundedresize+hierarchysource nowDeveloperIDsigned0.2.6-dev.recovery.1; archive0aab0759b446cc63b166045c9145f935c9d1491bc689a334ac942376164fd740/exe3e930f78a17ab520d5222bba40ddf27b1987c87a799e400227e8c3dd5a70200e;6258sealedentries exactarchive/384ARMmachO max15/noexternalabsolutelinks. Actualsignedisolatedsmoke0,compiledPYZlegacyrootcleanup+Main.qml bindingspass. Notnotarized/nativeaccepted/releaseeligible. CheappreflightcaughtDeno hostSQLite/lcms26; correctedreaderbuilt-in/selfIDissuespreserved; copiedportable24fileowntoolgraph/preflightpass/badHomebrewreject retained. QA-onlypartition+footeroracle changesafterfreeze explicitlymapped;1partitioncontractpass/no rebuild. Fictional4caseprofile+Move destination prepared/notlaunched; Proreview49905 lastobserved22:21untouched. Nativeinput/CUAabsentin task; needsparentcoordinatedphysical/CUAstep, no permissionbypass. Report `build/recovery-20261011/recovery-arm-20261014/REPORT.md`; no broadcampaign/publication/Airtransfer.
+
+
+## Parent-coordinated isolated recovery launch — 2026-10-14T22:40:04.950668+00:00
+
+Exact signed0.2.6-dev.recovery.1 launched through LaunchServices, PID75446; executable3e930f78a17ab520d5222bba40ddf27b1987c87a799e400227e8c3dd5a70200e. Native readiness/attestation confirms fictional isolated HOME/history/output and telemetry production/preview false. NSRunningApplication active/finished/not-hidden; WindowServer title VODForge [Recovery-1-FIXTURES], layer0/alpha1,1440x817 at0,30. Metadata only, not pixel verification. Older ordinary-profile review PID49905 remains open; cooperative hide returnedfalse, so not claimed hidden. No close/terminate or further fallback input. Candidate is distinctly tagged; all real profiles/media preserved by isolation, no contemporary full normal-profile equality claim. Four native manual gates remain open: continuousresize, edge/firstdrag/fullscreen, accepted Options morph/controls, GUI Move/Delete hierarchy. No public release/notarization/native acceptance claim. Receipt `build/recovery-20261011/recovery-arm-20261014/native-fixture/launch-observation.json`. Owned launch step released; user review remains open.
+
+
+## Requested Settings/Collections and both-OS Trash closure — 2026-10-14T23:03:15.340460+00:00
+
+ThreeQMLonly: themeSETTINGS heading/alignedYouTube in side-by-sideOptions; directrightclick/MoreDeletecollection via existing scoped transaction/confirmation with noselectionmode; collectionlabels fixed/sourceplaylistterms preserved. Cooper acceptedrecovery.1resize/Optionsresponsiveness explicitly; usertestimony,notexecutorobservation.21Options+14collectioncasespass;finalcontext/sourceplaylist1pass;priorQMLnegativecontrol5fail2pass;Ruff/format/diffpass. Signedprivate0.2.6-dev.recovery.2 compiledresourcebinding/finalfrozenSmoke0/6258archiveentriespass;archive0b441b348c24dfe3045db0eca9c75e3561cd7b204571365a41ed1518f4c4294a/exe5fb15da703b5fff58111d8b92cdc4f78ea77ecabf0449cdfecc45b1f3b280d7e. Notlaunched/notnotarized/publicheld. RealOSsharedsourceTrashmatrix34/34Mac+34/34Windows;84recoverablepayloadhasheseach, exactbefore/afterpaths. Initialreaderfailurespreserved/reevaluatedwithoutdeletionrepeat. No realmedia/collections/Profile/ordinaryapp input orTrashemptying. Fullcase report `build/recovery-20261011/trash-matrix-20261014/REPORT.md`; build/report `build/recovery-20261011/recovery-arm-2-20261014/REPORT.md`. PackagedGUIMac/Windowssuccessortransactionstilluntested;Windowsopenf961untouched. Directobservercoordinationtoolrejected byautomaticapprovalreview; parenthandoffneeded. Noownedheavy/native/SSHjob remains.
+
+
+## Actual Windows recovery.2 GUI and user-found successor corrections — 2026-10-14T23:26:15.936441+00:00
+
+Retainedprivate-finalenvbuild/smoke0/noinstalls. ActualPID53328/session1/96DPI1100x740,exe589f7ba3132062695c08daaa2daf5736d27bc1eb9662f291306336a0ace14ee1. Nativepixelsinspected.1actualGUIcollectionrightclick/3filesTrash/ownerremoved;rootpersonalfilepreserved/33rowsremain;GUIrecoverabilityUNVERIFIED(initialreader0of3matches), notclaimed.33remainingGUIcasesprepared,notcompleted. CurrentQAappopen;ordinary56632untouched. ParentMac13GUIrecord/31Trashhashacceptancepreservedwithitslimits. Nativecaughtintroducedmissinganchorassignment/sourcefix1beforefail1afterpass. UserRunDeck151vs139clipping:4beforefail/10resize-deckafterpass. Structuredread-onlyfilepathblocks2widthspassaftervisualreaderrepair;buttonsunchanged;actualsuccessorWindowsrenderpending. Newlyuncoveredreservedemptybucketcleanup6beforefail15afterpass;noAPI34suite repeat. Consolidatedsourceawaitsrecovery.3package/nativehandoff. Report `build/recovery-20261011/windows-recovery2-gui/CHECKPOINT.md`. Public0.2.6held.
+
+
+## GUI recoverability acceptance held — 2026-10-14T23:30:43.977486+00:00
+
+FirstWindowsGUItransaction journalcompleted/3filesgone/selectedhistoryownerremoved/rootnotepreserved, but recoverabilityreaderexpected3matched0. Vacuousallhashes-matchflagNOTaccepted. Ownedprefixandboundedoperationtime/hashreadbacksC/Ealso0;2knownpriorAPIpayloadsstillexist. No rootcauseclaim/no additionaldeletions/APIrepeat. GUIcaseNOTPASSuntilrecoverabilityproven. Exactcurrentstate/readersunder `build/recovery-20261011/windows-recovery2-gui/`; noownedbuild/sign/inputactive. Sourceonlysuccessorfixesqualifiedbutnotyetpackaged/nativeaccepted.
+
+
+## Consolidated recovery.3 build checkpoint — 2026-10-14T23:53:31.725800+00:00
+
+Macprivate3strictsigned/smoke0/archivebe4982e2e60488e16b087fb69ff5143d8fbdf4cd18d1e4adf09b8819986c9ef2/exe943140e6704402ab3fc9d2ed10b662a24fd4d082bd3ac22ba0d82e6ae091fe4c/6258entries/384ARMmax15pass; actualGUIpending. Compiledarchiveowner+QtBridge source and4QML exactlybound; Windows-only nativeadapterpostfreeze delta mapped as notMacexecutedinput. Windowsprivate3maintainedbuild+smoke0completed; exactbindingreaderUTF8repairinprogress,nolaunchyet. NativeTrashoriginalGUIrecoveryacceptanceFAILED:allaccessibleC/E/Fbins/SIDs0of3matches, expectedGUIownerSIDverified,prior84payloadsremain. No permanentloss/rootcauseassertion; original3whereaboutsunknown. Windowsadapter nowraisesCOMHRESULTbeforenonrecycleandrequiresnativePostDelete destinationbeforeack;5prior-sourcefail/5correctedpass with fakeoperations/realbindings(noOSdeletion). Originalpytestparentdrive-discoveryerrorretained/fixedreaderonly. NoAPIcampaignrepeat/noadditionalGUIdeletions. OldGUI2PID53328lastsnapshotvalid/33rows/finishedresult;ordinary56632untouched. Mac GUIhandoff `build/recovery-20261011/recovery-arm-3-20261014/MAC-GUI-HANDOFF.md`; nextguardedrealWindows3transition/firstnative-receipt trial. Public0.2.6held.
+
+Windowsrecovery.3binding reader repaired toUTF8 against unchanged artifact:3compiledmodules+4QMLmatch; exea40c6876d0b772712cda87632b8bf53706dfc56180f00be0df1598e0648c47e5. No rebuildforreaderfix. ReadyforguardedGUItransition,nolaunchyet.
+
+
+## Windows recovery.3 first GUI receipt diagnosis — 2026-10-15T00:05:04.883201+00:00
+
+QA2normalcloseexit0/independentabsent,ordinary56632preserved. QA3a40c6876PID54988isolatedstartup. Actual1100x740outerwheelshowsfullRunDeckcards/footer; initialtopneeds scroll,longpath. Anchoredmenuand3separatedpathblockspixelsinspected. Firstc00GUItransactionneeds_attention/firstfileonly; actualnativeBinvideoexists+exacthash,2companionsunchanged/history34. NohierarchyPASS. NativeprobePostDeletepositiveHRESULT0x00270008revealsnewreceiptcheckbug; highbitcorrection1beforefail5pass→6pass. Longabort-onlyprobe nativeflags514nonrecyclevs642short; trueCOMexceptionabortpreservesbytes. OriginalQA2potentialdata-loss3payloadwhereaboutsUNRESOLVED; priorproviderintegerabortweakness+longpathboundaryidentified,originalcallbacktraceabsent. Nofurthermatrixdeletions/nopublication. CurrentexactpackagepredatesHRESULTcorrection; successorrequired. Detailedreceipt `build/recovery-20261011/windows-recovery3-gui/CHECKPOINT.md`.
+
+
+## Mac recovery.3 actual GUI and Windows potential-loss diagnosis — 2026-10-15T00:08:29.054109+00:00
+
+Parentobserverexact943140..1fe4c2nativeGUItransactions/2completedjournals/6of6nativeTrashpayloadhashesPASS: nestedwholechannelwithemptyownedbranches+reservedbucketremoved/rootunknownsiblingretained; secondcaseprotectedselected/channelnotes+peerMP4unchanged/parentsretained. Anchoredmenu/fullpathselection/3columnOptionsPASS.1100x740twoRunDeckcardsvisible; shorterheight/manyrecordscrollUNQUALIFIED(onecornerdragnoeffect). NormalquitPID1508. Original13recordcampaignnotrepeated. Report `/Users/coop/Documents/Codex/2026-10-14/task-2/vodforge-recovery3-native-qa/report.md`.
+
+WindowsQA3firstvideonativeRecycleBinbytesverifiedandnativeundelete restoredexactdisposableoriginalpath/hash;2companionsremain/history34. StaleBinmetadataremainedatfirstreadback,notclaimedfullyretired. Separatelongabort-onlynativeprobesourcebytespreserved;flags514lacksrecycle128versus642shortpath. OldproviderreturnsE_FAILintegerandcommentexplicitlywarnsdoesnotstop; pywin32gatewayreturnsInvokeViaPolicyHRESULTratherthanPythoninteger. OriginalQA2callbacktraceabsent; treatasUNRESOLVEDPOTENTIALDATA-LOSS,notreceipt-only. CorrectedproviderraisesCOMExceptionbeforeunrecyclabledeleteandrequiresactualpayload. Follow-upsuccessHRESULTfix6affectedactualWindowsbindingtestsPASS/RuffformatdiffPASS; prior1fail5passretained. NoOSsettings/securitychanges/ordinarymedia. NecessaryseparateWindowsrecovery4buildstartedretainedSSH; firstdetachedattemptneverexecuted/zerologs,noartifact,preserved.
+
+
+## Corrected Windows actual-app matrix and recovery — 2026-10-15T00:26:44.164194+00:00
+
+NecessaryprivateWindowsrecovery.4build/frozenSmoke0; compiled3modules+4QMLmatch,execd975480d6bf966233f3dd9d264f257985856250d32dda0f8d8dd6cad9c8893b,NotSigned/privateonly. QA3normallyclosed54988/preservedjournal; QA4PID58648attestedisolatedsession1. FirstcollectionGUI3filescompleted/3nativeBinpayloadhashes,wholeeligiblechannelgone/rootkept; all3nativeundelete restoredoriginalvacantfixturelocationswith3exacthashes. FourfilteredGUIbatches10/7/9/7records complete; full34currentpackagerecordoutcomes/84nativepayloadhashes. Per-caseexpectedremovals,actualremainingpaths,otherbytes,historyandBinbytes separated; zero-owned-filecasesN/Aforrecovery,notvacuousPASS.81payloadsremain/3restored. Long353charreal-appTrashrefusedbeforemutation/all3hashes+allfolders+historyretained,0Bintransfers/pendingjournalpreserved. InitialCP1252readerfalseownerabsentfixedtoUTF8againstunchangedtrial;noOSoperationrepeat. OriginalQA2potentialdata-loss3payloadsUNRESOLVED. ExactoriginalGUI2Send2Trash2.1.0/pywin32312modulesbound; no explicitUIpermanentfallback(permanentFalse), unsafeoldintegercallbackidentified/trueCOMHRESULTabortproven.
+
+ActualWinRunDeckfullcards/footerreachable1100x640and1100x560viaouterForge scroll,34records. WindowsactualfullpathCtrlA/Cexact/clipboardrestored; separatedblocks/dividers/footerpixelsPASS; SETTINGSheadingfirstYouTubealignednativePASS. No physicaldrag/OS125%DPIclaim. Report `build/recovery-20261011/windows-recovery4-gui/REPORT.md` andROOT-CAUSE.md; public0.2.6HELD,ordinaryreview56632notreplaced.
+
+
+Finalownedrelease 2026-10-15T00:27:10.2738142Z: WindowsQA4normalexit0/noQA2-4survivors; exact3ownedReadyinputtasksretired. Ordinary56632unchangedpath/all9JSONhashesunchanged. NoownedMac/Windowsheavy/sign/nativejob. CurrentcorrectedWindowsartifactisolatedunsignedonly,ordinaryf961notreplaced; publicheld. No furtherordinarymediaTrashtrial.
+
+
+## OriginalQA2 read-only NTFS evidence — 2026-10-15T00:35:25.800916+00:00
+
+ExistingOSlogs35secondownedpathfilter0matches. ExistingNTFSUSNread-onlyvolumehandle/capturedjournalrangecomplete; only3exactoriginalfileIDnamespersisted. Creation23:13:07 and originalparentFRNmatch; eachFILE_DELETE|CLOSE0x80000200 at23:17:49.328598/49.403368/49.463850UTC fallsinsideoriginalnativeUI006interval23:17:47.8336206→50.8357201. Norenameeventsforall3acrossretainedcreation→deletionrange. Originalpaths359/363/363UTF16units. OriginalNTFSobjectdeletionnowOS-evidenced; recoverydestination/bytesstillUNRESOLVED,notsecure-erasure/rawrecoverabilityproof. CorrectedQA4threeexistingBinpayloadsretainoriginalFRNs/samevolumecontrol. Nodiskrecovery/restore/deletion/permission/logenable/journalcreate/profilechanges. Fullreceiptsandlimits `build/recovery-20261011/windows-recovery4-gui/ROOT-CAUSE.md`; exactreviewartifactpath/hashinWINDOWS-ARTIFACT-HANDOFF.md.
+
+ParentexplicitlyauthorizedMacobservercoordination; handoffaccepted, observerreleasedKrydenandstartedqueuedfreshisolatedmany-recordRunDeck/drag/fullscreenfollow-up. ThislaneholdsnoMacnative/heavyjob; Windowsnativeworkremainsreleased.
+
+
+## Mac bounded layout/native release — 2026-10-15T00:41:49.600984+00:00
+
+Observerexact943140...1fe4c/PID12183/fresh24recordattestation: actualouterbarfull4RunDeckcards/actions/All24/footer1100x640and1100x560PASS. Genericwheeldidnotmoveouter,notpassed. Firstbottom/topedgeandbottom-rightcornerchangedbounds; otherrecordedfirstedges/cornersdidnotresize. Fullscreenentered/supportedreturnattemptsdidnotexposereturnedwindow; afterfullscreenwindoweddragsandpressfirstpainttimingUNQUALIFIED. CUAtoolroundtripnotpaintlatency. NormalQuit/zeroownedprocess/24payloadhashes+historyunchanged/nojournal. No Trashrepeat/download/ordinaryprofileinput. Report `/Users/coop/Documents/Codex/2026-10-14/task-2/vodforge-recovery3-layout-qa/report.md`. NativeownershipreleasedforqueuedKryden387; thislaneownsnojobs.
+
+## Mac fullscreen return classification/correction — 2026-10-15
+
+Recovery.3 actual 24-record outer-scroll640/560 acceptance retained; several edge/corner inputs changed bounds, several did not. Application-vs-CUA cause of unsuccessful drags remains unresolved; no resize hit-zone modification. Source inspection finds no main fullscreen menu/standard shortcut; View/CtrlCmdF lacked an application return path. Added state-derived Enter/Exit Full Screen/public Qt methods, available while navigation is blocked, preserving per-navigation guards. Two actual-QML/QQuickWindow cases fail before and pass after; initial enum-reader failure preserved/corrected, Ruff/format pass. Offscreen does not prove native Space retirement. Fresh exact ARM/Intel successors now necessary solely for changed QML; existing Trash campaign not invalidated. Report `build/recovery-20261011/fullscreen-return-20261015/REPORT.md`. Public0.2.6held; no ordinary app replacement/native input.
+
+Recovery.5 build progress: ARM final DeveloperID/notaryAccepted3d68002c/staple/Gatekeeper pass, exe4cb98de04a35bbd3efa402ccf76060575078f86486530a03db771abc886e574c/archive54f69bfcc70a3b0764a58ffae21e4ee22c0a33945358af4eb765d81df5f437a1;118actualcompiledmodules+47QMLbound,7210finalsealedentries. Exact immutable native handoff sent to observer for fullscreen return/one after-return drag only. Intel built/smoke0/DeveloperID; stable386x64MachOfloors≤15pass. Original unsigned audit overlappedcodesign, encountered .cstemp files and failed; preserved, superseded only by stable signed audit. Intel Applewait pending. Two fullscreen cases moved unchanged into already-registered test_qt_resize_continuity lane (2pass/10deselected); no workflowexpansion.
+
+Space preflight then guarded cleanup: removed only five VOD-owned rebuildable caches and two new duplicate COLLECT staging trees, after no-PyInstaller and no-app-symlink-dependency checks; accepted apps/archives/receipts/source/tools/profiles/incidentfixtures preserved. Both executable hashes unchanged/internal links resolve. Free1,458,176,000→7,577,714,688bytes; receipt fullscreen-return-20261015/transient-cleanup-result.json. Localheavy/sign explicitly released to Kryden; only Intelnotarynetworkwait/finalseal remains, ~400MBarchive reserved. No Mac foreground input in this lane.
+
+Recovery.5 actual ARM native closure: freshattestedemptyHOME/PID24112/exe4cb98de0..e574c, nativegreenfullscreen→actualmacOS View Exit Full Screen→exact1100x740returned;ONEafterreturnbottomedgedrag→1100x640. NormalCmdQ/noownedprocess/history-outputempty/nojournal/exehashunchanged. Menu-basedreturn+oneedgePASS; actualshortcutunverified/firstpainttimingunqualified/otherno-resizegesturesnotrelabeled. Observer report `.../task-2/vodforge-recovery5-fullscreen-qa/report.md`; ownerreadreport+returnedwindowpixels. No priorcampaignrepeat. Nativeownershipreleased; ordinaryapps/profilespreserved.
+
+## Recovery.5 final private seal — 2026-10-15
+
+ARM archive54f69bfcc70a3b0764a58ffae21e4ee22c0a33945358af4eb765d81df5f437a1/exe4cb98de04a35bbd3efa402ccf76060575078f86486530a03db771abc886e574c; Intel archive110bd511075397f95906d646a95a0371bb626d6729f7b165c878af26061831c2/exe5821441267fcbf0ec04a78f02a2ef7b0f51ab1e92647ecdc0f3648275a456cce. BothDeveloperID/AppleAccepted(ARM3d68002c,Intelca42059d)/staple/Gatekeeper/isolatedsignedSmoke0 pass.118actualcompiledapplicationmodules+47QMLbindeach, full7210ARM/7214Intelentryarchivemembership/bytes/links/noextras pass; floors384ARM/386Intel≤15.0. Intel localruntime usesexistingRosetta, NOTphysicalAir. ExistingAirSSHtimeout255 beforeidentity means physicalcurrentruntime/renderingBLOCKED; laterpeerstatusattemptinterrupted/noresult, no accessretry/change.
+
+Final strengthenedmenu test additionallychecks View reachable while all4navActions retainblockedguard; initialreader countedbothActionsandMenuItems(8), originalfailedreaderretained; correctedAction-classreader2pass/10deselected, Ruff/format/diffpass. No furtherproductedit/buildneeded. Two changedtestreadererrors are not runtimefailures; originalmissing-action2beforefail remainsvalid.
+
+Reviewdeliverable/finalfreezeplan `build/recovery-20261011/fullscreen-return-20261015/PRIVATE-REVIEW-HANDOFF.md`; exactartifacts+pendingphysicalgates `final-summary.json`,checkpointrecovery_20261015 updated. PriorWindows34/84andMac13+2Trashreceiptsretained/no campaignrepeat. OriginalQA2confirmedNTFSobjectdeletions/recoveryUNRESOLVED. Localheavy/sign/nativeexplicitlyreleasedtoKryden/observer; no ordinary appreplacement, commit/push/publication. Public0.2.5/0.2.6HELD.
+
+## Original QA2 normal content copies — 2026-10-15T01:08:56UTC
+
+Parentrequestedretained-evidence/read-onlyrecoverydiagnosisonly. Originalmanifest/seedshowsharedsyntheticbytes; retainedlocal4921bytevideo exactlymatches originald3f939... hash. NewtargetedexistingGenesisSSHreader checks ONLY3untouchedoriginalQA2legacy-peerfiles+3originalpathexistence: metadata20bytes/thumbnail25/video4921allnormalreadable/nonsymlink/SHA256exactoriginalvictimmanifest;mtime23:13:07UTCpredatesdeletion23:17:49. Alloriginalpathsabsent. Thus ALL3payloadcontentshaveexistingnormalcopies; no generatedreplacement/copy/restore/undelete/write. OriginalNTFSobjectsdeleted/nativeBindestinationunproved; rawrecoverabilityunassessed. PriorBinexactidentityreadersproperlyexcludedduplicatehashesandremainvalid; thisdistinctcontent-availabilityquestionwasnotansweredbythem. Firstencodedcommandtoolengthfailedbeforeexecution; sameboundedreaderstdintransportexit0, originalsretained. Exactcopymap/report `build/recovery-20261011/original-loss-copy-audit-20261015/`. No diskrepair/forensicwrites/newdeletion/OSchange/appinput/Airretry/publication.
+
+Parentauthorizedfiniteactualremainingresizefollow-up queuedstrictlyAFTERKrydenimmediaterun. Observer reportsKrydennormalrelease01:08:56UTCandstartsnewguard/freshfictionalHOMEonimmutablerecovery5,left/right/top-cornersabove minimaonly; nofullscreen/Trash/download/24recordcampaignrepeat. Thislanehasnoownednative/heavyjob.
+
+## Finite remaining resize actual result — 2026-10-15T01:11:56UTC
+
+ParentcoordinatedobserverwaitedforKrydennormalrelease, thenexactimmutableARMrecovery5exe4cb98de0..e574c/PID26282/freshattestedemptyHOME/telemetryfalse.1100x740above820x560minima. ONEleftedge[2,740]→[42,740]2200x1480→2160x1480PASS;ONEright[2157,740]→[2117,740]→2120x1480PASS. ONEtop-left[8,22]→[48,62]unchanged; nativehitregion/causeunestablished. ONEtop-right[2112,22]→[2072,62]CUAwindowNotFoundAtPosition(screen1126,69), appstillobservable; completedgestureUNQUALIFIED, concrete tooltargetinglimitation notapplicationrejectionproof. No retry/sourcefix/fullscreen/Trash/download/campaignrepeat. Roundtrip559/1188/888msNOTpainttiming. NormalCmdQ/zeroownedprocess/emptyhistory-output/nojournal/exacthashunchanged. Report `/Users/coop/Documents/Codex/2026-10-14/task-2/vodforge-recovery5-remaining-resize-qa/report.md`. Priorrecovery3failed/no-resizeinputsretained; newabove-minimumleft/rightPASSdoesnotrelabeleverycorner. Checkpointupdated; no VODownednative/heavyjob, Airunretried/publicheld.
+
+Parentexplicitclassificationclarification: recovery5top-left is FAIL for observedresize(no dimensionchange), withpointerhitregionUNQUALIFIED/appregressionUNPROVED. Top-right is TOOLFAILEDwindowNotFoundAtPosition; productresizeUNTESTED because target/gesturecompletionnotestablished. SideedgesPASSonlyboundedabove-minimumcase. CompleteresizeacceptanceNOTACCEPTED; no furtherrun/sourcefixproposed,noblindrepeat. Actualobserverreport+rawobservationsread; normalreleasepreserved.
+
+## Current Air state and retained identity join — Oct14 11:44p.m. Chicago
+
+Renewed parent scope: remaining privatequalification only, no nativeinput/rebuild/acceptedmatrixrepeat. ExistingTailscale status readexit0/backendRunning: exactAir100.84.96.112 Onlinefalse/Activefalse, LastSeen2026-10-15T04:10:00.1Z (Oct14 11:10p.m.Chicago). No SSH retry againstofflinepeer, no access/security/key/route changes. PhysicalIntelrecovery5runtime/renderingstillBLOCKED; retainedsigned/notarized/localRosettaproofsunchanged, notrelabeled. Receipt `build/recovery-20261011/air-current-route-20261015/peer-state.json`.
+
+Fallbacklocalretained-evidencejoincompleted: all3originaljournalartifactstamps/sourcepaths match independentUSNfileIDs3096224744811075/76/77, exactparent3096224744811074,creationseen, FILE_DELETE|CLOSEwithinGUIwindow/noRename; each originaljournalnativeTrashdestinationnull. JoinedcorrespondingSHA/sizes20/25/4921withpreviouslyverifiednormalcopymap; all3contentsstillhaveverifiedexistingcopies(notcalledlost, no repeatremotechecks). Originalidentity/nativeBinlocationunproved; retainedmetadatahasnoclusterrecoverabilityproof. No diskrepair/undelete/copywrites/newdeletion/Windowsconnection/nativeinput. Report `build/recovery-20261011/air-current-route-20261015/REPORT.md`, machinecheckretained-identity-audit.json. Prior “released” messagesmeanresourceclearance, notpublication; no separatepublicationreceipt,0.2.6HELD. Recovery5artifacts/acceptedresults/incidentreceiptspreserved; noownedheavy/native/signjob.
+
+## Apple Silicon lower-macOS support audit / metadata carry-forward — Oct15 Chicago
+
+Parentaskedlower-versionSiliconsupport. Retainedauthorizedcompatible889target15alreadyimplemented/signed/notarized, explicitplist15, native/runtimehost27.0.1; olderOSacceptancefalse. Currentrecovery5whole384ARMMachOauditmax15/zeroerrors; bootloaderPython11,QtCore13,PySide15,FFmpeg-probe15,SQLite15,Deno12. Public0.2.5boundedprimarytoolreceiptobservesPython/FFmpeg26 (notcompletegraph). No currentexactARM15runtimeproof; macos-15releasebuilderconfigandmacos-26sourceCIarenotexactolderOSacceptance. ExistingstartupworkflowIntel-only/AirIntel15.8.1cannotqualifyARM15. NeedauthorizedARM15device/GUIfixture orreviewedmatchinghostedqualificationroute, notOSdowngrade/grants.
+
+Concreteunfinishedpackaginggap: immutablecurrentrecovery5LSMinimumSystemVersionABSENT; no olderOScompatibilityinferred. Canonicalbuildnowwrites/validates sameexistingVODFORGE_MACOS_MIN_VERSION(default15.0) asinputfloorgate beforefinalsigning. Fiveactualbuild-block/PlistBuddyfixtures failbefore→5passafter: missing/stalehigher/stalelower/overrides; unrelatedmetadataandversionpreserved. Existingbinary-floorcoverage missedplistdeclarationcarry-forward; newboundedregressioncoversdeclared-targetdrift acrosssharedMacpackaging path. Ruff/format/bashsyntax/diffpass. Fullreceipt `build/recovery-20261011/silicon-support-20261015/REPORT.md`/support-evidence.json. No newbuild/sign/nativeinput/matrixrepeat. Postfreezeimpactonlybuild_macos.sh; allfrozenproductPython/QML/assetsunchanged, exactARMexe/archiveSHAverifiedunchanged. Docs/currentcheckpointupdated. Nextcandidaterecipemustcarrythismetadatafixandrecordplisttargetalongsideallbinaryfloors; doNOTrelabelexistingrecovery5metadata. Publicheld/resourceclearance≠publication.
+
+## Smallest older-OS fixture plan — Oct15 12:20a.m. Chicago
+
+Read-onlyconnectedhostMac14,7/M2/8CPUcores/24GBRAM,free5,324,800,000bytes. NoVMapps/CLI/fixturesfoundinApplications/PATH/standardlocations; noIPSWDownloads. ExistingmountsreportonlysameAPFSlowspace; noexternalcapacityidentified. PublicApplemodelidentification/SequoiasupportconfirmsM2modelclasseligible. RestrictedSDKVZisSupportedfalse/sysctldenied preserved; SAMEread-onlynormalhostcontext VZtrue/kern.hv_support1, no OS permission/entitlementchanges/VMconfiguration created. Exact15.0IPSWnotpresent soimagehardwaremodel is NOT verified; installedSDK/publicAppleAPI requiresimageisSupported+non-nilsupportedconfiguration+hardwaremodelisSupported beforecreation.
+
+Plan ONEUTMAppleVirtualizationbaseline15.0VM, proposed2CPU/6GiBRAM/64GiBsparsedisk;budget~80GBavailableforimagestaging/guest/growth, explicitlyestimate notmeasuredchosenimage. Disk5.3GBblockssetup; no cleanup/install/image download/VMcreation. OfficialUTMfreeGitHubroute; Tartalternatequickstartexample25GB/default2CPU4GB, notinstalled. ExistingreleaseARMmacos-15+Intelmacos-15-intel; sourceTestsmacos-latestdrifts; signedsignedbytestartupworkflowANDrunnerIntel-only. OfficialGitHubcurrentARM15imagereports15.7.9(24G830), not15.0; ARMhostednestedvirtualizationunsupported. ProposedreviewexistingstartupguardarchitecturematrixfornativeCIpatch-levelchecks, ONEpinned15.0VMforminfloor, existingrealM2/Intelwhenreachableformediahardwarebehavior. No billableCI started orcostassumption.
+
+ApprovalneededbeforeVMtool/Appleimage/VMcreation/specificstorageorcleanup/CIworkflow+privateassetstaging+anyminutesbudget. No changes/nativeinput/purchases/securitysettings/publication orbuildmatrixrepeat. Fullsourcedplan/rawinventory/capabilitycontextreceipts `build/recovery-20261011/lower-os-fixture-plan-20261015/REPORT.md`; checkpointupdated. Currentbuildspreserved/publicheld.
+
+Coststeering: preferredlocalUTMofficialGitHubdistributionisfree/samefeaturesaspaidAppStoreperofficialdocs; no paidAppStore/rental/Tart/CIrequiredforoneguest. CIoptional/separatelyauthorized. HostM2/24GB/virtualizationtruebut5.3GBstoragegate remains; no storagepurchase/deletionassumed. Exactfuturego-ahead:approvedstorageplan+freeUTMinstall+Apple15imagevalidation/download+oneVMcreation(2CPU/6GiBRAM/64GiBsparse,80GBplanningreserve). Useraskedcostonly,nosetupstarted. Reportcostsectionupdated; buildspreserved/publicheld.
+
+
+## Authorized publication preparation / bounded PostHog / disk audit — 2026-10-15
+
+Cooperexplicitlyliftedpublicationholdforapp+newsitewithPostHog;publicMacrequirementsunchangedpendingactualARM15runtime. PreviousHELDstatementsarehistoricalpermissiononly;othergatesnotwaived. ActualpublicGitHubreadbackstillstablev0.2.5/850e19e,5assets,notdraft/prerelease. Final0.2.6sourcefreeze/signing/runtime/nativegatespending; recovery5dev-labelledandpredatesnewtelemetry,WindowsQA4unsigned. No publicreleaseclaim; canonicalsiteowneractivelyauthorizedownsource/privacy/ingestiongates+publicationretaining0.2.5downloadsuntilfinalassets. No duplicatedeployment.
+
+PostHogsourceenabledwithseparateexplicitproviderconsent/epochandenvfalsekill-switch;replay/experimentsremainoff. Mirrorsafeenumprocessing/wait/duration/size/export/outcome/failure-stagefactsratherthandropallusefuldimensions. Newperformancecase1beforefail4negativepass;activationcasebeforefail;UUIDenvelopecasebeforefail.26affectedafterpass/Ruffformatdiffpass. Actualsynthetic-onlytestchanneltransport: property-onlyinsertID2HTTP200→2receivedrowsFAILEDdedup; top-levelstableUUID5correction2HTTP200→1matchingreceivedrowPASS. NeitherprovesnativeoptinUI/packagedruntime/adoption. Optionalproject-getautomaticallyrejectedtoken-returningread;noindirectretry/credentialread/settingschange. Permittedpublicingestion+eventqueryworks. Exactreceipts/docs/plan: build/recovery-20261011/posthog-release-20261015/.
+
+Read-onlydevelopmentdiskaudit: VOD226.077GB/build183.030GB/engineering40.298GB; onecanonicalVODworktree/36dirtyuntrackedentriespreserved.58ignoredintermediate/cachetargets42.606GB,23historicalcandidateexpandedapps17.883GB,25historicalreplacementexpandedapps21.216GB=81.704GBgrossCONDITIONALopportunity,notapprovedsafe/netreclaim. All23P2candidateZIP+extractedtree/source/version/policymetadatafreshverifyPASSviaexistingreadonlyboundary;archives/receiptsretained. P1/P3bindingconditionsremain. Latestfree4.096GB;zeromoves/deletions/Trashpurges/VMdownloads. Allrecovery5/Windowsincidentjournals/QAproof/sourceassets/profilesprotected;Krydenownercanonical91GiBmixedprotectedhistory/8c75allsevenbundlesexcluded,Bebeownercoordpending/noBebepathaction. Histcleanproduction-sourceclone1.080GB+twohistoricalsiteworktrees1.501GB/25.575MBidentified,sourcecommitexistscanonicalbutallrefs/ignoredpreservationstillrequired.17.435GBnogitconsolidationsnapshotisnotcalledclone. NoactiveVODbuildpathprocessobservedpointintime;freshguardsstillrequired. Onecanonicalcheckout/commit-tag/immutableoutputworkflowdocumented,nocloneperDMG/no branchswitchdirtyoractive. Report/manifests build/recovery-20261011/disk-consolidation-audit-20261015/REPORT.md. Permanentcleanuprequiresexactper-targetapprovalafterrecoverability; movingTrashdoesnotfreespace. Noownedheavy/sign/nativejob.

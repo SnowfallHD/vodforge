@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 from PySide6.QtCore import QCoreApplication, QEvent, QObject, QUrl
-from PySide6.QtTest import QSignalSpy
+from PySide6.QtTest import QSignalSpy, QTest
 
-from tests.test_qt_scene_port import qt_app, saved
+from tests.test_qt_scene_port import qt_app, saved, visual_item
 from tests.test_run_identity import make_job
 from yt_downloader.history import (
     history_annotation_owner,
@@ -17,6 +17,43 @@ from yt_downloader.history import (
 )
 from yt_downloader.library_annotations import LibraryAnnotation
 from yt_downloader.qt_quick import main as qt_main
+
+
+@pytest.mark.parametrize("width", [820, 1100])
+def test_file_action_paths_are_separate_selectable_blocks(scene, tmp_path, width):
+    from tests.test_archive_trash_hierarchy import canonical_legacy_fixture
+
+    app, bridge, window = scene
+    directory = tmp_path / ("Long nested fixture path " * 3)
+    _root, _folder, record = canonical_legacy_fixture(directory)
+    bridge._runtime.history = [record]
+    save_history(bridge._runtime.history_path, [record])
+    window.resize(width, 560)
+    assert bridge.startFileAction("delete", history_archive_owner(record), QUrl())
+    bridge._files.worker.join(timeout=10)
+    bridge._pump()
+    popup = window.findChild(QObject, "libraryFileActionPopup")
+    popup.open()
+    app.processEvents()
+    QTest.qWait(80)
+    expected = [
+        str(a.path) for item in bridge._files.plan.items for a in item.artifacts
+    ]
+    assert len(expected) == 3
+    blocks = [
+        visual_item(window.contentItem(), "fileActionPathBlock_" + str(i))
+        for i in range(3)
+    ]
+    for i, block in enumerate(blocks):
+        assert block is not None
+        path = visual_item(window.contentItem(), "fileActionPath_" + str(i))
+        name = visual_item(window.contentItem(), "fileActionPathName_" + str(i))
+        assert path.property("text") == expected[i]
+        assert path.property("readOnly") and path.property("selectByMouse")
+        assert name.property("text") == Path(expected[i]).name
+        if i:
+            assert block.y() >= blocks[i - 1].y() + blocks[i - 1].height() + 10
+    assert not bridge._file_action_busy
 
 
 @pytest.fixture

@@ -304,6 +304,21 @@ def test_options_places_groups_by_available_width(tmp_path, monkeypatch, size, c
             assert point(extras).x() >= point(quality, quality.width()).x() + 15
             assert abs(point(extras).y() - point(mode).y()) < 1
             assert window.findChild(QObject, "composerExtrasScroll").isVisible()
+            heading = window.findChild(QObject, "composerSettingsHeading")
+            access = window.findChild(QObject, "composerYouTubeAccessButton")
+            first_mode = next(
+                item
+                for item in mode.childItems()
+                if item.property("label") == "Everyday"
+            )
+            assert heading.property("text") == "SETTINGS"
+            mode_heading = next(
+                item
+                for item in mode.childItems()
+                if item.property("text") == "OUTPUT MODE"
+            )
+            assert heading.property("color") == mode_heading.property("color")
+            assert abs(point(access).y() - point(first_mode).y()) < 1
         else:
             right = window.findChild(QObject, "composerOptionsScroll")
             assert manual.width() == pytest.approx(right.width(), abs=1)

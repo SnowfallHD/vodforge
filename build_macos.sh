@@ -32,6 +32,11 @@ fi
 
 "$python_bin" -m pip install --upgrade pip
 "$python_bin" -m pip install -r requirements-dev.txt -r engineering-quality/requirements.txt
+# Reject incompatible host inputs before source campaigns and PyInstaller work.
+# The sealed bundle and actual target OS still require their own qualification.
+"$python_bin" scripts/check_macos_runtime_inputs.py --python-inputs \
+  --maximum "${VODFORGE_MACOS_MIN_VERSION:-15.0}" \
+  --report "${VODFORGE_COMPATIBILITY_REPORT:-build/macos-input-compatibility.json}"
 "$python_bin" -m compileall -q yt_downloader main.py qt_main.py macos_smoke_test.py
 (
   # Build policy belongs to the packaged bytes, not to source tests that may
@@ -54,6 +59,7 @@ fi
     --ignore=tests/test_qt_update_check_guidance.py \
     --ignore=tests/test_qt_options_shared_settings.py \
     --ignore=tests/test_qt_watch_scroll_extent.py \
+    --ignore=tests/test_qt_resize_continuity.py \
     --ignore=tests/test_qt_player_responsive_stage.py \
     --ignore=tests/test_qt_player_resize_continuity.py \
     --ignore=tests/test_qt_retry_recovery_membership.py \
@@ -145,6 +151,7 @@ fi
     tests/test_qt_update_check_guidance.py \
     tests/test_qt_options_shared_settings.py \
     tests/test_qt_watch_scroll_extent.py \
+    tests/test_qt_resize_continuity.py \
     tests/test_qt_player_responsive_stage.py \
     tests/test_qt_player_resize_continuity.py \
     tests/test_qt_retry_recovery_membership.py \
@@ -286,6 +293,7 @@ vlc_args=(--exclude-module vlc --exclude-module tkinter --exclude-module PIL.Ima
   --add-data "$build_version_dir/VODFORGE_BUILD_REVISION:." \
   --add-data "$build_version_dir/VODFORGE_TELEMETRY_POLICY:." \
   --add-data "$icon_png:assets" \
+  --add-data "assets/posthog-public-config.json:assets" \
   --add-data "assets/brand:assets/brand" \
   --add-data "assets/materials:assets/materials" \
   --add-data "$icon_asset_dir:assets/icons/lucide" \
@@ -327,9 +335,19 @@ for version_key in CFBundleShortVersionString CFBundleVersion; do
   fi
 done
 
+# Match the input-floor gate above; this declares the package requirement and
+# does not lower deployment commands in any already compiled dependency.
+minimum_macos="${VODFORGE_MACOS_MIN_VERSION:-15.0}"
+if /usr/libexec/PlistBuddy -c "Print :LSMinimumSystemVersion" "$app_plist" >/dev/null 2>&1; then
+  /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion $minimum_macos" "$app_plist"
+else
+  /usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion string $minimum_macos" "$app_plist"
+fi
+
 if [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app_plist")" != "$bundle_version" ]] || \
-   [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app_plist")" != "$bundle_version" ]]; then
-  echo "Packaged macOS version metadata does not match $bundle_version."
+   [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app_plist")" != "$bundle_version" ]] || \
+   [[ "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$app_plist")" != "$minimum_macos" ]]; then
+  echo "Packaged macOS version/minimum metadata does not match $bundle_version / $minimum_macos."
   exit 1
 fi
 

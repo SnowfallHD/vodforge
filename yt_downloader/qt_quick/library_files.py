@@ -267,9 +267,11 @@ class QtLibraryFiles:
                         payload
                     )
                 else:
+                    owned_files = sum(len(item.artifacts) for item in payload.items)
                     self.status = (
-                        f"Move {ready} file(s) to Trash and remove {missing} "
-                        "already-missing Library entry(s)?"
+                        f"Move {owned_files} owned file(s) to Trash and remove "
+                        f"{ready + missing} Library entry(s)? Verified empty download "
+                        "folders are cleaned; the output root and other content stay."
                     )
                 if not self.eligible and self.action != "move":
                     reasons = []
