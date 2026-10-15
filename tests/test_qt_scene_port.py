@@ -6021,6 +6021,59 @@ def test_qt_consent_keeps_four_icon_summaries_and_actions_inside_surface(
         bridge.close()
 
 
+@pytest.mark.parametrize("width", [1100, 860, 820])
+def test_qt_enabled_provider_consent_stays_explicit_and_fits(
+    tmp_path, monkeypatch, width
+):
+    from yt_downloader.analytics_consent import AnalyticsConsentOwner
+
+    app = qt_app()
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    bridge = qt_main.Bridge(None)
+    # Keep every transport disabled, but exercise the real consent/UI owner.
+    owner = AnalyticsConsentOwner(tmp_path / "consent")
+    bridge._analytics.owner = owner
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        window.setWidth(width)
+        window.setHeight(560)
+        window.show()
+        bridge.analyticsPromptRequested.emit()
+        QTest.qWait(150)
+        popup = window.findChild(QObject, "analyticsConsentPopup")
+        content = popup.property("contentItem")
+        extra = visual_item(content, "analyticsPosthogOptIn")
+        assert bridge.posthogAvailable and extra.isVisible()
+        assert not extra.property("checked") and not owner.posthog_allowed
+        actions = [
+            item
+            for item in popup.findChildren(QObject)
+            if item.property("label")
+            in {"Privacy details", "No thanks", "Share analytics"}
+        ]
+        assert len(actions) == 3
+        for item in (extra, *actions):
+            assert item.isVisible()
+            pos = item.mapToItem(content, QPointF(0, 0))
+            assert pos.y() >= 0
+            assert pos.y() + item.height() <= content.height() + 1
+        assert popup.property("height") <= window.height()
+        extra.setProperty("checked", True)
+        app.processEvents()
+        # Editing a choice is not consent until the explicit submit action.
+        assert not owner.posthog_allowed
+        assert owner.snapshot().get("posthog_choice") != "granted"
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        app.processEvents()
+        bridge.close()
+
+
 def test_qt_support_review_matches_selected_attachments_and_protects_footer(
     tmp_path, monkeypatch
 ):
