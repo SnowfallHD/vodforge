@@ -118,3 +118,18 @@ owned by their existing functionality. Optional Off still revokes/blocks rich
 first-party/provider events and queues; desktop replay is absent in every mode.
 Backend deployment and exact packaged/native verification are separate gates;
 source/intercepted tests do not certify activation or production delivery.
+
+Activation receipt: website ac029116 is deployed on Worker
+9912dee6-d4cb-4e03-8530-d12227cbef8c at100% since2026-10-16T01:19:38.819933Z;
+migration0030, both baseline flags, fetch/scheduled handlers and04:17UTCcron
+are verified by the website owner. Actual policy returns the matched positive
+fields; GPC/DNT cases disable it. No synthetic production POST was performed.
+The exporter timestamps each event at closed UTC-day00:00:00Z and adds
+schema_version1, measurement_mode daily_aggregate, scope/environment production
+and is_testfalse. Oct16 cells first qualify for Oct17 04:17UTC export; no provider
+ingestion receipt is claimed. Preview remains held after automatic approval
+review rejected missing prerequisite migrations0027–0029 as outside the narrow
+baseline scope/schema-state risk. Existing order14 registry drift is preserved;
+explicit preview approval is pending. Exact runtime8159164 is privately signed,
+notarized/stapled, source-bound, with224 frozen-module and16 packaged-QML tests;
+native UI, platform and public-release gates remain separate.
