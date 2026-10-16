@@ -4,7 +4,6 @@ import json
 
 import pytest
 
-pytestmark = pytest.mark.usefixtures("production_telemetry_contract")
 from pathlib import Path
 from typing import Any, Self
 
@@ -23,6 +22,8 @@ from yt_downloader.install_attribution import (
     claim_state,
     issue_claim,
 )
+
+pytestmark = pytest.mark.usefixtures("production_telemetry_contract")
 
 INSTALL_ID = "f9c775b1-4c5a-47c4-87bb-81fe51881e54"
 CLAIM_TOKEN = "A" * 43
@@ -53,7 +54,7 @@ def test_existing_profile_delivery_never_issues_browser_claim(tmp_path):
 def permitted_analytics(tmp_path, monkeypatch):
     from yt_downloader import analytics_consent
 
-    analytics_consent.AnalyticsConsentOwner(tmp_path).choose(True)
+    analytics_consent.AnalyticsConsentOwner(tmp_path).choose_data_sharing(True)
     monkeypatch.setattr(analytics_consent, "application_data_dir", lambda: tmp_path)
 
 
@@ -80,6 +81,11 @@ def test_claim_client_accepts_only_the_expected_https_fragment_url(
     from yt_downloader.analytics_consent import AnalyticsConsentOwner
 
     AnalyticsConsentOwner(tmp_path).choose(usage_allowed)
+    from yt_downloader.settings_store import update_analytics_settings
+
+    update_analytics_settings(
+        tmp_path / "settings.json", {}, remove=("attribution_permission_version",)
+    )
     requests: list[tuple[str, dict[str, str]]] = []
 
     def opener(request: Any, *, timeout: float) -> PayloadResponse:
@@ -89,22 +95,39 @@ def test_claim_client_accepts_only_the_expected_https_fragment_url(
             return PayloadResponse({"ok": True, "claim_url": CLAIM_URL})
         return PayloadResponse({"ok": True, "state": "pending"})
 
-    assert issue_claim(INSTALL_ID, CLAIM_TOKEN, opener=opener) == ClaimIssueResult(
-        CLAIM_URL
+    permission = AnalyticsConsentOwner(tmp_path).attribution_permission()
+    assert (
+        issue_claim(INSTALL_ID, CLAIM_TOKEN, opener=opener, permitted=permission)
+        is None
     )
-    assert claim_state(CLAIM_TOKEN, opener=opener) == "pending"
+    assert requests == []
+    AnalyticsConsentOwner(tmp_path).choose_data_sharing(True)
+    permission = AnalyticsConsentOwner(tmp_path).attribution_permission()
+    assert issue_claim(
+        INSTALL_ID, CLAIM_TOKEN, opener=opener, permitted=permission
+    ) == ClaimIssueResult(CLAIM_URL)
+    assert claim_state(CLAIM_TOKEN, opener=opener, permitted=permission) == "pending"
     assert requests == [
         (
             ATTRIBUTION_CLAIM_ISSUE_ENDPOINT,
-            {"install_id": INSTALL_ID, "claim_token": CLAIM_TOKEN},
+            {
+                "install_id": INSTALL_ID,
+                "claim_token": CLAIM_TOKEN,
+                "attribution_permission_version": 1,
+                "attribution_choice": "granted",
+            },
         ),
         (ATTRIBUTION_CLAIM_STATUS_ENDPOINT, {"claim_token": CLAIM_TOKEN}),
     ]
 
-    bad = lambda *_args, **_kwargs: PayloadResponse(
-        {"ok": True, "claim_url": f"https://evil.example/claim#token={CLAIM_TOKEN}"}
+    def bad(*_args, **_kwargs):
+        return PayloadResponse(
+            {"ok": True, "claim_url": f"https://evil.example/claim#token={CLAIM_TOKEN}"}
+        )
+
+    assert (
+        issue_claim(INSTALL_ID, CLAIM_TOKEN, opener=bad, permitted=permission) is None
     )
-    assert issue_claim(INSTALL_ID, CLAIM_TOKEN, opener=bad) is None
 
 
 def test_claim_status_distinguishes_transport_failure_from_an_unknown_token():

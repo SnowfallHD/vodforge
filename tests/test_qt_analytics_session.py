@@ -139,7 +139,7 @@ def test_explicit_link_uses_gui_dispatch_and_only_canonical_claim_ack(
 
     monkeypatch.setattr(analytics, "telemetry_collection_allowed", lambda: True)
     consent = AnalyticsConsentOwner(tmp_path)
-    consent.choose(True)
+    consent.choose_data_sharing(True)
     monkeypatch.setattr(
         analytics,
         "ProductTelemetryOwner",
@@ -175,9 +175,9 @@ def test_explicit_link_uses_gui_dispatch_and_only_canonical_claim_ack(
     assert not session.request_installation_link(open_browser)
     assert not dispatched  # Never opens from preparation's worker thread.
     if interruption in {"denied", "reenrolled"}:
-        consent.choose(False)
+        consent.choose_data_sharing(False)
         if interruption == "reenrolled":
-            consent.choose(True)
+            consent.choose_data_sharing(True)
     elif interruption == "closed":
         session.close()
     deadline = time.monotonic() + 3
@@ -185,7 +185,7 @@ def test_explicit_link_uses_gui_dispatch_and_only_canonical_claim_ack(
         session.poll_first_launch_delivery()
         time.sleep(0.005)
     state = load_or_create_installation_state(tmp_path / "installation.json")
-    if interruption in {None, "denied", "reenrolled"}:
+    if interruption is None:
         assert len(dispatched) == 1
         assert state.attribution_claim_opened and state.attribution_claim_confirmed
         assert state.attribution_claim_token is None

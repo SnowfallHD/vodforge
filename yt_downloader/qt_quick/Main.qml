@@ -376,6 +376,18 @@ Window {
                 label: "Welcome tour"
                 onActivated: { bridge.prepareHelpAction("welcome"); helpMenu.close(); window.closeDownloadSettings(); bridge.openWelcomeTour() }
             }
+            StoneButton {
+                objectName: "helpPrivacyAccess"
+                width: parent.width; height: 46
+                label: "Request my data"
+                onActivated: { helpMenu.close(); bridge.requestPrivacyAction("access") }
+            }
+            StoneButton {
+                objectName: "helpPrivacyDeletion"
+                width: parent.width; height: 46
+                label: "Request data deletion"
+                onActivated: { helpMenu.close(); bridge.requestPrivacyAction("deletion") }
+            }
         }
     }
     StonePopup {

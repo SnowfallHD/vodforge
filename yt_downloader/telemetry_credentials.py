@@ -13,6 +13,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+from datetime import datetime, timezone
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -43,6 +44,77 @@ class TelemetryCredentialOwner:
         self.backoff = directory / "telemetry-backoff.json"
         self.opener = opener
         self._observed_session_version: str | None = None
+
+    def issue_privacy_request(
+        self, request_kind: str, *, permitted: Callable[[], bool]
+    ) -> str | None:
+        """Explicit rights action; read an existing credential, never enroll.
+
+        A browser confirmation still has to follow. Issuance proves neither
+        erasure nor provider completion, and no identifiers are shown in UI.
+        """
+        if request_kind not in {"access", "deletion"} or not permitted():
+            return None
+        try:
+            credential = _read(self.path)
+            credential_id = str(uuid.UUID(credential["credential_id"]))
+            secret = credential["secret"]
+            if uuid.UUID(credential_id).version != 4 or not SECRET_RE.fullmatch(secret):
+                return None
+            request = urllib.request.Request(
+                "https://getvodforge.com/api/privacy/requests/issue",
+                data=json.dumps(
+                    {
+                        "schema_version": 1,
+                        "credential_id": credential_id,
+                        "request_kind": request_kind,
+                    }
+                ).encode(),
+                headers={
+                    "Authorization": f"Bearer {secret}",
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                },
+                method="POST",
+            )
+            if not permitted():
+                return None
+            # Never follow a redirect carrying the existing ownership secret.
+            opener = self.opener
+            kwargs: dict[str, Any] = {"timeout": 4.0}
+            if opener is telemetry_urlopen:
+                kwargs["follow_redirects"] = False
+            with opener(request, **kwargs) as response:
+                raw = response.read(4097)
+                if int(response.status) != 200 or len(raw) > 4096:
+                    return None
+            value = json.loads(raw)
+            if (
+                not permitted()
+                or not isinstance(value, dict)
+                or value.get("ok") is not True
+                or type(value.get("schema_version")) is not int
+                or value["schema_version"] != 1
+                or value.get("request_kind") != request_kind
+                or value.get("state") != "awaiting_confirmation"
+                or uuid.UUID(value["request_id"]).version != 4
+            ):
+                return None
+            url = value["request_url"]
+            prefix = "https://getvodforge.com/privacy/request/#token="
+            if not isinstance(url, str) or not url.startswith(prefix):
+                return None
+            if not SECRET_RE.fullmatch(url[len(prefix) :]):
+                return None
+            expires = datetime.fromisoformat(value["expires_at"].replace("Z", "+00:00"))
+            remaining = (expires - datetime.now(timezone.utc)).total_seconds()
+            if not 0 < remaining <= 16 * 60:
+                return None
+            from .telemetry_policy import telemetry_site_origin
+
+            return telemetry_site_origin() + url[len("https://getvodforge.com") :]
+        except (OSError, ValueError, TypeError, KeyError, AttributeError):
+            return None
 
     def _credential(self) -> dict[str, Any]:
         if not self.path.exists():

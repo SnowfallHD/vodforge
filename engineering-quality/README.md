@@ -4,6 +4,17 @@ Consult [the change and test log](change-and-test-log.md) before assigning or
 repeating qualification work. Retain valid prior passes; record a concrete
 affected change or evidence defect before repeating a check.
 
+## Attribution authorization precedes identity transmission — 2026-10-16
+
+Browser consume permission cannot authorize an earlier installation-ID/capability
+request. Existing independent browser-handoff tests missed that earlier boundary.
+The current invariant gates issue, persistence, browser dispatch, status and
+confirmation against fresh feature policy/current explicit permission, including
+Off/regrant and replaced policy. Blocked work must not consume a one-time attempt.
+See [the app contract and rights protocol](ATTRIBUTION_PERMISSION_AND_RIGHTS.md)
+for prior failures, representative cross-owner coverage and unqualified live gates.
+Rights requests use existing ownership only; page opening is not deletion proof.
+
 ## Rendered checks follow the intended owner — 2026-10-15
 
 Component pixel checks must isolate the component's surface: an application caption painted above a synthetic icon probe contaminated the old top-left crop with title glyphs. The strict connected-silhouette and extent assertions now sample a separate96x96 window containing the actual SceneIcon. Main-scene coordinate assertions retain exact bounds while explicitly including the integrated Windows32px caption; its button height is independently asserted. Actual prior native Windows pixels and byte-identical frame source establish that origin. Continuous-inset endpoint expectations must match the accepted layout rather than reintroduce removed breakpoint padding. Original CI failures, real rendered scenes, isolated icon pixels and focused outcomes are retained under `build/recovery-20261011/posthog-release-20261015/composer-render-evidence/`. These checks do not substitute for physical drag/timing or new frozen-native acceptance.

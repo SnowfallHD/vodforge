@@ -7,6 +7,7 @@ import threading
 import time
 import urllib.request
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -38,7 +39,7 @@ ANALYTICS_BENEFITS = (
     ("sliders", "Optional sharing in Settings"),
 )
 ANALYTICS_DESCRIPTION = (
-    "Share optional app reports. Off stops detailed sharing. "
+    "Share optional reports and referral association. Off stops new requests. "
     "Regional basic counts and service records may continue. "
     "No media links, paths or credentials. See Privacy details."
 )
@@ -48,6 +49,9 @@ class AnalyticsConsentOwner:
     def __init__(self, directory: Path) -> None:
         self.path = directory / "settings.json"
         self._native_baseline_until = 0.0
+        self._attribution_until = 0.0
+        self._attribution_generation = 0
+        self._privacy_requests_until = 0.0
         legacy = directory / "analytics-consent.json"
         with _LOCK:
             try:
@@ -174,11 +178,52 @@ class AnalyticsConsentOwner:
             }
             if acknowledge_scope:
                 changes["usage_scope_version"] = 1
+                changes["attribution_permission_version"] = 1
             if not enabled:
                 changes["collection_epoch"] = str(uuid.uuid4())
             # Finish onboarding metadata before the atomic preference commit.
             self.update(prompted=True)
             update_analytics_settings(self.path, changes)
+
+    @property
+    def attribution_allowed(self) -> bool:
+        """Identity transmission needs its own fresh default or current grant."""
+        if not telemetry_collection_allowed():
+            return False
+        state = self.snapshot()
+        if not state or "denied" in {state.get("choice"), state.get("posthog_choice")}:
+            return False
+        if state.get("choice") == "granted":
+            return (
+                type(state.get("attribution_permission_version")) is int
+                and state.get("attribution_permission_version") == 1
+            )
+        return time.monotonic() < self._attribution_until
+
+    def attribution_permission(self) -> Callable[[], bool]:
+        """Fence a bounded operation against Off/regrant and policy replacement."""
+        state = self.snapshot()
+        epochs = (state.get("collection_epoch"), state.get("posthog_epoch"))
+        generation = self._attribution_generation
+
+        def permitted() -> bool:
+            current = self.snapshot()
+            return (
+                self.attribution_allowed
+                and generation == self._attribution_generation
+                and epochs
+                == (current.get("collection_epoch"), current.get("posthog_epoch"))
+            )
+
+        return permitted
+
+    @property
+    def privacy_requests_available(self) -> bool:
+        """Deployment capability only, never a grant for analytics or erasure."""
+        return (
+            telemetry_collection_allowed()
+            and time.monotonic() < self._privacy_requests_until
+        )
 
     @property
     def native_baseline_allowed(self) -> bool:
@@ -251,6 +296,9 @@ class AnalyticsConsentOwner:
     ) -> str:
         """No install ID, cookie, credential or analytics payload in this request."""
         self._native_baseline_until = 0.0
+        self._attribution_until = 0.0
+        self._attribution_generation += 1
+        self._privacy_requests_until = 0.0
         if not telemetry_collection_allowed():
             return "unknown"
         self.update(
@@ -296,9 +344,25 @@ class AnalyticsConsentOwner:
                 and value.get("native_baseline_mode") == "enabled"
                 else 0.0
             )
+            self._attribution_until = (
+                time.monotonic() + 24 * 3600
+                if value.get("resolved") is True
+                and type(value.get("attribution_policy_version")) is int
+                and value.get("attribution_policy_version") == 1
+                and value.get("attribution_mode") == "default-on"
+                else 0.0
+            )
+            self._privacy_requests_until = (
+                time.monotonic() + 24 * 3600
+                if type(value.get("privacy_requests_version")) is int
+                and value.get("privacy_requests_version") == 1
+                else 0.0
+            )
             return mode
         except (OSError, ValueError, RuntimeError):
             self._native_baseline_until = 0.0
+            self._attribution_until = 0.0
+            self._privacy_requests_until = 0.0
             return "unknown"
 
 

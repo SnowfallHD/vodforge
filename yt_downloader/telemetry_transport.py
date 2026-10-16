@@ -18,12 +18,16 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         raise OSError("QA telemetry redirects are forbidden")
 
 
-def telemetry_urlopen(request: urllib.request.Request, **kwargs: Any) -> Any:
+def telemetry_urlopen(
+    request: urllib.request.Request, *, follow_redirects: bool = True, **kwargs: Any
+) -> Any:
     # Cloudflare browser-integrity checks reject urllib's generic agent (1010).
     # Identify our client honestly, without adding device or personal identifiers.
     if not request.has_header("User-agent"):
         request.add_header("User-Agent", "VODForge")
     if not preview_telemetry_allowed():
+        if not follow_redirects:
+            return urllib.request.build_opener(_NoRedirect()).open(request, **kwargs)
         return urllib.request.urlopen(request, **kwargs)  # nosec B310 - fixed telemetry endpoints
     url = urllib.parse.urlsplit(request.full_url)
     if (

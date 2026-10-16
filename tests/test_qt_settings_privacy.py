@@ -125,3 +125,67 @@ def test_single_settings_toggle_saves_both_choices_without_network(
         engine.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         bridge.close()
+
+
+@pytest.mark.parametrize("width", [820, 1100])
+def test_help_privacy_actions_dispatch_without_exposing_identity(
+    tmp_path, monkeypatch, width
+):
+    from PySide6.QtCore import QPointF, Qt
+    from PySide6.QtTest import QTest
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    bridge = main.Bridge(None)
+    requests = []
+    monkeypatch.setattr(
+        bridge._analytics,
+        "request_privacy_action",
+        lambda kind, opener: requests.append(kind) or True,
+    )
+    engine = main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    window.resize(width, 560)
+    window.show()
+    try:
+        settings = window.findChild(QObject, "downloadSettingsPopup")
+        settings.open()
+        QTest.qWait(180)
+        help_button = next(
+            item
+            for item in settings.findChildren(QObject)
+            if item.property("label") == "Help"
+        )
+        for name, kind in (
+            ("helpPrivacyAccess", "access"),
+            ("helpPrivacyDeletion", "deletion"),
+        ):
+            point = help_button.mapToScene(
+                QPointF(help_button.width() / 2, help_button.height() / 2)
+            ).toPoint()
+            QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, point)
+            QTest.qWait(150)
+            menu = window.findChild(QObject, "helpMenu")
+            assert menu.property("visible")
+            button = window.findChild(QObject, name)
+            assert button.isVisible() and button.property("enabled")
+            bounds = button.mapToScene(QPointF(0, 0))
+            assert (
+                bounds.y() >= 0 and bounds.y() + button.height() <= window.height() + 1
+            )
+            point = button.mapToScene(
+                QPointF(button.width() / 2, button.height() / 2)
+            ).toPoint()
+            QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, point)
+            app.processEvents()
+            assert requests[-1] == kind
+        assert requests == ["access", "deletion"]
+        assert not list(tmp_path.rglob("telemetry-credential.json"))
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()

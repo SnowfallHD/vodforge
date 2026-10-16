@@ -1681,6 +1681,16 @@ class Bridge(QObject):
     def openPrivacy(self) -> None:
         QDesktopServices.openUrl(QUrl(f"{telemetry_site_origin()}/privacy/"))
 
+    @Slot(str)
+    def requestPrivacyAction(self, request_kind: str) -> None:
+        if self._analytics.request_privacy_action(
+            request_kind, lambda url: QDesktopServices.openUrl(QUrl(url))
+        ):
+            self.operationFeedback.emit(
+                "Continue in the browser to review your privacy request. "
+                "No data has been deleted by opening this page."
+            )
+
     @Slot()
     def openSocialAccount(self) -> None:
         QDesktopServices.openUrl(QUrl("https://x.com/VODForge"))

@@ -27,8 +27,9 @@ def test_automatic_browser_claim_preserves_independent_usage_choice(
     path = tmp_path / "installation.json"
     load_or_create_installation_state(path)  # A genuinely new eligible profile.
     consent = AnalyticsConsentOwner(tmp_path)
-    consent.choose(allowed)
-    consent.choose_posthog(False)
+    consent.choose_data_sharing(True)
+    if not allowed:
+        consent.choose_data_sharing(False)
     monkeypatch.setattr(
         analytics,
         "ProductTelemetryOwner",
@@ -36,6 +37,21 @@ def test_automatic_browser_claim_preserves_independent_usage_choice(
             **kwargs, d1_recorder=lambda e: pytest.fail("Handshake sent usage")
         ),
     )
+    if not allowed:
+        session = analytics.QtAnalyticsSession(
+            tmp_path,
+            "0.2.6",
+            Mock(),
+            browser_opener=lambda url: pytest.fail("Off opened browser"),
+        )
+        session._started = True
+        session.poll_first_launch_delivery()
+        assert session._attribution_work is None
+        assert not (load_or_create_installation_state(path).onboarding or {}).get(
+            "browser_claim_auto_attempted"
+        )
+        session.close()
+        return
     opened = []
     issued = []
     gui = threading.get_ident()
@@ -76,9 +92,8 @@ def test_automatic_browser_claim_preserves_independent_usage_choice(
         assert state.attribution_claim_confirmed is (response == "claimed")
         assert not state.first_launch_confirmed
         assert not state.product_telemetry_allowed
-        # The historical provider refusal conservatively migrates the unified choice.
-        assert not consent.allowed
-        assert consent.snapshot()["posthog_choice"] == "denied"
+        assert consent.allowed
+        assert consent.snapshot()["posthog_choice"] == "granted"
         assert not _load_outbox(tmp_path / "product-telemetry.json")
         session.close()
 
@@ -96,7 +111,7 @@ def test_automatic_handoff_is_once_only_and_respects_operational_boundaries(
     path = tmp_path / "installation.json"
     load_or_create_installation_state(path)
     consent = AnalyticsConsentOwner(tmp_path)
-    consent.choose(False)
+    consent.choose_data_sharing(True)
     if boundary == "migrated":
         update_onboarding(path, browser_eligible=False)
     opened = []
@@ -133,7 +148,7 @@ def test_automatic_handoff_is_once_only_and_respects_operational_boundaries(
     state = load_or_create_installation_state(path)
     assert len(opened) == (1 if boundary == "browser_failed" else 0)
     assert not state.attribution_claim_opened and not state.attribution_claim_confirmed
-    assert not state.first_launch_confirmed and not consent.allowed
+    assert not state.first_launch_confirmed and consent.allowed
     session.close()
     enabled[0] = True
     # Failed dispatch does not trigger another automatic opening on restart.
@@ -153,7 +168,7 @@ def test_browser_poll_does_not_invent_confirmation_or_usage(tmp_path, boundary):
     )
 
     consent = AnalyticsConsentOwner(tmp_path)
-    consent.choose(False)
+    consent.choose_data_sharing(True)
     path = tmp_path / "installation.json"
     state = load_or_create_installation_state(path)
     token = "x" * 43
@@ -174,7 +189,7 @@ def test_browser_poll_does_not_invent_confirmation_or_usage(tmp_path, boundary):
     saved = load_or_create_installation_state(path)
     assert not saved.attribution_claim_confirmed
     assert not saved.first_launch_confirmed and not saved.product_telemetry_allowed
-    assert not consent.allowed
+    assert consent.allowed
 
 
 def test_only_one_owner_takes_automatic_attempt_and_completed_profiles_are_inert(

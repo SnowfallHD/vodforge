@@ -30,6 +30,8 @@ from yt_downloader.product_telemetry import (
 )
 from yt_downloader.run_state import RunRecoveryOwner
 from yt_downloader.telemetry_policy import telemetry_collection_allowed
+from yt_downloader.telemetry_credentials import TelemetryCredentialOwner
+from yt_downloader.telemetry_policy import telemetry_site_origin
 
 
 class QtAnalyticsSession:
@@ -65,8 +67,11 @@ class QtAnalyticsSession:
         self.installation_link_status = "unavailable"
         self.installation_link_message = ""
         self._link_opener: Callable[[str], bool] | None = None
+        self._link_permission: Callable[[], bool] = lambda: False
         self._automatic_browser_opener = browser_opener
         self._automatic_browser_checked = False
+        self._privacy_work: ArchiveWorkOwner | None = None
+        self._privacy_opener: Callable[[str], bool] | None = None
         if not telemetry_collection_allowed():
             # Offline/preview QA must still show saved local facts. Never
             # create a new identity merely to render this disabled surface.
@@ -90,6 +95,7 @@ class QtAnalyticsSession:
             ),
         )
         self.owner = owner
+        self._attribution.consent = owner
         self.telemetry = telemetry
         self.lifecycle = ApplicationLifecycle(telemetry, directory)
         self._refresh_installation_link()
@@ -278,23 +284,42 @@ class QtAnalyticsSession:
         except (OSError, ValueError, RuntimeError):
             self.installation_link_status = "unavailable"
 
-    def request_installation_link(self, opener: Callable[[str], bool]) -> bool:
-        """Recovery action; the website owns browser attribution permission."""
+    def request_installation_link(
+        self, opener: Callable[[str], bool], *, automatic: bool = False
+    ) -> bool:
+        """Permission precedes even the capability issue request."""
         if (
             self._closed
             or self.owner is None
             or self._attribution_work is not None
             or not telemetry_collection_allowed()
+            or self._choice_save_failed
+            or not self.owner.attribution_allowed
         ):
             return False
         self._link_opener = opener
+        permission = self.owner.attribution_permission()
+        self._link_permission = lambda: (
+            not self._closed and not self._choice_save_failed and permission()
+        )
+
+        def admit() -> bool:
+            if not self._link_permission():
+                return False
+            if not automatic:
+                return True
+            admitted = take_automatic_browser_claim_attempt(self._attribution_path)
+            self._automatic_browser_checked = True
+            return admitted
+
         self.installation_link_status = "preparing"
         self.installation_link_message = "Preparing the installation link…"
         self._attribution_work = ArchiveWorkOwner()
         self._attribution_work.submit(
             "browser_link",
             lambda cancelled: self._attribution.prepare_browser_attribution(
-                cancelled=cancelled.is_set
+                cancelled=lambda: cancelled.is_set() or not self._link_permission(),
+                admit=admit,
             ),
         )
         return True
@@ -308,36 +333,93 @@ class QtAnalyticsSession:
             or self._automatic_browser_opener is None
             or self._automatic_browser_checked
             or self._attribution_work is not None
+            or self._choice_save_failed
+            or not self.owner.attribution_allowed
         ):
             return
-        self._automatic_browser_checked = True
         try:
             state = load_or_create_installation_state(self._attribution_path)
             if state.attribution_claim_confirmed:
+                self._automatic_browser_checked = True
                 self._refresh_installation_link()
                 return
             if state.attribution_claim_opened and state.attribution_claim_token:
+                self._automatic_browser_checked = True
                 self._start_browser_confirmation()
                 return
-            admitted = take_automatic_browser_claim_attempt(self._attribution_path)
+            onboarding = state.onboarding or {}
+            if (
+                onboarding.get("browser_eligible") is not True
+                or onboarding.get("browser_claim_auto_attempted") is True
+            ):
+                self._automatic_browser_checked = True
+                return
         except (OSError, ValueError, RuntimeError):
             return
-        if admitted:
-            self.request_installation_link(self._automatic_browser_opener)
+        self.request_installation_link(self._automatic_browser_opener, automatic=True)
 
     def _start_browser_confirmation(self) -> None:
+        if self.owner is None or not self.owner.attribution_allowed:
+            return
+        permission = self.owner.attribution_permission()
         self._attribution_work = ArchiveWorkOwner()
         self._attribution_work.submit(
             "browser_confirmation",
             lambda cancelled: self._attribution.poll_browser_attribution(
-                cancelled=cancelled.is_set
+                cancelled=lambda: (
+                    cancelled.is_set()
+                    or self._closed
+                    or not permission()
+                    or self._choice_save_failed
+                )
             ),
         )
+
+    def request_privacy_action(
+        self, request_kind: str, opener: Callable[[str], bool]
+    ) -> bool:
+        """Explicit Help action, independent of the optional analytics switch."""
+        if self._closed or self._privacy_work is not None:
+            return False
+        if request_kind not in {"access", "deletion"}:
+            return False
+        owner = self.owner
+        if owner is None or not owner.privacy_requests_available:
+            return bool(opener(f"{telemetry_site_origin()}/privacy/"))
+        self._privacy_opener = opener
+        self._privacy_work = ArchiveWorkOwner()
+        credentials = TelemetryCredentialOwner(self._attribution_path.parent)
+        self._privacy_work.submit(
+            "privacy_request",
+            lambda cancelled: credentials.issue_privacy_request(
+                request_kind,
+                permitted=lambda: (
+                    not cancelled.is_set()
+                    and not self._closed
+                    and owner.privacy_requests_available
+                ),
+            ),
+        )
+        return True
 
     def poll_first_launch_delivery(self) -> None:
         """Poll startup work and retry the existing outbox while Qt is idle."""
         if self._closed:
             return
+        privacy_work = self._privacy_work
+        if privacy_work is not None:
+            result = privacy_work.poll()
+            if result is not None:
+                privacy_work.close()
+                self._privacy_work = None
+                opener, self._privacy_opener = self._privacy_opener, None
+                if opener is not None:
+                    # Only the credential owner can construct a validated URL.
+                    opener(
+                        result.value
+                        if not result.error and isinstance(result.value, str)
+                        else f"{telemetry_site_origin()}/privacy/"
+                    )
         if self.lifecycle is not None and self._presented:
             self.lifecycle.tick()
         work = self._attribution_work
@@ -357,6 +439,7 @@ class QtAnalyticsSession:
                         and self.owner is not None
                         and not self._closed
                         and telemetry_collection_allowed()
+                        and self._link_permission()
                     ):
                         try:
                             opened = bool(opener(claim.claim_url))
@@ -365,7 +448,8 @@ class QtAnalyticsSession:
                         if opened:
                             opened = (
                                 self._attribution.record_browser_attribution_opened(
-                                    claim.claim_url, cancelled=lambda: self._closed
+                                    claim.claim_url,
+                                    cancelled=lambda: not self._link_permission(),
                                 )
                             )
                     self.installation_link_message = (
@@ -397,6 +481,10 @@ class QtAnalyticsSession:
         if self.lifecycle is not None:
             self.lifecycle.close()
         self._closed = True
+        self._privacy_opener = None
+        if self._privacy_work is not None:
+            self._privacy_work.close()
+            self._privacy_work = None
         self._link_opener = None
         if self._attribution_work is not None:
             self._attribution_work.close()
