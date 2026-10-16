@@ -238,6 +238,7 @@ from yt_downloader.settings_store import (
     load_settings,
     save_settings,
     settings_file_path,
+    update_automatic_updates_setting,
 )
 from yt_downloader.support_diagnostics import (
     FailureContext,
@@ -247,7 +248,11 @@ from yt_downloader.support_diagnostics import (
 )
 from yt_downloader.telemetry_features import settings_dimensions, time_bucket
 from yt_downloader.telemetry_policy import telemetry_site_origin
-from yt_downloader.updates import RELEASES_PAGE, record_update_telemetry_receipts
+from yt_downloader.updates import (
+    RELEASES_PAGE,
+    acquire_update_lease,
+    record_update_telemetry_receipts,
+)
 from yt_downloader.url_list_inputs import parse_url_list_text
 from yt_downloader.version import __version__
 from yt_downloader.visual_chrome import (
@@ -637,6 +642,12 @@ class Bridge(QObject):
         except SettingsError:
             self._settings = {}
             self._settings_writable = False
+        self._automatic_updates = (
+            self._settings_writable
+            and self._settings.get("automatic_updates", True) is True
+        )
+        self._automatic_download_requested = False
+        self._automatic_updates_supported = True
         selection = apply_theme_selection(
             self._settings.get("appearance_theme", DEFAULT_THEME_NAME),
             self._settings.get("custom_accent", "#7170ff"),
@@ -847,6 +858,56 @@ class Bridge(QObject):
             and getattr(owner, "posthog_allowed", False)
         )
 
+    @Property(bool, notify=updateChanged)
+    def automaticUpdates(self) -> bool:
+        return self._automatic_updates
+
+    @Property(bool, notify=updateChanged)
+    def automaticUpdatesSupported(self) -> bool:
+        return self._automatic_updates_supported
+
+    @Slot(bool)
+    def setAutomaticUpdates(self, enabled: bool) -> None:
+        # Persist before granting automatic work. Failed persistence fails closed.
+        self._automatic_updates = False
+        try:
+            if not self._settings_writable or (
+                enabled and not self._automatic_updates_supported
+            ):
+                raise SettingsError("Automatic update settings are unavailable.")
+            self._settings = update_automatic_updates_setting(
+                self._settings_path, enabled
+            )
+            self._automatic_updates = bool(enabled)
+        except SettingsError:
+            self._status = (
+                "Automatic updates are off because settings could not be saved."
+            )
+            self.statusChanged.emit()
+        self._automatic_download_requested = self._automatic_updates
+        if self._automatic_updates:
+            if (
+                self._updates.ready is not None
+                and not self._updates.repair
+                and self._updates.available
+                and not self._updates.pending_install
+                and not self._updates.handoff_started
+            ):
+                self._updates.automatic_download = True
+                self._updates.status = (
+                    "Update verified. It will install when you quit VODForge."
+                )
+                self._automatic_download_requested = False
+            elif not self._updates.busy:
+                self._updates.telemetry = self._analytics.telemetry
+                self._updates.check(automatic=True)
+        if not self._automatic_updates and self._updates.automatic_download:
+            self._updates.cancel_automatic_download()
+            self._updates.status = (
+                "Automatic updates are off. Manual update remains available."
+            )
+        self.updateChanged.emit()
+
     @Property(str, notify=updateChanged)
     def updateStatus(self) -> str:
         return self._updates.status
@@ -854,6 +915,15 @@ class Bridge(QObject):
     @Property(bool, notify=updateChanged)
     def updateBusy(self) -> bool:
         return self._updates.busy
+
+    @Property(bool, notify=updateChanged)
+    def updateAutomaticDownload(self) -> bool:
+        return bool(
+            self._updates.automatic_download
+            and self._updates.busy
+            and self._updates.stage == "download"
+            and not self._updates.pending_install
+        )
 
     @Property(bool, notify=updateChanged)
     def updateRestartPending(self) -> bool:
@@ -1557,6 +1627,14 @@ class Bridge(QObject):
             )
         except (HistoryError, OSError, RunStateError, ValueError):
             return False
+
+    @Slot()
+    def installUpdateNow(self) -> None:
+        if not self._updates.request_install_now():
+            return
+        self.updateChanged.emit()
+        if self._updates.ready is not None and not self._updates.busy:
+            self.installUpdate()
 
     @Slot()
     def installUpdate(self) -> None:
@@ -5762,6 +5840,10 @@ class Bridge(QObject):
         try:
             save_settings(self._settings_path, updated)
         except SettingsError:
+            self._automatic_updates = False
+            self._automatic_download_requested = False
+            self._updates.cancel_automatic_download()
+            self.updateChanged.emit()
             self._status = "Settings could not be saved. Check the app data folder."
             self.statusChanged.emit()
             return
@@ -7008,6 +7090,19 @@ class Bridge(QObject):
                 self._finish_run_removal()
             self.fileActionChanged.emit()
         if self._updates.poll():
+            if (
+                self._automatic_updates
+                and (
+                    self._updates._trigger == "automatic"
+                    or self._automatic_download_requested
+                )
+                and self._updates.available
+                and self._updates.ready is None
+                and not self._updates.busy
+                and not self._updates.recovery
+                and not self._updates.check_failed
+            ) and self._updates.download(automatic=True):
+                self._automatic_download_requested = False
             self.updateChanged.emit()
         for action, dimensions in self._updates.take_observations():
             self._record_update_feature("updater", action, dimensions)
@@ -7206,12 +7301,20 @@ class Bridge(QObject):
             elif not self._updates.busy:
                 self.installUpdate()
 
-    def close(self) -> None:
+    def close(self, *, normal_quit: bool = False) -> None:
         if self._input_application is not None:
             self._input_application.removeEventFilter(self)
         self._pointer_press = None
         if self._closed:
             return
+        install_on_close = bool(
+            normal_quit
+            and self._automatic_updates
+            and self._updates.automatic_download
+            and self._updates.ready is not None
+            and not self._updates.handoff_started
+            and not self._update_work_pending()
+        )
         self._closed = True
         self._help_observations.close()
         if self._nvenc_probe is not None:
@@ -7259,6 +7362,23 @@ class Bridge(QObject):
         if self._analytics.telemetry is not None:
             self._analytics.telemetry.shutdown(timeout_seconds=1.0)
         close_activity_log(self._activity_log_path)
+        # Only a completed normal shutdown can authorize the detached helper.
+        # An interrupted download/crash leaves durable cache bytes, never a helper.
+        if (
+            install_on_close
+            and self._automatic_updates
+            and not self._update_work_pending()
+        ):
+            try:
+                saved = load_settings(self._settings_path)
+                if saved.get("automatic_updates", True) is True:
+                    self._updates.install(
+                        downloads_busy=False,
+                        telemetry_permitted=False,
+                        relaunch_after_install=False,
+                    )
+            except SettingsError:
+                pass
 
     def _current_export_inputs(
         self, selected_type: OutputType
@@ -7587,11 +7707,23 @@ def main() -> int:
             smoke_home.cleanup()
             return 1
     QQuickStyle.setStyle("Basic")
+    update_lease = None
+    if getattr(sys, "frozen", False) and not args.runtime_smoke:
+        try:
+            update_lease = acquire_update_lease(Path(sys.executable))
+        except RuntimeError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
     application = QGuiApplication(sys.argv[:1])
+    # Keep the lease until process teardown, including every early-return path.
+    application._update_lease = update_lease  # type: ignore[attr-defined]
     application.setApplicationName("VODForge Qt Quick")
     application.setFont(QFont(FONT_UI_FAMILY))
     bridge = Bridge(args.event_log)
-    application.aboutToQuit.connect(bridge.close)
+    if getattr(sys, "frozen", False) and update_lease is None:
+        bridge._automatic_updates = False
+        bridge._automatic_updates_supported = False
+    application.aboutToQuit.connect(lambda: bridge.close(normal_quit=True))
     engine = create_engine(bridge)
     if not engine.rootObjects():
         engine.deleteLater()

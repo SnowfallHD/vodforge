@@ -305,7 +305,7 @@ def test_update_notice_keyboard_opens_existing_offer(update_notice_scene, key):
     "state, label, visible",
     [
         ("current", "Update available", False),
-        ("check", "Checking for updates", False),
+        ("check", "Checking for updates", True),
         ("available", "Update available", True),
         ("manual", "Update available", True),
         ("download", "Updating VODForge", True),
@@ -350,7 +350,7 @@ def test_update_notice_tracks_existing_owner_states(
         assert popup.property("visible")
         primary = window.findChild(QObject, "updatePrimary")
         assert primary.property("visible") == (
-            state not in {"download", "repair", "manual", "waiting", "handoff"}
+            state not in {"check", "download", "repair", "manual", "waiting", "handoff"}
         )
         if state == "recovery":
             assert primary.property("label") == "Repair VODForge"

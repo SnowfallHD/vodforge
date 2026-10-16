@@ -63,7 +63,18 @@ def save_settings(path: Path, values: Mapping[str, Any]) -> None:
         if "analytics_consent" in existing:
             merged["analytics_consent"] = existing["analytics_consent"]
             merged.pop("anonymous_usage_analytics", None)
+        if "automatic_updates" in existing:
+            merged["automatic_updates"] = existing["automatic_updates"]
         _write_settings(path, merged)
+
+
+def update_automatic_updates_setting(path: Path, enabled: bool) -> dict[str, Any]:
+    """Commit an explicit update choice without racing ordinary preference saves."""
+    with _FILE_LOCK:
+        values = load_settings(path)
+        values["automatic_updates"] = bool(enabled)
+        _write_settings(path, values)
+        return values
 
 
 def update_analytics_settings(

@@ -427,6 +427,8 @@ def _write_mac_app(
 ) -> None:
     contents = app_path / "Contents"
     contents.mkdir(parents=True, exist_ok=True)
+    (contents / "MacOS").mkdir(exist_ok=True)
+    (contents / "MacOS/VODForge").write_bytes(b"fixture executable")
     with (contents / "Info.plist").open("wb") as handle:
         plistlib.dump({"CFBundleIdentifier": bundle_id}, handle)
 

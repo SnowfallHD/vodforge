@@ -114,3 +114,128 @@ cases 1–4; their layout feedback drove the owned chrome and app-relative place
 A separate real download check fetched signed public 0.2.0, SHA-256
 `bf7117a864c34cf2ed45d603572c390c9d5919b217278cab2629442f40b09ded`, without
 executing it. This is not a newly packaged full repair-installation receipt.
+
+## Successor automatic updates — 2026-10-16 (unpublished)
+
+Cooper explicitly requested a single default-on **Update automatically** setting,
+then clarified installation should happen on normal application close. This
+supersedes the earlier no-auto-update-setting scope; the old signed candidates
+and their native acceptance receipts do not qualify this new runtime.
+
+The shipped 0.2.5 and predecessor Qt startup already scheduled the metadata check
+at `QTimer.singleShot(0)`. There was no intentional one-minute initial delay.
+The check uses a 15-second network timeout; a busy updater retries scheduling in
+30 seconds. The header previously concealed the checking state. That is a proven
+presentation gap, not a measured explanation of Cooper's entire observed delay.
+The successor exposes an unobtrusive checking notice immediately and retains the
+existing discoverable availability notice without opening a modal. Existing
+local logs now record check start, elapsed completion and applied availability;
+no URL, release body, new analytics event or network request is added for timing.
+
+`automatic_updates` lives in the existing atomic settings file. Missing means On;
+explicit False stays Off. Malformed settings, failed writes or an app location
+where the replacement lease cannot be owned fail closed for automatic updates.
+Explicit On checks immediately, or reauthorizes an already verified staged
+newer update. Off revokes automatic handoff immediately and cancels an active
+automatic download at its next chunk boundary (an outstanding socket read may
+finish first). Manual Check, Download, Restart and Repair remain available. Startup checks and
+availability notices stay on even when this setting is Off. While an automatic
+download is running or ready, the same existing popup primary action becomes
+**Install now**: it promotes that same payload to the existing explicit manual
+restart flow, with no duplicate download. Off does not cancel this explicit
+manual request. Hiding or ignoring the offer leaves automatic staging and
+normal-close/no-relaunch behavior intact; no extra button or popup is added.
+
+The existing download owner fetches official release metadata and its checksum
+manifest, checks exact asset size/SHA-256 and verifies the platform signature.
+The downloaded archive/installer is the durable stage: a later launch must fetch
+a fresh trusted manifest and revalidate exact cached bytes before reuse. It then
+prepares a new target-specific Mac stage or revalidates Windows Authenticode.
+No mutable saved JSON path is trusted as authorization to install. Unique owned
+`.part` files are never promoted after an interrupted download. There is no
+installer/helper launched merely because a staged update exists or work is idle.
+
+Only `aboutToQuit` authorizes the automatic close handoff, after the existing
+settings/history/runtime owners have flushed. Work/recovery uncertainty before
+or after cleanup, an unready download, cleanup failure, a failed fresh settings
+read, saved Off or a prior handoff prevents it. Other `Bridge.close()` cleanup
+paths have no normal-quit authorization. A canceled window close starts no helper.
+Crashes and forced termination cannot run this authorization path; next launch
+may recover cached bytes but must wait for another accepted normal quit.
+
+Automatic helpers wait for the exact parent exit, install with **no relaunch**,
+and record `installed` rather than `relaunched`. Manual explicit restart retains
+its original relaunch behavior. Existing Mac team/bundle/notarization/Gatekeeper
+checks and swap rollback remain; Windows rechecks the timestamped publisher,
+bound installer digest/version and data preservation before returning. Windows
+backs up app data, not a complete rollback of installed application binaries.
+Staged payload hash and release version are bound through the existing owner and
+rechecked at replacement; installer creation alone is never a success receipt.
+
+The packaged app holds a shared OS lifetime lease adjacent to its target;
+automatic helpers require the matching exclusive lease after parent exit. If a
+second app opens first the helper defers; if replacement already owns the lease,
+startup reports that the update is finishing and exits without loading the app
+being replaced. No competing process is killed. The lease is acquired at Python application
+startup, after the frozen bootloader/import phase; it does not claim to serialize
+the kernel's initial executable load. A reopen during replacement currently
+reports the short retry message on stderr and exits; it is not a seamless waiting
+window. Windows loaded-file refusal is an installation failure, not proof of a
+completed update or complete binary rollback. macOS uses matching BSD `flock`/`lockf -kn -t 0`;
+Windows uses shared CRT byte locks and the helper's exclusive .NET byte lock.
+Locks release on process exit/crash; an empty leftover lock file is not a pending
+update or reason to install. Unwritable/unsafe lock locations leave ordinary app
+use available with automatic updates unavailable. The additional exact-target
+process check also conservatively refuses replacement of an already running copy.
+
+### Evidence and remaining gates
+
+`tests/test_automatic_updates.py` exercises settings durability/failure, explicit
+On/Off, late ready results, cancellation, normal-close-only authorization, saved
+Off at handoff, state-flush failure/uncertainty, actual canceled Qt window close,
+no install while open, cache reuse/tamper and helper no-relaunch/signature contracts.
+The in-memory negative control removes only the normal-quit admission gate; the
+cleanup-close test then fails. Canonical files are not mutated by that test.
+Earlier checks covered explicit one-click restart/active jobs, not the newly
+introduced default automatic close/late-revocation lifecycle; that is why those
+valid checks alone could not establish this behavior.
+
+Actual isolated Windows probes independently verify both directions of CRT shared
+vs .NET exclusive byte-lock exclusion and successful reacquisition after release.
+They are locking evidence, not a signed helper installation or native update UI
+transaction. Local helper-runtime tests execute Mac temporary-folder swaps with
+signing/launch tools doubled; they do not confer Apple or Windows package trust.
+
+Before public release, rebuild/freeze this exact runtime on each supported
+architecture, repeat affected signed native close-install/no-relaunch and next
+launch checks, exercise Off while staged and canceled-close with actual active
+work, and retain data/profile hashes. Windows additionally needs real signed
+installer acceptance in the maintained isolated installer fixture. Physical Intel
+GUI acceptance and the old Windows startup diagnostic gap stay separate. No prior
+44 artifact or headless portable smoke may be relabeled as these new guarantees.
+
+The first actual Mac helper/lease fixture exposed an implementation mistake:
+`lockf -n` means existing-file-only and waits indefinitely by default; the utility
+uses BSD locks rather than POSIX record locks. Its original 15-second timeout is
+retained. The corrected matching `flock` plus `lockf -kn -t 0` passes actual OS
+exclusion in both directions and the generated temporary-bundle no-relaunch swap.
+No owned helper survived the original timeout. This source-level fixture doubles
+signature commands and is still distinct from a signed native update transaction.
+
+Final source qualification receipts are under
+`build/automatic-updates-20261016/`: `final-source-matrix.log` has 109 passed / 19
+platform skips, with additional retained 39-case explicit-manual owner coverage.
+`windows-semantic/transport-result.json` has 12 actual Windows helper control-flow
+passes with OS/installer/signature doubles, including close-installed/no PID and
+manual relaunch. The Windows helper function is byte-identical to that executed
+fixture (`windows-semantic/final-function-binding.json`). Actual Windows locking
+probes in both directions are adjacent to the root's Windows private qualification
+receipts. The corrected actual Mac helper/reopen/lock checks pass three cases.
+Scoped updater/settings/session mypy passes; Qt main still reports 81 existing
+Qt-stub/decorator errors, exactly matching the same-module HEAD shadow baseline
+with no added or removed errors. This is not a blanket typecheck pass.
+
+Automatic package installation is supported only where an official matching Mac
+or Windows asset and a writable existing app location pass all checks. A missing
+platform asset retains manual download-page guidance. No new installer privilege,
+credential, permission grant, public feed or release publication is introduced.

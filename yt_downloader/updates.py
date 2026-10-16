@@ -20,7 +20,7 @@ import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 import certifi
 
@@ -41,6 +41,43 @@ WINDOWS_PUBLISHER = "Kryden Ventures, LLC"
 WINDOWS_POWERSHELL_MODULE_PATH = "$env:PSModulePath = $PSHOME + '/Modules';"
 
 MACOS_STAGING_PREFIX = "staged-"
+
+
+def acquire_update_lease(executable: Path) -> BinaryIO | None:
+    """Keep the running binary intact while a detached updater owns its lock.
+
+    The OS releases the lock after a crash; the persistent empty file is not a
+    pending-install marker. Multiple normal app instances may share a read lock.
+    """
+    executable = executable.resolve()
+    app = running_macos_app(executable)
+    target = app if app is not None else executable.parent
+    lock = Path(str(target) + ".vodforge-update-lock")
+    if lock.is_symlink() or not os.access(target.parent, os.W_OK):
+        return None  # manual installation is already required in this location
+    try:
+        handle = lock.open("a+b")
+    except OSError:
+        return None  # allow ordinary app use, without automatic replacement
+    try:
+        if sys.platform == "win32":
+            import msvcrt
+
+            if lock.stat().st_size == 0:
+                handle.write(b"0")
+                handle.flush()
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBRLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle, fcntl.LOCK_SH | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        raise RuntimeError(
+            "VODForge is finishing an update. Open it again shortly."
+        ) from None
+    return handle
 
 
 def qa_update_feed() -> str | None:
@@ -316,7 +353,10 @@ def download_verified_update(
     platform_name: str | None = None,
     machine: str | None = None,
     timeout: float = 60,
+    cancelled: Callable[[], bool] | None = None,
 ) -> Path:
+    if cancelled is not None and cancelled():
+        raise InterruptedError("Automatic update download canceled.")
     version_match = SEMVER_RE.fullmatch(str(release.tag_name).strip())
     normalized_tag_version = (
         ".".join(version_match.group(index) for index in range(1, 4))
@@ -358,9 +398,23 @@ def download_verified_update(
             "This release is missing the update file's SHA-256 checksum."
         )
 
-    destination_dir.mkdir(parents=True, exist_ok=True)
+    destination_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     destination = destination_dir / asset.name
-    temporary = destination.with_suffix(destination.suffix + ".part")
+    # Crash/normal-close recovery reuses bytes only after a fresh trusted manifest.
+    # Existing partial downloads are never promoted or treated as verified.
+    if (
+        destination.is_symlink()
+        or destination_dir.is_symlink()
+        or destination_dir.parent.is_symlink()
+    ):
+        raise RuntimeError("The update cache path is unsafe.")
+    if destination.is_file() and destination.stat().st_size == asset.size:
+        with destination.open("rb") as cached:
+            if hashlib.file_digest(cached, "sha256").hexdigest() == expected_hash:
+                return destination
+    temporary = destination.with_name(
+        destination.name + "." + uuid.uuid4().hex + ".part"
+    )
     digest = hashlib.sha256()
     downloaded = 0
     request = urllib.request.Request(
@@ -370,9 +424,11 @@ def download_verified_update(
         # asset_url was exact-canonicalized immediately above, before any network access.
         with (
             _open_update_request(request, timeout=timeout) as response,
-            temporary.open("wb") as output,
+            temporary.open("xb") as output,
         ):
             while True:
+                if cancelled is not None and cancelled():
+                    raise InterruptedError("Automatic update download canceled.")
                 chunk = response.read(1024 * 1024)
                 if not chunk:
                     break
@@ -395,6 +451,8 @@ def download_verified_update(
         if os.name != "nt":
             destination.chmod(0o700)
         return destination
+    except InterruptedError:
+        raise
     except (OSError, urllib.error.HTTPError, urllib.error.URLError) as exc:
         raise RuntimeError("VODForge could not download the release update.") from exc
     finally:
@@ -494,6 +552,7 @@ def prepare_macos_update(
     target_app: Path,
     *,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+    expected_version: str | None = None,
 ) -> MacUpdatePlan:
     """Extract and verify a downloaded macOS update before the running app exits."""
     archive_path = Path(archive_path)
@@ -522,6 +581,13 @@ def prepare_macos_update(
         )
         source_app = staging_root / "VODForge.app"
         verify_macos_app(source_app, runner=runner)
+        if expected_version is not None:
+            with (source_app / "Contents/Info.plist").open("rb") as handle:
+                actual_version = plistlib.load(handle).get("CFBundleShortVersionString")
+            if actual_version != expected_version:
+                raise RuntimeError(
+                    "The signed update version does not match the release."
+                )
     except Exception:
         shutil.rmtree(staging_root, ignore_errors=True)
         raise
@@ -555,6 +621,9 @@ def write_macos_swap_script(
     telemetry_permitted: bool = False,
     telemetry_token: str | None = None,
     qa_relaunch: bool = False,
+    relaunch_after_install: bool = True,
+    expected_digest: str | None = None,
+    expected_version: str | None = None,
 ) -> Path:
     """Write the detached, rollback-capable macOS app replacement script."""
     script_path = plan.staging_root / "install-update.sh"
@@ -578,6 +647,13 @@ def write_macos_swap_script(
         if qa_relaunch
         else '/usr/bin/open --env "VODFORGE_UPDATE_RECEIPT=$telemetry_receipt" "$target_app"'
     )
+    if not relaunch_after_install:
+        relaunch = ":"
+    with (plan.source_app / "Contents/Info.plist").open("rb") as handle:
+        expected_version = expected_version or str(
+            plistlib.load(handle).get("CFBundleShortVersionString") or ""
+        )
+    success_status = "relaunched" if relaunch_after_install else "installed"
     script = textwrap.dedent(
         f"""\
         #!/bin/bash
@@ -616,6 +692,15 @@ def write_macos_swap_script(
         done
         /bin/kill -0 "$parent_pid" 2>/dev/null && fail "running app did not exit"
 
+        # Acquire the same lifetime lease used by normal packaged startup.
+        # A reopened app wins and defers replacement; no process is terminated.
+        if [[ "{str(relaunch_after_install).lower()}" == "false" && "${{5:-}}" != "locked" ]]; then
+          exec /usr/bin/lockf -kn -t 0 "$target_app.vodforge-update-lock" /bin/bash "$0" "$parent_pid" "$source_app" "$target_app" "$staging_root" locked
+        fi
+        # A rapid reopen must keep its running app intact.
+        /usr/sbin/lsof -t "$target_app/Contents/MacOS/VODForge" >/dev/null 2>&1 && fail "app reopened"
+        digest=$(/usr/bin/shasum -a 256 "$source_app/Contents/MacOS/VODForge")
+        [[ "{expected_digest or ""}" == "" || "${{digest%% *}}" == "{expected_digest or ""}" ]] || fail "staged executable changed"
         [[ "$new_app" == "$target_app.vodforge-update-new" ]] || fail "unsafe new path"
         [[ "$old_app" == "$target_app.vodforge-update-old" ]] || fail "unsafe backup path"
         /bin/rm -rf -- "$new_app" "$old_app"
@@ -630,14 +715,16 @@ def write_macos_swap_script(
         /usr/bin/xcrun stapler validate "$new_app" >/dev/null 2>&1 || fail "notarization ticket missing"
         /usr/sbin/spctl --assess --type execute "$new_app" >/dev/null 2>&1 || fail "Gatekeeper rejected update"
 
+        version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$new_app/Contents/Info.plist" 2>/dev/null) || fail "bundle version missing"
+        [[ "{expected_version}" == "" || "$version" == "{expected_version}" ]] || fail "staged version changed"
         stage="installing"
         /bin/mv "$target_app" "$old_app" || fail "could not preserve current app"
         if /bin/mv "$new_app" "$target_app"; then
-          stage="relaunching"
+          stage="{"relaunching" if relaunch_after_install else "installing"}"
           if {relaunch}; then
             digest=$(/usr/bin/shasum -a 256 "$target_app/Contents/MacOS/VODForge")
             digest="${{digest%% *}}"
-            printf '%s\n' '{{"status":"relaunched","stage":"relaunching","executable_sha256":"'"$digest"'","repair":{str(repair).lower()},"telemetry_permitted":{str(telemetry_permitted).lower()}}}' > "$telemetry_receipt.tmp"
+            printf '%s\n' '{{"status":"{success_status}","stage":"{"relaunching" if relaunch_after_install else "installing"}","executable_sha256":"'"$digest"'","repair":{str(repair).lower()},"telemetry_permitted":{str(telemetry_permitted).lower()}}}' > "$telemetry_receipt.tmp"
             /bin/mv "$telemetry_receipt.tmp" "$telemetry_receipt"
             /bin/rm -rf -- "$old_app"
             /usr/bin/logger -t VODForge "update installed successfully"
@@ -661,6 +748,9 @@ def launch_macos_update(
     plan: MacUpdatePlan,
     *,
     parent_pid: int | None = None,
+    relaunch_after_install: bool = True,
+    expected_digest: str | None = None,
+    expected_version: str | None = None,
     repair: bool = False,
     telemetry_permitted: bool = False,
     telemetry_token: str | None = None,
@@ -669,12 +759,19 @@ def launch_macos_update(
 ) -> None:
     """Launch the verified macOS swapper; the caller must then exit."""
     verify_macos_app(plan.source_app, runner=runner)
+    with (plan.source_app / "Contents/MacOS/VODForge").open("rb") as handle:
+        expected_digest = (
+            expected_digest or hashlib.file_digest(handle, "sha256").hexdigest()
+        )
     script_path = write_macos_swap_script(
         plan,
+        expected_digest=expected_digest,
+        expected_version=expected_version,
         repair=repair,
         telemetry_permitted=telemetry_permitted,
         telemetry_token=telemetry_token,
         qa_relaunch=qa_update_feed() is not None,
+        relaunch_after_install=relaunch_after_install,
     )
     process = popen(
         [
@@ -749,6 +846,8 @@ def windows_update_script(
     telemetry_permitted: bool = False,
     window_bounds: tuple[int, int, int, int] | None = None,
     qa_relaunch: bool = False,
+    relaunch_after_install: bool = True,
+    expected_digest: str | None = None,
 ) -> str:
     """Detached handoff: wait for graceful exit, install, then explicitly relaunch."""
 
@@ -785,6 +884,7 @@ def windows_update_script(
         if window_bounds
         else "$null"
     )
+    success_status = "relaunched" if relaunch_after_install else "installed"
     return RECOVERY_FUNCTIONS + textwrap.dedent(f"""\
         {WINDOWS_POWERSHELL_MODULE_PATH}
         $ErrorActionPreference = 'Stop'
@@ -801,6 +901,7 @@ def windows_update_script(
         $repairRequested = ${str(repair).lower()}
         $setup = $null
         $manifest = $null
+        $updateLock = $null
         do {{
         $stage = 'waiting_for_exit'
         $result = @{{ status = 'failed'; stage = $stage; executable = $executable; repair = $repairRequested; telemetry_permitted = ${str(telemetry_permitted).lower()} }}
@@ -808,6 +909,12 @@ def windows_update_script(
             $parent = Get-Process -Id {int(parent_pid)} -ErrorAction SilentlyContinue
             Set-Content -LiteralPath $ready -Value 'ready' -Encoding UTF8
             if ($parent -and !$parent.WaitForExit(120000)) {{ throw 'VODForge did not close. Close it normally and retry the update.' }}
+            if (${str(not relaunch_after_install).lower()}) {{
+            $updateLock = [System.IO.File]::Open(($directory + '.vodforge-update-lock'), 'OpenOrCreate', 'ReadWrite', 'ReadWrite')
+            $updateLock.Lock(0, 1)
+            }}
+            $others = @(Get-Process -Name VODForge -ErrorAction SilentlyContinue | Where-Object {{ $_.Path -eq $executable }})
+            if ($others.Count -gt 0) {{ throw 'VODForge reopened; update deferred.' }}
             if ($setup -and !$setup.HasExited) {{ throw 'The previous installer is still running. Finish or close it before repair.' }}
             if ($null -ne $manifest) {{
                 $stage = 'checking_data'
@@ -823,6 +930,9 @@ def windows_update_script(
             if ($null -eq $manifest) {{ $manifest = Save-VODForgeData $dataRoot $backup }}
             $result.data_backup = $backup
             $stage = 'verifying'
+            if ({literal(expected_digest or "")} -ne '' -and (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant() -ne {literal(expected_digest or "")}) {{ throw 'Staged installer changed.' }}
+            $installerVersion = (Get-Item -LiteralPath $installer).VersionInfo.ProductVersion
+            if ($installerVersion -ne $expectedVersion) {{ throw 'Staged installer version mismatch.' }}
             $signature = Get-AuthenticodeSignature -LiteralPath $installer
             if ($signature.Status -ne 'Valid' -or !$signature.TimeStamperCertificate -or !$signature.SignerCertificate.Subject.Contains('CN="Kryden Ventures, LLC"') -or !$signature.SignerCertificate.Subject.Contains('O="Kryden Ventures, LLC"')) {{ throw 'Installer signature verification failed. Download a fresh installer from the official release.' }}
             $directory = Split-Path -Parent $executable
@@ -842,13 +952,15 @@ def windows_update_script(
             $result.data_preserved_before_relaunch = $true
             $result.installed_version = $installedVersion
             $env:PYINSTALLER_RESET_ENVIRONMENT = '1'
-            $stage = 'relaunching'
+            $stage = '{"relaunching" if relaunch_after_install else "installing"}'
             $env:VODFORGE_UPDATE_RECEIPT = $receipt
             {qa_identity}
+            if (${str(relaunch_after_install).lower()}) {{
             $app = Start-Process -FilePath $executable -WorkingDirectory $directory -PassThru
             if ($app.WaitForExit(3000)) {{ throw 'VODForge exited immediately after installation. Open it from the Start menu; see the update log if it fails again.' }}
-            $result.status = 'relaunched'
             $result.pid = $app.Id
+            }}
+            $result.status = '{success_status}'
             $result.executable = $executable
             $result.executable_sha256 = (Get-FileHash -LiteralPath $executable -Algorithm SHA256).Hash
         }} catch {{
@@ -859,17 +971,19 @@ def windows_update_script(
             }}
             $result.stage = $stage
             $result | ConvertTo-Json | Set-Content -LiteralPath $receipt -Encoding UTF8
-            $choice = Show-VODForgeRecovery $stage ($result.error + "`r`nUpdate log: " + $receipt) $directory $backup
+            $choice = 'later'
+            if (${str(relaunch_after_install).lower()}) {{ $choice = Show-VODForgeRecovery $stage ($result.error + "`r`nUpdate log: " + $receipt) $directory $backup }}
             $repairRequested = $choice -eq 'repair'
             if ($repairRequested) {{
                 Copy-Item -LiteralPath $receipt -Destination ($receipt + '.' + [guid]::NewGuid().ToString('N') + '.failed.json')
             }}
         }} finally {{
+            if ($null -ne $updateLock) {{ $updateLock.Dispose(); $updateLock = $null }}
             $result.stage = $stage
             $result | ConvertTo-Json | Set-Content -LiteralPath $receipt -Encoding UTF8
         }}
-        }} while ($result.status -ne 'relaunched' -and $repairRequested)
-        if ($result.status -ne 'relaunched') {{ exit 1 }}
+        }} while ($result.status -notin @('relaunched', 'installed') -and $repairRequested)
+        if ($result.status -notin @('relaunched', 'installed')) {{ exit 1 }}
         """)
 
 
@@ -878,6 +992,9 @@ def launch_windows_update(
     *,
     executable: Path | None = None,
     parent_pid: int | None = None,
+    relaunch_after_install: bool = True,
+    expected_digest: str | None = None,
+    expected_version: str | None = None,
     repair: bool = False,
     telemetry_permitted: bool = False,
     telemetry_token: str | None = None,
@@ -900,6 +1017,15 @@ def launch_windows_update(
         raise RuntimeError(
             "The app folder is not writable. Close VODForge and run the installer manually."
         )
+    with installer.open("rb") as handle:
+        expected_digest = (
+            expected_digest or hashlib.file_digest(handle, "sha256").hexdigest()
+        )
+    if (
+        expected_version is not None
+        and installer.name != f"VODForge-Windows-Setup-v{expected_version}.exe"
+    ):
+        raise RuntimeError("Staged installer does not match the release.")
     token = uuid.UUID(telemetry_token).hex if telemetry_token else uuid.uuid4().hex
     receipt = installer.parent / f"handoff-{token}.json"
     ready = installer.parent / f"handoff-{token}.ready"
@@ -909,10 +1035,12 @@ def launch_windows_update(
         os.getpid() if parent_pid is None else parent_pid,
         receipt,
         ready,
+        expected_digest=expected_digest,
         window_bounds=window_bounds,
         repair=repair,
         telemetry_permitted=telemetry_permitted,
         qa_relaunch=qa_update_feed() is not None,
+        relaunch_after_install=relaunch_after_install,
     )
     script_path = installer.parent / f"handoff-{token}.ps1"
     # A file avoids Windows' 32K command-line ceiling as recovery grows.

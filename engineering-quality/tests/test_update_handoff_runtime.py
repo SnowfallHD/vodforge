@@ -20,6 +20,7 @@ from yt_downloader.updates import windows_update_script
     "outcome",
     [
         "success",
+        "close_success",
         "installer_failure",
         "wrong_version",
         "relaunch_failure",
@@ -50,6 +51,7 @@ def test_windows_helper_runtime(tmp_path, outcome):
         tmp_path / "ready",
         data_dir=tmp_path / "saved-data",
         qa_relaunch=outcome == "qa_relaunch_success",
+        relaunch_after_install=outcome != "close_success",
     )
     # Suppress only presentation; execute the production failure and receipt flow.
     script = script.replace(
@@ -64,7 +66,7 @@ def test_windows_helper_runtime(tmp_path, outcome):
         r"""
 function Get-Process { param($Id, $ErrorAction) $p=New-Object PSObject; $p | Add-Member ScriptMethod WaitForExit { param($ms) PARENT_EXIT }; return $p }
 function Get-AuthenticodeSignature { return [pscustomobject]@{Status='SIGNATURE_STATUS'; TimeStamperCertificate='trusted'; SignerCertificate=[pscustomobject]@{Subject='CN="Kryden Ventures, LLC", O="Kryden Ventures, LLC"'}} }
-function Get-Item { param($LiteralPath) if ($LiteralPath -like '*VODForge.exe') { return [pscustomobject]@{VersionInfo=[pscustomobject]@{ProductVersion='INSTALLED_VERSION'}} }; return Microsoft.PowerShell.Management\Get-Item -LiteralPath $LiteralPath }
+function Get-Item { param($LiteralPath) if ($LiteralPath -like '*Setup*') { return [pscustomobject]@{VersionInfo=[pscustomobject]@{ProductVersion='1.2.3'}} }; if ($LiteralPath -like '*VODForge.exe') { return [pscustomobject]@{VersionInfo=[pscustomobject]@{ProductVersion='INSTALLED_VERSION'}} }; return Microsoft.PowerShell.Management\Get-Item -LiteralPath $LiteralPath }
 
 function Start-Process {
  param($FilePath,$ArgumentList,[switch]$PassThru,$WorkingDirectory)
@@ -81,6 +83,11 @@ function Start-Process {
         .replace("INSTALL_EXIT", "5" if outcome == "installer_failure" else "0")
         .replace("APP_EXIT", "$true" if outcome == "relaunch_failure" else "$false")
     )
+    if outcome == "close_success":
+        prefix = prefix.replace(
+            " $p=New-Object PSObject -Property",
+            " if ($FilePath -notlike '*Setup*') { throw 'Unexpected auto-update relaunch' }; $p=New-Object PSObject -Property",
+        )
     prefix = prefix.replace(
         "SIGNATURE_STATUS", "NotSigned" if outcome == "invalid_signature" else "Valid"
     )
@@ -145,9 +152,23 @@ function Start-Process {
     import json
 
     evidence = json.loads(receipt.read_text(encoding="utf-8-sig"))
-    success = outcome in {"success", "repair_success", "qa_relaunch_success"}
+    success = outcome in {
+        "success",
+        "close_success",
+        "repair_success",
+        "qa_relaunch_success",
+    }
     assert (result.returncode == 0) == success, (result.stderr, evidence)
-    assert evidence["status"] == ("relaunched" if success else "failed")
+    assert evidence["status"] == (
+        "installed"
+        if outcome == "close_success"
+        else "relaunched"
+        if success
+        else "failed"
+    )
+    if outcome == "close_success":
+        assert "pid" not in evidence
+        assert evidence["stage"] == "installing"
     assert media.read_bytes() == b"existing media"
     backup = tmp_path / "result.json.data-backup" / "download-history.json.backup"
     if outcome != "parent_timeout":
@@ -205,10 +226,16 @@ def test_macos_swap_executes_relaunch_and_rollback(tmp_path, outcome):
     source = staging / "VODForge.app"
     target = tmp_path / "installed" / "VODForge.app"
     for app, marker in ((source, "new"), (target, "old")):
-        (app / "Contents").mkdir(parents=True)
+        (app / "Contents/MacOS").mkdir(parents=True)
+        (app / "Contents/MacOS/VODForge").write_bytes(marker.encode())
         (app / "marker").write_text(marker)
         (app / "Contents/Info.plist").write_bytes(
-            plistlib.dumps({"CFBundleIdentifier": "com.snowfallhd.vodforge"})
+            plistlib.dumps(
+                {
+                    "CFBundleIdentifier": "com.snowfallhd.vodforge",
+                    "CFBundleShortVersionString": "1.2.3",
+                }
+            )
         )
     opened = tmp_path / "opened"
     verifier = tmp_path / "verify"
@@ -269,7 +296,12 @@ def test_macos_qa_update_relaunch_keeps_isolated_profile(tmp_path):
     for app in (source, target):
         (app / "Contents/MacOS").mkdir(parents=True)
         (app / "Contents/Info.plist").write_bytes(
-            plistlib.dumps({"CFBundleIdentifier": "com.snowfallhd.vodforge"})
+            plistlib.dumps(
+                {
+                    "CFBundleIdentifier": "com.snowfallhd.vodforge",
+                    "CFBundleShortVersionString": "1.2.3",
+                }
+            )
         )
     observed = tmp_path / "relaunch-environment"
     (source / "Contents/MacOS/VODForge").write_text(

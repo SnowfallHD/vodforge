@@ -1214,7 +1214,7 @@ Window {
             visible: bridge.updateAvailable || bridge.updateManualAvailable ||
                 bridge.updateRecovery || bridge.updateCheckFailed ||
                 bridge.updateReady || bridge.updateRestartPending ||
-                (bridge.updateBusy && bridge.updateStage !== "check")
+                bridge.updateBusy
             Item { Layout.fillWidth: true }
             StoneButton {
                 objectName: "updateNoticeButton"
@@ -2975,6 +2975,20 @@ Window {
                     ColumnLayout {
                         Layout.fillWidth: true
                         spacing: 10
+                    Text { text: "UPDATES"; color: theme.accent; font.pixelSize: 13; font.bold: true }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text { text: "Update automatically"; color: theme.text; font.pixelSize: 15; Layout.fillWidth: true }
+                        StoneButton {
+                            objectName: "settingsAutomaticUpdatesToggle"
+                            enabled: bridge.automaticUpdatesSupported
+                            label: bridge.automaticUpdates ? "On" : "Off"
+                            selected: bridge.automaticUpdates
+                            Layout.preferredWidth: 74; Layout.preferredHeight: 36
+                            onActivated: bridge.setAutomaticUpdates(!bridge.automaticUpdates)
+                        }
+                    }
+                    Text { text: bridge.automaticUpdatesSupported ? "Verified updates install when you quit. Turn off to update manually." : "Automatic updates are unavailable in this app location. Update manually."; color: theme.muted; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true }
                     Text { objectName: "settingsPrivacyHeading"; text: "PRIVACY"; color: theme.accent; font.pixelSize: 13; font.bold: true }
                     RowLayout {
                         objectName: "settingsAnalyticsRow"
@@ -3175,14 +3189,16 @@ Window {
                 }
                 StoneButton {
                     objectName: "updatePrimary"
-                    visible: !updatePopup.inProgress && !bridge.updateManualAvailable
-                    label: bridge.updateRecovery ? "Repair VODForge" :
+                    visible: (!updatePopup.inProgress && !bridge.updateManualAvailable) || bridge.updateAutomaticDownload
+                    label: bridge.updateReady || bridge.updateAutomaticDownload ? "Install now" :
+                        bridge.updateRecovery ? "Repair VODForge" :
                         bridge.updateAvailable ? "Download update" : "Check again"
                     emphasized: true
                     Layout.preferredWidth: 155
                     Layout.preferredHeight: 40
                     onActivated: {
-                        if (bridge.updateRecovery) bridge.repairUpdate()
+                        if (bridge.updateReady || bridge.updateAutomaticDownload) bridge.installUpdateNow()
+                        else if (bridge.updateRecovery) bridge.repairUpdate()
                         else if (bridge.updateAvailable) bridge.downloadUpdate()
                         else bridge.checkForUpdates()
                     }

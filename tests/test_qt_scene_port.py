@@ -6486,7 +6486,9 @@ def test_qt_one_click_update_verifies_waits_then_handoffs_once(
         verified.append(args)
         if blocker == "verification_failure":
             raise RuntimeError("signature refused")
-        return tmp_path / ("verified.zip" if platform == "mac" else "verified.exe")
+        path = tmp_path / ("verified.zip" if platform == "mac" else "verified.exe")
+        path.write_bytes(b"verified fixture")
+        return path
 
     def handoff(*args, **kwargs):
         handoffs.append((args, kwargs))
@@ -6494,8 +6496,10 @@ def test_qt_one_click_update_verifies_waits_then_handoffs_once(
             raise RuntimeError("helper refused")
 
     plan = MacUpdatePlan(
-        tmp_path / "verified.zip", tmp_path / "VODForge.app", tmp_path / "stage"
+        tmp_path / "source/VODForge.app", tmp_path / "VODForge.app", tmp_path / "stage"
     )
+    (plan.source_app / "Contents/MacOS").mkdir(parents=True)
+    (plan.source_app / "Contents/MacOS/VODForge").write_bytes(b"verified fixture")
     monkeypatch.setattr(session, "_start", start)
     monkeypatch.setattr(update_session, "download_verified_update", verify)
     monkeypatch.setattr(update_session, "is_macos", lambda: platform == "mac")
@@ -6505,7 +6509,7 @@ def test_qt_one_click_update_verifies_waits_then_handoffs_once(
     )
     monkeypatch.setattr(update_session, "running_macos_app", lambda: plan.target_app)
     monkeypatch.setattr(update_session, "cleanup_stale_macos_updates", lambda *_: None)
-    monkeypatch.setattr(update_session, "prepare_macos_update", lambda *_: plan)
+    monkeypatch.setattr(update_session, "prepare_macos_update", lambda *_, **__: plan)
     monkeypatch.setattr(update_session, "launch_macos_update", handoff)
     monkeypatch.setattr(update_session, "launch_windows_update", handoff)
     monkeypatch.setattr(

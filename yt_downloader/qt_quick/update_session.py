@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import logging
 import queue
 import re
 import threading
@@ -77,6 +79,9 @@ class QtUpdateSession:
         self.busy = False
         self.stage = "check"
         self.pending_install = False
+        self.automatic_download = False
+        self._ready_digest: str | None = None
+        self._download_cancel = threading.Event()
         self.handoff_started = False
         self.observations: list[tuple[str, dict[str, str] | None]] = []
 
@@ -156,9 +161,11 @@ class QtUpdateSession:
         self.available = False
         self.manual = False
         self.observe("check_started")
+        logging.getLogger(__name__).info("Update check started (%s).", self._trigger)
         if not self._start(self._check_worker, "vodforge-qt-update-check"):
             return False
         self.ready = None
+        self._ready_digest = None
         self.release = None
         self.available = False
         self.manual = False
@@ -183,9 +190,18 @@ class QtUpdateSession:
                     ),
                 )
             )
+        finally:
+            logging.getLogger(__name__).info(
+                "Update check finished in %.3f seconds.",
+                time.monotonic() - self._started,
+            )
 
     def download(
-        self, *, repair: bool = False, install_when_ready: bool = False
+        self,
+        *,
+        repair: bool = False,
+        install_when_ready: bool = False,
+        automatic: bool = False,
     ) -> bool:
         release = self.release
         if not repair and (release is None or not self.available):
@@ -195,22 +211,54 @@ class QtUpdateSession:
         if repair:
             self._begin_observation("repair")
             self.release = None
+        self._download_cancel.clear()
+        self.automatic_download = automatic
         self.stage = "downloading_repair" if repair else "download"
         self.observe("repair_started" if repair else "download_started")
         if not self._start(
-            lambda: self._download_worker(release if not repair else None),
+            lambda: self._download_worker(
+                release if not repair else None, automatic=automatic
+            ),
             "vodforge-qt-update-download",
         ):
             return False
         self.repair = repair
+        self.automatic_download = automatic
         self.check_failed = False
         self.pending_install = install_when_ready
         self.ready = None
+        self._ready_digest = None
         self.stage = "downloading_repair" if repair else "download"
         self.status = "Downloading and verifying the installer…"
         return True
 
-    def _download_worker(self, release: ReleaseInfo | None) -> None:
+    def request_install_now(self) -> bool:
+        """Promote the same staged/in-flight automatic payload to explicit restart."""
+        if self.pending_install or self.handoff_started or self.repair:
+            return False
+        if self.ready is None and not (
+            self.automatic_download and self.busy and self.stage == "download"
+        ):
+            return False
+        self.automatic_download = False
+        self._trigger = "manual"
+        self.pending_install = True
+        self.status = (
+            "Update verified. VODForge will restart when active work has finished."
+            if self.ready is not None
+            else "Downloading update… VODForge will restart after verification and active work."
+        )
+        return True
+
+    def cancel_automatic_download(self) -> None:
+        if self.automatic_download:
+            self._download_cancel.set()
+            self.automatic_download = False
+            self.pending_install = False
+
+    def _download_worker(
+        self, release: ReleaseInfo | None, *, automatic: bool = False
+    ) -> None:
         try:
             release = release or fetch_latest_release()
             if semantic_version_key(release.version) < semantic_version_key(
@@ -219,7 +267,15 @@ class QtUpdateSession:
                 raise RuntimeError("A repair cannot install an older release.")
             self.events.put(("release", release))
             destination = application_data_dir() / "updates" / release.tag_name
-            path = download_verified_update(release, destination)
+            path = (
+                download_verified_update(
+                    release, destination, cancelled=self._download_cancel.is_set
+                )
+                if automatic
+                else download_verified_update(release, destination)
+            )
+            if self._download_cancel.is_set():
+                raise InterruptedError("Automatic update download canceled.")
             payload: Path | MacUpdatePlan = path
             if is_macos():
                 target_app = running_macos_app()
@@ -228,10 +284,24 @@ class QtUpdateSession:
                         "VODForge must be running from the packaged app to update itself."
                     )
                 cleanup_stale_macos_updates(destination)
-                payload = prepare_macos_update(path, target_app)
+                payload = prepare_macos_update(
+                    path, target_app, expected_version=release.version
+                )
             elif is_windows():
                 verify_windows_authenticode(path)
+            fingerprint_path = (
+                payload.source_app / "Contents/MacOS/VODForge"
+                if isinstance(payload, MacUpdatePlan)
+                else payload
+            )
+            with fingerprint_path.open("rb") as handle:
+                digest = hashlib.file_digest(handle, "sha256").hexdigest()
+            if self._download_cancel.is_set():
+                raise InterruptedError("Automatic update download canceled.")
+            self.events.put(("fingerprint", digest))
             self.events.put(("ready", payload))
+        except InterruptedError:
+            self.events.put(("cancelled", None))
         except Exception as exc:  # noqa: BLE001 - verified update failures retain app
             self.events.put(
                 (
@@ -256,10 +326,21 @@ class QtUpdateSession:
             except queue.Empty:
                 break
             changed = True
+            if kind == "fingerprint" and isinstance(payload, str):
+                self._ready_digest = payload
+                continue
             if kind == "release" and isinstance(payload, ReleaseInfo):
                 self.release = payload
                 continue
             self.busy = False
+            if kind == "cancelled":
+                self.ready = None
+                self.pending_install = False
+                self.automatic_download = False
+                self.status = (
+                    "Automatic updates are off. Manual update remains available."
+                )
+                continue
             if kind == "checked" and isinstance(payload, ReleaseInfo):
                 self.release = payload
                 newer = is_newer_release(self.current_version, payload.version)
@@ -274,6 +355,11 @@ class QtUpdateSession:
                     if newer
                     else "VODForge is up to date."
                 )
+                logging.getLogger(__name__).info(
+                    "Update check applied: available=%s manual=%s.",
+                    self.available,
+                    self.manual,
+                )
                 self.observe(
                     "available"
                     if self.available
@@ -283,7 +369,11 @@ class QtUpdateSession:
                 )
             elif kind == "ready" and isinstance(payload, (Path, MacUpdatePlan)):
                 self.ready = payload
-                self.status = "Verified installer ready."
+                self.status = (
+                    "Update verified. It will install when you quit VODForge."
+                    if self.automatic_download
+                    else "Verified installer ready."
+                )
                 self.observe("download_completed")
                 self.observations.append(("download_completed", None))
             else:
@@ -336,6 +426,7 @@ class QtUpdateSession:
         downloads_busy: bool,
         telemetry_permitted: bool,
         window_bounds: tuple[int, int, int, int] | None = None,
+        relaunch_after_install: bool = True,
     ) -> bool:
         """Launch the verified helper before the UI is allowed to close."""
         payload = self.ready
@@ -365,6 +456,9 @@ class QtUpdateSession:
                 launch_macos_update(
                     payload,
                     repair=self.repair,
+                    relaunch_after_install=relaunch_after_install,
+                    expected_digest=self._ready_digest,
+                    expected_version=self.release.version if self.release else None,
                     telemetry_permitted=telemetry_permitted,
                     telemetry_token=uuid.UUID(self._attempt).hex,
                 )
@@ -372,6 +466,9 @@ class QtUpdateSession:
                 launch_windows_update(
                     payload,
                     repair=self.repair,
+                    relaunch_after_install=relaunch_after_install,
+                    expected_digest=self._ready_digest,
+                    expected_version=self.release.version if self.release else None,
                     telemetry_permitted=telemetry_permitted,
                     telemetry_token=uuid.UUID(self._attempt).hex,
                     window_bounds=window_bounds,
@@ -391,5 +488,9 @@ class QtUpdateSession:
         self.pending_install = False
         self.handoff_started = True
         self.ready = None
-        self.status = "Installing update… VODForge will reopen afterward."
+        self.status = (
+            "Installing update… VODForge will reopen afterward."
+            if relaunch_after_install
+            else "Installing update after closing…"
+        )
         return True

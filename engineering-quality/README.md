@@ -3056,7 +3056,11 @@ shows stage hierarchy and an indeterminate bar when processing, and has one
 footer. Hide closes only the popup; processing and pending idle installation
 continue. No cancellation control or percentage is invented. Check/download
 choices disappear during processing; recovery retains Repair VODForge and the
-manual download page. A settings auto-update checkbox is not introduced.
+manual download page. That historical scope did not introduce a settings auto-update
+checkbox; Cooper explicitly superseded it on 2026-10-16 with one default-on
+Update automatically control and normal-close installation. See
+`docs/update-handoff.md#successor-automatic-updates--2026-10-16-unpublished` for
+the successor contract and its separate qualification gates.
 
 Three representative new popup/click regressions fail against exact predecessor
 94d0256. Current source checks normal/minimum layout across checking, downloading,
