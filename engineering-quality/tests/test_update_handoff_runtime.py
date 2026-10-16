@@ -3,9 +3,11 @@
 Windows-only, so skips on macOS must never count as Windows release proof.
 """
 
+import hashlib
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -27,6 +29,10 @@ from yt_downloader.updates import windows_update_script
         "parent_timeout",
         "invalid_signature",
         "repair_success",
+        "repair_changed_success",
+        "repair_changed_tampered",
+        "repair_changed_bad_digest",
+        "repair_changed_missing_digest",
         "repair_download_failure",
         "data_changed",
         "qa_relaunch_success",
@@ -43,13 +49,17 @@ def test_windows_helper_runtime(tmp_path, outcome):
     (data / "settings.json").write_text('{"telemetry": false}')
     media = tmp_path / "downloaded.mp4"
     media.write_bytes(b"existing media")
+    installer = tmp_path / "VODForge-Windows-Setup-v1.2.3.exe"
+    installer.write_bytes(b"original verified installer")
+    launches = tmp_path / "installer-launches"
     script = windows_update_script(
-        tmp_path / "VODForge-Windows-Setup-v1.2.3.exe",
+        installer,
         executable,
         123,
         receipt,
         tmp_path / "ready",
         data_dir=tmp_path / "saved-data",
+        expected_digest=hashlib.sha256(installer.read_bytes()).hexdigest(),
         qa_relaunch=outcome == "qa_relaunch_success",
         relaunch_after_install=outcome != "close_success",
     )
@@ -66,7 +76,7 @@ def test_windows_helper_runtime(tmp_path, outcome):
         r"""
 function Get-Process { param($Id, $ErrorAction) $p=New-Object PSObject; $p | Add-Member ScriptMethod WaitForExit { param($ms) PARENT_EXIT }; return $p }
 function Get-AuthenticodeSignature { return [pscustomobject]@{Status='SIGNATURE_STATUS'; TimeStamperCertificate='trusted'; SignerCertificate=[pscustomobject]@{Subject='CN="Kryden Ventures, LLC", O="Kryden Ventures, LLC"'}} }
-function Get-Item { param($LiteralPath) if ($LiteralPath -like '*Setup*') { return [pscustomobject]@{VersionInfo=[pscustomobject]@{ProductVersion='1.2.3'}} }; if ($LiteralPath -like '*VODForge.exe') { return [pscustomobject]@{VersionInfo=[pscustomobject]@{ProductVersion='INSTALLED_VERSION'}} }; return Microsoft.PowerShell.Management\Get-Item -LiteralPath $LiteralPath }
+function Get-Item { param($LiteralPath) if ($LiteralPath -like '*Setup*') { return [pscustomobject]@{VersionInfo=[pscustomobject]@{ProductVersion=$(if ($LiteralPath -like '*v1.2.4.exe') {'1.2.4'} else {'1.2.3'})}} }; if ($LiteralPath -like '*VODForge.exe') { return [pscustomobject]@{VersionInfo=[pscustomobject]@{ProductVersion='INSTALLED_VERSION'}} }; return Microsoft.PowerShell.Management\Get-Item -LiteralPath $LiteralPath }
 
 function Start-Process {
  param($FilePath,$ArgumentList,[switch]$PassThru,$WorkingDirectory)
@@ -78,10 +88,21 @@ function Start-Process {
 }
 """.replace("PARENT_EXIT", "$false" if outcome == "parent_timeout" else "$true")
         .replace(
-            "INSTALLED_VERSION", "0.1.8" if outcome == "wrong_version" else "1.2.3"
+            "INSTALLED_VERSION",
+            "0.1.8"
+            if outcome == "wrong_version"
+            else "1.2.4"
+            if outcome.startswith("repair_changed_")
+            else "1.2.3",
         )
         .replace("INSTALL_EXIT", "5" if outcome == "installer_failure" else "0")
         .replace("APP_EXIT", "$true" if outcome == "relaunch_failure" else "$false")
+    )
+    prefix = prefix.replace(
+        " if ($FilePath -like '*Setup*') {",
+        " if ($FilePath -like '*Setup*') { Add-Content -LiteralPath '"
+        + str(launches).replace("'", "''")
+        + "' -Value $FilePath;",
     )
     if outcome == "close_success":
         prefix = prefix.replace(
@@ -98,8 +119,36 @@ function Start-Process {
         override = (
             "function Get-VODForgeRepairInstaller { throw 'TEST: network unavailable' }\n"
             if outcome == "repair_download_failure"
-            else "function Get-VODForgeRepairInstaller { return @{Path=$installer;Version='1.2.3'} }\n"
+            else "function Get-VODForgeRepairInstaller { return @{Path=$installer;Version='1.2.3';Sha256=(Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()} }\n"
         )
+        if outcome.startswith("repair_changed_"):
+            fresh = tmp_path / "fresh/VODForge-Windows-Setup-v1.2.4.exe"
+            fresh.parent.mkdir()
+            fresh.write_bytes(b"different official verified replacement")
+            digest = hashlib.sha256(fresh.read_bytes()).hexdigest()
+            digest_field = (
+                ""
+                if outcome.endswith("missing_digest")
+                else ";Sha256='"
+                + ("invalid-digest" if outcome.endswith("bad_digest") else digest)
+                + "'"
+            )
+            tamper = (
+                "[IO.File]::WriteAllBytes('"
+                + str(fresh).replace("'", "''")
+                + "',[byte[]](1,2,3));"
+                if outcome.endswith("tampered")
+                else ""
+            )
+            override = (
+                "function Get-VODForgeRepairInstaller { "
+                + tamper
+                + "return @{Path='"
+                + str(fresh).replace("'", "''")
+                + "';Version='1.2.4'"
+                + digest_field
+                + "} }\n"
+            )
         script = script.replace(
             "$ErrorActionPreference = 'Stop'",
             override + "$ErrorActionPreference = 'Stop'",
@@ -156,6 +205,7 @@ function Start-Process {
         "success",
         "close_success",
         "repair_success",
+        "repair_changed_success",
         "qa_relaunch_success",
     }
     assert (result.returncode == 0) == success, (result.stderr, evidence)
@@ -166,6 +216,18 @@ function Start-Process {
         if success
         else "failed"
     )
+    if outcome.startswith("repair_changed_"):
+        attempts = launches.read_text(encoding="utf-8-sig").splitlines()
+        assert len(attempts) == (2 if outcome == "repair_changed_success" else 1)
+        if outcome == "repair_changed_success":
+            assert evidence["installed_version"] == "1.2.4"
+            assert attempts[-1] == str(fresh)
+        else:
+            assert evidence["error"] == (
+                "Staged installer changed."
+                if outcome.endswith("tampered")
+                else "The verified repair digest is unavailable."
+            )
     if outcome == "close_success":
         assert "pid" not in evidence
         assert evidence["stage"] == "installing"
@@ -527,3 +589,65 @@ Show-VODForgeRecovery 'installing' 'test cause' 'C:\\VODForge' 'test backup'
     assert layout["buttons_inside"] is True
     assert layout["repair"] == "Repair VODForge"
     assert layout["technical"] == "Technical details"
+
+
+@pytest.mark.skipif(
+    sys.platform != "win32" and not os.environ.get("VODFORGE_QA_POWERSHELL"),
+    reason="requires PowerShell runtime",
+)
+def test_repair_verified_download_returns_bound_digest(tmp_path):
+    import json
+
+    from yt_downloader.platforms.windows.update_recovery import RECOVERY_FUNCTIONS
+
+    payload = b"fresh verified official repair bytes"
+    digest = hashlib.sha256(payload).hexdigest()
+    numbers = ",".join(str(value) for value in payload)
+    # Double only the request/response boundary; real streams, file hash,
+    # size check, private temporary file and final rename execute unchanged.
+    functions = RECOVERY_FUNCTIONS.replace(
+        "$request = [Net.HttpWebRequest]::Create($base + $name)",
+        "$request = New-VODForgeFixtureRequest",
+    )
+    script = tmp_path / "repair-stream.ps1"
+    script.write_text(
+        f"""
+$ErrorActionPreference = 'Stop'
+function Invoke-RestMethod {{ return @{{tag_name='v1.2.4';draft=$false;prerelease=$false;assets=@(@{{name='VODForge-Windows-Setup-v1.2.4.exe';size={len(payload)}}})}} }}
+function Invoke-WebRequest {{ return @{{Content='{digest}  VODForge-Windows-Setup-v1.2.4.exe'}} }}
+function New-VODForgeFixtureRequest {{
+    $request = New-Object PSObject -Property @{{Timeout=0;ReadWriteTimeout=0}}
+    $request | Add-Member ScriptMethod GetResponse {{
+        $response = New-Object PSObject
+        $response | Add-Member ScriptMethod GetResponseStream {{ return [IO.MemoryStream]::new([byte[]]({numbers})) }}
+        $response | Add-Member ScriptMethod Dispose {{}}
+        return $response
+    }}
+    return $request
+}}
+"""
+        + functions
+        + "\nGet-VODForgeRepairInstaller '"
+        + str(tmp_path).replace("'", "''")
+        + "' | ConvertTo-Json\n"
+    )
+    result = subprocess.run(
+        [
+            os.environ.get("VODFORGE_QA_POWERSHELL", "powershell.exe"),
+            "-NoProfile",
+            "-NonInteractive",
+            "-File",
+            str(script),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+        **({"creationflags": 0x08000000} if sys.platform == "win32" else {}),
+    )
+    assert result.returncode == 0, result.stderr
+    receipt = json.loads(result.stdout)
+    assert receipt["Sha256"] == digest
+    assert receipt["Version"] == "1.2.4"
+    assert Path(receipt["Path"]).read_bytes() == payload
+    assert not list(tmp_path.glob("*.part"))

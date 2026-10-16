@@ -898,6 +898,7 @@ def windows_update_script(
         $backup = $receipt + '.data-backup'
         $directory = Split-Path -Parent $executable
         $expectedVersion = {literal(expected_version)}
+        $expectedDigest = {literal(expected_digest or "")}
         $repairRequested = ${str(repair).lower()}
         $setup = $null
         $manifest = $null
@@ -923,14 +924,17 @@ def windows_update_script(
             if ($repairRequested) {{
                 $stage = 'downloading_repair'
                 $fresh = Get-VODForgeRepairInstaller (Split-Path -Parent $installer) $qaUpdateFeed
+                $freshDigest = [string]$fresh.Sha256
+                if ($freshDigest -cnotmatch '^[a-fA-F0-9]{{64}}$') {{ throw 'The verified repair digest is unavailable.' }}
                 $installer = $fresh.Path
                 $expectedVersion = $fresh.Version
+                $expectedDigest = $freshDigest.ToLowerInvariant()
             }}
             $stage = 'backing_up'
             if ($null -eq $manifest) {{ $manifest = Save-VODForgeData $dataRoot $backup }}
             $result.data_backup = $backup
             $stage = 'verifying'
-            if ({literal(expected_digest or "")} -ne '' -and (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant() -ne {literal(expected_digest or "")}) {{ throw 'Staged installer changed.' }}
+            if ($expectedDigest -ne '' -and (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedDigest) {{ throw 'Staged installer changed.' }}
             $installerVersion = (Get-Item -LiteralPath $installer).VersionInfo.ProductVersion
             if ($installerVersion -ne $expectedVersion) {{ throw 'Staged installer version mismatch.' }}
             $signature = Get-AuthenticodeSignature -LiteralPath $installer

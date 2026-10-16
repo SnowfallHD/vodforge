@@ -102,7 +102,7 @@ function Get-VODForgeRepairInstaller {
         $outputStream.Dispose(); $outputStream = $null
         if ($total -ne $asset[0].size -or (Get-FileHash -LiteralPath $partial -Algorithm SHA256).Hash -ne $expectedHash) { throw 'The installer download could not be verified.' }
         Move-Item -LiteralPath $partial -Destination $path -Force
-        return @{ Path = $path; Version = $release.tag_name.Substring(1) }
+        return @{ Path = $path; Version = $release.tag_name.Substring(1); Sha256 = $expectedHash.ToLowerInvariant() }
     } finally {
         if ($outputStream) { $outputStream.Dispose() }
         if ($inputStream) { $inputStream.Dispose() }

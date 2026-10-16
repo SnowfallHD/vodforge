@@ -3190,15 +3190,15 @@ Window {
                 StoneButton {
                     objectName: "updatePrimary"
                     visible: (!updatePopup.inProgress && !bridge.updateManualAvailable) || bridge.updateAutomaticDownload
-                    label: bridge.updateReady || bridge.updateAutomaticDownload ? "Install now" :
-                        bridge.updateRecovery ? "Repair VODForge" :
+                    label: bridge.updateRecovery ? "Repair VODForge" :
+                        bridge.updateReady || bridge.updateAutomaticDownload ? "Install now" :
                         bridge.updateAvailable ? "Download update" : "Check again"
                     emphasized: true
                     Layout.preferredWidth: 155
                     Layout.preferredHeight: 40
                     onActivated: {
-                        if (bridge.updateReady || bridge.updateAutomaticDownload) bridge.installUpdateNow()
-                        else if (bridge.updateRecovery) bridge.repairUpdate()
+                        if (bridge.updateRecovery) bridge.repairUpdate()
+                        else if (bridge.updateReady || bridge.updateAutomaticDownload) bridge.installUpdateNow()
                         else if (bridge.updateAvailable) bridge.downloadUpdate()
                         else bridge.checkForUpdates()
                     }

@@ -600,3 +600,28 @@ def test_dismiss_auto_download_offer_keeps_quit_install_intent(
     window.findChild(QObject, "updateDismiss").activated.emit()
     assert not popup.property("visible")
     assert session.automatic_download and not session.pending_install
+
+
+@pytest.mark.parametrize("repair", [False, True])
+def test_recovery_primary_retries_repair_even_with_retained_ready_payload(
+    update_notice_scene, monkeypatch, tmp_path, repair
+):
+    from tests.test_qt_scene_port import polish_scene
+
+    _, bridge, window = update_notice_scene
+    session = bridge._updates
+    session.ready = tmp_path / "retained-verified.exe"
+    session.repair = repair
+    session.recovery = True
+    actions = []
+    monkeypatch.setattr(bridge, "repairUpdate", lambda: actions.append("repair"))
+    monkeypatch.setattr(bridge, "installUpdateNow", lambda: actions.append("install"))
+    bridge.updateChanged.emit()
+    window.findChild(QObject, "updateNoticeButton").activated.emit()
+    polish_scene(window.contentItem())
+    primary = window.findChild(QObject, "updatePrimary")
+    assert primary.property("visible")
+    primary.activated.emit()
+    assert actions == ["repair"]
+    assert primary.property("label") == "Repair VODForge"
+    assert session.ready == tmp_path / "retained-verified.exe" and session.recovery
