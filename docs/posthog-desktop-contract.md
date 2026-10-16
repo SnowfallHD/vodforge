@@ -69,3 +69,44 @@ availability remains an internal capability restriction. Failed preference saves
 disable the session's collection and report Off, with the existing save warning.
 Automatic browser-owned attribution remains independent of app usage permission;
 no automatic operational request is evidence of consent or a successful link.
+
+## Coarse native baseline, separately resolved — 2026-10-16UTC
+
+The existing product telemetry worker now also admits five coarse first-party
+count metrics: app_started, run_completed, run_failed,
+local_conversion_completed, local_conversion_failed. This path is independent
+of optional detailed sharing, but requires a fresh positive feature-specific
+policy response (native_baseline_mode=enabled, native_baseline_version=1,
+resolved=true), the existing build/QA transport boundary, and no historical
+broad refusal lacking the current usage_scope_version. New explicit On/Off
+saves that scope marker; migration never manufactures it. Identical regional
+eligibility gives default-Off and new manual-Off the same coarse fields. A
+historical broad denial remains the explicitly stricter compatibility case.
+
+The server owner independently assesses US/CH/AU for these first-party,
+non-content counts; UK/EEA/other/unknown modes remain disabled for this new
+phone-home. This is not inherited from the website replay matrix and not a
+universal legal-clearance claim. The server independently enforces its region,
+signals, feature flag and registered-version checks. Existing rich default
+coverage remains unchanged; cached rich consent policy still works on outage,
+while no cached/default mode substitutes for fresh baseline eligibility.
+
+POST /api/telemetry/baseline contains exactly schema_version, platform,
+app_version, metric, count(1..100). No credentials, installation/browser/session
+IDs, individual event timestamp, source, media data, failure content, operation
+ID or extra dimensions. It is not mirrored to PostHog. Counts are bounded in
+memory, sent once, never persisted or automatically retried after an ambiguous
+result; loss/repeated process launches/producer callbacks prevent unique-user,
+unique-install, complete-run or exactly-once claims. app_started means a process
+observation, not activation. Positive policy expires after24hours in memory;
+new processes resolve again. No extra fresh UUID is generated for counts.
+
+Matching server contract aggregates by UTCday/platform/version/metric with
+30UTCday retention; separate security processing can use IP and daily keyed
+rate-limit hashes. Request headers/network metadata still reach the service;
+no assertion of anonymous transport, no processing of arbitrary bodies for
+measurement. Existing local UUID, installation facts and optional outbox remain
+owned by their existing functionality. Optional Off still revokes/blocks rich
+first-party/provider events and queues; desktop replay is absent in every mode.
+Backend deployment and exact packaged/native verification are separate gates;
+source/intercepted tests do not certify activation or production delivery.

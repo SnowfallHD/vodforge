@@ -35,18 +35,19 @@ ANALYTICS_BENEFITS = (
     ("shield-check", "No content or credentials"),
     ("activity", "Fix errors without support"),
     ("trending-up", "Improve the platform"),
-    ("sliders", "Turn off anytime in Settings"),
+    ("sliders", "Optional sharing in Settings"),
 )
 ANALYTICS_DESCRIPTION = (
-    "Share usage events and system diagnostics to help us fix errors and improve the app. "
-    "Automatic analytics excludes source links, file paths, and credentials. "
-    "You can change this in Settings."
+    "Share optional app reports. Off stops detailed sharing. "
+    "Regional basic counts and service records may continue. "
+    "No media links, paths or credentials. See Privacy details."
 )
 
 
 class AnalyticsConsentOwner:
     def __init__(self, directory: Path) -> None:
         self.path = directory / "settings.json"
+        self._native_baseline_until = 0.0
         legacy = directory / "analytics-consent.json"
         with _LOCK:
             try:
@@ -159,9 +160,11 @@ class AnalyticsConsentOwner:
                 state.get("choice") != "denied"
                 or state.get("posthog_choice") != "denied"
             ):
-                self.choose_data_sharing(False)
+                self.choose_data_sharing(False, acknowledge_scope=False)
 
-    def choose_data_sharing(self, enabled: bool) -> None:
+    def choose_data_sharing(
+        self, enabled: bool, *, acknowledge_scope: bool = True
+    ) -> None:
         """Persist one explicit user choice for all optional app analytics."""
         with _LOCK:
             changes: dict[str, Any] = {
@@ -169,11 +172,33 @@ class AnalyticsConsentOwner:
                 "posthog_choice": "granted" if enabled else "denied",
                 "posthog_epoch": str(uuid.uuid4()),
             }
+            if acknowledge_scope:
+                changes["usage_scope_version"] = 1
             if not enabled:
                 changes["collection_epoch"] = str(uuid.uuid4())
             # Finish onboarding metadata before the atomic preference commit.
             self.update(prompted=True)
             update_analytics_settings(self.path, changes)
+
+    @property
+    def native_baseline_allowed(self) -> bool:
+        """Fresh feature-specific policy only; never reuse the generic default."""
+        if (
+            not telemetry_collection_allowed()
+            or time.monotonic() >= self._native_baseline_until
+        ):
+            return False
+        state = self.snapshot()
+        if not state:
+            return False
+        legacy_refusal = "denied" in {
+            state.get("choice"),
+            state.get("posthog_choice"),
+        } and (
+            type(state.get("usage_scope_version")) is not int
+            or state.get("usage_scope_version") != 1
+        )
+        return not legacy_refusal
 
     @property
     def posthog_allowed(self) -> bool:
@@ -225,6 +250,7 @@ class AnalyticsConsentOwner:
         self, *, opener: Any = telemetry_urlopen, deadline: float | None = None
     ) -> str:
         """No install ID, cookie, credential or analytics payload in this request."""
+        self._native_baseline_until = 0.0
         if not telemetry_collection_allowed():
             return "unknown"
         self.update(
@@ -262,8 +288,17 @@ class AnalyticsConsentOwner:
                 ),
                 posthog_region_resolved=value.get("resolved") is True,
             )
+            self._native_baseline_until = (
+                time.monotonic() + 24 * 3600
+                if value.get("resolved") is True
+                and type(value.get("native_baseline_version")) is int
+                and value.get("native_baseline_version") == 1
+                and value.get("native_baseline_mode") == "enabled"
+                else 0.0
+            )
             return mode
-        except (OSError, ValueError):
+        except (OSError, ValueError, RuntimeError):
+            self._native_baseline_until = 0.0
             return "unknown"
 
 

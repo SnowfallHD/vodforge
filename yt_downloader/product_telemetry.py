@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 import urllib.request
@@ -407,6 +408,8 @@ class ProductTelemetryOwner:
         diagnostic: Callable[[str], None] | None = None,
         session_id: str | None = None,
         posthog_recorder: Callable[[ProductTelemetryEvent], bool] | None = None,
+        baseline_permitted: Callable[[], bool] = lambda: False,
+        baseline_recorder: Callable[[dict[str, Any]], bool] | None = None,
     ) -> None:
         from .posthog_analytics import PosthogEventSink
 
@@ -416,6 +419,9 @@ class ProductTelemetryOwner:
         self._app_version = str(app_version)
         self._platform = installation_platform(platform_name)
         self._release_channel = release_channel(app_version)
+        self._baseline_permitted = baseline_permitted
+        self._baseline_recorder = baseline_recorder or self._send_baseline
+        self._baseline_pending: dict[str, int] = {}
         self._enabled = bool(enabled)
         self._consent_generation = 0
         credential_owner = TelemetryCredentialOwner(installation_state_path.parent)
@@ -441,6 +447,65 @@ class ProductTelemetryOwner:
         self._lock = threading.RLock()
         self._worker: threading.Thread | None = None
         self._flush_requested = False
+
+    def _send_baseline(self, payload: dict[str, Any]) -> bool:
+        if not telemetry_collection_allowed() or not self._baseline_permitted():
+            return False
+        request = urllib.request.Request(
+            "https://getvodforge.com/api/telemetry/baseline",
+            data=json.dumps(payload, separators=(",", ":")).encode(),
+            headers={"Content-Type": "application/json", "Accept": "application/json"},
+            method="POST",
+        )
+        try:
+            with telemetry_urlopen(request, timeout=4.0) as response:
+                return response.status == 200
+        except (OSError, ValueError):
+            return False  # Ambiguous outcomes are never retried or persisted.
+
+    def record_baseline(self, metric: str) -> bool:
+        if (
+            self._platform not in {"macos", "windows", "linux"}
+            or re.fullmatch(r"\d{1,3}\.\d{1,3}\.\d{1,3}", self._app_version) is None
+        ):
+            return False
+        if metric not in {
+            "app_started",
+            "run_completed",
+            "run_failed",
+            "local_conversion_completed",
+            "local_conversion_failed",
+        }:
+            return False
+        if not telemetry_collection_allowed() or not self._baseline_permitted():
+            return False
+        with self._lock:
+            self._baseline_pending[metric] = min(
+                100, self._baseline_pending.get(metric, 0) + 1
+            )
+        self.flush_async()
+        return True
+
+    def _flush_baseline(self) -> None:
+        with self._lock:
+            pending, self._baseline_pending = self._baseline_pending, {}
+        for metric, count in pending.items():
+            if not telemetry_collection_allowed() or not self._baseline_permitted():
+                return
+            try:
+                self._baseline_recorder(
+                    {
+                        "schema_version": 1,
+                        "platform": self._platform,
+                        "app_version": self._app_version,
+                        "metric": metric,
+                        "count": count,
+                    }
+                )
+            except Exception:  # noqa: BLE001 - counter failure cannot block optional delivery
+                self._diagnostic(
+                    "Basic app count not confirmed; discarded without retry"
+                )
 
     def _permitted(self) -> tuple[bool, str | None]:
         if not telemetry_collection_allowed() or not self._enabled:
@@ -659,6 +724,13 @@ class ProductTelemetryOwner:
             raise ValueError("unsupported product telemetry run kind")
         if output_type is not None and output_type not in _OUTPUT_KINDS:
             raise ValueError("unsupported product telemetry output type")
+        if event_name in {
+            "run_completed",
+            "run_failed",
+            "local_conversion_completed",
+            "local_conversion_failed",
+        }:
+            self.record_baseline(event_name)
         with self._lock:
             permitted, install_id = self._permitted()
             generation = self._consent_generation
@@ -990,7 +1062,7 @@ class ProductTelemetryOwner:
 
     def flush_async(self) -> None:
         with self._lock:
-            if not self._enabled:
+            if not self._enabled and not self._baseline_pending:
                 return
             if self._worker is not None and self._worker.is_alive():
                 self._flush_requested = True
@@ -1006,6 +1078,7 @@ class ProductTelemetryOwner:
     def _flush_worker(self) -> None:
         try:
             while True:
+                self._flush_baseline()
                 self._flush()
                 with self._lock:
                     if not self._flush_requested:

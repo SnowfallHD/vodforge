@@ -227,3 +227,86 @@ def test_unified_failed_choice_disables_session_and_reports_off(tmp_path, monkey
     session.telemetry.set_enabled.assert_called_once_with(False)
     session.telemetry = telemetry
     session.close()
+
+
+@pytest.mark.parametrize("manual", [False, True])
+def test_default_off_and_manual_off_have_same_optional_collection_boundary(
+    tmp_path, monkeypatch, manual
+):
+    from yt_downloader.cloud_funnel import load_or_create_installation_state
+
+    monkeypatch.setattr(analytics, "telemetry_collection_allowed", lambda: True)
+    consent = AnalyticsConsentOwner(tmp_path)
+    consent.update(mode="opt-in", region_checked=True)
+    if manual:
+        consent.choose_data_sharing(False)
+    install_id = load_or_create_installation_state(
+        tmp_path / "installation.json"
+    ).install_id
+    sinks = []
+    monkeypatch.setattr(
+        analytics,
+        "ProductTelemetryOwner",
+        lambda **kwargs: ProductTelemetryOwner(
+            **kwargs,
+            d1_recorder=lambda event: sinks.append(event) or True,
+            posthog_recorder=lambda event: pytest.fail("Off sent provider analytics"),
+        ),
+    )
+    session = analytics.QtAnalyticsSession(tmp_path, "0.2.6", Mock())
+    try:
+        assert not session.allowed and not session.owner.posthog_allowed
+        for event in (
+            "app_opened",
+            "run_started",
+            "run_completed",
+            "media_exported",
+            "playback_started",
+        ):
+            assert not session.telemetry.record(event)
+        session.lifecycle.ready()
+        session.lifecycle.foreground(True)
+        session.lifecycle.viewed("library")
+        session.lifecycle.report_exception(ValueError, "sys")
+        session.lifecycle.tick()
+        session.poll_first_launch_delivery()
+        assert session.telemetry.shutdown(2)
+        assert sinks == []
+        assert not _load_outbox(tmp_path / "product-telemetry.json")
+        assert not (tmp_path / "analytics-sessions").exists()
+        assert (
+            load_or_create_installation_state(tmp_path / "installation.json").install_id
+            == install_id
+        )
+    finally:
+        session.close()
+
+
+def test_fresh_native_policy_outage_preserves_existing_rich_policy_cache(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(analytics, "telemetry_collection_allowed", lambda: True)
+    owner = AnalyticsConsentOwner(tmp_path)
+    owner.update(
+        mode="default-on",
+        region_checked=True,
+        posthog_mode="default-on",
+        posthog_region_resolved=True,
+    )
+
+    def unavailable(self, **kwargs):
+        self.update(
+            mode="unknown", posthog_mode="opt-in", posthog_region_resolved=False
+        )
+        return "unknown"
+
+    monkeypatch.setattr(AnalyticsConsentOwner, "resolve", unavailable)
+    session = analytics.QtAnalyticsSession(tmp_path, "0.2.6", Mock())
+    try:
+        session.start()
+        assert session._resolved.wait(2)
+        assert session._mode == "default-on"
+        assert session.owner.allowed and session.owner.posthog_allowed
+        assert not session.owner.native_baseline_allowed
+    finally:
+        session.close()

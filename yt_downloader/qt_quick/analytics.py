@@ -50,6 +50,7 @@ class QtAnalyticsSession:
         self._started = False
         self._presented = False
         self._opened = False
+        self._baseline_started = False
         self._closed = False
         self._choice_save_failed = False
         self._next_telemetry_flush = time.monotonic() + 30.0
@@ -84,6 +85,9 @@ class QtAnalyticsSession:
             installation_state_path=installation_state_path(data_dir=directory),
             app_version=app_version,
             enabled=initial_allowed,
+            baseline_permitted=lambda: (
+                not self._closed and owner.native_baseline_allowed
+            ),
         )
         self.owner = owner
         self.telemetry = telemetry
@@ -132,11 +136,18 @@ class QtAnalyticsSession:
         def resolve() -> None:
             try:
                 saved = owner.saved_region_mode
-                self._mode = (
-                    saved
-                    if saved is not None
-                    else owner.resolve(deadline=self._deadline)
-                )
+                prior = owner.snapshot()
+                self._mode = owner.resolve(deadline=self._deadline)
+                if self._mode == "unknown" and saved is not None:
+                    # Preserve the established rich-policy cache on outage;
+                    # native baseline permission remains fresh-only and Off.
+                    owner.update(
+                        mode=saved,
+                        posthog_mode=prior.get("posthog_mode", "opt-in"),
+                        posthog_region_resolved=prior.get("posthog_region_resolved")
+                        is True,
+                    )
+                    self._mode = saved
             except (OSError, ValueError):
                 self._mode = "unknown"
             finally:
@@ -162,6 +173,9 @@ class QtAnalyticsSession:
             return False
         telemetry.set_enabled(owner.allowed)
         self._record_opened_if_allowed()
+        if not self._baseline_started:
+            self._baseline_started = True
+            telemetry.record_baseline("app_started")
         state = owner.snapshot()
         if (
             self._mode in {"opt-in", "unknown"}

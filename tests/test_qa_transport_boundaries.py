@@ -17,10 +17,15 @@ def test_marked_qa_without_preview_credentials_is_off(tmp_path, monkeypatch, mar
     monkeypatch.delenv("VODFORGE_QUALITY_E2E", raising=False)
     monkeypatch.delenv("VODFORGE_QA_PREVIEW_TELEMETRY", raising=False)
     monkeypatch.delenv("VODFORGE_QA_ACCESS_KEY", raising=False)
-    monkeypatch.setenv(marker, "fictional-qa")
+    value = (
+        "3a095a15-bef2-4e6b-bb7e-5df466c103c7"
+        if marker == "VODFORGE_POSTHOG_QA_RUN"
+        else str(tmp_path / "fictional-home")
+    )
+    monkeypatch.setenv(marker, value)
     assert not telemetry_policy.production_telemetry_allowed()
     assert not telemetry_policy.telemetry_collection_allowed()
-    assert not PosthogConfig.from_environment({marker: "fictional-qa"}).enabled
+    assert not PosthogConfig.from_environment({marker: value}).enabled
 
 
 def test_credentialed_existing_preview_route_never_enables_provider(
