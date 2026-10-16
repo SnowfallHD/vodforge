@@ -38,11 +38,13 @@ class ArchiveWorkOwner:
 
     @property
     def busy(self) -> bool:
-        return (
-            self._current is not None
-            or self._busy.is_set()
-            or not self._requests.empty()
-        )
+        if self._current is not None or self._busy.is_set():
+            return True
+        # The bounded queue also carries None to wake the consumer at shutdown.
+        # That control message is not filesystem work. Real queued requests (or
+        # an unknown non-None entry) must still block replacement after close.
+        with self._requests.mutex:
+            return any(request is not None for request in self._requests.queue)
 
     def submit(self, kind: str, work: Callable[[threading.Event], Any]) -> int | None:
         if self._closed or self.busy:

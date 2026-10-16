@@ -626,3 +626,39 @@ def test_recovery_primary_retries_repair_even_with_retained_ready_payload(
     assert actions == ["repair"]
     assert primary.property("label") == "Repair VODForge"
     assert session.ready == tmp_path / "retained-verified.exe" and session.recovery
+
+
+def test_real_close_owner_ignores_only_relink_shutdown_sentinel(
+    update_notice_scene, monkeypatch, tmp_path
+):
+    from tests.test_archive_work import StartPausedArchiveWorkOwner
+
+    _, bridge, _ = update_notice_scene
+    # Retire the original idle lane and control scheduling of a genuine product
+    # owner. Its close()/busy and the Bridge close/work predicate are not mocked.
+    original = bridge._relink.work
+    original.close()
+    original._thread.join(2)
+    controlled = StartPausedArchiveWorkOwner()
+    bridge._relink.work = controlled
+    bridge._updates.automatic_download = True
+    bridge._updates.ready = tmp_path / "verified.exe"
+    calls = []
+    monkeypatch.setattr(
+        bridge._updates, "install", lambda **kw: calls.append(kw) or True
+    )
+    try:
+        assert not bridge._update_work_pending()
+        bridge.close(normal_quit=True)
+        assert calls == [
+            {
+                "downloads_busy": False,
+                "telemetry_permitted": False,
+                "relaunch_after_install": False,
+            }
+        ]
+        assert not bridge._update_work_pending()
+    finally:
+        controlled.worker_release.set()
+        controlled._thread.join(2)
+        assert not controlled._thread.is_alive()

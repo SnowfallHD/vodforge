@@ -91,3 +91,90 @@ def test_worker_failure_uses_closed_error_category_and_next_work_can_succeed():
     finally:
         owner.close()
         owner._thread.join(2)
+
+
+class StartPausedArchiveWorkOwner(ArchiveWorkOwner):
+    """Run the real worker after a deterministic startup barrier."""
+
+    def __init__(self):
+        self.worker_entered = threading.Event()
+        self.worker_release = threading.Event()
+        super().__init__()
+        assert self.worker_entered.wait(2)
+
+    def _run(self):
+        self.worker_entered.set()
+        assert self.worker_release.wait(5)
+        super()._run()
+
+
+def test_idle_close_control_sentinel_is_not_filesystem_work():
+    owner = StartPausedArchiveWorkOwner()
+    try:
+        assert not owner.busy
+        owner.close()
+        assert not owner._requests.empty()  # actual close enqueued its control sentinel
+        assert not owner.busy
+        owner.close()
+        assert not owner.busy
+    finally:
+        owner.worker_release.set()
+        owner._thread.join(2)
+        assert not owner._thread.is_alive()
+
+
+def test_active_close_keeps_busy_until_real_filesystem_work_returns():
+    owner = ArchiveWorkOwner()
+    entered, release = threading.Event(), threading.Event()
+    effects = []
+
+    def work(cancelled):
+        entered.set()
+        assert release.wait(5)
+        if not cancelled.is_set():
+            effects.append("write")
+
+    try:
+        assert owner.submit("controlled-active", work)
+        assert entered.wait(2)
+        owner.close()
+        assert owner.busy and owner._busy.is_set()
+        release.set()
+        owner._thread.join(2)
+        assert not owner._thread.is_alive()
+        assert not owner.busy
+        assert not effects
+    finally:
+        release.set()
+        owner.close()
+        owner._thread.join(2)
+
+
+def test_queued_close_retains_real_request_as_busy_until_retired():
+    owner = StartPausedArchiveWorkOwner()
+    effects = []
+    try:
+        assert owner.submit("controlled-queued", lambda _: effects.append("write"))
+        assert owner.busy
+        owner.close()
+        assert owner.busy  # a real queued request is not the None control marker
+        request = owner._requests.get_nowait()
+        assert request is not None and request[2].is_set()
+        assert not owner.busy
+        assert not effects
+    finally:
+        owner.worker_release.set()
+        owner._thread.join(2)
+        assert not owner._thread.is_alive()
+
+
+def test_closed_unknown_queue_entry_remains_uncertain_busy():
+    owner = StartPausedArchiveWorkOwner()
+    try:
+        owner._requests.put_nowait(object())
+        owner.close()
+        assert owner.busy
+    finally:
+        owner.worker_release.set()
+        owner._thread.join(2)
+        assert not owner._thread.is_alive()
