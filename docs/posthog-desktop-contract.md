@@ -127,9 +127,22 @@ fields; GPC/DNT cases disable it. No synthetic production POST was performed.
 The exporter timestamps each event at closed UTC-day00:00:00Z and adds
 schema_version1, measurement_mode daily_aggregate, scope/environment production
 and is_testfalse. Oct16 cells first qualify for Oct17 04:17UTC export; no provider
-ingestion receipt is claimed. Preview remains held after automatic approval
-review rejected missing prerequisite migrations0027–0029 as outside the narrow
-baseline scope/schema-state risk. Existing order14 registry drift is preserved;
-explicit preview approval is pending. Exact runtime8159164 is privately signed,
+ingestion receipt is claimed. Preview was initially held after automatic approval
+review rejected missing prerequisites. Subsequent explicit approval covered exact
+0027–0030 plus ledger records; Worker49fd6e70 is deployed with0.2.6 enabled and
+production exports disabled. Existing order14 registry drift is preserved.
+Exact runtime8159164 is privately signed,
 notarized/stapled, source-bound, with224 frozen-module and16 packaged-QML tests;
 native UI, platform and public-release gates remain separate.
+
+Bounded8159164 Mac acceptance subsequently passed two corrected native launches:
+one control, both choices saved together, cold Off/settings/UUID persistence and
+normal exits. Independent preview counters observed app_started0→1→2; a separate
+five-POST HTTP contract probe then produced3/1/1/1/1 totals. Those extra requests
+are not native download/conversion coverage. Explicit user approval also cleared
+the previously rejected fictional-ID handoff. Scoped preview readback at
+2026-10-16T04:20:04Z returned12 unique optional events(1app_opened,11feature_used),
+one client and one first-launch acknowledgment. No event occurred or was received
+at/after the durable Off cutoff03:28:27.546067Z or cold birth03:29:18.262601Z
+through that snapshot. This is accepted-row absence for the exact fixture/window,
+not proof of zero HTTP attempts, provider/production delivery or every producer.
