@@ -94,7 +94,15 @@ while no cached/default mode substitutes for fresh baseline eligibility.
 POST /api/telemetry/baseline contains exactly schema_version, platform,
 app_version, metric, count(1..100). No credentials, installation/browser/session
 IDs, individual event timestamp, source, media data, failure content, operation
-ID or extra dimensions. It is not mirrored to PostHog. Counts are bounded in
+ID or extra dimensions. Individual client reports are not mirrored to PostHog.
+The server owner is separately implementing scheduled closed UTC-day aggregate
+exports to PostHog: vf_baseline_daily, fixed distinct_id vf_baseline_aggregate
+(a dataset label, never a user), UUIDv5 per day/dimension cell, count for SUM,
+and closed surface/metric/route/platform/app_version/status_class/duration_bucket.
+No country, source, individual IDs/IP/client timing/raw rows; profiles/GeoIP off,
+no aliases/replay. Preview never exports. That exporter remains pending its own
+deployment receipt; client transport stays first-party-only. D1 keeps30UTCdays;
+actual provider event retention is unverified, not a30day deletion guarantee. Counts are bounded in
 memory, sent once, never persisted or automatically retried after an ambiguous
 result; loss/repeated process launches/producer callbacks prevent unique-user,
 unique-install, complete-run or exactly-once claims. app_started means a process
