@@ -36,6 +36,10 @@ from yt_downloader.updates import windows_update_script
         "repair_download_failure",
         "data_changed",
         "qa_relaunch_success",
+        "installer_version_padded",
+        "installed_version_padded",
+        "installer_wrong_version_padded",
+        "installed_wrong_version_padded",
     ],
 )
 def test_windows_helper_runtime(tmp_path, outcome):
@@ -98,6 +102,23 @@ function Start-Process {
         .replace("INSTALL_EXIT", "5" if outcome == "installer_failure" else "0")
         .replace("APP_EXIT", "$true" if outcome == "relaunch_failure" else "$false")
     )
+    if outcome in {"installer_version_padded", "installer_wrong_version_padded"}:
+        resource_version = (
+            "1.2.30" if outcome == "installer_wrong_version_padded" else "1.2.3"
+        )
+        prefix = prefix.replace(
+            "else {'1.2.3'}",
+            "else {'"
+            + resource_version
+            + "                                             '}",
+        )
+    if outcome in {"installed_version_padded", "installed_wrong_version_padded"}:
+        resource_version = (
+            "1.2.30" if outcome == "installed_wrong_version_padded" else "1.2.3"
+        )
+        prefix = prefix.replace(
+            "ProductVersion='1.2.3'", "ProductVersion='" + resource_version + "   '"
+        )
     prefix = prefix.replace(
         " if ($FilePath -like '*Setup*') {",
         " if ($FilePath -like '*Setup*') { Add-Content -LiteralPath '"
@@ -207,6 +228,8 @@ function Start-Process {
         "repair_success",
         "repair_changed_success",
         "qa_relaunch_success",
+        "installer_version_padded",
+        "installed_version_padded",
     }
     assert (result.returncode == 0) == success, (result.stderr, evidence)
     assert evidence["status"] == (
@@ -255,6 +278,16 @@ function Start-Process {
     if not success:
         assert evidence["error"]
         assert "pid" not in evidence
+    if outcome == "installer_wrong_version_padded":
+        assert evidence["error"] == "Staged installer version mismatch."
+        assert evidence["stage"] == "verifying"
+        assert not launches.exists()
+    if outcome == "installed_wrong_version_padded":
+        assert evidence["stage"] == "verifying_install"
+        assert "Installed version does not match" in evidence["error"]
+        assert len(launches.read_text(encoding="utf-8-sig").splitlines()) == 1
+    if outcome in {"installer_version_padded", "installed_version_padded"}:
+        assert evidence["installed_version"] == "1.2.3"
 
 
 def test_windows_qa_relaunch_rotates_only_opted_in_identity(tmp_path):

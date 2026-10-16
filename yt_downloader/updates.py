@@ -935,7 +935,9 @@ def windows_update_script(
             $result.data_backup = $backup
             $stage = 'verifying'
             if ($expectedDigest -ne '' -and (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedDigest) {{ throw 'Staged installer changed.' }}
-            $installerVersion = (Get-Item -LiteralPath $installer).VersionInfo.ProductVersion
+            # Inno's VERSIONINFO string is space-padded; compare its exact value
+            # after removing resource padding, never a prefix or numeric range.
+            $installerVersion = ([string]((Get-Item -LiteralPath $installer).VersionInfo.ProductVersion)).Trim()
             if ($installerVersion -ne $expectedVersion) {{ throw 'Staged installer version mismatch.' }}
             $signature = Get-AuthenticodeSignature -LiteralPath $installer
             if ($signature.Status -ne 'Valid' -or !$signature.TimeStamperCertificate -or !$signature.SignerCertificate.Subject.Contains('CN="Kryden Ventures, LLC"') -or !$signature.SignerCertificate.Subject.Contains('O="Kryden Ventures, LLC"')) {{ throw 'Installer signature verification failed. Download a fresh installer from the official release.' }}
@@ -949,7 +951,7 @@ def windows_update_script(
             if ($setup.ExitCode -ne 0) {{ throw ('Installation did not complete (exit code ' + $setup.ExitCode + '). Run the downloaded installer manually; see the installation log.') }}
             $stage = 'verifying_install'
             if (!(Test-Path -LiteralPath $executable -PathType Leaf)) {{ throw 'Installed application is missing. Run the downloaded installer manually.' }}
-            $installedVersion = (Get-Item -LiteralPath $executable).VersionInfo.ProductVersion
+            $installedVersion = ([string]((Get-Item -LiteralPath $executable).VersionInfo.ProductVersion)).Trim()
             if ($installedVersion -ne $expectedVersion) {{ throw ('Installed version does not match the update: ' + $installedVersion + '. Run the installer manually.') }}
             $stage = 'checking_data'
             Confirm-VODForgeData $dataRoot $manifest
