@@ -599,6 +599,7 @@ def test_repair_verified_download_returns_bound_digest(tmp_path):
     import json
 
     from yt_downloader.platforms.windows.update_recovery import RECOVERY_FUNCTIONS
+    from yt_downloader.updates import WINDOWS_POWERSHELL_MODULE_PATH
 
     payload = b"fresh verified official repair bytes"
     digest = hashlib.sha256(payload).hexdigest()
@@ -611,7 +612,8 @@ def test_repair_verified_download_returns_bound_digest(tmp_path):
     )
     script = tmp_path / "repair-stream.ps1"
     script.write_text(
-        f"""
+        WINDOWS_POWERSHELL_MODULE_PATH
+        + f"""
 $ErrorActionPreference = 'Stop'
 function Invoke-RestMethod {{ return @{{tag_name='v1.2.4';draft=$false;prerelease=$false;assets=@(@{{name='VODForge-Windows-Setup-v1.2.4.exe';size={len(payload)}}})}} }}
 function Invoke-WebRequest {{ return @{{Content='{digest}  VODForge-Windows-Setup-v1.2.4.exe'}} }}
@@ -643,6 +645,7 @@ function New-VODForgeFixtureRequest {{
         text=True,
         check=False,
         timeout=30,
+        env={**os.environ, "PSModulePath": str(tmp_path / "foreign-modules")},
         **({"creationflags": 0x08000000} if sys.platform == "win32" else {}),
     )
     assert result.returncode == 0, result.stderr
