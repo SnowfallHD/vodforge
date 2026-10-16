@@ -186,12 +186,13 @@ def test_helpers_close_mode_preserves_signatures_and_never_reopens(tmp_path):
         and "stapler validate" in script
         and "spctl --assess" in script
     )
-    assert (
-        subprocess.run(
-            ["/bin/bash", "-n", str(script_path)], capture_output=True, check=False
-        ).returncode
-        == 0
-    )
+    if sys.platform != "win32":
+        assert (
+            subprocess.run(
+                ["/bin/bash", "-n", str(script_path)], capture_output=True, check=False
+            ).returncode
+            == 0
+        )
     windows = updates.windows_update_script(
         tmp_path / "VODForge-Windows-Setup-v1.2.3.exe",
         tmp_path / "VODForge.exe",
