@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import plistlib
 import uuid
 from pathlib import Path
 from typing import Any
@@ -26,6 +28,26 @@ def _release(version: str) -> ReleaseInfo:
     )
 
 
+def _staged_mac_plan(tmp_path: Path, version: str) -> MacUpdatePlan:
+    staging = tmp_path / "staging"
+    source = staging / "VODForge.app"
+    (source / "Contents/MacOS").mkdir(parents=True)
+    (source / "Contents/MacOS/VODForge").write_bytes(
+        b"verified staged fixture executable"
+    )
+    (source / "Contents/Info.plist").write_bytes(
+        plistlib.dumps(
+            {
+                "CFBundleIdentifier": "com.snowfallhd.vodforge",
+                "CFBundleShortVersionString": version,
+            }
+        )
+    )
+    target = tmp_path / "installed/VODForge.app"
+    target.mkdir(parents=True)
+    return MacUpdatePlan(source, target, staging)
+
+
 def test_new_release_without_platform_asset_offers_manual_page(
     monkeypatch: Any,
 ) -> None:
@@ -44,14 +66,29 @@ def test_verified_mac_update_handoff_waits_for_idle_work(
     session = qt_updates.QtUpdateSession("0.2.2")
     release = _release("0.2.3")
     archive = tmp_path / "verified.zip"
-    target = tmp_path / "VODForge.app"
-    plan = MacUpdatePlan(archive, target, tmp_path / "staging")
+    archive.write_bytes(b"verified archive fixture")
+    plan = _staged_mac_plan(tmp_path, release.version)
+    target = plan.target_app
     calls: list[tuple[Any, ...]] = []
     monkeypatch.setattr(qt_updates, "is_macos", lambda: True)
     monkeypatch.setattr(qt_updates, "running_macos_app", lambda: target)
     monkeypatch.setattr(qt_updates, "download_verified_update", lambda *_args: archive)
     monkeypatch.setattr(qt_updates, "cleanup_stale_macos_updates", lambda *_args: None)
-    monkeypatch.setattr(qt_updates, "prepare_macos_update", lambda *_args: plan)
+
+    def prepare(
+        downloaded: Path, destination: Path, *, expected_version: str
+    ) -> MacUpdatePlan:
+        assert downloaded == archive and destination == target
+        assert expected_version == release.version
+        assert (
+            plistlib.loads((plan.source_app / "Contents/Info.plist").read_bytes())[
+                "CFBundleShortVersionString"
+            ]
+            == expected_version
+        )
+        return plan
+
+    monkeypatch.setattr(qt_updates, "prepare_macos_update", prepare)
     monkeypatch.setattr(
         qt_updates,
         "launch_macos_update",
@@ -67,6 +104,11 @@ def test_verified_mac_update_handoff_waits_for_idle_work(
             (plan,),
             {
                 "repair": False,
+                "relaunch_after_install": True,
+                "expected_digest": hashlib.sha256(
+                    (plan.source_app / "Contents/MacOS/VODForge").read_bytes()
+                ).hexdigest(),
+                "expected_version": release.version,
                 "telemetry_permitted": False,
                 "telemetry_token": uuid.UUID(session._attempt).hex,
             },
@@ -442,13 +484,37 @@ def test_single_click_failure_clears_intent_but_repair_keeps_verified_latest_pat
         lambda: fetched.append(True) or _release("0.2.3"),
     )
     archive = tmp_path / "archive"
-    plan = MacUpdatePlan(archive, tmp_path / "target", tmp_path / "stage")
+    archive.write_bytes(b"verified repair archive fixture")
+    plan = _staged_mac_plan(tmp_path, "0.2.3")
     monkeypatch.setattr(qt_updates, "download_verified_update", lambda *_: archive)
     monkeypatch.setattr(qt_updates, "is_macos", lambda: True)
     monkeypatch.setattr(qt_updates, "running_macos_app", lambda: plan.target_app)
     monkeypatch.setattr(qt_updates, "cleanup_stale_macos_updates", lambda *_: None)
-    monkeypatch.setattr(qt_updates, "prepare_macos_update", lambda *_: plan)
+    prepared_versions = []
+
+    def prepare(
+        downloaded: Path, destination: Path, *, expected_version: str
+    ) -> MacUpdatePlan:
+        assert downloaded == archive and destination == plan.target_app
+        assert expected_version == "0.2.3"
+        assert (
+            plistlib.loads((plan.source_app / "Contents/Info.plist").read_bytes())[
+                "CFBundleShortVersionString"
+            ]
+            == expected_version
+        )
+        prepared_versions.append(expected_version)
+        return plan
+
+    monkeypatch.setattr(qt_updates, "prepare_macos_update", prepare)
     assert session.download(repair=True, install_when_ready=True)
     session._download_worker(None)
     assert session.poll() and session.ready == plan and session.pending_install
     assert fetched == [True] and session.repair
+    assert prepared_versions == ["0.2.3"]
+    assert (
+        session._ready_digest
+        == hashlib.sha256(
+            (plan.source_app / "Contents/MacOS/VODForge").read_bytes()
+        ).hexdigest()
+    )
