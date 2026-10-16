@@ -178,3 +178,43 @@ def test_closed_unknown_queue_entry_remains_uncertain_busy():
         owner.worker_release.set()
         owner._thread.join(2)
         assert not owner._thread.is_alive()
+
+
+def test_close_after_consumer_claim_cancels_before_filesystem_work(monkeypatch):
+    owner = StartPausedArchiveWorkOwner()
+    claimed, release_claim = threading.Event(), threading.Event()
+    effects = []
+    requests = []
+    original_get = owner._requests.get
+
+    def get_then_pause(*args, **kwargs):
+        request = original_get(*args, **kwargs)
+        if request is not None:
+            requests.append(request)
+            claimed.set()
+            assert release_claim.wait(5)
+        return request
+
+    monkeypatch.setattr(owner._requests, "get", get_then_pause)
+    try:
+        assert owner.submit("claimed-before-busy", lambda _: effects.append("write"))
+        owner.worker_release.set()
+        assert claimed.wait(2)
+        assert owner._requests.empty() and not owner._busy.is_set()
+        assert owner.busy  # the claimed request still has its current owner
+        owner.close()
+        assert requests[0][2].is_set()  # real close cancels the claimed request
+        assert owner._current is None
+        assert not owner.busy  # only the shutdown marker is queued now
+        assert not effects
+        release_claim.set()
+        owner._thread.join(2)
+        assert not owner._thread.is_alive()
+        assert not effects  # worker checks cancellation before invoking work
+        assert not owner.busy and owner.poll() is None
+    finally:
+        owner.worker_release.set()
+        release_claim.set()
+        owner.close()
+        owner._thread.join(2)
+        assert not owner._thread.is_alive()
