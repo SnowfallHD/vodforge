@@ -32,6 +32,8 @@ class _Telemetry:
         self.installation = kwargs["installation_state_path"]
         self.enabled = kwargs["enabled"]
         self.opens = 0
+        self.baseline_attempts: list[str] = []
+        self.baseline_permitted = kwargs["baseline_permitted"]
         self.first_run_mirrors: list[tuple[str, object]] = []
         self.instances.append(self)
 
@@ -43,6 +45,10 @@ class _Telemetry:
             return False
         self.opens += 1
         return True
+
+    def record_baseline(self, metric: str) -> bool:
+        self.baseline_attempts.append(metric)
+        return bool(self.baseline_permitted())
 
     def record_operation(self, *_args: Any, **_kwargs: Any) -> None:
         pass
@@ -106,6 +112,7 @@ def test_qt_permission_waits_for_choice_and_revokes_without_replay(
     assert session.settled and not session.allowed
     assert not session.update_receipt_decided
     assert _Telemetry.instances[0].opens == 0
+    assert _Telemetry.instances[0].baseline_attempts == ["app_started"]
     session.choose(True)
     assert session.allowed and _Telemetry.instances[0].opens == 1
     assert session.update_receipt_decided
@@ -113,6 +120,7 @@ def test_qt_permission_waits_for_choice_and_revokes_without_replay(
     assert not session.allowed and not _Telemetry.instances[0].enabled
     assert session.update_receipt_decided
     assert not session.poll() and _Telemetry.instances[0].opens == 1
+    assert _Telemetry.instances[0].baseline_attempts == ["app_started"]
     assert AnalyticsConsentOwner(tmp_path).snapshot()["choice"] == "denied"
 
 
@@ -148,7 +156,16 @@ def test_qt_first_launch_uses_existing_attribution_owner_once_after_consent(
             calls.append("needs")
             return True
 
-        def deliver_first_launch(self, _state: object, *, app_version: str) -> Any:
+        def deliver_first_launch(
+            self,
+            _state: object,
+            *,
+            app_version: str,
+            cancelled: Any,
+            browser_handoff: bool,
+        ) -> Any:
+            assert not cancelled()
+            assert browser_handoff is False
             calls.append(app_version)
             return SimpleNamespace(first_launch_confirmed=True)
 
@@ -157,7 +174,11 @@ def test_qt_first_launch_uses_existing_attribution_owner_once_after_consent(
         analytics,
         "load_or_create_installation_state",
         lambda _path: SimpleNamespace(
-            first_launch_confirmed=False, install_id="fixture-installation"
+            first_launch_confirmed=False,
+            install_id="fixture-installation",
+            attribution_claim_confirmed=False,
+            attribution_claim_opened=False,
+            attribution_claim_token="",
         ),
     )
     session = analytics.QtAnalyticsSession(tmp_path, "0.2.3", _Recovery())
@@ -225,11 +246,15 @@ def test_qt_permission_write_failure_keeps_delivery_disabled(
     monkeypatch.setattr(analytics, "telemetry_collection_allowed", lambda: True)
     session = analytics.QtAnalyticsSession(tmp_path, "0.2.3", _Recovery())
 
-    def refuse(_self: AnalyticsConsentOwner, _enabled: bool) -> None:
+    writes: list[bool] = []
+
+    def refuse(_self: AnalyticsConsentOwner, enabled: bool) -> None:
+        writes.append(enabled)
         raise OSError("private settings unavailable")
 
-    monkeypatch.setattr(AnalyticsConsentOwner, "choose", refuse)
+    monkeypatch.setattr(AnalyticsConsentOwner, "choose_data_sharing", refuse)
     assert not session.choose(True)
+    assert writes == [True]
     assert not session.allowed
     assert not _Telemetry.instances[0].enabled
     assert _Telemetry.instances[0].opens == 0
