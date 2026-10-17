@@ -3212,3 +3212,113 @@ No media/provider/production request, new credentials/permissions, native input,
 app restart/build/sign/deploy/publish or private-artifact edit. Existing signed
 DMG/app remain unchanged and do not include this new source-only copy fix. Ten
 reported no-stream incidents remain unproven regression; no selector changes.
+
+
+2026-10-17 LATEST b031 THREE-MACHINE OPEN — IN PROGRESS. Cooper explicitly
+requested latest app open on main Mac, Windows and Julie Intel Air, with prior
+build cleanup. Exact source b031f6d includes cookie guidance copy fix; prior94
+source checks retained rather than repeated. Fresh universal build passes439
+native closure,122 actual embedded project modules/47 QML source binding; only
+project module download_error_presentation differs from accepted eed, all47QML
+identical. Actual frozen-module cookie cases8PASS,50projectPYZ modules loaded,
+source fallback refused/network attempts0. Before final handoff builder found90
+test-created yt_dlp pycache files in pre-sign output; original attempt preserved,
+clean copied successor/sign/notary pending, no final artifact/native acceptance
+claim. Windows exact874tracked files exported/verified, existing private pinned
+toolchain packaging independent; no source/dependency install or NSIS inferred.
+
+Cleanup exact33 main-side superseded APP/DMG/ZIP recoverable-rename proposal
+was AUTO-REVIEW REJECTED before execution: review recognized older23-app approval
+and possible fixture dependencies despite current root delegation/builder no-use
+clearance. ZERO moves/deletions, no retry/bypass; exact proposal/rejection under
+build/universal2-implementation-20261017/cleanup-20261017. Explicit user scope
+clarification requested. Julie exact10 known binary proposal read-only/HOLD,
+Applications eed rollback/direct Documents accepted DMG/source/profiles/receipts
+excluded. Latest-open work continues independently, no public release.
+
+2026-10-17 user-requested latest three-machine Windows private review: exact b031f6d
+tracked-source874files/SHAverified via established strictGenesisSSH + existing
+Python/vendor toolchain. No pip/registry/installer/security/newaccess. Preserved
+stdin transfer timeout167936Bpartial; exactorphan59864command/sessionverified and
+stopped, no ordinaryapp. SCP separate completearchive39,021,360B verified. Old
+privatewrapper nullLASTEXITCODE provenance failure beforePyInstaller and later
+.NETnullExitCode terminalwrapper failure preserved; actualpackagebuiltONCE,
+independentPython-wait smoke62912exit0+marker. Full122PYZ/47QMLbind+4212-file seal
+PASS; exact new E:\Applications\VODForge-private-b031f6d copyfullhashPASS.
+Exe0161d0a0b9fbe7420b166dd16d7227d897641101e3275acec1221a940da27e81,
+NotSigned/privateonly. ExistinglimitedInteractive route freshunlocked/noappguard
++lastinput32878s thenONEordinaryprofilelaunch65324 at17:14:56UTC. Actualready/
+foreground1100x740/croppednativePNG personallyinspectedForge+priorcompletedRunDeck,
+leftopenforCooper17:15:03UTC. All9profileJSONhashesunchanged inclsettings/history/
+installation; processonlytelemetrydisabled/no savedconsentchange/no mediaactions.
+Oldordinary0.2.3EApplicationsrollbackunchanged. Three exactoldexpandedtesttrees
+~2.73GB inventoriedproposalONLY, no moves/deletes pendingrootreview. Evidence
+build/latest-three-machines-20261017/windows/{RESULT.json,REPORT.md,latest-open.png,
+actual-open.json,frozen-source-verification.json,cleanup-proposal.json}. No native
+inputlease/buildtask remains; app intentionalhuman-owned. No publicrelease.
+
+2026-10-17 latest three-machine private Mac b031f6d packaging: canonical universal2
+build completed once from exact detached b031f6d7e1f1d5851de658940e6ddfd3f33049d5,
+reusing retained runtime/dependencies, no source/dependency cleanup. Actual122PYZ/
+47QML exact-source binding and439native closure PASS; only compiled error-presenter
+module differs from accepted eed, allQML identical. Existing94source proof retained.
+Original pre-sign frozen fixture wrote90yt_dlp pycache files; first Accepted
+6b5d2851 attempt preserved explicitly NOT HANDOFF. Authorized distinct clean copy
+removed only exact90cachefiles/12emptydirs, allother6341entries identical, then
+existingidentity sequential sign/notary Accepted a4ae1c4f-bb33-4ea1-8922-c3949f8b0f19.
+Botharch emptyentitlements/strict/staple/Gatekeeper PASS. Final signed actualfrozen
+cookieguidance8cases PASS (direct/cause/context/provider missingDB + generic
+boundaries),50actualPYZmodules/no sourcefallback/networkattempts0/bytecodesuppressed.
+Signed ARM8.12s and Rosetta53.74s runtime-smoke exit0/OK, freshisolated diagnostics.
+Complete6341-entrytree unchangedaftertests/zero sidecarcaches; manifestSHA
+62c0673cf3cea16e1cedee3d052722e4262a6a0797a1e618030617da3231bf2b.
+Evidence build/universal2-implementation-20261017/PRIVATE-b031f6d-CLEAN-REPORT.md
+and SIGNED-NATIVE-b031f6d-CLEAN-HANDOFF.json. PhysicalIntel/visibleGUI opening
+separateowner work; noGUI/profile replacement/installer/publicrelease/provider
+trial. Eed rollback and all priorattempts/receipts preserved.
+
+
+2026-10-17 b031 CLEAN MAC PRIVATE ARTIFACT SEALED. Corrected copy excluded ONLY
+90 inventoried test-created yt_dlp caches/12 emptydirs; remaining6,341 entries
+matched original before resigning. Original accepted cache-containing attempt
+retained ATTEMPT-NOT-HANDOFF. Clean Apple a4ae1c4f-bb33-4ea1-8922-c3949f8b0f19
+Accepted; strictallarch/staple/Gatekeeper/emptyentitlements PASS. Actual signed
+frozen guidance8PASS/zero network;122PYZ+47QMLbind/439nativeclosurePASS; ARM8.12s
+and Rosetta53.74s runtime smokes exit0 (not native startup/paint timing). All6,341
+entries unchanged after tests, zero caches. Executable10f08e381a817dd2ff6e088afd63526fec5310efc4b43412f9d5012ddb6eb397.
+Final private ZIP528450926bytes SHA b985057327bbe7457785891295684be898d15c7946ec666961e81a73efa001eb.
+SIGNED-NATIVE-b031f6d-CLEAN-HANDOFF.json under universal2base binds all evidence.
+Headless slot released; main/Julie native opens separately handed off17:25UTC,
+not yet accepted by this checkpoint. No installer/public publication.
+
+
+2026-10-17 MAIN latest b031 actual native OPEN PASS17:28:24UTC. ONEordinary
+LaunchServicesopen exactcleanprivateapp, PID98256/nativeARM CPUtype16777228,
+foreground1100x740 window/no modal; exactexe10f08e38... beforeafter. Nativeowner
+ANDroot personally inspected latest-open-b031f6d-20261017/main/latest-open.png
+(actualForge+retained28runs), no media/fullscreen/consentinput; appleftopenCooper.
+Applications0.2.4exe/Info/rootlstat EXACTunchanged; settings+downloadhistorybyte/
+metadatahashunchanged. installation.json changed duringordinary startup, hash
+recorded/no contentsread/no consentclick; do NOTclaim allprofilefilesunchanged.
+Krydenuntouched; inputleaseexplicitlyreleased, noqueuedactions. Mainresult.json
+bindsprocess/window/screenshot/preservation.
+
+Julie initialstricttransferfailedOperationtimedout/Brokenpipe, no completehash/
+extraction/launch; subsequent17:28:47 and17:31:17connectchecks exit255 before
+remotecommand. Cooper explicitlyrequestedretry17:31:08('it is online'); fresh
+17:32:11same establishedJulieIP connecttimeout retained cooper-online-recheck.
+No poweredoff/authentication/permission inference, no alternateAir/security or
+hostkeychange. Main+Windowsopenindependent. ExactJulienodemetadatareadpending;
+cleanupstillZERO moves/deletions/pendingexplicit33clarification.
+
+
+2026-10-17 latest-three-machine task bounded final: mainMac+Windowsexactb031
+actualOPEN/screenshot/rootinspectionPASS,leftopenhumanowned; noGUIleasepending.
+Juliecurrentexactnode17:32:46TailscaleOnline=false/LastSeen17:30:00.1Z, sameIP
+100.84.96.112+DNS/trustedaliases; nootherAir/securitychange. Newlyuserauthorized
+17:32:11retry timedoutbeforeauth/remotecommand. CleanMacartifactready, physical
+Julieopeningblocked; RosettaPASSdoesnotreplaceit. Exact33cleanupAUTO-REVIEWheld,
+ZERO moves/deletions, explicitclarificationpending; Julie10/Windows3proposals
+read-only. Consolidated build/latest-open-b031f6d-20261017/RESULT.json+REPORT.md
+bindactualmachinepaths/PIDs/screenshots/hashes/preservation/remainingblockers.
+No publicrelease/publish/installer/registry/providertrial implied.
