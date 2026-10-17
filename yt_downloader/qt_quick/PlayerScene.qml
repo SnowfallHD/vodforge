@@ -127,8 +127,10 @@ Item {
         const owner = displayedOwner
         Qt.callLater(function() {
             if (scene.presentationEpoch === epoch && scene.displayedOwner === owner &&
-                    scene.presentationMode === "embedded" && presentationWindow.visible)
+                    scene.presentationMode === "embedded") {
                 presentationWindow.hide()
+                scene.appBridge.syncPresentationWindow(presentationWindow, scene)
+            }
         })
     }
     function scheduleRetainedFrame() {
@@ -193,11 +195,14 @@ Item {
         playerOptions.close()
         captionsMenu.close()
         presentationCaptionMenu.close()
+        // Register native completion before requesting an asynchronous Space exit.
+        appBridge.syncPresentationWindow(presentationWindow, scene)
         changingPresentationWindow = true
         if (presentationMode === "embedded") {
             if (presentationWindow.visibility === Window.FullScreen)
                 presentationWindow.showNormal()
             presentationWindow.hide()
+            scheduleEmbeddedRetirement()
         } else if (presentationMode === "fullscreen") presentationWindow.showFullScreen()
         else {
             presentationWindow.naturalSizePending = !videoFill

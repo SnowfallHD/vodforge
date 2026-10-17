@@ -83,3 +83,80 @@ def test_backdrop_requires_public_content_parent(monkeypatch, parent_kind):
         assert state == {"opaque": True, "background": "original"}
         assert properties["backgroundOpacity"] == 1.0
         assert not hasattr(window, "_native_frosted_backdrop")
+
+
+@pytest.mark.parametrize(
+    "qt_visible,fullscreen,allowed,expected",
+    [
+        (False, False, True, 1),
+        (False, True, True, 0),
+        (True, False, True, 0),
+        (False, False, False, 0),
+    ],
+)
+def test_native_exit_uses_exact_window_and_current_retirement_permission(
+    monkeypatch, qt_visible, fullscreen, allowed, expected
+):
+    from PySide6.QtGui import QGuiApplication
+
+    from yt_downloader.qt_quick import mac_windowing
+
+    monkeypatch.setattr(mac_windowing.sys, "platform", "darwin")
+    monkeypatch.setattr(QGuiApplication, "platformName", lambda: "cocoa")
+    calls, observers = [], []
+    native = SimpleNamespace(
+        isVisible=lambda: True,
+        styleMask=lambda: 8 if fullscreen else 0,
+        orderOut_=lambda sender: calls.append(sender),
+    )
+    center = SimpleNamespace(
+        addObserverForName_object_queue_usingBlock_=lambda name, obj, queue, block: (
+            observers.append((name, obj, queue, block)) or "token"
+        ),
+        removeObserver_=lambda token: calls.append(token),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "objc",
+        SimpleNamespace(objc_object=lambda **_: SimpleNamespace(window=lambda: native)),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "AppKit",
+        SimpleNamespace(
+            NSWindowDidExitFullScreenNotification="exit", NSWindowStyleMaskFullScreen=8
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "Foundation",
+        SimpleNamespace(
+            NSNotificationCenter=SimpleNamespace(defaultCenter=lambda: center),
+            NSOperationQueue=SimpleNamespace(mainQueue=lambda: "main"),
+        ),
+    )
+    window = SimpleNamespace(winId=lambda: 5, isVisible=lambda: qt_visible)
+    permission = {"allowed": allowed}
+    hook = mac_windowing.watch_presentation_retirement(
+        window, lambda: permission["allowed"]
+    )
+    assert hook is not None
+    assert observers[0][:3] == ("exit", native, "main")
+    observers[0][3](None)
+    assert calls == [None] * expected
+    hook.close()
+    hook.close()
+    observers[0][3](None)  # a callback already queued before removal must be inert
+    assert calls == [None] * expected + ["token"]
+
+
+def test_offscreen_retirement_never_resolves_a_native_window(monkeypatch):
+    from PySide6.QtGui import QGuiApplication
+
+    from yt_downloader.qt_quick import mac_windowing
+
+    monkeypatch.setattr(QGuiApplication, "platformName", lambda: "offscreen")
+    window = SimpleNamespace(
+        winId=lambda: pytest.fail("offscreen must not access AppKit")
+    )
+    assert mac_windowing.watch_presentation_retirement(window, lambda: True) is None

@@ -166,3 +166,71 @@ def test_mini_latest_frame_is_retained_for_return_not_pre_mini_frame(player_scen
     window.setProperty("miniPlayerActive", False)
     flush(app)
     assert inline.videoFrame().toImage().pixelColor(80, 45) == QColor("red")
+
+
+@pytest.mark.parametrize("next_mode", ["embedded", "floating", "fullscreen"])
+def test_native_exit_reconciles_hidden_qt_window_without_hiding_latest_intent(
+    player_scene, monkeypatch, next_mode
+):
+    from yt_downloader.qt_quick import main as qt_main
+
+    app, window, scene, floating = player_scene
+    bridge = scene.property("appBridge")
+    hooks = []
+
+    class NativeRetirement:
+        def __init__(self, target, allowed):
+            assert target is floating
+            self.allowed = allowed
+            self.native_visible = False
+            self.closed = False
+            hooks.append(self)
+
+        def retire(self):
+            if not self.closed and self.allowed():
+                self.native_visible = False
+
+        def close(self):
+            self.closed = True
+
+    monkeypatch.setattr(qt_main, "watch_presentation_retirement", NativeRetirement)
+    bridge._playback_record = saved(
+        bridge._runtime.history_path.parent, "Terminal", "MP4"
+    )
+    bridge.playerSceneChanged.emit()
+    scene.setProperty("presentationMode", "fullscreen")
+    flush(app)
+    assert len(hooks) == 1
+    scene.setProperty("presentationMode", "embedded")
+    flush(app)
+    assert not floating.isVisible()
+    # AppKit completes exit after Qt's hide; there is NO Qt visibility signal.
+    hooks[0].native_visible = True
+    if next_mode != "embedded":
+        scene.setProperty("presentationMode", next_mode)
+        flush(app)
+    hooks[0].retire()
+    assert hooks[0].native_visible == (next_mode != "embedded")
+    assert scene.property("presentationMode") == next_mode
+    assert window.property("playerSurfaceBound")
+    bridge.close()
+    assert hooks[0].closed
+    hooks[0].native_visible = True
+    hooks[0].retire()
+    assert hooks[0].native_visible
+
+
+def test_native_retirement_rejects_foreign_windows_and_scene(player_scene, monkeypatch):
+    from yt_downloader.qt_quick import main as qt_main
+
+    _, _, scene, floating = player_scene
+    bridge = scene.property("appBridge")
+    calls = []
+    monkeypatch.setattr(
+        qt_main, "watch_presentation_retirement", lambda *args: calls.append(args)
+    )
+    foreign = QObject()
+    foreign.setObjectName("watchPresentationWindow")
+    bridge.syncPresentationWindow(foreign, scene)
+    bridge.syncPresentationWindow(floating, foreign)
+    assert calls == []

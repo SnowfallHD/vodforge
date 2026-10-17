@@ -4,6 +4,21 @@ Consult [the change and test log](change-and-test-log.md) before assigning or
 repeating qualification work. Retain valid prior passes; record a concrete
 affected change or evidence defect before repeating a check.
 
+## Native completion follows current presentation intent — 2026-10-17
+
+A toolkit-hidden window is not proof that an asynchronous native fullscreen
+transition has retired its on-screen window. Qt-only visibility regressions missed
+this boundary in the signed ARM904 fullscreen/Escape observation. The existing
+macOS window owner now listens for fullscreen exit on the exact presentation
+NSWindow and orders it out only when current intent is embedded, Qt is hidden,
+and native fullscreen has ended. No global window search, private API or timer.
+Bridge close removes the observer; latest floating/fullscreen intent and foreign
+windows remain protected. Headless native-adapter tests independently model Qt
+hidden/native visible, with removal/intent/fullscreen negative controls. They
+qualify the source boundary, not the incident's unobserved native cause or a
+rebuilt package's behavior. See the change log and
+`build/automatic-updates-20261016/04377b6/fullscreen-retirement-fix/`.
+
 ## Attribution authorization precedes identity transmission — 2026-10-16
 
 Browser consume permission cannot authorize an earlier installation-ID/capability

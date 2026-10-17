@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from typing import Any
 
 
@@ -102,3 +103,74 @@ def _install_frosted_backdrop(window: Any, native: Any, view: Any) -> bool:
         except Exception:  # noqa: BLE001 - the opaque Qt artwork remains the fallback
             return False
         return False
+
+
+class _PresentationRetirement:
+    """Retire one native presentation window after asynchronous Space exit."""
+
+    def __init__(self, window: Any, allowed: Callable[[], bool], native: Any) -> None:
+        from AppKit import NSWindowDidExitFullScreenNotification
+        from Foundation import NSNotificationCenter, NSOperationQueue
+
+        self._window = window
+        self._allowed = allowed
+        self._native = native
+        self._closed = False
+        self._center = NSNotificationCenter.defaultCenter()
+        # Keep both the block and observer alive until the bridge closes.
+        self._callback: Any = lambda _notification: self.retire()
+        self._observer = self._center.addObserverForName_object_queue_usingBlock_(
+            NSWindowDidExitFullScreenNotification,
+            native,
+            NSOperationQueue.mainQueue(),
+            self._callback,
+        )
+
+    def retire(self) -> None:
+        from AppKit import NSWindowStyleMaskFullScreen
+
+        try:
+            if (
+                not self._closed
+                and self._allowed()
+                and not self._window.isVisible()
+                and not self._native.styleMask() & NSWindowStyleMaskFullScreen
+                and self._native.isVisible()
+            ):
+                # Qt hide can already be a no-op while Cocoa finishes exit and
+                # remaps its window. Do not close/destroy the reusable player.
+                self._native.orderOut_(None)
+        except RuntimeError:
+            # A queued native notification can outlive its Qt wrapper.
+            return
+
+    def close(self) -> None:
+        if not self._closed:
+            self._closed = True
+            try:
+                self._center.removeObserver_(self._observer)
+            finally:
+                self._observer = None
+                self._callback = None
+
+
+def watch_presentation_retirement(
+    window: Any, allowed: Callable[[], bool]
+) -> _PresentationRetirement | None:
+    """Observe only the supplied Cocoa window, without global window lookup."""
+    if sys.platform != "darwin":
+        return None
+    from PySide6.QtGui import QGuiApplication
+
+    if QGuiApplication.platformName() != "cocoa":
+        return None
+    try:
+        import objc
+
+        view = objc.objc_object(c_void_p=int(window.winId()))
+        native = view.window()
+        if native is not None:
+            return _PresentationRetirement(window, allowed, native)
+    except Exception:  # noqa: BLE001 - Qt hide remains the fallback if AppKit refuses
+        return None
+    return None

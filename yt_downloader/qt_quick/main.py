@@ -208,7 +208,10 @@ from yt_downloader.qt_quick.help_observations import QtHelpObservations
 from yt_downloader.qt_quick.library_files import QtLibraryFiles, relocated_owner_map
 from yt_downloader.qt_quick.library_window_model import register_window_model
 from yt_downloader.qt_quick.local_conversion import LocalConversionRuntime
-from yt_downloader.qt_quick.mac_windowing import integrate_qt_main_window
+from yt_downloader.qt_quick.mac_windowing import (
+    integrate_qt_main_window,
+    watch_presentation_retirement,
+)
 from yt_downloader.qt_quick.metadata_preview import QtMetadataPreview
 from yt_downloader.qt_quick.presentation import QtPresentationProbe
 from yt_downloader.qt_quick.previews import QtPreviewSession
@@ -620,6 +623,7 @@ class Bridge(QObject):
         self._playback_output_type = ""
         self._playback_chapters: list[dict[str, Any]] = []
         self._playback_heatmap: list[dict[str, float]] = []
+        self._presentation_retirement: Any = None
         self._playback_generation = 0
         self._playback_retained_frame = QVideoFrame()
         self._playback_frame_owner = ""
@@ -6456,6 +6460,33 @@ class Bridge(QObject):
         # Re-present one retained decoded frame, without advancing/restarting audio.
         sink.setVideoFrame(self._playback_retained_frame)
 
+    @Slot(QObject, QObject)
+    def syncPresentationWindow(self, presentation: QObject, scene: QObject) -> None:
+        window = self._window
+        if (
+            self._closed
+            or window is None
+            or window.findChild(QObject, "watchPresentationWindow") is not presentation
+            or window.findChild(QObject, "watchPlayerScene") is not scene
+        ):
+            return
+
+        def allowed() -> bool:
+            return bool(
+                not self._closed
+                and self._window is window
+                and window.findChild(QObject, "watchPresentationWindow") is presentation
+                and window.findChild(QObject, "watchPlayerScene") is scene
+                and scene.property("presentationMode") == "embedded"
+            )
+
+        if self._presentation_retirement is None:
+            self._presentation_retirement = watch_presentation_retirement(
+                presentation, allowed
+            )
+        if self._presentation_retirement is not None:
+            self._presentation_retirement.retire()
+
     @Slot(str)
     def recordPresentation(self, action: str) -> None:
         if (
@@ -7316,6 +7347,9 @@ class Bridge(QObject):
             and not self._update_work_pending()
         )
         self._closed = True
+        if self._presentation_retirement is not None:
+            self._presentation_retirement.close()
+            self._presentation_retirement = None
         self._help_observations.close()
         if self._nvenc_probe is not None:
             probe = self._nvenc_probe
