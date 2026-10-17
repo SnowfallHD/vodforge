@@ -45,6 +45,10 @@ def test_installer_window_roundtrips_single_entry_and_complete_icon_view(
         options = store["."]["icvp"]
         assert options["backgroundType"] == 2
         assert options["backgroundImageAlias"]
+        assert all(
+            options["backgroundColor" + channel] < 0.3
+            for channel in ("Red", "Green", "Blue")
+        )
         assert not options["showIconPreview"]
         assert options["scrollPositionX"] == options["scrollPositionY"] == 0
     assert sorted(p.name for p in volume.iterdir() if not p.name.startswith(".")) == [

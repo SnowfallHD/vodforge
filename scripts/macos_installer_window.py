@@ -77,6 +77,21 @@ def background_image(logo: Path, scale: int = 2):
         stretch=False,
     )
     image.alpha_composite(well, (212 * scale, 166 * scale))
+    # Finder supplies the real filename. On the observed macOS 15 icon view it
+    # stays black even with dark background metadata, so give that native label
+    # a readable stone surface rather than baking a duplicate white caption.
+    label_stone = control_surface_image(
+        180,
+        height=42,
+        fill=THEME["muted"],
+        edge=THEME["border"],
+        recessed=True,
+        depth=0.6,
+        radius=12,
+        density=scale,
+        stretch=False,
+    )
+    image.alpha_composite(label_stone, (230 * scale, 309 * scale))
     mark = Image.open(logo).convert("RGBA")
     mark.thumbnail((30 * scale, 30 * scale), Image.Resampling.LANCZOS)
     image.alpha_composite(mark, (30 * scale, 26 * scale))
@@ -96,9 +111,6 @@ def background_image(logo: Path, scale: int = 2):
     text(320, 103, "Install VODForge", 32, THEME["text"])
     text(320, 140, "Double-click the icon below", 16, THEME["muted"])
     text(320, 394, "Apple Silicon: macOS 26+  ·  Intel: macOS 15+", 12, THEME["muted"])
-    text(
-        320, 416, "You’ll choose where to install in the next step.", 12, THEME["muted"]
-    )
     return image.convert("RGB")
 
 
@@ -135,7 +147,7 @@ def write_assets(output: Path, logo: Path):
         (640, 654),
         "Install VODForge",
         font=ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial.ttf", 26),
-        fill="#f4f3f5",
+        fill="#000000",  # Observed Finder filename, still a preview only.
         anchor="mm",
     )
     preview.convert("RGB").save(output / "composition-preview.png")
@@ -171,6 +183,11 @@ def decorate_volume(volume: Path, icon: Path = Path("assets/VODForge.icns")):
         raise ValueError("Missing real VODForge volume icon")
     from ds_store import DSStore
     from mac_alias import Alias
+    from PIL import ImageColor
+
+    from yt_downloader.product_theme import THEME
+
+    red, green, blue = (value / 255 for value in ImageColor.getrgb(THEME["bg"]))
 
     with DSStore.open(str(volume / ".DS_Store"), "w+") as store:
         store["."]["bwsp"] = {
@@ -188,9 +205,9 @@ def decorate_volume(volume: Path, icon: Path = Path("assets/VODForge.icns")):
         store["."]["icvp"] = {
             "viewOptionsVersion": 1,
             "backgroundType": 2,
-            "backgroundColorRed": 1.0,
-            "backgroundColorGreen": 1.0,
-            "backgroundColorBlue": 1.0,
+            "backgroundColorRed": red,
+            "backgroundColorGreen": green,
+            "backgroundColorBlue": blue,
             "backgroundImageAlias": Alias.for_file(str(volume / BACKGROUND)).to_bytes(),
             "iconSize": 120.0,
             "textSize": 13.0,

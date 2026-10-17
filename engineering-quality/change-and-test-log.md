@@ -3066,3 +3066,23 @@ no needrestoreproductsource. InitialdriverparentindexassertfailedBEFOREcompile/
 execution, correctedfixtureonly; no extraactualcontrol. Exactlogs/hashes:
 installer-responsiveness/synchronous-scheduler-control/receipt.json underbase.
 No fullsuite/package/sign/remote/nativeUI, source-native limitsunchanged.
+
+2026-10-17 eed300f clean-sourceuniversalbuildexit0; actual122PYZcompiledmodules+47
+QMLbytebound. Firstdirectscriptdriverstoppedimportbeforecandidatecreation;
+correctmoduleinvocationcompleted, originalfailurelogretained. DeveloperIDempty
+entitlementsboth, Apple0a94e1b2-b1d0-4f3a-8f8e-7701dbdc4c2c Accepted/stapled/
+strictallarch/GatekeeperPASS. NewsealedARM/Rosettachecksongoing; actualsignedboth
+Macnative3screensstillpending. No additionaloldcandidateUIrun.
+
+Installerresponsive-sourcecommitted7a8a142; exactCheckApp/Installandothercore
+functionsbyteunchanged, nativeUIstillunqualified. Priorreceipt testhashpredates
+boundedharnesswait; final-source-binding.json+synccontrolreceiptbindcurrenttest
+e44c926... andproduct8f82c771 unchanged; no oldreceiptbackfill.
+
+ActualJulieFinderV3 PNG3a888788...personallyviewed08:28UTC: PASSnativefilename
+contrast(lightrecessedstone), completecompatibilityfooter, concavestone, branded
+volumeproxyicon, ONErealInstallVODForgeentry/NOApplicationsorTXT. No v3helper
+launch. Priorv1/v2contrastfails retained. Sourcewindow9tests/Ruff/formatPASS.
+PRIVATE-APPEARANCE-v3.json binds573541737bytes image8ee5439a..., unsignedappearance
+only witholdd42payload; notdelivery/finalnativeappacceptance. visual-inspection.json
+ininstaller-native-appearance-v3 recordsactualartifact/pixelhash.
