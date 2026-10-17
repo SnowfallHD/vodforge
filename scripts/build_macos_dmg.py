@@ -9,20 +9,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-MACHO = {
-    bytes.fromhex(x)
-    for x in (
-        "feedface",
-        "cefaedfe",
-        "feedfacf",
-        "cffaedfe",
-        "cafebabe",
-        "bebafeca",
-        "cafebabf",
-        "bfbafeca",
-    )
-}
-ARCHES = {"arm64", "x86_64"}
+from scripts.macos_native_closure import audit_payload
 
 
 def command(args):
@@ -39,26 +26,18 @@ def require_universal_app(app: Path, run=command):
     main = app / "Contents/MacOS/VODForge"
     if main.is_symlink() or not main.is_file():
         raise ValueError("Missing app executable")
-    rows, errors = [], []
-    for path in sorted(app.rglob("*")):
-        if path.is_symlink() or not path.is_file():
-            continue
-        with path.open("rb") as stream:
-            if stream.read(4) not in MACHO:
-                continue
-        slices = set(run(["/usr/bin/lipo", "-archs", str(path)]).split())
-        rows.append({"path": str(path.relative_to(app)), "slices": sorted(slices)})
-        if not ARCHES <= slices:
-            errors.append(str(path.relative_to(app)))
-    if not rows or errors:
+    graph = audit_payload(app, run)
+    if not graph["qualified"]:
         raise ValueError(
-            "Universal2 slices missing: " + ", ".join(errors or ["no Mach-O files"])
+            "Universal2 slices missing or dependency closure invalid: "
+            + repr(graph["errors"])
         )
     run(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(app)])
     run(["/usr/bin/xcrun", "stapler", "validate", str(app)])
     return {
         "bundle_version": info.get("CFBundleShortVersionString"),
-        "native_files": rows,
+        "native_files": graph["native_files"],
+        "dependency_errors": graph["errors"],
     }
 
 

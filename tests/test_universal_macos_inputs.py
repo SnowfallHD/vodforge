@@ -76,6 +76,9 @@ def test_private_recipe_selects_universal_target_and_retains_per_arch_policy(
     )
     monkeypatch.setattr("scripts.build_universal_macos.subprocess.check_output", git)
     monkeypatch.setattr("scripts.build_universal_macos.subprocess.run", pyinstaller)
+    monkeypatch.setattr(
+        "scripts.build_universal_macos.audit_payload", lambda _: {"qualified": True}
+    )
     package(source, tmp_path / "venv/bin/python", tools, output, "0.2.6")
     assert calls[0][calls[0].index("--target-arch") + 1] == "universal2"
     info = plistlib.loads(

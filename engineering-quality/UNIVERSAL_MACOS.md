@@ -7,7 +7,7 @@ Intel15+ until intended-host compatibility is separately qualified.
 ## Implemented owners
 
 - `scripts/build_universal_macos.py`: inspect native input slices and per-slice
-  deployment floors; reject missing inputs/thin natives/dirty source; construct a
+  deployment floors; reject missing universal entries/invalid thin-library graphs/dirty source; construct a
   fresh private PyInstaller `--target-arch universal2` build from a selected
   interpreter/environment and helper directory. No package has yet been built.
 - `scripts/build_macos_dmg.py`: refuse wrong/thin bundles before staging; require
@@ -26,10 +26,12 @@ python -m scripts.build_universal_macos --input PATH --report REPORT.json
 
 The future private build entry is `--build --source CLEAN_SOURCE --python
 UNIVERSAL_VENV/bin/python --tools QUALIFIED_HELPERS --output FRESH_OUTPUT --report
-REPORT.json`. The input check is conservative: currently every inspected native
-file must contain both slices. It does not yet implement a per-architecture
-dependency graph permitting architecture-specific shared libraries. Full bundle
-closure, runtime smoke and physical/native acceptance remain separate gates.
+REPORT.json`. The input check requires universal executables/extensions and checks each
+architecture deployment floor. Architecture-specific dylibs require actual
+matching load edges; external/missing/wrong-architecture providers and unused
+thin libraries fail. The completed app is independently audited for loader,
+executable and declared rpath dependencies before its build receipt is written.
+Runtime smoke and physical/native acceptance remain separate gates.
 
 ## First implementation evidence
 
@@ -49,10 +51,13 @@ native dependency closure. Existing thin-package passes did not cover that class
 
 ## Remaining engineering work
 
-1. Complete the universal environment and native helper closure. Existing helpers
-   are thin; ARM x265 uses ABI217 and Intel ABI216. Do not blindly merge or call
-   those trees a qualified universal closure. Rebuild matching dependency inputs
-   or implement and test an explicit per-architecture dependency layout/graph.
+1. Retain the qualified dependency inputs: official PSF universal Python,
+   hash-verified PyPI wheel pairs and universal Qt/PyObjC wheels.
+   `assemble_universal_helpers.py` combines only thin dependency binaries,
+   preserving the distinct ARM x265 ABI217 / Intel ABI216 and rebasing each edge.
+   Actual helper version/Deno eval/H264 encode-probe-decode pass on ARM and
+   Rosetta; full Qt/PyObjC/Pillow/psutil/curl imports pass both architectures.
+   These are headless current-host checks, not physical Intel/minimum-OS proof.
 2. Assemble a clean-source universal app, audit every loaded dependency per
    architecture, and verify the actual frozen source/resource bindings.
 3. Preserve signing policy. Existing signing script applies Intel's executable

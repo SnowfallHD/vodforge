@@ -34,7 +34,7 @@ def test_dmg_rejects_incomplete_architectures_before_signing_or_staging(app, sli
     if len(slices.split()) == 1:
         with pytest.raises(ValueError, match="slices missing"):
             require_universal_app(app, run)
-        assert len(calls) == 1
+        assert not any("codesign" in row[0] or "stapler" in row for row in calls)
     else:
         assert len(require_universal_app(app, run)["native_files"]) == 1
         assert any("codesign" in row[0] for row in calls)

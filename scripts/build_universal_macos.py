@@ -9,7 +9,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from scripts.build_macos_dmg import ARCHES, MACHO
+from scripts.macos_native_closure import ARCHES, MACHO, audit_payload
 
 
 def inspect_inputs(roots, run=subprocess.check_output):
@@ -29,7 +29,7 @@ def inspect_inputs(roots, run=subprocess.check_output):
             slices = set(run(["/usr/bin/lipo", "-archs", str(path)], text=True).split())
             row = {"path": str(path), "slices": sorted(slices)}
             rows.append(row)
-            if not ARCHES <= slices:
+            if not ARCHES <= slices and path.suffix != ".dylib":
                 errors.append(
                     {
                         "path": str(path),
@@ -37,42 +37,50 @@ def inspect_inputs(roots, run=subprocess.check_output):
                         "missing": sorted(ARCHES - slices),
                     }
                 )
-            else:
-                for arch, maximum in [("arm64", (26, 0, 0)), ("x86_64", (15, 0, 0))]:
-                    text = run(
-                        ["/usr/bin/otool", "-arch", arch, "-l", str(path)], text=True
+            for arch, maximum in [("arm64", (26, 0, 0)), ("x86_64", (15, 0, 0))]:
+                if arch not in slices:
+                    continue
+                text = run(
+                    ["/usr/bin/otool", "-arch", arch, "-l", str(path)], text=True
+                )
+                floors = []
+                for block in text.split("Load command"):
+                    field = (
+                        "minos"
+                        if re.search(r"cmd\s+LC_BUILD_VERSION\b", block)
+                        else "version"
+                        if re.search(r"cmd\s+LC_VERSION_MIN_MACOSX\b", block)
+                        else None
                     )
-                    # Only version-min/build-version blocks carry deployment floors.
-                    floors = []
-                    for block in text.split("Load command"):
-                        field = (
-                            "minos"
-                            if re.search(r"cmd\s+LC_BUILD_VERSION\b", block)
-                            else "version"
-                            if re.search(r"cmd\s+LC_VERSION_MIN_MACOSX\b", block)
-                            else None
-                        )
-                        match = (
-                            re.search(r"\b" + field + r"\s+(\d+(?:\.\d+){0,2})", block)
-                            if field
-                            else None
-                        )
-                        if match:
-                            floors.append(match.group(1))
-                    values = [
-                        tuple(map(int, v.split("."))) + (0,) * (3 - len(v.split(".")))
-                        for v in floors
-                    ]
-                    row[arch + "_floors"] = floors
-                    if not values or max(values) > maximum:
-                        errors.append(
-                            {
-                                "path": str(path),
-                                "arch": arch,
-                                "error": "unqualified deployment floor",
-                                "floors": floors,
-                            }
-                        )
+                    match = (
+                        re.search(r"\b" + field + r"\s+(\d+(?:\.\d+){0,2})", block)
+                        if field
+                        else None
+                    )
+                    if match:
+                        floors.append(match.group(1))
+                values = [
+                    tuple(map(int, v.split("."))) + (0,) * (3 - len(v.split(".")))
+                    for v in floors
+                ]
+                row[arch + "_floors"] = floors
+                if not values or max(values) > maximum:
+                    errors.append(
+                        {
+                            "path": str(path),
+                            "arch": arch,
+                            "error": "unqualified deployment floor",
+                            "floors": floors,
+                        }
+                    )
+        # Unique ABI dylibs may be thin only when the actual per-architecture
+        # loader graph is closed and each thin slice has an incoming edge.
+        if root.is_dir() and any(
+            Path(r["path"]).is_relative_to(root) and not ARCHES <= set(r["slices"])
+            for r in rows
+        ):
+            graph = audit_payload(root, lambda args: run(args, text=True))
+            errors.extend(graph["errors"])
     if not rows:
         errors.append({"error": "no native inputs inspected"})
     return {"native_files": rows, "errors": errors, "qualified": not errors}
@@ -154,8 +162,10 @@ def package(source: Path, python: Path, tools: Path, output: Path, version: str)
     ]
     for qml in sorted((source / "yt_downloader/qt_quick").glob("*.qml")):
         command += ["--add-data", str(qml) + ":yt_downloader/qt_quick"]
-    for tool in ["ffmpeg", "ffprobe", "deno", "libsqlite3.dylib"]:
-        command += ["--add-binary", str(tools / tool) + ":."]
+    for tool in [tools / n for n in ["ffmpeg", "ffprobe", "deno"]] + sorted(
+        tools.glob("*.dylib")
+    ):
+        command += ["--add-binary", str(tool) + ":."]
     command.append(str(source / "main.py"))
     subprocess.run(command, cwd=source, check=True)
     plist = output / "dist/VODForge.app/Contents/Info.plist"
@@ -167,6 +177,14 @@ def package(source: Path, python: Path, tools: Path, output: Path, version: str)
         LSMinimumSystemVersionByArchitecture={"arm64": "26.0", "x86_64": "15.0"},
     )
     plist.write_bytes(plistlib.dumps(info))
+    closure = audit_payload(output / "dist/VODForge.app")
+    (output / "dependency-closure.json").write_text(
+        json.dumps(closure, indent=2) + "\n"
+    )
+    if not closure["qualified"]:
+        raise ValueError(
+            "Packaged universal dependency closure failed; output preserved"
+        )
     (output / "build-receipt.json").write_text(
         json.dumps(
             {
