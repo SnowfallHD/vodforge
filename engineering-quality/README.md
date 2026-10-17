@@ -3728,3 +3728,12 @@ worker thread, serial ordering and main completion. A temporary synchronous
 scheduler mutation fails its actual async assertion with a bounded wait;
 transaction-only tests previously missed this event-loop class. Actual visible
 progress, responsiveness and signed-install interactions remain native gates.
+
+The installer routine path must select the fixed system Applications destination
+before asking for Install/Replace consent. A destination picker is an explicit
+exception after a read-only unsafe/unwritable destination refusal, never a routine
+setup step or an environment-controlled bypass. Exercise the actual delegate
+routing method before its UI boundary as well as fresh, verified-existing,
+foreign/newer, linked and unwritable destination admission. Pure transaction
+checks cannot detect an unnecessary picker inserted before confirmation. Native
+signed confirmation/default-path installation remains independent evidence.

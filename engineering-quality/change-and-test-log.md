@@ -3086,3 +3086,57 @@ launch. Priorv1/v2contrastfails retained. Sourcewindow9tests/Ruff/formatPASS.
 PRIVATE-APPEARANCE-v3.json binds573541737bytes image8ee5439a..., unsignedappearance
 only witholdd42payload; notdelivery/finalnativeappacceptance. visual-inspection.json
 ininstaller-native-appearance-v3 recordsactualartifact/pixelhash.
+
+2026-10-17 eedJulieconnectivity READONLY08:39:18UTC afternew08:37transfer
+SSHtimeout: scopedTailscalestatus exactJulieOnline=true; ONEestablishedstrictSSH
+identity/ownedpartialstatprobe succeeds0/0.606s/no stderr, julieUID501/x86_64.
+Newroot /Users/julie/Documents/Codex/VODForge-eed300f-native-20261017 exists0700;
+candidate.zip74,186,752bytesPARTIAL; extractedapp/nativefixtureABSENT. Earlier
+transportfailurepreserved, notcurrentauth/permissiondenial; causeunknown. Raw
+TailscaleLastSeen08:40aheadlocalsnapshot08:39:17retainedwithoutclockinference.
+No transfer/resume/extract/launch/kill/UI/security/auth/trust/profile/networkchange,
+no secondprobequeued; mainARMnativeowneruntouched. Timestampedreceipt:
+universal2implementation/native-fullscreen-repair/eed-connectivity-assessment/receipt.json.
+
+2026-10-17 exact eed300f signed universal app native acceptance COMPLETE on both Macs.
+Main PID38022 and Julie PID31444 each actual first-open/full-display fullscreen/
+one genuine OS Escape/restored screenshot personally inspected; no gray toolbar
+strip, exact executable68041bbecfdd80d45b3d40f25e3111df3883ac696eeb61f90d3ca069cee555b8
+unchanged/strict signatures pass. Both cooperative quits/owned absence confirmed.
+Evidence native-fullscreen-repair/eed-both-mac-native-result.json under build/
+universal2-implementation-20261017. Prior synthetic Escape and old toolbar failures
+remain distinct. Final old-picker DMG cce3ef1c... Apple58bc7cfb Accepted/stapled/
+strict/Gatekeeper, QA transfer to Julie exact573364646bytes/hash complete. NOT
+user delivery: Cooper then requested automatic /Applications destination, making
+old picker UX superseded. Main actual final-image Finder/readable single icon/
+Checking progress/one CGCancel pass; second helper43579 awaiting Install at owned
+target when foreground ChatGPT/human input conflict observed; no Install action.
+All further input held; driver now foreground-guards captures before and after.
+No old artifact delivered/installed/publicized. Source-only default-destination
+change underway; existing main /Applications/VODForge.app preserved. Native
+successor default-path confirmation/transaction remain pending.
+
+2026-10-17 userdefaultApplicationsinstaller sourcechange: fixedliteral/Applications
+normalpreflight→explicitInstall/Replaceconfirmation, NO routinepicker/envorQA
+pathoverride. Unsafe/unwritable/unverified/newerfolderpreflight offersChooseanother
+folderorCancel; exceptionpickerreusesexactchecks/confirmation, noelevation/silent
+fallback. Digest/RealDirectory/Snapshot/CheckApp/Running/MoveExclusive/Install/
+PerformWork byteidenticaltopriorHEAD; async/signature/stale/running/backup/rollback
+unchanged. Core24PASS(5async+10transactions+9destination), includesactualroutine
+method withnoUIboundaryprobe. Temporarypicker-routingmutationfailsintended
+assertionexit1/sameharness/noproductmutation/noUI. ExistingpytestactuallyFAIL15vs
+stale10count; now24nameduniqueassertions wrapperPASS1, originalfailurepreserved.
+ProductionARM26/x86_6415compile0/nodiagnostics;Ruff/diffPASS. No nativeGUI/package/
+sign/remote/Applications/profile/commit; signednative default/fallback/transaction
+remainUNTESTED. Receipt+REPORT installer-default-applications underuniversal2base.
+
+DefaultApplications source committed a797f2a; exact helper source851dd902...
+reviewed, Ruff/format/diffPASS. Existing signed eed payload preserved unchanged;
+new helper/signing/Apple submission underway, no runtime rebuild/repeated native
+app checks. Superseded main helper43579 cleanup completed: ineffective background
+terminate/activation preserved; ONE targeted ownedAXCancel succeeded, independent
+absence then ownedFinder/mountclosed/baseline1/sentinelunchanged at09:02:11. No
+Install occurred. Julie scoped prerequisite normalhost09:00:48 confirms writable
+Applications and absent VODForge. Initial sandbox SSH deniedbeforeconnection is
+retained separately; established strict normalhost route readback succeeds. No
+new native launch or security change from this root phase.
