@@ -3717,3 +3717,14 @@ reported value but never the import/closure boundary. Representative coverage
 now includes both preference values, unavailable native services, native Trash
 Unicode/result/error paths, and prior-owner import negative controls. Actual
 signed Intel startup and full native-window behavior remain separate gates.
+
+Installer verification is still UI work if called from the application-launch
+callback, even when the eventual copy/replace transaction is safe. Show a truthful
+checking state before dispatching expensive signature/hash/copy work onto a
+serial worker; keep AppKit queries and completions on main. During confirmed
+mutation, ordinary Quit/close must not interrupt the protected transaction.
+The installer core harness now independently checks nonblocking admission,
+worker thread, serial ordering and main completion. A temporary synchronous
+scheduler mutation fails its actual async assertion with a bounded wait;
+transaction-only tests previously missed this event-loop class. Actual visible
+progress, responsiveness and signed-install interactions remain native gates.
