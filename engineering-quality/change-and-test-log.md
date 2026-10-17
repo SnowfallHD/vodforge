@@ -3611,3 +3611,88 @@ Ruff/diffpass. Nativegeometry is hypothetical source coverage, NOT actual Intel
 cause. Evidence fullscreen-transition-20261017/source-assessment/
 ADMISSION-DIAGNOSTIC-HANDOFF.json. Need new exactfrozen readyreason before any
 layoutpolicy correction or fullscreen successclaim; no oldcandidate relabeling.
+
+2026-10-17 diagnostic127bf2efd38690cac36f98404feae4a05b40389a universal2private
+buildONCE/source882gitarchivefiles exact/clean, protectede864+b031+eed exe+manifest
+hashes verified. Newcandidate-localABI2helper sourcee251aa60...5b2e2/fatfac90cc9...48fa7;
+ARM26/Intel15/SDK27/compilercommands bound.123actualPYZ/47QML/440nativeclosure
+PASS inclpairedloader+mainreadydiagnostics. SingleexistingDeveloperIDnotary
+Acceptedf05da88f-0d33-4d6a-9817-f9aac96be063, emptyboth/explicithelper+outer
+allarchstrict/staple/GatekeeperPASS inauthorizedsigningcontext. Signedhelper
+3eb40b7f6c1d808a6e05dd4f3412cf64bb6ac1a92f7681c7fefa47a15abbdc0d;
+botharchABI2/getterreason+40geometryslots/outofrangeNaN/NSAppabsentPASS.
+SignedARM9.18s/Rosetta53.19s offscreenexit0/OK;6343entries unchanged/zero caches,
+manifestb21a3f19d08ae3e1ebe460411e037f4f754547277a9e6a5f2143a92d9b1200e2.
+QAzip528486822B/SHA1dcc3796119e5cc755dca63aefb6a6c02ecebbf0b583a62c6332e0619129ca4d.
+Guidance8e864receipt RETAINED NOTRERUN:50testedprojectmodule sourcebytes identical,
+newfrozenbindingexact; WindowsFrameunchanged/priornativeproofnotrelabeled127.
+No layoutpolicychange/fixclaim; frozenCocoa diagnosticgate stillpending rootowners.
+NoGUI/provider/normalreplacement/installer/publicrelease/securitychange/cleanup.
+Builderheavy/signslotRELEASED; PRIVATE-native-diagnostic-127bf2ef-REPORT.md and
+SIGNED-NATIVE-diagnostic-127bf2ef-HANDOFF.json underuniversal2implementationbase.
+
+2026-10-17 actual127 cross-architecture native discriminator: signed ARM58527
+ready integrated/success then ONEentry20:31:20/Escape20:31:45; readable inspected
+entry/full, restoredownedPNG byte-identical/startbounds30,30/1100x740.
+Exit001/004/006 unrelatednotification excluded cleanright-header acceptance;
+existingunobscured025 alreadysettledwindowed. MenuReveal UNQUALIFIED. Normalexit0
+20:32:17/6343sealunchanged/ordinary98256retained; mainGUIRELEASED forparentemail.
+Intel1993ready20:33:03: native_create/target_outside_parent, actualparent28pt,
+button14x16,target18,-6; needs34pt support. No fullscreen; normalclose/absent
+20:34:33/seal+ordinary971profileunchanged. CorrectedONEhiddenAccessorypolicy
+probe2090exit0/inactive/nevervisible: baseline andTop32/34/50 allparent28/reason8.
+PublicTopaccessory alone DISPROVEN; earlierProhibitedprobeemptyoutput retained
+unqualified. No productionparentmutation/fixclaim yet. Evidence paths in
+build/fullscreen-transition-20261017/QUALIFICATION.md. Existing fixed32pt fake
+owner/sourceARMconstructor missed physicalIntel28pt support; reason nowactual,
+not prior hypothetical22pt test. Nextdiagnostic narrowly tests public SAMEshared
+immediateparent geometry/rollback, no privateancestor/access/security changes.
+
+Next hiddenparent-support2160exit0 was GUARDONLY/notmechanismnegative:
+zero-sized immediate native sibling[0,0,0,0] failed positive-only rectangle
+prerequisite; no support/buttonmutation/owneradmission occurred. Preserved
+sourcef4a13907/binary1b613386/receipts. Narrow DIAGNOSTIC successor accepts
+finiteNONNEGATIVE siblinggeometry (includingzero), keepspositiveparent/buttons
+and comparesALLsiblingwindowrects, no skipping. Not a productchange or repeated
+validgeometrycheck; actual28→34 experiment remainedunexercised. Separatefresh
+probeauthorized withdurablerawexit-first receipts; ordinaryapp/inputreleased.
+
+Hidden2196 finiteNONNEGATIVE siblingguardcorrected prerequisite: parent28→34
+ONCE top/widthstable, but nativebuttonswindowY718→712 and background/otherchild
+changedbyAppKitautoresize. OwnerNOTcalled; exactsamegenerationrollbacktrue;
+hiddeninactive/exit0/ordinary971foregroundpointerprofile unchanged. Thisisactual
+negativepreservationresult, notsuccessfuladmission. Frame+boundsorigin alone
+rejectedSOURCEassessment becausechildrenchangeddifferently; no pointretry.
+NewdiagnosticONLY boundedframe/bounds+ALLimmediatechildsnapshotrestore prepares
+causalnextdiscriminator, productionunchanged. Original2160guardfailure and2196
+negativeinputs/results retained. No extra mainGUI whileemailownsforeground.
+
+2026-10-17 Intel public-support causal follow-up: prior2160hidden probe refused
+before mutation because diagnostic incorrectly required positive sizes for every
+native sibling; one legitimate zero-size view caused the guard. Original inputs
+retained. Corrected2196frame-only probe actually expanded28→34, but controls and
+other siblings moved; unchangedowner skipped/exactrollback passed. Public Top
+accessory32/34/50 negative result retained. DiagnosticB2246frame+bounds origin−6
+plus restoration of ALL6 immediate child frames preserved every original window
+rectangle before unchangedABI2owner admitted/reason0, localbuttonhit3/3; exact
+rollback/noexceptions/hiddeninactive. This is source-mechanism proof, not pixels.
+
+Conditional production support now touches ONLY exact shared immediate parent
+when all current targets require bounded downward growth; sufficient ARM path
+has zero support writes. Retained exact child generations/public finite bounds;
+all sibling worldrects preserve before any alignment. Explicit collapse inverts
+only owned delta in CURRENT width/top/frame/bounds and restores CURRENT local
+child frames, not constructor widths. Temporary foreign receiver phases retain
+ownership untouched; valid own native reset/replacement rebaselines without stale
+writes. Residual native bounds are treated as CURRENT baseline, never claimed
+restored to an unknown earlier state. NativeWillClose stays release-only. Partial
+constructor/child/button/inverse setters have bounded same-generation rollback;
+identity loss refuses stale restoration. Before source127 compiled28basic/resize/
+reset tests fail3/3; new actual compiled headless cases pass24 (NSApplication nil),
+including mixed native sibling autoresizing/zero child, derived20/28/30→34 growth,
+sufficient34 no writes, width1300 resize, foreign recovery, reset/residual,
+replacement, inverse fault, thread and nativeclose. Existing32fake+ARM geometry
+never exercised neededgrowth/16pxIntelcontrols; that coverage gap is explicit.
+No visible Intel transition/Qt/signed success yet. Standalone Regular AppKit
+prospective diagnostic prepared/compiled only, distinct from Qt artifact proof;
+no GUI/main foreground during email ownership. Root joint review/commit pending.

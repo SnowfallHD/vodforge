@@ -3760,7 +3760,7 @@ successor, with signed ARM/Intel entry/reveal/exit pixels still required.
 Native frame changes are a transaction over exact current receivers. Validate all
 three current standard buttons, their owning window, immediate parent coordinate
 systems and complete finite target rectangles before writing any frame. Preserve
-system spacing; never resize a private container or transplant a stale frame
+system spacing; never traverse undocumented ancestors or transplant a stale frame
 snapshot onto a replacement button or parent. Refused transitional geometry must
 remain inert and recover from the next current layout, without a pending toolbar
 attachment phase. Compiled geometry/lifetime tests and Python loader/cleanup
@@ -3768,3 +3768,14 @@ tests complement actual native captures; neither substitutes for them. Package
 the helper at one fixed path with versioned typed ABI, bound source/compiler
 provenance and per-architecture closure/signature checks. Do not compile on
 startup or fall back to native executable Python callbacks.
+
+Native support geometry varies across OS versions. The fixed 32pt test parent
+and ARM constructor missed Intel's actual 28pt parent with 16pt controls. If
+current targets need additional support, a public immediate-parent adjustment
+must preserve every immediate child's window rectangle before aligning buttons;
+native autoresizing can move siblings differently, including zero-sized views.
+Bind that transaction to exact receiver generations. Its inverse must preserve
+the current resized width and top, rather than restore constructor dimensions.
+Partial setters, temporary foreign receivers, replacement and residual bounds
+need independent refusal/recovery cases. A hidden geometry pass establishes
+neither OS hit routing nor visible fullscreen behavior; retain those gates.

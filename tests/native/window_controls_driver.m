@@ -12,25 +12,62 @@
 static unsigned writes, deallocButtons, deallocWindows, deallocViews;
 static unsigned raiseAtWrite;
 static unsigned toolbarWrites, appearanceWrites;
+static unsigned supportWrites, raiseSupportAt;
 @class VFTestWindow;
 @interface VFTestView : NSObject
-@property NSRect frame;
-@property NSRect bounds;
+@property(nonatomic) NSRect frame;
+@property(nonatomic) NSRect bounds;
 @property NSPoint windowOrigin;
 @property BOOL flipped;
+@property(retain) NSArray *subviews;
+@property BOOL autoFill;
+@property BOOL flexMinY;
+@property BOOL raiseOnFrame;
+- (BOOL)isFlipped;
+- (BOOL)isRotatedOrScaledFromBase;
 @property(assign) VFTestWindow *window;
 @property(assign) VFTestView *superview;
 - (NSRect)convertRect:(NSRect)rect toView:(NSView *)view;
 - (NSRect)convertRect:(NSRect)rect fromView:(NSView *)view;
 @end
 @implementation VFTestView
+@synthesize frame = _frame;
+@synthesize bounds = _bounds;
+- (BOOL)isFlipped { return self.flipped; }
+- (BOOL)isRotatedOrScaledFromBase { return NO; }
+- (void)setFrame:(NSRect)frame {
+    if(self.raiseOnFrame){self.raiseOnFrame=NO;[NSException raise:@"childSetter" format:@"controlled"]; }
+    if(self.subviews) {
+        supportWrites++;
+        if(raiseSupportAt && supportWrites==raiseSupportAt){raiseSupportAt=0;[NSException raise:@"supportSetter" format:@"controlled"];}
+        double delta=frame.size.height-_frame.size.height;
+        self.windowOrigin=NSMakePoint(self.windowOrigin.x+frame.origin.x-_frame.origin.x,self.windowOrigin.y+frame.origin.y-_frame.origin.y);
+        _bounds.size=frame.size;
+        _frame=frame;
+        for(VFTestView *child in self.subviews) {
+            NSRect next=child.frame;
+            if(child.autoFill)next.size=frame.size;
+            if(child.flexMinY)next.origin.y+=delta;
+            child.frame=next;
+        }
+    }
+    _frame=frame;
+}
+- (void)setBounds:(NSRect)bounds {
+    if(self.subviews) {
+        supportWrites++;
+        if(raiseSupportAt && supportWrites==raiseSupportAt){raiseSupportAt=0;[NSException raise:@"supportSetter" format:@"controlled"];}
+    }
+    _bounds=bounds;
+}
 - (NSRect)toWindow:(NSRect)rect {
-    double y = self.flipped ? self.bounds.size.height - rect.origin.y - rect.size.height : rect.origin.y;
-    return NSMakeRect(rect.origin.x + self.windowOrigin.x, y + self.windowOrigin.y, rect.size.width, rect.size.height);
+    double y = self.flipped ? self.bounds.size.height - (rect.origin.y-self.bounds.origin.y) - rect.size.height : rect.origin.y-self.bounds.origin.y;
+    return NSMakeRect(rect.origin.x-self.bounds.origin.x + self.windowOrigin.x, y + self.windowOrigin.y, rect.size.width, rect.size.height);
 }
 - (NSRect)fromWindow:(NSRect)rect {
     rect.origin.x -= self.windowOrigin.x; rect.origin.y -= self.windowOrigin.y;
     if (self.flipped) rect.origin.y = self.bounds.size.height - rect.origin.y - rect.size.height;
+    rect.origin.x+=self.bounds.origin.x;rect.origin.y+=self.bounds.origin.y;
     return rect;
 }
 - (NSRect)convertRect:(NSRect)rect toView:(NSView *)view {
@@ -41,7 +78,7 @@ static unsigned toolbarWrites, appearanceWrites;
     if (view) rect = [(VFTestView *)view toWindow:rect];
     return [self fromWindow:rect];
 }
-- (void)dealloc { deallocViews++; [super dealloc]; }
+- (void)dealloc { [_subviews release]; deallocViews++; [super dealloc]; }
 @end
 
 @interface VFTestButton : VFTestView
@@ -122,6 +159,7 @@ static void testBasic(void) {
     assert(owner && vf_window_controls_abi_version() == 2 && vf_window_controls_status(owner) == 1);
     assert(!window.toolbar && [window.appearance.name isEqualToString:NSAppearanceNameDarkAqua]);
     assertAligned(window); assert(writes == 3);
+    assert(supportWrites==0);
     writes = 0; assert(vf_window_controls_reconcile(owner) == 1 && writes == 0);
     assert(vf_window_controls_destroy(&owner) == 1 && !owner);
     assert(vf_window_controls_destroy(&owner) == 1);
@@ -255,6 +293,131 @@ static void *wrongThread(void *raw) {
     }
     return NULL;
 }
+static VFTestWindow *supportWindow(void) {
+    VFTestWindow *window=[VFTestWindow new];VFTestView *parent=window->parents[0];
+    parent.frame=NSMakeRect(0,0,1100,28);parent.bounds=NSMakeRect(0,0,1100,28);parent.windowOrigin=NSMakePoint(0,712);
+    for(unsigned i=0;i<3;i++) {
+        if(i){[window->parents[i] release];window->parents[i]=[parent retain];}
+        window->buttons[i].superview=parent;window->buttons[i].frame=NSMakeRect(7+20*i,6,14,16);
+    }
+    VFTestView *background=[VFTestView new],*empty=[VFTestView new],*title=[VFTestView new];
+    for(VFTestView *v in @[background,empty,title]){v.window=window;v.superview=parent;}
+    background.frame=NSMakeRect(0,0,1100,28);background.autoFill=YES;
+    title.frame=NSMakeRect(545,7,10,16);title.flexMinY=YES;
+    parent.subviews=@[background,empty,window->buttons[0],window->buttons[1],window->buttons[2],title];
+    [background release];[empty release];[title release];supportWrites=0;writes=0;return window;
+}
+static void assertSupportAligned(VFTestWindow *w) {
+    NSRect expected=NSMakeRect(0,-6,1100,34);
+    assert(NSEqualRects(w->parents[0].frame,expected));assert(NSEqualRects(w->parents[0].bounds,expected));
+    for(unsigned i=0;i<3;i++)assert(NSEqualRects(w->buttons[i].frame,NSMakeRect(18+20*i,-6,14,16)));
+}
+static void testSupportBasic(void) {
+    VFTestWindow *w=supportWindow();void *owner=vf_window_controls_create(w,18,18);
+    assert(owner&&vf_window_controls_status(owner)==1);assertSupportAligned(w);
+    assert(NSEqualRects(((VFTestView *)w->parents[0].subviews[0]).frame,NSMakeRect(0,0,1100,28)));
+    assert(NSEqualRects(((VFTestView *)w->parents[0].subviews[5]).frame,NSMakeRect(545,7,10,16)));
+    assert(vf_window_controls_destroy(&owner)==1);
+    assert(NSEqualRects(w->parents[0].frame,NSMakeRect(0,0,1100,28)));
+    assert(NSEqualRects(w->parents[0].bounds,NSMakeRect(0,0,1100,28)));
+    for(unsigned i=0;i<3;i++)assert(NSEqualRects(w->buttons[i].frame,NSMakeRect(7+20*i,6,14,16)));
+    [w release];
+}
+static void testSupportResize(void) {
+    VFTestWindow *w=supportWindow();void *owner=vf_window_controls_create(w,18,18);assert(owner);
+    VFTestView *p=w->parents[0];w->content.bounds=NSMakeRect(0,0,1300,900);
+    p.frame=NSMakeRect(0,-6,1300,34);p.bounds=NSMakeRect(0,-6,1300,34);p.windowOrigin=NSMakePoint(0,866);
+    assert(vf_window_controls_reconcile(owner)==1);assert(vf_window_controls_destroy(&owner)==1);
+    assert(NSEqualRects(p.frame,NSMakeRect(0,0,1300,28)));assert(NSEqualRects(p.bounds,NSMakeRect(0,0,1300,28)));
+    assert(p.windowOrigin.y==872);assert(((VFTestView *)p.subviews[0]).frame.size.width==1300);
+    [w release];
+}
+static void testSupportFailure(void) {
+    for(unsigned failure=1;failure<=3;failure++) {
+        VFTestWindow *w=supportWindow();raiseSupportAt=failure<=2?failure:0;raiseAtWrite=failure==3?20:0;
+        if(failure==3)raiseAtWrite=8; // parent resize3button writes + restoration3 + button owner second write
+        void *owner=vf_window_controls_create(w,18,18);
+        assert(!owner);assert(NSEqualRects(w->parents[0].frame,NSMakeRect(0,0,1100,28)));
+        assert(NSEqualRects(w->parents[0].bounds,NSMakeRect(0,0,1100,28)));
+        for(unsigned i=0;i<3;i++)assert(NSEqualRects(w->buttons[i].frame,NSMakeRect(7+20*i,6,14,16)));
+        raiseAtWrite=raiseSupportAt=0;[w release];
+    }
+}
+static void testSupportReset(void) {
+    VFTestWindow *w=supportWindow();void *owner=vf_window_controls_create(w,18,18);assert(owner);
+    VFTestView *p=w->parents[0];p.frame=NSMakeRect(0,0,1100,28);p.bounds=NSMakeRect(0,0,1100,28);p.windowOrigin=NSMakePoint(0,712);
+    for(unsigned i=0;i<3;i++)w->buttons[i].frame=NSMakeRect(7+20*i,6,14,16);
+    assert(vf_window_controls_reconcile(owner)==1);assertSupportAligned(w);
+    vf_window_controls_destroy(&owner);[w release];
+}
+static void testSupportGuards(void) {
+    for(unsigned mode=0;mode<3;mode++) {
+        VFTestWindow *w=supportWindow();VFTestView *p=w->parents[0];
+        if(mode==0)p.flipped=YES;
+        if(mode==1)((VFTestView *)p.subviews[1]).frame=NSMakeRect(NAN,0,0,0);
+        if(mode==2) {NSMutableArray *children=[p.subviews mutableCopy];for(unsigned i=0;i<27;i++){VFTestView *v=[VFTestView new];v.window=w;v.superview=p;[children addObject:v];[v release];}p.subviews=children;[children release];}
+        supportWrites=0;void *owner=vf_window_controls_create(w,18,18);
+        assert(!owner&&supportWrites==0);[w release];
+    }
+}
+static void testSupportChildFailure(void) {
+    VFTestWindow *w=supportWindow();VFTestView *p=w->parents[0];((VFTestView *)p.subviews[0]).raiseOnFrame=YES;
+    void *owner=vf_window_controls_create(w,18,18);assert(!owner);
+    assert(NSEqualRects(p.frame,NSMakeRect(0,0,1100,28)));assert(NSEqualRects(p.bounds,NSMakeRect(0,0,1100,28)));
+    assert(p.windowOrigin.y==712);for(unsigned i=0;i<3;i++)assert(NSEqualRects(w->buttons[i].frame,NSMakeRect(7+20*i,6,14,16)));
+    [w release];
+}
+static void testSupportNativeClose(void) {
+    VFTestWindow *w=supportWindow();void *owner=vf_window_controls_create(w,18,18);assert(owner);
+    writes=supportWrites=toolbarWrites=appearanceWrites=0;post(w,NSWindowWillCloseNotification);
+    assert(writes==0&&supportWrites==0&&toolbarWrites==0&&appearanceWrites==0);
+    post(w,NSWindowDidResizeNotification);assert(supportWrites==0);vf_window_controls_destroy(&owner);[w release];
+}
+static void testSupportResidual(void) {
+    VFTestWindow *w=supportWindow();void *owner=vf_window_controls_create(w,18,18);assert(owner);
+    VFTestView *p=w->parents[0];p.frame=NSMakeRect(0,0,1100,28);p.bounds=NSMakeRect(0,-6,1100,28);p.windowOrigin=NSMakePoint(0,712);
+    for(unsigned i=0;i<3;i++)w->buttons[i].frame=NSMakeRect(7+20*i,6,14,16);
+    supportWrites=0;assert(vf_window_controls_reconcile(owner)==1);assert(supportWrites>0);
+    vf_window_controls_destroy(&owner);assert(p.bounds.origin.y==-6);assert(p.frame.size.height==28);[w release];
+}
+static void testSupportForeignRecovery(void) {
+    VFTestWindow *w=supportWindow(),*other=[VFTestWindow new];void *owner=vf_window_controls_create(w,18,18);assert(owner);
+    w->buttons[1].window=other;supportWrites=0;assert(vf_window_controls_reconcile(owner)==0&&supportWrites==0);
+    w->buttons[1].window=w;assert(vf_window_controls_reconcile(owner)==1);vf_window_controls_destroy(&owner);assert(w->parents[0].frame.size.height==28);[w release];[other release];
+}
+static void testSupportInverseFailure(void) {
+    VFTestWindow *w=supportWindow();NSButton *buttons[3]={(NSButton *)w->buttons[0],(NSButton *)w->buttons[1],(NSButton *)w->buttons[2]};
+    VFSupportAdjustment *support=[[VFSupportAdjustment alloc] initWithWindow:(NSWindow *)w parent:(NSView *)w->parents[0] buttons:(NSButton **)buttons growth:6];assert(support);
+    NSRect expandedFrame=w->parents[0].frame,expandedBounds=w->parents[0].bounds;
+    NSRect before=[w->parents[0] convertRect:w->buttons[0].frame toView:nil];
+    raiseSupportAt=supportWrites+2;assert(![support collapse]);assert(raiseSupportAt==0);
+    assert(NSEqualRects(w->parents[0].frame,expandedFrame));assert(NSEqualRects(w->parents[0].bounds,expandedBounds));
+    assert(NSEqualRects([w->parents[0] convertRect:w->buttons[0].frame toView:nil],before));assert([support current]);
+    [support release];[w release];
+}
+static void testSupportReplacement(void) {
+    VFTestWindow *w=supportWindow();void *owner=vf_window_controls_create(w,18,18);assert(owner);
+    VFTestView *old=[w->parents[0] retain],*next=[VFTestView new];next.window=w;next.frame=NSMakeRect(0,0,1100,28);next.bounds=next.frame;next.windowOrigin=NSMakePoint(0,712);
+    for(unsigned i=0;i<3;i++){w->buttons[i].superview=next;w->buttons[i].frame=NSMakeRect(7+20*i,6,14,16);[w->parents[i] release];w->parents[i]=[next retain];}
+    next.subviews=@[w->buttons[0],w->buttons[1],w->buttons[2]];
+    NSRect oldFrame=old.frame,oldBounds=old.bounds;
+    assert(vf_window_controls_reconcile(owner)==1);vf_window_controls_destroy(&owner);
+    assert(NSEqualRects(old.frame,oldFrame)&&NSEqualRects(old.bounds,oldBounds));
+    assert(NSEqualRects(next.frame,NSMakeRect(0,0,1100,28))&&NSEqualRects(next.bounds,NSMakeRect(0,0,1100,28)));
+    [next release];[old release];[w release];
+}
+static void testSupportNecessaryGrowth(void) {
+    const double heights[]={20,28,30,34};
+    for(unsigned mode=0;mode<4;mode++) {
+        VFTestWindow *w=supportWindow();VFTestView *p=w->parents[0];double height=heights[mode];
+        p.frame=NSMakeRect(0,0,1100,height);p.bounds=NSMakeRect(0,0,1100,height);p.windowOrigin=NSMakePoint(0,740-height);
+        for(unsigned i=0;i<3;i++)w->buttons[i].frame=NSMakeRect(7+20*i,2,14,16);
+        supportWrites=0;void *owner=vf_window_controls_create(w,18,18);assert(owner);
+        assert(p.bounds.size.height==34);assert(p.bounds.origin.y==fmin(0,height-34));
+        if(height==34)assert(supportWrites==0);
+        vf_window_controls_destroy(&owner);assert(p.bounds.size.height==height&&p.bounds.origin.y==0);[w release];
+    }
+}
 static void testDiagnostics(void) {
     VFTestWindow *window = [VFTestWindow new];
     NSObject *toolbar = [window->toolbarValue retain];
@@ -276,6 +439,13 @@ static void testDiagnostics(void) {
     assert(vf_window_controls_reconcile(owner) == 1 && vf_window_controls_diagnostic_reason() == 0);
     assert(isnan(vf_window_controls_diagnostic_geometry(40)));
     vf_window_controls_destroy(&owner); [toolbar release]; [foreign release]; [window release];
+}
+static void testSupportThread(void) {
+    VFTestWindow *w=supportWindow();void *owner=vf_window_controls_create(w,18,18);assert(owner);
+    writes=supportWrites=toolbarWrites=appearanceWrites=0;VFThreadInput input={w,owner};pthread_t thread;
+    assert(pthread_create(&thread,NULL,wrongThread,&input)==0);assert(pthread_join(thread,NULL)==0);
+    assert(writes==0&&supportWrites==0&&toolbarWrites==0&&appearanceWrites==0);
+    vf_window_controls_destroy(&owner);assert(w->parents[0].bounds.size.height==28);[w release];
 }
 static void testWrongThread(void) {
     VFTestWindow *window = [VFTestWindow new]; void *owner = vf_window_controls_create(window, 18, 18); assert(owner);
@@ -313,6 +483,19 @@ int main(int argc, const char **argv) {
         else if (!strcmp(argv[1], "reparent_stale_close")) testReparent(NO);
         else if (!strcmp(argv[1], "wrong_thread")) testWrongThread();
         else if (!strcmp(argv[1], "diagnostics")) testDiagnostics();
+        else if (!strcmp(argv[1], "support_basic")) testSupportBasic();
+        else if (!strcmp(argv[1], "support_resize")) testSupportResize();
+        else if (!strcmp(argv[1], "support_failure")) testSupportFailure();
+        else if (!strcmp(argv[1], "support_reset")) testSupportReset();
+        else if (!strcmp(argv[1], "support_guards")) testSupportGuards();
+        else if (!strcmp(argv[1], "support_child_failure")) testSupportChildFailure();
+        else if (!strcmp(argv[1], "support_native_close")) testSupportNativeClose();
+        else if (!strcmp(argv[1], "support_residual")) testSupportResidual();
+        else if (!strcmp(argv[1], "support_foreign_recovery")) testSupportForeignRecovery();
+        else if (!strcmp(argv[1], "support_inverse_failure")) testSupportInverseFailure();
+        else if (!strcmp(argv[1], "support_replacement")) testSupportReplacement();
+        else if (!strcmp(argv[1], "support_necessary_growth")) testSupportNecessaryGrowth();
+        else if (!strcmp(argv[1], "support_thread")) testSupportThread();
         else return 2;
         assert(NSApp == nil);
         printf("{\"case\":\"%s\",\"passed\":true,\"gui_created\":false}\n", argv[1]);

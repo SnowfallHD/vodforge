@@ -95,6 +95,7 @@ class WindowControls:
                 "identity_changed",
                 "setter_exception",
                 "native_exception",
+                "support_transaction_refused",
             )
             reason = self._library.vf_window_controls_diagnostic_reason()
             values = [
