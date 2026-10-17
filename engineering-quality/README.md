@@ -3701,3 +3701,19 @@ The user's later October15 clarification explicitly supersedes the earlier no-st
 ## Build intermediates need an invocation lifetime — 2026-10-15
 
 A single Git checkout does not limit retained binary outputs. PyInstaller --clean clears only its selected cache; unique per-candidate roots accumulated transformed binaries alongside sealed packages. The maintained macOS recipe now gives PyInstaller an invocation-private temporary cache and retires only that newly created cache on normal success/failure. Real child-process checks preserve caller caches and output receipts while observing cache disappearance. Work diagnostics, signed rollback packages and historical evidence remain separate protected retention classes; existing paths require their own approved retirement. SIGKILL/host loss can still orphan temporary state, so this does not imply sweeping old temp/shared directories or a universal bounded-disk guarantee.
+
+### Native bridge startup invariants — 2026-10-17
+
+A harmless-looking preference getter can import an entire native bridge while
+QML is constructing its object tree. Test that preference reads and native file
+operations use only the required typed public functions, preserve bool/pointer
+and out-parameter ABIs, and do not introduce Python native callbacks or dynamic
+AppKit/Foundation imports. Source/offscreen tests and ad-hoc binaries cannot
+establish compatibility with an exact hardened signed architecture. Preserve
+signed-runtime failures and obtain phase evidence before changing signing
+permissions. The signed Intel incident sampled PyObjC struct registration in
+system libffi closure allocation; previous mocked preference tests exercised the
+reported value but never the import/closure boundary. Representative coverage
+now includes both preference values, unavailable native services, native Trash
+Unicode/result/error paths, and prior-owner import negative controls. Actual
+signed Intel startup and full native-window behavior remain separate gates.

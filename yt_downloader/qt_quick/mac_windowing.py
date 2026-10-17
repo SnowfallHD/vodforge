@@ -1,157 +1,213 @@
-"""Use the native macOS title controls within Qt Quick's compact header."""
+"""Native macOS window ownership without executable Python bridge callbacks."""
 
 from __future__ import annotations
 
+import ctypes
 import sys
 from collections.abc import Callable
 from typing import Any
 
+from yt_downloader.platforms.macos.native_runtime import class_pointer, send
+
+_FULL_SIZE_CONTENT = 1 << 15
+_FULL_SCREEN = 1 << 14
+_POINTER = ctypes.c_void_p
+_UNSIGNED = ctypes.c_ulong
+
+
+class _NativeWindow:
+    def __init__(self, pointer: int) -> None:
+        self.pointer = pointer
+
+    def styleMask(self):
+        return send(self.pointer, b"styleMask", _UNSIGNED)
+
+    def setStyleMask_(self, value):
+        send(self.pointer, b"setStyleMask:", None, (_UNSIGNED,), value)
+
+    def titleVisibility(self):
+        return send(self.pointer, b"titleVisibility", ctypes.c_long)
+
+    def setTitleVisibility_(self, value):
+        send(self.pointer, b"setTitleVisibility:", None, (ctypes.c_long,), value)
+
+    def titlebarAppearsTransparent(self):
+        return send(self.pointer, b"titlebarAppearsTransparent", ctypes.c_bool)
+
+    def setTitlebarAppearsTransparent_(self, value):
+        send(
+            self.pointer,
+            b"setTitlebarAppearsTransparent:",
+            None,
+            (ctypes.c_bool,),
+            value,
+        )
+
+    def toolbar(self):
+        return send(self.pointer, b"toolbar", _POINTER)
+
+    def setToolbar_(self, toolbar):
+        send(self.pointer, b"setToolbar:", None, (_POINTER,), toolbar)
+
+    def setToolbarStyle_(self, style):
+        send(self.pointer, b"setToolbarStyle:", None, (ctypes.c_long,), style)
+
+    def isVisible(self):
+        return send(self.pointer, b"isVisible", ctypes.c_bool)
+
+    def orderOut_(self, sender):
+        send(self.pointer, b"orderOut:", None, (_POINTER,), sender)
+
+    def retain(self):
+        send(self.pointer, b"retain", _POINTER)
+
+    def release(self):
+        send(self.pointer, b"release", None)
+
+
+def _native_window(window: Any) -> _NativeWindow | None:
+    # Qt's Cocoa WId is the exact owned NSView, not a global app/window lookup.
+    pointer = send(int(window.winId()), b"window", _POINTER)
+    return _NativeWindow(pointer) if pointer else None
+
+
+def _new_toolbar() -> int:
+    string = send(class_pointer(b"NSString"), b"alloc", _POINTER)
+    string = send(
+        string,
+        b"initWithUTF8String:",
+        _POINTER,
+        (ctypes.c_char_p,),
+        b"VODForge.QtMainHeader",
+    )
+    if not string:
+        raise RuntimeError("Native toolbar identifier allocation failed")
+    toolbar = None
+    try:
+        toolbar = send(class_pointer(b"NSToolbar"), b"alloc", _POINTER)
+        toolbar = send(toolbar, b"initWithIdentifier:", _POINTER, (_POINTER,), string)
+        if not toolbar:
+            raise RuntimeError("Native toolbar allocation failed")
+        send(toolbar, b"setAllowsUserCustomization:", None, (ctypes.c_bool,), False)
+        send(toolbar, b"setShowsBaselineSeparator:", None, (ctypes.c_bool,), False)
+        return toolbar
+    except Exception:
+        if toolbar:
+            send(toolbar, b"release", None)
+        raise
+    finally:
+        send(string, b"release", None)
+
 
 def integrate_qt_main_window(window: Any) -> bool:
-    """Extend the QQuickWindow content behind its native traffic lights."""
+    """Extend the QQuickWindow behind traffic lights using public scalar calls."""
     if sys.platform != "darwin":
         return False
     from PySide6.QtGui import QGuiApplication
 
     if QGuiApplication.platformName() != "cocoa":
         return False
+    native = None
+    original_toolbar = None
+    toolbar = None
     try:
-        import objc
-        from AppKit import (
-            NSToolbar,
-            NSWindowStyleMaskFullSizeContentView,
-            NSWindowTitleHidden,
-            NSWindowToolbarStyleUnified,
-        )
-
-        # Qt's macOS WId is an NSView pointer; AppKit still owns the controls.
-        view = objc.objc_object(c_void_p=int(window.winId()))
-        native = view.window()
+        native = _native_window(window)
         if native is None:
             return False
         original_style = native.styleMask()
         original_visibility = native.titleVisibility()
         original_transparency = native.titlebarAppearsTransparent()
         original_toolbar = native.toolbar()
-        toolbar = NSToolbar.alloc().initWithIdentifier_("VODForge.QtMainHeader")
-        toolbar.setAllowsUserCustomization_(False)
-        toolbar.setShowsBaselineSeparator_(False)
-        native.setStyleMask_(original_style | NSWindowStyleMaskFullSizeContentView)
-        native.setTitleVisibility_(NSWindowTitleHidden)
+        if original_toolbar:
+            send(original_toolbar, b"retain", _POINTER)
+        toolbar = _new_toolbar()
+        native.setStyleMask_(original_style | _FULL_SIZE_CONTENT)
+        native.setTitleVisibility_(1)  # NSWindowTitleHidden
         native.setTitlebarAppearsTransparent_(True)
         native.setToolbar_(toolbar)
-        native.setToolbarStyle_(NSWindowToolbarStyleUnified)
-        _install_frosted_backdrop(window, native, view)
+        native.setToolbarStyle_(3)  # NSWindowToolbarStyleUnified
+        # Native frost remains an optional cosmetic capability. The actual Qt
+        # top-level parent is a private NSThemeFrame, not a supported sibling
+        # owner. Keep the established readable artwork fallback without asking
+        # PyObjC to register executable struct wrappers on hardened Intel.
+        window.setProperty("backgroundOpacity", 1.0)
         return True
-    except Exception:  # noqa: BLE001 - preserve a usable native window on bridge failure
-        if "native" in locals() and native is not None:
+    except Exception:  # noqa: BLE001 - preserve the usable Qt window
+        if native is not None and "original_style" in locals():
             try:
                 native.setToolbar_(original_toolbar)
                 native.setTitlebarAppearsTransparent_(original_transparency)
                 native.setTitleVisibility_(original_visibility)
                 native.setStyleMask_(original_style)
-            except Exception:  # noqa: BLE001 - AppKit may reject rollback during teardown
+            except Exception:  # noqa: BLE001 - teardown can reject rollback
                 return False
         return False
-
-
-def _install_frosted_backdrop(window: Any, native: Any, view: Any) -> bool:
-    """Place native frost behind Qt; foreground text and controls stay opaque."""
-    try:
-        from AppKit import (
-            NSAppearance,
-            NSAppearanceNameVibrantDark,
-            NSColor,
-            NSViewHeightSizable,
-            NSViewWidthSizable,
-            NSVisualEffectBlendingModeBehindWindow,
-            NSVisualEffectMaterialSidebar,
-            NSVisualEffectStateFollowsWindowActiveState,
-            NSVisualEffectView,
-            NSWindowBelow,
-        )
-
-        original_opaque = native.isOpaque()
-        original_background = native.backgroundColor()
-        parent = view.superview()
-        # A top-level Qt view sits in AppKit's private NSThemeFrame. That
-        # frame does not support arbitrary sibling views. Keep the readable
-        # opaque fallback unless the sibling owner is the public content view.
-        if parent is None or parent != native.contentView():
-            window.setProperty("backgroundOpacity", 1.0)
-            return False
-        frost = NSVisualEffectView.alloc().initWithFrame_(view.frame())
-        frost.setMaterial_(NSVisualEffectMaterialSidebar)
-        frost.setBlendingMode_(NSVisualEffectBlendingModeBehindWindow)
-        frost.setState_(NSVisualEffectStateFollowsWindowActiveState)
-        frost.setAppearance_(NSAppearance.appearanceNamed_(NSAppearanceNameVibrantDark))
-        frost.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
-        parent.addSubview_positioned_relativeTo_(frost, NSWindowBelow, view)
-        native.setOpaque_(False)
-        native.setBackgroundColor_(NSColor.clearColor())
-        window._native_frosted_backdrop = frost
-        window.setProperty("backgroundOpacity", 0.88)
-        return True
-    except Exception:  # noqa: BLE001 - retain an opaque readable window on native failure
-        window.setProperty("backgroundOpacity", 1.0)
-        try:
-            if "frost" in locals():
-                frost.removeFromSuperview()
-            if "original_opaque" in locals():
-                native.setOpaque_(original_opaque)
-                native.setBackgroundColor_(original_background)
-        except Exception:  # noqa: BLE001 - the opaque Qt artwork remains the fallback
-            return False
-        return False
+    finally:
+        if toolbar:
+            send(toolbar, b"release", None)
+        if original_toolbar:
+            send(original_toolbar, b"release", None)
 
 
 class _PresentationRetirement:
-    """Retire one native presentation window after asynchronous Space exit."""
+    """Retire the exact hidden presentation after asynchronous native Space exit.
+
+    The Qt timer owns callback lifetime; no Foundation block/Python native
+    callback is registered. Every tick rechecks current visibility and intent.
+    """
 
     def __init__(self, window: Any, allowed: Callable[[], bool], native: Any) -> None:
-        from AppKit import NSWindowDidExitFullScreenNotification
-        from Foundation import NSNotificationCenter, NSOperationQueue
+        from PySide6.QtCore import QTimer
 
         self._window = window
         self._allowed = allowed
         self._native = native
         self._closed = False
-        self._center = NSNotificationCenter.defaultCenter()
-        # Keep both the block and observer alive until the bridge closes.
-        self._callback: Any = lambda _notification: self.retire()
-        self._observer = self._center.addObserverForName_object_queue_usingBlock_(
-            NSWindowDidExitFullScreenNotification,
-            native,
-            NSOperationQueue.mainQueue(),
-            self._callback,
-        )
+        self._timer = None
+        # The Qt window can release its NSWindow during asynchronous teardown.
+        # Hold this exact receiver until our timer has been stopped/disconnected.
+        native.retain()
+        try:
+            self._timer = QTimer(window)
+            self._timer.setInterval(100)
+            self._timer.timeout.connect(self.retire)
+            window.destroyed.connect(self.close)
+            self._timer.start()
+        except Exception:
+            self.close()
+            raise
 
     def retire(self) -> None:
-        from AppKit import NSWindowStyleMaskFullScreen
-
         try:
             if (
                 not self._closed
                 and self._allowed()
                 and not self._window.isVisible()
-                and not self._native.styleMask() & NSWindowStyleMaskFullScreen
+                and not self._native.styleMask() & _FULL_SCREEN
                 and self._native.isVisible()
             ):
-                # Qt hide can already be a no-op while Cocoa finishes exit and
-                # remaps its window. Do not close/destroy the reusable player.
                 self._native.orderOut_(None)
         except RuntimeError:
-            # A queued native notification can outlive its Qt wrapper.
+            # Queued Qt work may outlive the native wrapper during teardown.
             return
 
-    def close(self) -> None:
+    def close(self, *_destroyed) -> None:
         if not self._closed:
             self._closed = True
             try:
-                self._center.removeObserver_(self._observer)
+                if self._timer is not None:
+                    self._timer.stop()
+                    self._timer.timeout.disconnect(self.retire)
+                    self._timer.deleteLater()
+            except RuntimeError:
+                pass  # The parent QWindow already destroyed its timer.
             finally:
-                self._observer = None
-                self._callback = None
+                try:
+                    self._window.destroyed.disconnect(self.close)
+                except (RuntimeError, TypeError):
+                    pass
+                finally:
+                    self._native.release()
 
 
 def watch_presentation_retirement(
@@ -165,12 +221,9 @@ def watch_presentation_retirement(
     if QGuiApplication.platformName() != "cocoa":
         return None
     try:
-        import objc
-
-        view = objc.objc_object(c_void_p=int(window.winId()))
-        native = view.window()
+        native = _native_window(window)
         if native is not None:
             return _PresentationRetirement(window, allowed, native)
-    except Exception:  # noqa: BLE001 - Qt hide remains the fallback if AppKit refuses
+    except Exception:  # noqa: BLE001 - Qt hide remains the fallback
         return None
     return None

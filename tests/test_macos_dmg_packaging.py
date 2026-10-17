@@ -1,4 +1,5 @@
 import plistlib
+import sys
 
 import pytest
 
@@ -69,6 +70,7 @@ def test_dmg_rejects_symlinked_entrypoint(app, tmp_path):
         require_universal_app(app, lambda _: pytest.fail("must refuse before commands"))
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="Native macOS font artwork")
 def test_background_has_retina_point_size_and_explicit_compatibility(tmp_path):
     from PIL import Image
 

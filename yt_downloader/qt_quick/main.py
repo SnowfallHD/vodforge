@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import importlib
 import json
 import os
 import re
@@ -401,16 +400,10 @@ class Materials(QQuickImageProvider):
 
 
 def _system_reduced_motion() -> bool:
-    """Read the macOS accessibility preference without changing system state."""
-    if sys.platform != "darwin":
-        return False
-    try:
-        appkit = importlib.import_module("AppKit")
-        return bool(
-            appkit.NSWorkspace.sharedWorkspace().accessibilityDisplayShouldReduceMotion()
-        )
-    except (ImportError, AttributeError, RuntimeError):
-        return False
+    """Read the native preference without importing the Python AppKit bridge."""
+    from yt_downloader.qt_quick.mac_preferences import system_reduced_motion
+
+    return system_reduced_motion()
 
 
 class Bridge(QObject):

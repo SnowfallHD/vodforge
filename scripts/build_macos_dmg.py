@@ -1,10 +1,16 @@
-"""Create a private universal2 drag-to-Applications DMG without Finder automation."""
+"""Create a private universal2 DMG without Finder automation.
+
+New single-icon packaging takes a separately signed Install VODForge.app.
+The original app input retains historical drag-layout tooling for old receipts.
+"""
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import plistlib
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -38,6 +44,52 @@ def require_universal_app(app: Path, run=command):
         "bundle_version": info.get("CFBundleShortVersionString"),
         "native_files": graph["native_files"],
         "dependency_errors": graph["errors"],
+    }
+
+
+def require_installer_app(app: Path, run=command):
+    """Refuse a renamed ordinary app or an unbound/unsigned installer."""
+    if app.is_symlink() or app.name != "Install VODForge.app" or not app.is_dir():
+        raise ValueError("Expected a real Install VODForge.app")
+    info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
+    if (
+        info.get("CFBundleIdentifier") != "com.snowfallhd.vodforge.installer"
+        or info.get("CFBundleExecutable") != "VODForgeInstaller"
+    ):
+        raise ValueError("Unexpected installer identity")
+    main = app / "Contents/MacOS/VODForgeInstaller"
+    if main.is_symlink() or not main.is_file():
+        raise ValueError("Missing real installer executable")
+    payload = app / "Contents/Resources/VODForge.app"
+    audit = require_universal_app(payload, run)
+    with (payload / "Contents/MacOS/VODForge").open("rb") as stream:
+        digest = hashlib.file_digest(stream, "sha256").hexdigest()
+    if info.get("VFExecutableSHA256") != digest:
+        raise ValueError("Installer payload does not match its bound executable")
+    graph = audit_payload(app, run)
+    if not graph["qualified"]:
+        raise ValueError("Installer native dependency closure is incomplete")
+    requirement = (
+        'anchor apple generic and identifier "com.snowfallhd.vodforge.installer" '
+        'and certificate leaf[subject.OU] = "76G5W4954G"'
+    )
+    run(
+        [
+            "/usr/bin/codesign",
+            "--verify",
+            "--deep",
+            "--strict",
+            "--all-architectures",
+            "-R=" + requirement,
+            str(app),
+        ]
+    )
+    run(["/usr/bin/xcrun", "stapler", "validate", str(app)])
+    return {
+        "payload": audit,
+        "payload_executable_sha256": digest,
+        "native_files": graph["native_files"],
+        "layout": "single installer icon",
     }
 
 
@@ -111,16 +163,25 @@ def decorate_volume(volume: Path):
 def build_dmg(app: Path, output: Path, logo: Path):
     if output.exists() or output.suffix != ".dmg":
         raise ValueError("Require fresh .dmg output; refusing overwrite")
-    audit = require_universal_app(app)
+    installer = app.name == "Install VODForge.app"
+    audit = require_installer_app(app) if installer else require_universal_app(app)
     output.parent.mkdir(parents=True, exist_ok=True)
     stage = Path(tempfile.mkdtemp(prefix="dmg-stage-", dir=output.parent))
-    command(["/usr/bin/ditto", str(app), str(stage / "VODForge.app")])
-    (stage / "Applications").symlink_to("/Applications")
-    (stage / ".background").mkdir()
-    write_background(stage / ".background/install.png", logo)
-    (stage / "Compatibility.txt").write_text(
-        "Apple Silicon: macOS 26 or newer. Intel: macOS 15 or newer.\nPrivate candidate; release acceptance is separate.\n"
-    )
+    command(["/usr/bin/ditto", str(app), str(stage / app.name)])
+    if installer:
+        from scripts.macos_installer_window import BACKGROUND, write_assets
+
+        artwork = stage / ".generated-artwork"
+        write_assets(artwork, logo)
+        (artwork / BACKGROUND).rename(stage / BACKGROUND)
+        shutil.rmtree(artwork)  # Only this newly generated temporary artwork.
+    else:
+        (stage / "Applications").symlink_to("/Applications")
+        (stage / ".background").mkdir()
+        write_background(stage / ".background/install.png", logo)
+        (stage / "Compatibility.txt").write_text(
+            "Apple Silicon: macOS 26 or newer. Intel: macOS 15 or newer.\nPrivate candidate; release acceptance is separate.\n"
+        )
     writable = output.with_suffix(".rw.dmg")
     if writable.exists():
         raise ValueError("Refusing existing writable image")
@@ -135,7 +196,7 @@ def build_dmg(app: Path, output: Path, logo: Path):
             "-format",
             "UDRW",
             "-volname",
-            "VODForge",
+            "Install VODForge" if installer else "VODForge",
             str(writable),
         ]
     )
@@ -167,7 +228,14 @@ def build_dmg(app: Path, output: Path, logo: Path):
         if len(matching) != 1:
             raise RuntimeError("Owned mountpoint not established")
         device = matching[0]["dev-entry"]
-        decorate_volume(mount)
+        if installer:
+            from scripts.macos_installer_window import (
+                decorate_volume as decorate_installer,
+            )
+
+            decorate_installer(mount)
+        else:
+            decorate_volume(mount)
     finally:
         if device:
             command(["/usr/bin/hdiutil", "detach", device])
@@ -204,4 +272,4 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--logo", type=Path, default=Path("assets/brand/vf-mark.png"))
     args = parser.parse_args()
-    build_dmg(args.app.resolve(), args.output.resolve(), args.logo.resolve())
+    build_dmg(args.app.absolute(), args.output.absolute(), args.logo.resolve())

@@ -8,9 +8,10 @@ import subprocess
 import sys
 
 import pytest
-from PySide6.QtCore import QCoreApplication, QEvent, QObject, QPointF
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, QPointF, Qt
+from PySide6.QtGui import QWindow
 from PySide6.QtMultimedia import QMediaPlayer
-from PySide6.QtTest import QTest
+from PySide6.QtTest import QSignalSpy, QTest
 
 from tests.test_qt_scene_port import qt_app, saved
 from yt_downloader.playback_backend import PlaybackSnapshot
@@ -21,6 +22,154 @@ pytestmark = pytest.mark.skipif(
     sys.platform != "darwin" or os.environ.get("VODFORGE_NATIVE_UI_TESTS") != "1",
     reason="requires an isolated native macOS Qt run",
 )
+
+
+def test_main_header_covers_native_frame_across_fullscreen_and_escape(
+    tmp_path, monkeypatch
+):
+    """Observe Cocoa geometry, not just the retained QWindow flag values.
+
+    Separate packaged screenshots still own visible release acceptance.
+    """
+    import objc
+    from AppKit import NSWindowStyleMaskFullScreen, NSWindowStyleMaskFullSizeContentView
+    from PySide6.QtGui import QGuiApplication
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    assert app.platformName() == "cocoa"
+    bridge = qt_main.Bridge(None)
+    bridge._engagement.presented_welcome()
+    bridge._settings["whats_new_seen"] = qt_main.SHOWCASE_ID
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    key_trace = []
+
+    class OwnedKeyTrace(QObject):
+        def eventFilter(self, watched, event):
+            if event.type() in (
+                QEvent.Type.ShortcutOverride,
+                QEvent.Type.Shortcut,
+                QEvent.Type.KeyPress,
+                QEvent.Type.KeyRelease,
+            ):
+                key_trace.append(
+                    {
+                        "type": event.type().name,
+                        "target": watched.metaObject().className(),
+                        "object_name": watched.objectName(),
+                        "accepted_before_dispatch": event.isAccepted(),
+                        "key": event.key() if hasattr(event, "key") else None,
+                        "spontaneous": event.spontaneous(),
+                    }
+                )
+            return False
+
+    trace = OwnedKeyTrace(window)
+    app.installEventFilter(trace)
+
+    def until(predicate):
+        for _ in range(100):
+            app.processEvents()
+            if predicate():
+                return True
+            QTest.qWait(50)
+        return False
+
+    def assert_header(native):
+        assert native.styleMask() & NSWindowStyleMaskFullSizeContentView
+        assert native.titlebarAppearsTransparent()
+        view = objc.objc_object(c_void_p=int(window.winId()))
+        view_rect = native.convertRectToScreen_(
+            view.convertRect_toView_(view.bounds(), None)
+        )
+        frame = native.frame()
+        assert view_rect.origin.x == pytest.approx(frame.origin.x, abs=1)
+        assert view_rect.origin.y == pytest.approx(frame.origin.y, abs=1)
+        assert view_rect.size.width == pytest.approx(frame.size.width, abs=1)
+        assert view_rect.size.height == pytest.approx(frame.size.height, abs=1)
+
+    try:
+        assert qt_main.integrate_qt_main_window(window)
+        native = objc.objc_object(c_void_p=int(window.winId())).window()
+        window.requestActivate()
+        QTest.qWait(250)
+        assert_header(native)
+        window.showFullScreen()
+        assert until(
+            lambda: (
+                bool(native.styleMask() & NSWindowStyleMaskFullScreen)
+                and window.visibility() == QWindow.Visibility.FullScreen
+            )
+        )
+        assert_header(native)
+        assert window.property("menuNavigationAllowed")
+        window.requestActivate()
+        assert until(
+            lambda: QGuiApplication.focusWindow() is window and window.isActive()
+        )
+        shortcut = window.findChild(QObject, "mainFullscreenEscape")
+        assert shortcut is not None and shortcut.property("enabled")
+        activated = QSignalSpy(shortcut.activated)
+        ambiguous = QSignalSpy(shortcut.activatedAmbiguously)
+        inventory = [
+            {
+                "object_name": item.objectName(),
+                "type": item.metaObject().className(),
+                "enabled": item.property("enabled"),
+                "context": str(item.property("context")),
+                "sequence": str(item.property("sequence")),
+                "parent_type": item.parent().metaObject().className()
+                if item.parent()
+                else None,
+            }
+            for item in window.findChildren(QObject)
+            if "Shortcut" in item.metaObject().className()
+        ]
+        print("Owned shortcut inventory:", inventory, flush=True)
+        visible_popups = [
+            {"object_name": item.objectName(), "type": item.metaObject().className()}
+            for item in window.findChildren(QObject)
+            if "Popup" in item.metaObject().className() and item.property("visible")
+        ]
+        print("Owned visible popup inventory:", visible_popups, flush=True)
+        print(
+            "Native Escape prerequisites:",
+            window.visibility(),
+            window.isActive(),
+            shortcut.property("enabled"),
+            flush=True,
+        )
+        QTest.keyClick(window, Qt.Key.Key_Escape)
+        exited = until(
+            lambda: (
+                not native.styleMask() & NSWindowStyleMaskFullScreen
+                and window.visibility() == QWindow.Visibility.Windowed
+            )
+        )
+        print(
+            "Native Escape result:", window.visibility(), native.styleMask(), flush=True
+        )
+        print(
+            "Native Escape activation counts:",
+            activated.count(),
+            ambiguous.count(),
+            flush=True,
+        )
+        print("Owned Qt key trace:", key_trace, flush=True)
+        assert exited
+        QTest.qWait(400)
+        assert_header(native)
+    finally:
+        app.removeEventFilter(trace)
+        window.showNormal()
+        QTest.qWait(1200)
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
 
 
 @pytest.mark.parametrize("destination", ["embedded", "floating"])

@@ -129,32 +129,10 @@ def test_notice_reduced_motion_and_long_text_clamp(feedback_scene):
 
 @pytest.mark.parametrize("preference", [False, True])
 def test_system_reduced_motion_reads_mac_preference(monkeypatch, preference):
-    from types import SimpleNamespace
+    from yt_downloader.qt_quick import mac_preferences, main
 
-    from yt_downloader.qt_quick import main
-
-    workspace = SimpleNamespace(
-        accessibilityDisplayShouldReduceMotion=lambda: preference
-    )
-    appkit = SimpleNamespace(
-        NSWorkspace=SimpleNamespace(sharedWorkspace=lambda: workspace)
-    )
-    monkeypatch.setattr(main.sys, "platform", "darwin")
-    monkeypatch.setattr(main.importlib, "import_module", lambda _name: appkit)
+    monkeypatch.setattr(mac_preferences, "system_reduced_motion", lambda: preference)
     assert main._system_reduced_motion() is preference
-
-
-def test_system_reduced_motion_unavailable_falls_back(monkeypatch):
-    from yt_downloader.qt_quick import main
-
-    def unavailable(_name):
-        raise ImportError("not installed")
-
-    monkeypatch.setattr(main.sys, "platform", "darwin")
-    monkeypatch.setattr(main.importlib, "import_module", unavailable)
-    assert not main._system_reduced_motion()
-    monkeypatch.setattr(main.sys, "platform", "win32")
-    assert not main._system_reduced_motion()
 
 
 @pytest.mark.parametrize("width,height", [(720, 560), (820, 560), (1100, 800)])

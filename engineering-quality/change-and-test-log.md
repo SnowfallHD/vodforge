@@ -2500,3 +2500,467 @@ Corrected test-only bd7b274 run38887870787 built/signed/verified both Windows as
 Bounded staticPE resource scan finds ProductVersion='0.2.6' plus45spaces in the actual signed Innoinstaller. Newly added strict rawresource equality rejected its padding. Narrow local fix trims only surrounding resourcewhitespace for staged and installedProductVersion, then retains exactversion equality; hash/filename/trustedpublisher/timestamp/freshrepair/data guards unchanged. Existing doubled metadata used exact clean literals and missed real installer resourceformat. Generalized installer+installed boundary cases cover paddedvalid and paddedwrongversion1.2.30, no prefix/range matching. Prior actualWindows2positiveFAIL/2wrongversionPASS3.56s. Fixed actualWindows19helpercasesPASS11.24s under normalprocesspolicyadapter, preserving wrongversion rejection/noinstallerexecution and installedwrongversion/norelaunch. The first fixed19run accidentally used maintained legacytestflags; its scope metadata is explicitly corrected and separate normal-policy19run is operative. No host policy setting changed.
 
 Affected pinned source updater/Qt matrices114PASS82.27s; Ruff/format/diffPASS, scopedupdatesmypyPASS ignoring existingmissingpsutilstubs; initial unconfiguredmypy reports that1dependencyerror, not clean globaltypecheck. Large2MiBresource-prefix stdintransport timedout before anyfixturecreated; small test-only transport then succeeds; no false Win32property-read claim. Exact root-owned Windowsprocess release queried separately, no forcekill. Reviewable local source fix only, not packaged or actualnativeinstallPASS. Existing ARM904/Intel8a82 immutableproof stays at actualsource; newWindows-only helper delta is not falsely labeled byte-identical. Publicrelease/newassetupload held; no sourcepush/workflowdispatch/deploy is authorized by the later read-only watcher status message.
+
+## 2026-10-16 — approved043 signed Windows upgrade qualification and new UI gate
+
+Cooper explicitly approved reviewed04377b6 push/private Windows workflow at21:04:57UTC, then public release AFTER qualification at21:08:46UTC and actual rendered UI regression gate at21:09:24UTC. Pushed exact04377b63612274295cda22ebdd6ec1ca396e4bf7; Windows-only artifacts-only run38967007887 SUCCESS. Signed app+installer/runtime smoke/updater faults PASS. Independent22-check reconciliation PASS: actual official025baseline0aa2e2...bb6a6 installed exact signed026 through both production helper and legacy handoff, genuine different PID/native updated window; normal11486→2287ms and legacy4312→274ms visibility. No click verification claim. Candidateexe620d2b12...dd01; installer8c00484b...a10f, portablebf7464c3...01d1.120actualPYZ modules+47QML checkoutCRLFprojection bind immutable043source. Raw receipts and original failedbd7 remain retained under build/automatic-updates-20261016/04377b6/windows. No repeat Mac updater transactions; accepted9043nativeflows retained.
+
+Four assets+SHA manifest prepared locally, not published. ARM904/Intel8a82 retain actual source/signatures; only product difference through043 is windows_update_script AST (resource whitespace trim), all Mac updater owners unchanged, no whole-source byte-equivalence relabeling. New Mac native observer owns ONEfresh rendered UI fixture; root owns no foreground input. First fictional seed mistakenly used rawsave_history without requiredvodforge_output_dir; canonical loader skips3rows, actual Library0. Separate local prerequisite probe confirms0before/3after via maintained sanitize_history_record, all3actualpayloads exist. Original app/profile unchanged while running; independently valid settings/dialog/download observations continue, missing-only corrected fresh fixture planned after normal release. This is fixture defect, not product regression.
+
+Windows rendered UI remains pending trusted current availability; SSH read-only finds ordinaryf961PID56632still running and standardUIAutomationassembly loads, no input/app launch/ordinaryprofile or installer mutation. Native observer has Mac controller only. Maintained TELEMETRY_RELEASE_GATE.md requires final-signed-artifact realUIpreview-D1 evidence on both platforms; older815/44/failed36receipts cannot be relabeled904/043. Auditing current evidence and existing opaquecredential runner, no productionQA. Conditional release authority does not waive qualification.
+
+Rendered fixture follow-up: actual firstloopbackMP4 UI attempt failed source-selection (no Retry); independent source yt-dlp returns unknown height/codecs, so maintainedselector refuses. Synthetic HLS master with explicit640x360/avc1/mp4a produces real selectable360format and passes sameownerpreflight; privateprobe server closed. New helper canonical3row preload passes beforelaunch; nativeLibrary3cards/description-scroll/fullsavedpathhighlight/playpause observations independently reported, other checks ongoing. Caption track languages alone were insufficient: actual savedreader requires explicit embedded Original captions(manual/automatic) provenance, so genericSubtitleHandler correctly yielded nooriginal even though historysummary/tracks retained. Generated distinct tagged payload, actual savedcatalog and bounded cue extraction now returnENoriginal+EStranslation/twocues each/exact5stext. No runningfixture media/history changes. A missing-only caption-native freshroot is queued aftercurrentnormalrelease, no repeatedvalidSettings/dialog/updater work. These are testprerequisite defects retained separately, not productregressions or justification to relabelfailedchecks.
+
+Windows actual rendered follow-up uses the existing authorized SSH/limited Interactive task route with standardUIAutomation/Win32/PIL, no new dependencies/access. Native interactiveGetLastInputInfo guard observed83220s idle/unlocked; fresh launch guard83630s/noknownvisiblecallhint. FirstPIDs59980 normalexit1 BEFOREready because testlauncher omitted cross-platform mandatoryXDG_DATA_HOME; startuprefusal preserved, ordinaryf961untouched. Corrected NEWroot validenv launches signed043PID60672/windowtoken/readynative1100x740/previewtrueproductionfalse. Actual image-bearing startup, Libraryfirstclick/nativewheel/cards, Detailsdescription, video/Pause/pointerseek4.167s, originalEnglish+Spanishcaptions, fullscreen/EscapeWatchreturn, mainheaderdrag [30,30,1130,770]→[110,70,1210,810], SettingsvisibledefaultautomaticOn/analyticsOff, Helpfirstclick+Escape allPASS with app-only PNG/UIA/normalinput receipts. No runtime changes. OneDetailscontrol safelyrefused beforeinput because scheduledtask's ownedconsole tookfocus; adapter now re-focuses only its owncontrolconsole beforePID-boundinput and stops any unexpectednativeinputtick. Captureboundsre-resolved from actualsamePIDforeground afterwindowtransitions, notstalepriorfullscreenhandle. Originaldriverfailure preserved. Folderdialog/realWindowsHLS/finalnormalexit pending atthischeckpoint, notclaimedcomplete.
+
+Mac independentfinal rendered receipt65PNG/AXSHA entries: startup/3cards/descriptionscroll+savedpathhighlight/actualplayseekvolume/fullscreen+floatingreturns/EN+EScaptionrender/firstclickFile/folderdialog/defaultOn/controllednoticeLater/ONEHLSdurableMP4 pass; all3normalexit0/serverclosed/originalmediaunchanged/finalnative0. ONEfloatingdrag unchangedgeometry remainsUNQUALIFIED, no productbug inferred. No repeatedthreevalid904updatertransactions. Rootreviewed actualMaccaption andWindowsstartup/Library/description/English+Spanish/fullscreen images. FinalexactartifactpreviewD1 releasegate stillabsent and notwaived.
+
+Auto-review rejected one benignstatussend to website task01a12d70 for lackof explicit thread-specific messagingauthorization. No retry/bypass/indirectmessage. Remaining localUI/evidence work continues; exact rejection retained at043/outbound-coordination-blocker.json. Publicrelease/site remain0.2.5; existingdraft containsold canonicaldigests plus3QAIntelassets and mustnotbepublishedas-is.
+
+Windows rendered journey FINAL: actual normal output folder dialog/Cancel and ONE native Download of owned HLS completed (UI100%,4runs,640×360/h264AAC/10.9MB). Independent exact savedMP4 ffprobe+FULLdecode exit0/emptyerrors;11471479bytes/SHA998407fb507fc98e619f27c99b4fbe1c830c7131a7565e5263741badbda48988. Three seed media SHA unchanged; signedexe620d2b12…dd01 unchanged. NormalWM_CLOSE exactPID60672 exit0 at22:00:21UTC; launchserverclosed, separatemediaserverclosed22:00:44UTC; both ownedlongrunningScheduledTasks removed onlyafterfinished. Freshps ownedexecutable[]/unreadable[]; ordinaryf961PID56632 retained. No duplicateDownload/no profile/installer/registry/production mutation. Full screenshot/UIA/control hashes and explicit remainingWindowsfloating/volume/complete-description-selection/automatic-close-native limits in043/rendered-ui/windows/rendered-ui-results.json. All Mac/Windows native/heavy ownership now released. Finalhandoff043/FINAL-HANDOFF.json and REPORT.md supersede earlier activefixture checkpoints; original receipts remain intact.
+
+Fresh site peer read-only preview prerequisites now confirmed same707cffbe Worker100%, isolated924640fb DB, existingQAkeypresenceonly,026enabled/order17,0027–0030/tickets/claims/baseline present,rightsabsent/exportdisabled. Metadata is not final signed-native telemetry evidence. Maintained final-signed realUIpreview-D1 bothplatform gate remains unfulfilled, not waived by releaseauthorization. Fournewsealedassets+SUMS ready locally, public0.2.5unchanged; old026draft cannot publishas-is. No outboundretry after messagingautoreviewdenial. Workinglog remains modified intentionally; no newruntime/sourcecommit.
+
+## 2026-10-16 — parent-authorized remaining UI qualification and exact telemetry prerequisites
+
+Parent explicitly directed continuing final signed Mac/Windows preview telemetry and missing UI, without retrying denied website messaging. Consulted all existing receipts; no successful updater/download/fullscreen campaign repeated. Fresh Windows missing-only fixture exact043exe620d2b12…dd01 PID63976: actual pointerVolume0.171875, actualMute0/Unmute, image-bearing nativefloating/ReturnmainWatch PASS. Nativewheel innerdescription0→84.477→100 andouterdetail0→100 PASS; actualsavedpathclick+CtrlA fullwrappedtext visiblyhighlighted, noclipboard/edit. NormalWM_CLOSE22:11:24UTC exit0/feedclosed; onlyownedtaskremoved; three36e843…db9a mediaunchanged/consentdenied; freshownedprocess[]/unreadable[]; ordinaryf961PID56632retained. RESULT+hashes at043/final-telemetry/windows-remaining-ui/RESULT.json. No synthetictransport/provider/productionQA.
+
+Macroot readonly preflight nowAXtrue/Screentrue/idle80519s, no grants. New immutable904missing-only fixturePID15680: maintainednativeinput observe first foregroundtimeout5s/no featureinput. FreshAppKit/CGread thenestablishedtargetactive/frontmost; oneobserveafteractualtransition succeeded. Actualapprectangle screenshot revealed overlapping 'Python quit unexpectedly' systemdialog; owneruncertain, no dismissal/Reopen/Report orfeatureinput. Rootstoppedfeaturework, exactexe/PIDguarded NSRunningApplication.terminate cooperativeonly; exit0/feedclosed/originalsunchanged/newfiles[]/PIDabsent. PriorunchangedboundsMacdragreceiptstillunqualified; no productbug inferred. Allownednative/serversreleased. Private desktop companion retainedlocally/notpublication; RESULT in043/rendered-ui/mac-drag-only.
+
+Exacttelemetryplan043/final-telemetry/REMAINING-TEST-PLAN.json enumerates36ordered nativeobservations/6readbacks/4launchesbothplatforms, product/producers/presets/upgrade/privacy. Currentvocabulary224raw; verifiedQt+SHOWCASE_MODE none leaves214applicable, so oldprose215/207countsstale; verifierunchanged/noactionwaived. Freshpreviewmetadata is prerequisite-only. Canonicalfreezer currentcheckout043hasretainedlogedits andMacoriginal904/Intel8a82 sourceidentities; no clean-source claim/relabel/discard/newcheckout/branch/gatebypass. MaintainedWindowsrunner also refuses anypreexistingVODForge: preservedf961 blocksit untilparentcoordinatesnormalrelease/disposabledesktop. No keymaterialretrieval/newcredential/prodlaunch/newtelemetryjourney. Reported concrete3coordinationneeds in043/final-telemetry/FOLLOWUP.md; continue afterboundoriginalsource/Windowsapp/Macdialog boundaries resolved. Historicaldraft0.2.6stillunpublished, public0.2.5unchanged; deniedintertaskmessagenotretried.
+
+## 2026-10-16 — read-only actionable-blocker clarification
+
+Parentrequestedexactrequirements/no userprocess termination or dialoginteraction. Artifactfactsnotmissing: all3originalGitcommitobjectsavailable and actualembeddedVODFORGE_BUILD_REVISION reads matchARM904/Intel8a82/Windows043; originalmaintainedrevisionwriter returnsunknownifdirty. Existingarchive/exe/signature/sourcebinding/sealedinventories retained. Missingcanonicalcandidate-artifact.json + readonlycandidate.zip/extractedtree/originalfullsource-manifest binding is ROOTengineeringtooling work, NOT information orpermissionCooperneedsprovide. No relabel/schema-rename/gatechange/rebuild was performed. Exactscope and existingdata in043/final-telemetry/artifact-binding-requirements.json.
+
+FreshWindowsread-only confirms56632isoldf961reviewbinarydeliberatelyleftopenforCooper, NOTcurrentdisposablefixture; historicalreceiptandallowlistedcurrentenvironment confirmordinaryuserprofile C:/Users/Coop/AppData/Local/VODForge/no QAisolation/telemetryoff. SSHsessionEnumWindows[]wasinapplicabletodesktop; correctactualinteractiveSELECT-onlyUIA task finds1visibleVODForgewindow/Downloadenabled/no scopedbusycontrols; processchildren[]. active-run journalidle/queue0butmtimeOct12 16:05UTC predatesprocessOct12 18:20, so notalonecurrentidlenessproof. No unsaveddrafts read/input/termination. Preciseuserstepifneeded: reviewexistingwindow/finishwork/save thennormalQuit, orparentcoordinatesdisposablehost; do notforce. Readonlytaskended/removed. OneinitialmetadataTransportcommandtoolongrefusedbeforeexecution; sameboundedscriptstagedinclosedownedQAroot thenworked. Initialparentindexerror also enumeratedTempentrynames(no contents), retainedprivaterawreceipt/excludedfromshareablereport; bounds corrected and no broad furtherread.
+
+Mac22:15UTCfreshmetadata noReportCrash/Python/dialog, QA15680absent; earliertextPythonquitunexpectedly/ReopenIgnoreReport hadnoindependentownerPID, cannotattributeit toQA. No dismissal/report/crashdumpread. Safeindependentmissing-only fresh17809launchedafterdialogabsent/idle/no callwindow guard; maintaineddriveragainforegroundtimeout BEFOREfeatureinput despitebefore/afterAppKit/CGexacttargetactive/no dialog. Stop/no furthernativeattempt; exactownedPIDcooperativelynormalquit0/feedclosed/originalsunchanged/newfiles[]/absent. No userprocess terminated. RemainingMacblocker is qualifiedcontroller/observerengineering, NOTcurrentlyvisiblecrashdialog orOSgrant. Supersedingconciselist043/final-telemetry/ACTIONABLE-BLOCKERS.md. No newtelemetry/privatekeyaccess/prodQA/publication/deniedmessage retry; allownedresourcesreleased.
+
+## 2026-10-16 — canonical retained candidates and final preview journey started
+
+Original clean-build source proof is now imported through retained_candidate.py, bound to immutable Git blobs, original revision-writer hash, full compiled-module/QML list, source-proof/archive/executable hashes and actual embedded revision. Normal dirty-checkout freezer remains unchanged/refuses dirty source. Canonical retained ARM904/Intel8a82/Windows043 receipts all verify; original source identities are preserved, not relabeled043. Index: build/automatic-updates-20261016/04377b6/final-telemetry/CANONICAL-CANDIDATES.json. Windows freeze ran on actual Windows with Authenticode/timestamp/publisher/runtime checks. Focused candidate/controller/platform suites92PASS1skip; strict full-QML-list follow-up42PASS. No product runtime/package rebuild, dependencies or credentials created.
+
+Mac controller now initializes foreground state before activation, skips redundant activation of exact foreground PID, pumps AppKit within unchanged5second deadline and still verifies exact frontmost PID/AX/window/hit-test guards. Prior redundant-activation case fails before; current cases pass. Exact904 floating titlebar native drag now establishes samewindow16548 movement(190,160)→(270,192) with intermediate frames, normal close/quit0/original media unchanged. Initial capture was transitional1548x926 while later input used stable1560x934; functional movement only, no precision or latency benchmark. Existing system UserNotificationCenter/Python crash dialog and CoreServicesUIAgent prompt were identified by geometry/PID and left untouched; prior filtered absence claims superseded, crash source unknown.
+
+Cooper explicitly authorized normal close of discussed Mac/Windows builds at22:26:11UTC. Exact old Windowsf961PID56632 CloseMainWindow normally exited at22:27:58UTC; five normal profile hashes unchanged/no force/no save prompt. Exitcode unavailable, not claimed0. Final signed ARM904 maintained preview journey began PID22504 in fresh attested HOME, DE opt-in, previewtrue/productionfalse, existing opaqueQAkey inherited privately. Initial app_visible actual screenshot recorded. SELECT-only unknown snapshot22:48:51UTC has zero installation/client/events and consentnull. SystemNode aborted missing loader dependency; existing app-bundled Node succeeds, no system repair. No consent click before snapshot; journey still incomplete, no final release proof/publication. All private desktop companions stay local.
+
+Final ARM preview bounded checkpoint: native11/36 ordered observations recorded throughMP3playback, realMP4(960x540) andMP3(one each) starts/completion/export/playback scopedpreviewreceipts each1; OriginalAAC master.m4a completed/validated/atomiccommit only, Opus+Originalplayback stillunperformed. FolderInspectorDescription actual fullsentinel visibly unobscured after movingONLYQAwindow30→320; immutablegeometryverified. Two nativeentrytarget misses retained/noextrafeaturesubmit, no Retry. Exactproducerledger at043/final-telemetry/mac-journey/action-ledger.json; noexpectedcounts copiedfromD1. Unknown22:48:51zero/client0/consentnull thenfirst_launch1app_opened/client1/granted actualchoice. Groupreadbacks allSELECT-only/rows_written0. Existingprivatepreviewkey inherited only; no productionQA.
+
+Parent requested concise progress/safe desktop transfer. IdlefinalAACterminal; exact22504 normalCmdQ exit0 at23:05:52.580UTC, fixtureownedprocess[]/unreadableVODrows[] at23:06:09.867UTC, server/runnerended, staging[]/survivors0/threeindependentlyreadableoutputs. Exactcandidateintegrity before/aftertree unchanged. Maintained E2E RESULT truthfullyFAILED/incomplete25observationsmissing, no falseorderedshutdown/restart orfullOriginalgroup. Originalreceipts preserved, read-onlysame-candidate continuationplan requested; no relaunch. Allownednative/heavy/sign released, parentmaysequenceKryden existingobserver. ExistinguserPython/CoreServicesprompts untouched.
+
+Windowsfulltelemetry toolingexport attemptedbut AUTO-REVIEW REJECTED beforeexecution: broadprivateharness/sourcepayload andexactexistingSSHdestination notexplicitlyauthorized/establishedtrusted. No retry/bypass/sourceorcredentialtransfer/newWindowslaunch. Blocked action wouldexportmaintainedquality_harness/*.py+schemas andtwoGit043sourcehelpers intoexistingownedcanonicalQAroot; details043/final-telemetry/windows-journey-export-blocker.json. Need exactpayload/destinationapproval fordependentWindowscontinuation. UnaffectedMacboundedwork completed normally. Publicreleaseheld/fullnativepreviewgate notwaived; historicaldraftstillineligible.
+
+Windows export approval preparation remainedLOCALONLY afterrejection. Exactarchive77files/347881bytes/SHA490dd0cc530c874ce37e0c624053b48bc58e8feaf4057313dbcddbf1998da425:72quality_harnessPythonmodules,3receiptschemas,2immutable043QAhelpermodules. LocalZIPmembers+everyfilehash/length matchmanifest; allUTF8source/schema, no credential/profile/media/userdoc/Git filesselected. Commoncredential-patternaudit foundoneexistingstaticTOPSECRET-HARNESS-CANARY securityfixture with example.invalid/dummycredentials, notactualsecret. No actualcredentials identified; envvarnames/publicendpoint/projectIDs remaincode. Thisboundedscan isnotuniversalPIIproof. Exactdestinationexistingcoop@100.125.157.77 temporarycanonicalQAroot recorded; no transferretry/credentialcopy/native reacquisition. Parentrequestedlegiblemanifestfacts formeaningfulCooperapproval.
+
+## 2026-10-17 — continued exact ARM904 native preview, 20/36 ordered observations
+
+After parent-sequenced Kryden release00:37:56UTC and fresh no-conflict guard00:39:20UTC, maintained same-candidate/same-HOME continuation launched32338 at00:40:13UTC. Original11/36 failed/incomplete wrapper and exact trace archived continuation-1 without backfill. Actual launch2 is logical phase1 continuation, not formal ordered restart; app_opened2/unchanged firstlaunch/oneclient readback retained. No runtime/package rebuild or identity relabel.
+
+New actual native OriginalAAC playback plus Opus export/playback completes Original group; scoped preview original starts/completed/exported/playback each2. Actual native file pickers select owned MP3+still; local MP4 created, started/completed1. First intended failed URL recovered internally in yt-dlp and completed: retained as extra successfulrun, NOT failure/UIRetry. Separate loopback404 gate produced genuine Failed; real Retry→Same settings once completed and exact retry_of linked failed attempt to distinct completion. Helper's initial syntax error occurred before serving/appattempt, original log retained. Actual PRO click sets scoped preview cloud_clicked_at00:57:57UTC; no browser render/form/account/subscription claim. It may leave one owned previewPRO tab; parent/observer cleanup coordination needed without ordinary-tab input.
+
+All six actual MP4 presets qualify: retainedEveryday plus one each Streaming/Editing/Sharing/CTV/Custom export; five new native terminal screenshots show completed960x540, CPU.01:05:13UTC SELECT-only preview has starts/completed/exported exactly1 per five new presets. Genuine loaded two-link synthetic batch Skip during slow transfer advances second source and retains Skipped+Partial; separate queued card Remove from queue observed.01:09:12 snapshot run_skipped/run_queued/run_dequeued each1. Distinct slow removal-support run later completes; no silent retry/cached success claim. Fragment-close/staging-clean proof waits final normal exit.
+
+Actual malformed ownedMP3 conversion shows validation failure; separate600second syntheticMP3 active Stop shows Conversion stopped.01:11:49UTC scoped preview local_started3/completed1/failed1/stopped1. Ordered recorder now20/36, remaining16 are unperformed. First preset record attempt lacked escalated CGWindow visibility and refused before mutation; identical attestation under normalhost read succeeds. Every readback previewonly/rows_written0. Exact action ledger under04377b6/final-telemetry/mac-journey/action-ledger.json; current native32338 still owned/active at local terminal. SystemPython/CoreServices prompts untouched, no productionQA/publication/Windows denied transfer retry. Full214applicableaction vocabulary, formal restart/refusal/disabled, telemetry update/Repair and Windows full journey remain open; continuation app-open count integration needs truthful actual-launch reconciliation, no waiver.
+
+Continuation final bounded checkpoint21/36: actual Library search/filter/select, tag, note and category save each delivered canonical feature events; reopened editor content renders exact saved concatenated fictional note/category. Earlier inline note-target miss left text only in unsaved tag input; no save/event falsely inferred. Separate Library-only removal of sole controlled-retry card reduces history14→13, payload remains exactd6d0f88b...1f6bba. No Trash or usermedia change. Scoped preview group includes searched/filtered/selection_started/finished/tags_saved/notes_saved/category_saved/removed each1; fixed fictional text absent from event rows. NativeUI evidence kept private due existing systemdialog overlay.
+
+At idle checkpoint app32338 normalCmdQ, both actual launch returncodes0, current runnerexit1 truthfully reflects incompletejourney, NOT appcrash. Candidatebefore/aftertree identical;14outputs independentlyffprobe-readable/staging0/survivors0. Fresh release01:25:26.439UTC originalPIDabsent/ownedprocess[]/unreadableVOD[]. Recoverableloopbackserver closednormally; maintainedserver ended. Original ordered/provenance/screenshots valid;15required UI events stillmissing, no formalshutdown/restart backfill. Remainingcoverage snapshot48/214applicable actions,166unobserved; raw224 corrected through already-bound214applicability, no gatechange. Fullwrapper genericreliabilityfinding retained as incomplete qualification, no new productdefect inferred. CURRENT-STATUS/PARENT-CHECKPOINT/CHECKPOINT/REMAINING-FEATURE-COVERAGE bind exact nextwork. No product/runtime edits, productionQA/publication/deniedWindows transfer retry. Allownednative/heavy released; potentialnewpreviewPROtabcleanup must preserveordinarytabs and be parent-sequenced.
+
+## 2026-10-17 — third exact ARM904 continuation finds persistent blank fullscreen-return window
+
+Parent explicitly resumed remaining Mac work after21checkpoint; fresh01:28:55guard idle237s/conflicts[]; maintainedcontinuation archives21prefix and launches38299 samecandidate/HOME/logicalphase1. Actual launchsequence3 is still NOT formalorderedrestart. No product/package changes. Existing24secondcompletedMP4 actualPlay; seek12s and generated18s hoverthumbnail visible; realFill thenFit, one presentationFullscreenentry. Actual fullscreenwindow17154 rendersvideo2880x1800. ONE Escape returnsmainWatch (17121) but leaves samepresentation17154 as visible780x508 blankwindow at480,160. Settledmaincapture and later exactownedwindowcapture persistblank; no repeatedfullscreen/escape/artificialstate. Scopedpreview01:35:19 records seek/hover_preview_shown/fill/fit/fullscreen/returned each1; returnedtelemetry is NOTwindowretirementproof. Checkpoint22 NOTrecorded,21/36prefix preserved. Rootcause notestablished; preservedexistingPython/CoreServicesdialoguntouched, no crashdump/sourcefix. Read-onlydiagnostic prerequisites systemPythonQuartzimportfailed beforeaction; existingvenv actualobserve succeeds, CFdictionaryJSONnormalization failure afterscreenshot separatelyfixed metadata-only.
+
+ParentrequestedimmediateCooperMac handoff whileprobeclosing. Exact38299 normallyCmdQ (return0), runnerexit1incomplete/serverended; fresh01:35:56UTC pidabsent/owned[]/unreadableVOD[]/nooutstandingcontroller. ExplicitnativeRELEASE/no furtherMacinput. Artifactafterintegrityverified; allpriorpasses/failedscreens retained. Concretefailure mac-player-fullscreen-return-failure.json and privatePNG/CGwindows. NewapprovedWindows77filetransfer exactscope/destination01:33:12UTC nowavailable; retryonceonly perparent, no app/publication yet. No deniedtransfer bypass orpersonalsurfaceinput.
+
+ApprovedWindowsretry outcome: parentrelayed Cooperexact77file/destinationapproval01:33:12UTC; ONEretryrequested with immutable347881byte/SHA490dd0cc...da425/memberhash checks, existinghost/destinationreadpreflight and importonly. AUTO-REVIEW REJECTED BEFOREEXECUTION: exactapproval deemed presentonlyin untrusteddelegated/tool evidence, notdirectend-user-authoredauthorization forprivateexport/remotewrites. No staging scriptcreated, noSSH/SCP/remoteextract/import ran, no furtherretry/bypass. Rawreason+exactscope saved windows-approved-retry-rejected.json. Directend-userapproval inexecutionthread isreviewer'sremainingrequirement; parentnotifiedexplicitly. No change topublichold.
+
+Finalparenthandoff consolidatesconcreteMacfailure ratherthanfalsecompletedgate:21/36prefix, newplayerseek/hover/fill/fit/fullscreen/returnedrealpreviewpairs present but blankownedwindow persists afterEscape;54/214applicable actions observed160missing. ExactsourceonPresentationModeChanged calls showNormal/hide and deferredretirement, but sourcecause NOTestablished by this observation. Earlierpassed904fullscreenwasdifferentplaybackstate; newcase naturalEndOfMedia→pausedseek→FillFit→FullscreenEscape; no automatic invalidation ofpriorpasses. ParenthumanMacpriority honored, all3launchesreturn0/staging0/candidateunchanged/release01:35:56. No productfix/rebuild/publication/newproductionQA.
+
+
+## 2026-10-17 — source-only candidate protection for native fullscreen retirement
+
+Parent authorized source diagnosis/minimal fix with headless coverage only while
+Cooper owns the Mac. No foreground input/launch/observation, build/signing,
+Windows transfer or publication occurred. The signed904 failure and all earlier
+bounded passes remain untouched. Native incident cause remains unproven.
+
+Existing frame-handoff and return matrices simulate late Qt visibility changes;
+they missed Qt-hidden/native-visible divergence during asynchronous Cocoa exit.
+The existing mac_windowing owner now observes fullscreen completion on only the
+exact presentation NSWindow, using public AppKit notification/orderOut APIs.
+It retires only current embedded intent when Qt is hidden and native fullscreen
+has ended; floating/fullscreen intent, foreign windows, closed bridges and queued
+post-close callbacks are guarded. QML keeps epoch/owner checks and reconciles
+retirement even when Qt already reports hidden. Observer/token/block references
+are retained until bridge close and released there. No global window search,
+private API, permission request, recurring poll or player/media restart.
+
+Nine new cases fail before because the hook/API are absent (not a native cause
+reproduction). After implementation 34 affected frame/presentation/chrome/native
+owner tests PASS headlessly, with two existing QVideoFrame deprecation warnings.
+Three independent behavioral negative controls each produce 1 failure/3 passes:
+missing native hide, ignoring latest intent, and retiring during fullscreen.
+Original source restored after each mutation. Final callback-reference cleanup
+rechecked its nine affected native-owner cases PASS. Ruff check/format and diff
+check PASS. Existing retained-frame, current-owner and normal floating return
+checks remain in that bounded34; no full campaign repeated.
+
+Evidence: build/automatic-updates-20261016/04377b6/fullscreen-retirement-fix/
+receipt.json, before.log, after.log, negative-*.log and teardown-final.log.
+This is an uncommitted source candidate, not a native repair claim. A new signed,
+source-bound package must qualify the failing natural-EndOfMedia/paused seek/
+Fill-Fit/fullscreen/Escape case, owned-window retirement and latest presentation
+intent/normal quit before acceptance;904/8a82/043 artifacts cannot be relabeled.
+Formal journey remains21/36 and54/214 actions; no checkpoint backfill. Windows
+transfer stays held after actual auto-review rejection; no alternate route or
+retry. Cooper/Kryden retain foreground; VOD owns no native/heavy/sign slot.
+
+
+## 2026-10-17 — authorized private ARM fullscreen-return successor c8ee61a
+
+Parent explicitly authorized recognized private build with focused checks while
+Cooper owns foreground. Committed ONLY six isolated fix/test/README files as
+c8ee61a49715158e1a8ffd50a714ff92158ee5e3 on existing qt-retirement; no push/publication.
+Unrelated prior qualification edits and working change log remain intact.
+Clean isolated build worktree under automatic-updates-20261017/c8ee61a/source;
+its detached HEAD was given local build branch codex/fullscreen-retirement-private-c8ee61a
+because the maintained freezer requires a named branch. No source files changed
+in that worktree. Existing pinned ARM recipe, Python/tool dependencies, Developer
+ID and kryden notary profile reused; no installs/credentials/permissions changes.
+
+Package exit0; clean-source34PASS and actual frozen-product-module34PASS (two
+existing deprecated QVideoFrame warnings each), offscreen/software/telemetrydisabled.
+All120compiledmodules+47QML bind clean source before and after signing;384Mach-O
+ARM/floor audit has0errors. Existing no-launch authority means bundle executable
+runtime-smoke DEFERRED; no VODForge executable/UI launch, native input, ordinary
+profile/browser/prompt change or new telemetry journey.
+
+AppleAccepted a62ef185-bb3a-4cce-b98e-317b6df45cb0; strict signature/staple/Gatekeeper
+PASS; local ZIP SHAf3ce3d69abe6da54f8ac192d6201ef80aa603326bdd458fcb21f43e7a3101bfb; exeSHAb6e679ad398e56754856eb1e20a64276fea59d54f8197602b7f96afee3775592;
+canonical treeSHAc904c69194e12c1fa0081d11edf94188dd417aaaa878b23343258bc811e14893. Canonical freezer verified true.
+First adapter failure missing source import path and second pinned-runtime lack
+of jsonschema retained. Existing development Python already has validator;
+corrected adapter then passes normal unchanged schema, no new dependency/bypass.
+572priorcandidate/qualificationJSONreceipts match prebuild hashes.
+
+Deliverables: build/automatic-updates-20261017/c8ee61a/PRIVATE-SUCCESSOR-RECEIPT.json,
+REPORT.md, TARGETED-NATIVE-ACCEPTANCE.json, canonical-candidate-location.json and
+arm64 logs/source-inputs/artifact-binding/notary receipt. New artifact has only
+signing/artifact eligibility; native repair/full-preview/platform/public gates
+remain open, not relabeled from904/8a82/043. Specifically qualify natural-end,
+paused seek/FillFit/fullscreen/Escape native retirement and latest floating intent
+on new signed bytes after Cooper releases foreground, then normal quit. All owned
+headless build/sign/test/freeze processes completed; owned heavy slot RELEASED,
+no human inactivity certification/native lease. No Windows denied-transfer retry.
+
+
+## 2026-10-16 Chicago — read-only universal2 packaging feasibility
+
+Parent requested future genuine single-Mac-download assessment while site owner
+prepares one primary hero/direct header with ambiguity chooser. No build/native
+lease, app/helper execution, binary merging, new test campaign, site/runtime edit
+or publication. Reused retained full384ARM/386Intel runtime slice audits and read
+selected current Mach-O headers/wheel tags with lipo -archs only. PySide6/shiboken
+and PyObjC wheels sampled universal2; existing bootloader bothslices. Both pinned
+Python interpreters thin, as are ARM curl-cffi/Pillow/psutil and packaged helpers.
+No qualified universal2 environment/currentartifact. Exact dependency closure,
+OS/signing/updater constraints and prospective smallest path in
+build/universal2-feasibility-20261017/REPORT.md + inspection.json/receipt.json.
+
+Publicsite026NOTpublished; localmanifest025 separateMacassets, publishedminimums
+ARM26/Intel15 retained. Privatefloor15 audit is NOT ARM15 runtimeacceptance. Apple
+perarchminimum mechanism documented but newmodernconfiguration/oldesthosts
+unqualified. Currentold+newupdaters exactarm64/x64assetnames; universalonlyname
+wouldnotmatch. Legacyasset alias/checksum transition is proposalonly, needsactual
+qualification. CurrentIntel-containing signingbranch entitlement requiresreview
+forfutureuniversal; no permissions changed. No lipo-create or speculative finished
+PyInstallermerge. SourcePyInstallerprimarydocsupportsproperuniversal2build and
+warnsfinishedexecutablemergeinvalid. Siteowner's oneaction/ambiguouschooserplan
+remainsindependent/current025; no newreleaseauthorityinferred. Allownedresources
+remainreleased; Cooperforeground untouched.
+
+## 2026-10-16 Chicago — universal2 first implementation d952774 (ongoing)
+
+Parent explicitly authorizes private universal implementation/brandedDMG using
+verified project+official dependency sources, no foreground/publication/spending/
+newcredentials/grants. Local commitd952774 contains ONLY seven packaging/updater/
+test/docfiles. Prior uncommitted qualification/harness/log edits preserved, no
+push/sitewrites. New exactuniversalZIPpreference fallsbacklegacy; prior-source
+3actualfailures retained after initial positionalReleaseInfofixture corrected.
+52affectedtestsPASS: bothMacarchitectures+Windowshash/tamper/URLguards, missing/
+thin/nestedinputs/perarchfloors/cleansource/recipe andDMGrefusal/outputpreservation/
+Retinadimensions. Initial test-edit accidentally changed one unrelated testcall;
+11NameErrorfailures retained, restoredoriginalcall, final52PASS/Ruff/format/diff.
+
+OfficialPython.org3.13.14pkg SHA8e58affb218c155a1dfdc27b291f817129669f8760e7a297adb2e4439ba5d2e8
+matchesupstream; sandboxtrustfails, normalhostpkgutilPSFBMM5U3QVKW/timestamp/notary
+PASS. Extractedonlytask-local; nosysteminstaller. BothARM+Intel/RosettaSSL/SQLite
+PASS withprivatechildloaderenv; originalmissingframework/SSLfailuresretained.
+Parent reports likelyassociatedPythoncompatibilitywarning at04:43:33.673UTC,
+pathredacted/notconclusiveattribution; no nativeprompt/permissioninput/dumps.
+
+OfficialPyPIdualwheelinputs curl-cffi0.16.3/Pillow12.3/psutil7.2.2+cffi2.1.1 all
+SHAverified. Delocate0.13 initialmergesfailed on differingWHEEL/RECORD metadata;
+derivedcopiesnormalizeONLYthose2metadatafiles, normalretag/RECORDregen succeeds,
+originalswheelbytespreserved. Curl.version(noHTTP),PillowImage,psutilbasicimports
+actualARM+Intel/RosettaPASS. Fullappenv/dependencyclosureNOTqualified. Isolated
+PyPItoolingvenvds-store/delocate and probe-site only; no ordinaryenvchanged.
+
+ActualsmallHFS+DMGlayoutfixture(emptyfictional.app,NOTdistributable) converted+
+CRCverified, imagebackground+iconcoordinates readbackPASS; APFS32bitCNIDalias
+failure retained/notrelabeled. BrandedRetinaPNGvisuallyinspected; noFinderpixels/
+nativedragproof. Currentthinrealc8appguardrefusesbeforeDMGstaging. Genericexisting
+helperspreflight24thinerrors; nofulluniversalPyInstallerbuildstartedyet. Native
+helperclosure andminimumhosts/signingpolicy remainownengineering; noARMpermission
+broadeningallowed. Evidencebuild/universal2-implementation-20261017/REPORT.md,
+STATUS.json, rawlogs/inputs/fixtures; sourceengineering-quality/UNIVERSAL_MACOS.md.
+Privatepackagingcontinues; public025/sitepointers/oldartifacts unchanged.
+
+### Universal dependency closure follow-up — 2026-10-16 Chicago (ongoing)
+
+Actual dependency-only helper assembly succeeds: all common binaries combined,
+per-arch load paths rebased locally; ARM x265217/Intel216 retained separately and
+actual per-arch edges verified. Original helper hashes unchanged. Both assembled
+architectures pass FFmpeg/ffprobe version, Deno local eval and H264 encode/probe/
+decode. No foreground/network/provider. New official-PyPI task-only app env audit
+caught pip preferring thin wheels despite local universal candidates; explicit
+verified wheel installs correct this. Added verified websockets17.2 wheel pair.
+Final env649nativefiles allbothslices; actual Qt6.11.2/PyObjC12.2.2/Pillow/psutil/
+curl imports+localdata pass ARM and Rosetta, no QGuiApplication/window. Full app
+build not yet started at this checkpoint; signing policy and native gates remain.
+
+New generalized payload verifier requires universal entries/extensions and closed
+per-arch load edges; only referenced .dylibs may be thin. Missing/wrongarch/host
+path/escape/undeclared-rpath/foreignsymlink inputs refused. First blanket allfat
+preflight rejects2 valid ABIlibs; corrected actual helper preflight passes all25.
+Nineteen integrated closure/packaging tests passed after correcting one stale
+three-argument testcall; original failedreceipt retained. Expanded implementation
++updater58PASS and rpath5PASS. Final package receipt now conditional on completed
+loadergraph. No finished-app lipo merge, source test gate waiver or ARM permission
+extension. Work remains private; no site/public/ordinaryprofile action.
+
+Universal build attempts preserved: clean4d preflight rejected unused PSF Intel-only
+alternate launcher/staticobjects and vendored debug symbols.5510a07 narrows roots
+to actual interpreter/framework/stdextension/site/helper inputs and excludes
+.dSYM explicitly (records exclusions);60affectedchecksPASS. Clean-source5510
+PyInstaller then actually started but isolated arch child lost framework loader
+env and aborted before analysis. No system install. Derived PSF framework copy
+rebases existing runtime references to relative loader paths/ad-hocsign only,
+92nativeinputs recorded with source hashes unchanged. New relocated venv copies
+qualified exact site payload; actual ARM+Rosetta imports pass WITHOUT DYLDenv.
+Third fresh output5510-relocated now passes input gate and reaches realPyInstaller
+module analysis. Original failure logs intact; no app launch or final signing yet.
+
+Actual universal candidate424e246 built cleanly:441nativefilegraph/floorsPASS,
+120actualPYZmodules+47QMLsourcebindPASS. Pre-signexe f7e15d173334c6d55f1cf61df6000846405862e2942710900cfcff18132376a2.
+5510wrapper214grapherrors were exact@loader_path verifierbug, notdependencyfailure;
+originalpreserved, correctedprototype441/0 then immutable424rebuildPASS.65tests
+PASS incl empty-entitlement universal signer. DeveloperID/Apple submission denied
+BEFOREPROCESS byauto-review: directuserauthorization forexternalprivateupload/
+existingcredentialusemissing; no retry/bypass. Exactartifactapprovalrequested.
+Read-onlymaindriverAX/Screenpreflightfalse; noGUIinput/screenshot/applaunch.
+NewPython3.13repositoryphase running; no realDMG/physicalARM/Intel/updateacceptance
+claim. IntendedAir correctedtoONLINEJulie; oldRacheloutcome notapplicable.
+
+Universal qualification424 follow-up (private, no publication): 6139repository
+passes/54skips;17initialfailures all traced to sandbox loopback/sysctl restrictions
+or pytest absent from child interpreters. Separate task-only qualificationvenv
+loads existing appdeps+testdeps for childprocesses; ONLY17rerun normal-host,17PASS.
+Originalfailedphase retained. Qtphase859PASS/9SKIP/5FAIL; five are outdated test
+shims in test_qt_analytics_session (record_baseline missing, incomplete claimstate,
+old firstlaunch signature, failurepatch aimed at choose instead of current atomic
+choose_data_sharing). Update ONLY test fixture, preserving refusal/no-replay/
+failed-durable-save assertions; add baseline-once and positive write-interception
+check. Complete affected9-case modulePASS; runtime analytics/consent bytes equal
+candidateclean424 source. Generalized lesson: mock old owner entrypoints can
+silently stop exercising durable-failure boundaries after API evolution. No
+runtime change to accommodate mocks and no native/sink-delivery claim. Final
+Qt scenephase214PASS. Sourcequalificationfixturecommit is separate from app424;
+no historicalcandidate relabel.
+
+Actual frozen diagnostic-copy offscreen smoke PASS on ARMhostmacOS27.0.1 and
+Rosetta; sourceappSHAf7e15d... unchanged. One earlierARMprobe had isolationdefect:
+HOME relied on late in-app smoke setup; import-time diagnosticpath resolved normal
+log. write_diagnostic swallows errors, so write outcome NOT verified; no ordinary
+profile-preservation claim from that probe and no log removal. Correctednewruns
+bind HOME/TMPDIR before processimports and verify owned diagnostics path. These
+are ad-hoc copiedapp probes, NOT DeveloperID/hardened/nativeCocoa GUI acceptance.
+
+Julie Air actualexistingtrustedTailscale SSH nowverified (not wrongRachelroute);
+physicalx86_64/macOS15.8.1, fresh ownedCodexfixture only. DiagnosticZIP3257215f6c42021ee4c82ba00e894f07809bb8ed4bbdb34d6385e6e3f1a7f771
+and exec430a700c28f3edf9026423358a8a0ab29a87e10ef739b5096e039877b89454b
+verifiedremotely; realIntel frozenoffscreen smokeexit0/runtimeOK/owneddiagnostics.
+No install/OSinput/security/keychange. PackagedH264+HEVC tiny syntheticencode/
+probe/decode6checksPASS each onARM/Rosetta/physicalIntel; distinctx265ABI tested.
+No private media or productiontelemetry. Existingcontroller AX/Screenpreflight
+false remains respected; no GUIcontrol attempt. Apple DeveloperID/notary and
+cross-threadcoordination actions auto-reviewREJECTED; directscopeapprovalpending,
+no retry/bypass. No actualappDMG/update/nativeGUI/publicrelease acceptance.
+
+Universal424 Intel visible checkpoint2026-10-17: Cooper explicitly requested
+“run it now I’m watching”; ONE existing verified ad-hoc diagnostic copy launched
+at05:48:16.726003UTC PID29951. Ready05:48:23UTC: cocoa/visibletrue/nativeheadertrue,
+geometry30,53,1100,740. Fresh external HOME+telemetrydisabled; left OPEN for Cooper,
+no AX/screenshot/input/grant/normalinstall. Latest preference then changed to
+qualified signed/notarized DMG in Julie Documents for selfinstallation. No real
+app DMG exists; signing/Appleupload auto-review rejection occurred beforeprocess,
+directapproval pending/no retry. Do not substitute diagnosticZIP or claim signed
+acceptance. Earlier all-owned-processes-zero checkpoint superseded by this open
+Intel app. MainMac visible probe separately denied beforeprocess, notexecuted.
+
+Universal424 actualJulieuser fullscreenincident: initiallynormal→nativegreenfullscreen
+palestrip→Escape no-op→greenreturn leavespalestrip+bottomlabelsclipped. Four
+actualLibraryphotos materialized/hashverified/visuallyinspected, notassumed
+from description. SameownedPID29951/exeSHA c430a700... retained; no quit/restart/
+AX/input. Ownedlogs onlystartup line; separateCG/JXAgeometryread failedbridge
+normalization, no usablebounds/no screenshots. Qt6.11 upstream Cocoa resets
+style/transparency fromQWindowflags onenter+exit; oldAppKitstartupsetsfullsize
+content+transparent whileMainflagsomitboth. Source2fee2c5 declares macOS
+ExpandedClientAreaHint+NoTitleBarBackgroundHint andmainWindowShortcutEscape
+gatedbyfullscreen+noPopup; noapplicationglobalshortcut/playercollision. New
+actualscene flag/key regressions bothFAILbefore; affectedwindow/menu/player
+24PASSafter; Ruff/format/diffPASS. Existingtests missednativeheader restoration
+andmainEscape, testedmenu/playerseparately. Native repairedpixels/bottomgeometry
+NOTyetverified. Separatecleansourceuniversal2fee buildstarted, no Appleupload/
+signing(nativecredentialsapprovalheld), no new launch or existingappmutation.
+Evidence build/universal2-implementation-20261017/fullscreen-user-evidence/INCIDENT.json.
+
+UserclarifiesForgefittostaticdashboard, otherintentionalpanescroll preserved;
+Librarysidebarshrinkinterpretation explicitlyRETRACTED. AdditionalactualLibrary
+images received/materialized/inspected (6total), noGUIinput. Independentsource
+idleForgegeometry608/556at1100x640,486/476at1100x560; max(viewport,implicitHeight)
+forcedouterdocument growth. d42c600 nowfixedviewportrootheight/naturalchild
+minimums/compactthreshold690+compactgaps, noouterflick/track; internalactivity/
+detailsscrollunchanged.12idle-activeboundcasesinitial9FAIL/3PASS; finalstable
+56focusedPASS incl actualEscape, layout/livechildren/footer/menu/player/notice.
+OriginaltestrequiredwholeForgeoverflow; changedonlyunderCooper'snewfixedForge
+requirement. IntermediatetestNameErrorQPoint retained/corrected; finalstable
+receiptseparate. No native repairedpixel/aftertransitiongeometryclaim. Public
+CGmetadataCreaderreturnednoownedrows, notvalidbounds; noTCC/AX/capturebypass.
+2feeheadersonlycandidatecompleted/sourcebound120PYZ+47QML; nowcombinedd42
+canonicalbuildunderwayinnewoutput, noexistingapplaunch/replacement. Cooper
+explicitApple/signapproval06:00:51UTC relayedbyparent, pendingoneapprovednormal
+signattemptoncombinedartifact. Historicalrejectionpreserved; no actionyet.
+
+Combinedd42 privateuniversal buildexit0/sourcebind120PYZ+47QML/441nativeclosure.
+CooperAppleapproval06:00:51UTCacceptedstandardattempt; appnotary99af72c3-f9a0-4d9a-bdbd-69b66f8cd60c Accepted/staple/GatekeeperPASS, emptybothentitlements.
+SignedARMoffscreenexit0. SignedRosettahelpersruntimeOKthen90sQtphase/exit
+TIMEOUT; onequietguarddiagnosticrepeat samebytes/newHOME/PID71554 also90sTIMEOUT;
+notrelabelledPASS. LaterdirectPIDabsent/scopedpscommandmatchesempty, noforce
+cleanuporlateexitcodeclaim. Actualcauseunknown; no nativecrashdump/input.
+RealbrandedDMG built/sign/notary46e24164-95ae-43bb-9e9b-d0ed65c78605 Accepted;
+staple/GatekeeperPASS; hdiutilchecksumPASSafterstaplemutation.570008878bytes/
+SHA88fd1f39d8e92da8b86633134f449f555d6d876bf5349cf4dbebeec537f3a2a3.
+ExplicitrequestedJulieDocumentstransfer06:26:04UTC fullremoteSHAmatches; no
+install/visiblelaunch/replacement. FilenameVODForge-universal2-private-d42c600.dmg.
+UserthenrequestsownverificationcurrentopenIntelfullscreen+screenshot. CUA/
+js_replcontrollerabsent; initialJXAreadfailedCGsymbolbridge(notpermissionproof).
+FreshpublicCpreflight06:26:48UTCexistingSSH→CLTPythonAXfalse/Screenfalse.
+STOPbeforeinput/capture/permissionschange. CurrentPID29951/source424diagknown
+path+SHAunchangedat06:25:53; actualwindowstatenotobservable. ExplicitnativeUI
+RELEASE/noqueuedlaunch/controlleraction forparent/accesshandoff; userappnotquit
+or altered. d42nativevisual/physicalIntelsealed/DMGinstall/updaterpublicgates
+stillUNQUALIFIED. Allownedbuild/sign/notary/transferactionscomplete.
+
+2026-10-17T06:54:13Z Julie signed-d42 diagnostic boundary: native Intel
+90s runtime-smoke timeout reproduced signed Rosetta failure, independent of
+Rosetta. One controlled QV4_FORCE_INTERPRETER=1 comparison also timed out90s;
+therefore disabling QV4 JIT alone is insufficient, exact cause UNRESOLVED.
+Original helper smoke succeeds before Qt trace stalls; no repaired-runtime claim.
+Owned PID30305 previously identity-guarded SIGTERM-cleaned; PID30409 now likewise
+exact executable/start-time guarded SIGTERM-only, confirmed absent. No force/group
+kill, crash dump, native input or permission change. User-visible424 PID29951
+remains same path/start and untouched. Separate Julie UI owner01a148a0 reports
+AXfalse/ScreenCapturefalse, main-Mac-only controller, no5900listener; no fullscreen
+input/screenshot attempted. Fullscreen and actual pixels remain BLOCKED, notPASS.
+UI ownership explicitly released/no queued action. Receipt
+build/universal2-implementation-20261017/JULIE-QUALIFICATION-CHECKPOINT.json and
+intel-interpreter-timeout-cleanup.json. Single-icon double-click installer is
+requested but NOT implemented; current delivered d42 DMG retains superseded
+Applications/TXT layout and actual white-background observation. No new install,
+public release or updater acceptance.
+
+2026-10-17 single-icon installer LOCAL checkpoint: user explicitly chose
+single double-click Install VODForge/no Applications. New shared-material artwork
+rendered and personally inspected (composition only); icon-view/root TIFF/custom
+volume icon metadata implemented. TIFF cathidpicheck initially collapsed second
+DPI to72; retained initial failure, -cat preserves72/144 pair. APFS test alias
+Carbon32bit overflow was fixture-only; unit alias now explicit substitute, no
+alias-resolution/nativeFinderPASS. Python macOS os lacks xattr API; switched
+to scoped Darwin public getxattr/setxattr; final16packaging/window checksPASS.
+Native AppKit helper source + assembler added, existing DMG owner accepts exact
+signed installer entry. Explicit confirmation/folder/cancel, no elevation/autoquit;
+identity/hash/signature, stale/newer refusal, stage/exclusive moves/backups.
+Nine compiled core casesPASS in disposable tmp with compile-time signature
+substitute; no actual native install/GUI/Apple-trust qualification. Production
+helper finalsource compiles arm64floor26/x86floor15, unsigned/unexecuted. Ruff
+anddiffPASS. NO revisedDMG/signedhelper/delivery; currentpayload signedIntel
+timeout remains unqualified. UI released throughout; separate fullscreenowner
+controls currentJulie diagnostic29951 and any macOS dialog. Receipt + rendered
+preview build/universal2-implementation-20261017/installer-window-v2/checkpoint.json.
+
+2026-10-17 signed Intel startup diagnostic: parent coordinated ONE same-signed
+Rosetta offscreen fresh fixture with sole QT_ENABLE_REGEXP_JIT=0 control. PID74701
+07:09:11UTC stillTIMEOUT90s/helperOK; exactpath/start guard SIGTERM-only returned
+-15, signedexe95690bd...unchanged. No nativeUI/remote launch/sign/entitlementchange.
+Approved one-second performance symbol sample (NOT crash/core/memorydump) during
+owned control found666/666 main-thread samples engine.load→QMLproperty→lazyimport→
+PyObjCcreateStructType→alloc_prepped_closure→systemlibffi ffi_closure_alloc/dlmmap.
+SourceBridge.reducedMotion getter importsAppKit there; exactbottleneck nowidentified,
+not QV4/regexpJIT. Hardenedmappingcause notisolated; olderworking424 differsQMLtoo.
+SkippingAppKitonlyoffscreen wouldmaskrealCocoaintegrationimport; nofixclaimed.
+No startup source changes or follow-up launchqueued. Report/evidence:
+build/universal2-implementation-20261017/SIGNED-INTEL-STARTUP-DIAGNOSIS.md .
+
+SignedIntelclosurefix sourcecheckpoint: mainreducedMotion nowdelegatesnew
+mac_preferences publicNSWorkspace scalar/pointercalls viasharedmac_native_runtime;
+noPythonAppKit/Foundation/objcimport/noPythoncallback/offscreen-onlyskip. Exact
+prior-d42getter extractedASTmutation yields2FAIL atAppKitimport; newactualgetter
++typedcalls/fallback6cases/delegator2PASS, affectedcomposer25PASS; retainedlogs
+mac-preferences-before/after/final-focused under universal2implementationbase.
+Changedpreference/testRuffPASS; mainUP017oldtimestampfinding untouched. Native
+windowadapterremainingimports ownedparallelfullscreenlane; nonstartupFoundation
+Trashowner stillneedsreview; excludedlegacylibVLCnotcovered. No source-native
+repairclaim/signedsuccessorproof/newlaunch. Diagnosisreportupdatedwithinventory.
+
+Rootextendssameclosurebugclassfix toexistingmacOSTrashowner. Foundationimports
+replacedbytypedpublicNSFileManager+NSString+NSURLcalls/BOOL+outpointers, actual
+returnedUnicodepath/nilNone/errorOSError, scopedautoreleasepool. No directTrash
+pathmove/deletefallback. EightTrash+sixpreferencecases14PASS; prior-d42Trash
+exactfunctionmutation3FAIL atFoundationimport. MaintainednativeTrashfixturetest
+ONCEexplicitflagPASS1: freshlycreateduniqueownedtmpfile→systemTrash→exactbytes/
+nameverify→restoresamefile; nouserfiles/Trashenumeration/oldcampaignrepeat. This
+is ARMsource-nativeONLY, notsignedIntelsuccessoracceptance. ChangedRuff/diffPASS;
+READMEbugclasslessonupdated. Evidence closure-free-platform-focused.log,
+closure-free-native-trash.log,mac-trash-before.log inuniversal2implementationbase.
+
+Finalclosurefreeconsumerscombinedsourcequalification33PASS17.01s aftersharedshim
+integration(19composer/delegation+6preference+8Trash). Finalstrictnative-returnbytes/
+Iteratorannotationguards8TrashPASS;Ruff/diffPASS. Exactcurrentproductsourcegrep
+leavesonlylibvlc_backend.py750Foundationimport(excludedlegacyQtpackageowner).
+NoGitcommitfromchild;rootintegratescoherentshim/windowing/preference/Trashchange.
+Nobuild/sign/remote/nativeGUIactionorqueuedlaunchfromthisdiagnosticlane.
+
+2026-10-17 installer design milestone: native helper assembled with unchanged
+signed d42 payload. Sandboxed signature preflight reported invalid beforestaging;
+normalhost strict/allarchitectures verificationPASS and sameexeSHA95690bd3...;
+one normalhost assembly then succeeded, no signaturebypass. HelperDeveloperID
+signing/notary63517cd0-cf4e-46ee-a97a-35ab8dd1c0b6 Accepted/stapled/GatekeeperPASS.
+HelperSHA0c3bd71de3a0c6e5e6da142f0e143c1d8e129eb959e0afa1c6d44f25a65427dd.
+Distinct Install-VODForge-stone-design-v1.dmg created with ONE realinstaller
+entry/TIFF/volumeiconmetadata, NOApplications/TXT. DMGAppleprocessingongoing,
+notyetFinder/nativeinstallerPASS. Embedded d42 x86runtime remains unqualified;
+thisappearancefixture maytest Cancel/Install-to-owned-temp/Done but mustNOT
+launchthatpayload orbedelivered asqualified. Latest17Pythonpackaging/window/core
+checksPASS (corecompiletest10temporaryfilesystemassertions, signatures/running
+state explicitlysubstituted). ObjectiveCproductionmacrobehavior unchanged by
+compile-test admissioncontrol; no normalApplications/profile/securitychanges.
+
+Newclosure-free publicmacOSnativecalls now cover reducedmotion, titlebar/window
+retirement andexistingTrashowner. Final36affectedABI/window/preference/Trashcases
+PASS; source-nativeCocoa expandedgeometry/transparencyPASS but syntheticEscape
+remainsFAILED/unqualified evenafterfocusready; retainedevidence explicitlynot
+repairacceptance. Actualsignedcandidatefirstopen→fullscreen→genuineEsc→restored
+3screens onBOTHIntel/ARM are stillrequired byCooper, notgreenbuttonsubstitute.
+ExistinguserquitoldJulie424himself; nooldbuildrelaunch authorized/attempted.
