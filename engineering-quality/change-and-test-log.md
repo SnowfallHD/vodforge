@@ -3356,3 +3356,21 @@ recoverymap,journal,beforeafterhashes:cleanup-20261017/narrow14-execution/
 RESULT.json+REPORT.md+preflight.json+move-journal.json. Source/dependencies/
 libraries/settings/media/receipts/rollbackprotected; remoteproposalsnotexecuted.
 Earlier33denial+Intelretryevidencepreserved; IntelworkwaitsuserTailscaleconfirmation.
+
+
+2026-10-17 JULIE RECOVERY FINAL actuallatestb031OPEN PASSwithuserchoicepending.
+Cooper18:03:42internetrestoreconfirmation; exactstrictJulie route18:04:33 works.
+Original267943936Bpartialpreserved; separateSCP528450926B/hashb985057...001eb
+PASS18:06:07. Extract6341exactentries/exe10f08e38/strict/Gatekeeper/staplePASS
+18:08:02. Humanidle/networkchecks stoppedbeforePopen, failuresretained. ONEactual
+launch18:10:03.924437UTC PID971/x86_64/macOS15.8.1normalHOME exactversionedDocapp.
+Originalobservercapture18:10:39.905554 completed despite laterlocalexechandleloss;
+read-onlyartifactretrievalrecoveredoriginal PNG/AX, no observer/applaunchrepeat.
+Owner+rootpersonallyviewed actualForge+Helpimproveprivacychoicemodal, NOchoice
+selected; underlyingReadytext notunobstructedcontrolacceptance. SamePIDexactpath
+18:13:40stillrunning; leftopenCooper/inputleaseRELEASED. Applications eedrollback
+unchanged/no consentoverride/media/security/networksettingchange/remotecleanup.
+Allthree actualopen screenshots nowqualify; consolidated latest-open-b031f6d-
+20261017/RESULT.json+REPORT.md supersede historicalnetworkblocker. Julie
+RESULT.json/latest-open.png binds allfacts. Existing14recoverablelocalcleanup/
+19held and allfailureevidence preserved. No rebuild/publicrelease.
