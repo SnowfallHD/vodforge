@@ -6,6 +6,20 @@ affected change or evidence defect before repeating a check.
 
 ## Native completion follows current presentation intent — 2026-10-17
 
+Main-window native decorations must also survive toolkit-owned transitions.
+The universal424 Intel user observation exposed a pale native toolbar and clipped
+bottom labels after main-window fullscreen entry/exit. Startup-only AppKit
+FullSizeContentView/transparency mutations were not represented in Qt flags;
+Qt6.11's Cocoa owner reconstructs both on each fullscreen boundary. Main.qml now
+declares ExpandedClientAreaHint and NoTitleBarBackgroundHint on macOS. A separate
+window-scoped Escape shortcut exits the main window only when no popup owns
+dismissal; it does not compete with the external player's shortcut. Prior menu
+tests exercised a return command and offscreen geometry, not native decoration
+restoration or Escape. Two prior-failing regressions cover actual production
+flags and key dispatch with modal priority; physical repaired pixels and content
+bounds remain a successor acceptance gate. Do not repaint over native insets or
+relabel offscreen results as native recovery.
+
 A toolkit-hidden window is not proof that an asynchronous native fullscreen
 transition has retired its on-screen window. Qt-only visibility regressions missed
 this boundary in the signed ARM904 fullscreen/Escape observation. The existing

@@ -43,7 +43,18 @@ Window {
     title: "VODForge"
     flags: Qt.platform.os === "windows" ? Qt.Window | Qt.WindowSystemMenuHint |
            Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint |
-           Qt.WindowCloseButtonHint | Qt.FramelessWindowHint : Qt.Window
+           Qt.WindowCloseButtonHint | Qt.FramelessWindowHint :
+           Qt.platform.os === "osx" ? Qt.Window | Qt.ExpandedClientAreaHint |
+               Qt.NoTitleBarBackgroundHint : Qt.Window
+    // Cocoa reapplies the Qt flags on fullscreen entry AND exit. Keep header
+    // integration here rather than only in the startup AppKit style mutation.
+    Shortcut {
+        objectName: "mainFullscreenEscape"
+        sequence: "Escape"
+        context: Qt.WindowShortcut
+        enabled: window.visibility === Window.FullScreen && window.menuNavigationAllowed
+        onActivated: window.showNormal()
+    }
     WindowsFrame { id: mainFrame; appWindow: window }
     color: Qt.platform.os === "osx" ? "transparent" : theme.bg
     property real backgroundOpacity: 1.0

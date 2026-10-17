@@ -1,9 +1,10 @@
 """Bounded production-QML geometry; native drag/pixels are separate gates."""
 
+import sys
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QMetaObject, QObject, QPointF, QUrl
+from PySide6.QtCore import QMetaObject, QObject, QPointF, Qt, QUrl
 from PySide6.QtGui import QKeySequence, QWindow
 from PySide6.QtQml import QQmlComponent, QQmlEngine
 from PySide6.QtQuick import QQuickWindow
@@ -11,6 +12,48 @@ from PySide6.QtTest import QTest
 
 from tests.test_qt_all_runs_hover_seam import run_scene  # noqa: F401
 from tests.test_qt_scene_port import qt_app
+
+
+def test_main_header_intent_survives_toolkit_fullscreen_style_reset(run_scene):  # noqa: F811
+    _app, _bridge, window, _button, _popup = run_scene
+    if sys.platform != "darwin":
+        pytest.skip("Cocoa header flags are macOS-only")
+    # Cocoa reconstructs native style and transparency from these flags on
+    # BOTH fullscreen boundaries; an AppKit-only startup mutation is lost.
+    required = (
+        Qt.WindowType.ExpandedClientAreaHint | Qt.WindowType.NoTitleBarBackgroundHint
+    )
+    for transition in (window.showFullScreen, window.showNormal):
+        transition()
+        QTest.qWait(30)
+        assert window.flags() & required == required
+
+
+def test_main_fullscreen_escape_is_window_scoped_and_preserves_modal_priority(
+    run_scene,  # noqa: F811
+):
+    _app, _bridge, window, _button, _popup = run_scene
+    popup = window.findChild(QObject, "downloadSettingsPopup")
+    shortcut = window.findChild(QObject, "mainFullscreenEscape")
+    assert shortcut is not None
+    assert shortcut.property("context") == Qt.ShortcutContext.WindowShortcut
+    window.showNormal()
+    QTest.qWait(30)
+    assert not shortcut.property("enabled")
+    window.showFullScreen()
+    QTest.qWait(30)
+    assert shortcut.property("enabled")
+    assert QMetaObject.invokeMethod(popup, "open")
+    QTest.qWait(30)
+    assert not shortcut.property("enabled"), "Escape must dismiss a popup first"
+    assert QMetaObject.invokeMethod(popup, "close")
+    QTest.qWait(30)
+    assert shortcut.property("enabled")
+    window.requestActivate()
+    QTest.qWait(30)
+    QTest.keyClick(window, Qt.Key.Key_Escape)
+    QTest.qWait(30)
+    assert window.visibility() == QWindow.Visibility.Windowed
 
 
 @pytest.mark.parametrize(
