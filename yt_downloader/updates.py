@@ -310,6 +310,14 @@ def release_asset_for_platform(
     if platform_name.startswith("win"):
         expected = f"VODForge-Windows-Setup-v{release.version}.exe"
     elif platform_name == "darwin":
+        # Prefer the native dual-architecture ZIP once a qualified release offers
+        # it; retain exact legacy names for existing architecture-only releases.
+        universal_name = f"VODForge-macOS-universal2-v{release.version}.zip"
+        universal = next(
+            (asset for asset in release.assets if asset.name == universal_name), None
+        )
+        if universal is not None:
+            return universal
         architecture = "arm64" if machine in {"arm64", "aarch64"} else "x64"
         expected = f"VODForge-macOS-{architecture}-v{release.version}.zip"
     else:

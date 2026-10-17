@@ -179,12 +179,19 @@ def test_platform_asset_selection_is_exact():
     )
 
 
+@pytest.mark.parametrize(
+    "platform_name,machine,asset_name",
+    [
+        ("win32", "AMD64", "VODForge-Windows-Setup-v1.2.3.exe"),
+        ("darwin", "arm64", "VODForge-macOS-universal2-v1.2.3.zip"),
+        ("darwin", "x86_64", "VODForge-macOS-universal2-v1.2.3.zip"),
+    ],
+)
 def test_verified_update_requires_matching_checksum(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, platform_name, machine, asset_name
 ):
     update_bytes = b"verified installer bytes"
     digest = hashlib.sha256(update_bytes).hexdigest()
-    asset_name = "VODForge-Windows-Setup-v1.2.3.exe"
     release = ReleaseInfo(
         version="1.2.3",
         tag_name="v1.2.3",
@@ -220,17 +227,24 @@ def test_verified_update_requires_matching_checksum(
 
     monkeypatch.setattr("yt_downloader.updates.urllib.request.urlopen", fake_urlopen)
     output = download_verified_update(
-        release, tmp_path, platform_name="win32", machine="AMD64"
+        release, tmp_path, platform_name=platform_name, machine=machine
     )
 
     assert output.read_bytes() == update_bytes
     assert parse_sha256sums(f"{digest}  {asset_name}\n") == {asset_name: digest}
 
 
+@pytest.mark.parametrize(
+    "platform_name,machine,asset_name",
+    [
+        ("win32", "AMD64", "VODForge-Windows-Setup-v1.2.3.exe"),
+        ("darwin", "arm64", "VODForge-macOS-universal2-v1.2.3.zip"),
+        ("darwin", "x86_64", "VODForge-macOS-universal2-v1.2.3.zip"),
+    ],
+)
 def test_verified_update_deletes_tampered_partial_file(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, platform_name, machine, asset_name
 ):
-    asset_name = "VODForge-Windows-Setup-v1.2.3.exe"
     release = ReleaseInfo(
         version="1.2.3",
         tag_name="v1.2.3",
@@ -267,7 +281,7 @@ def test_verified_update_deletes_tampered_partial_file(
 
     with pytest.raises(RuntimeError, match="SHA-256 verification"):
         download_verified_update(
-            release, tmp_path, platform_name="win32", machine="AMD64"
+            release, tmp_path, platform_name=platform_name, machine=machine
         )
 
     assert not (tmp_path / asset_name).exists()
@@ -661,3 +675,53 @@ def test_windows_verification_does_not_open_console(monkeypatch, tmp_path):
 
     verify_windows_authenticode(installer, runner=run)
     assert calls[0]["creationflags"] == 0x08000000
+
+
+@pytest.mark.parametrize("machine", ["arm64", "aarch64", "x86_64"])
+def test_macos_update_prefers_exact_universal_zip_without_breaking_legacy(machine):
+    version = "1.2.3"
+    assets = tuple(
+        ReleaseAsset(name, _release_download_url("v" + version, name), 10)
+        for name in [
+            "VODForge-macOS-arm64-v1.2.3.zip",
+            "VODForge-macOS-x64-v1.2.3.zip",
+            "VODForge-macOS-universal2-v1.2.30.zip",
+            "VODForge-macOS-universal2-v1.2.3.dmg",
+            "VODForge-macOS-universal2-v1.2.3.zip",
+        ]
+    )
+    release = ReleaseInfo(
+        version=version,
+        tag_name="v1.2.3",
+        name="release",
+        html_url="",
+        notes="",
+        assets=assets,
+    )
+    assert (
+        release_asset_for_platform(
+            release, platform_name="darwin", machine=machine
+        ).name
+        == "VODForge-macOS-universal2-v1.2.3.zip"
+    )
+    legacy = ReleaseInfo(
+        version=version,
+        tag_name="v1.2.3",
+        name="release",
+        html_url="",
+        notes="",
+        assets=assets[:-1],
+    )
+    expected_arch = "arm64" if machine in {"arm64", "aarch64"} else "x64"
+    assert (
+        release_asset_for_platform(legacy, platform_name="darwin", machine=machine).name
+        == f"VODForge-macOS-{expected_arch}-v1.2.3.zip"
+    )
+    assert (
+        release_asset_for_platform(release, platform_name="win32", machine=machine)
+        is None
+    )
+    assert (
+        release_asset_for_platform(release, platform_name="linux", machine=machine)
+        is None
+    )
