@@ -1,7 +1,7 @@
 """Composer feedback geometry and execution ownership."""
 
 import pytest
-from PySide6.QtCore import QObject, QPointF, QUrl
+from PySide6.QtCore import QObject, QPoint, QPointF, QUrl
 from PySide6.QtTest import QSignalSpy
 
 from tests import test_qt_inspector_actions as inspector_actions
@@ -197,7 +197,7 @@ def test_long_notice_floats_without_moving_page(feedback_scene, width, height):
     assert before == (composer.x(), composer.y(), composer.width(), composer.height())
 
 
-def test_compact_notice_overflow_reaches_deck_and_tracks_scroll(feedback_scene):
+def test_compact_notice_and_deck_fit_without_outer_dashboard_scroll(feedback_scene):
     from PySide6.QtTest import QTest
 
     _app, bridge, window = feedback_scene
@@ -210,13 +210,15 @@ def test_compact_notice_overflow_reaches_deck_and_tracks_scroll(feedback_scene):
     bridge.operationFeedback.emit("Settings need review before continuing. " * 20)
     QTest.qWait(100)
     assert flickable.property("contentY") == 0
-    assert flickable.property("contentHeight") > viewport.height()
+    assert flickable.property("contentHeight") <= viewport.height() + 0.5
     before = notice.mapToItem(window.contentItem(), QPointF(0, 0)).y()
-    bottom = flickable.property("contentHeight") - flickable.property("height")
-    flickable.setProperty("contentY", bottom)
+    # Long feedback stays in its existing bounded notice, without making the
+    # static Forge dashboard a scrolling page or displacing its Run Deck.
+    QTest.mouseMove(window, QPoint(2, 2))
     QTest.qWait(100)
     after = notice.mapToItem(window.contentItem(), QPointF(0, 0)).y()
-    assert after == pytest.approx(before - bottom, abs=1)
+    assert flickable.property("contentY") == 0
+    assert after == pytest.approx(before, abs=1)
     deck = window.findChild(QObject, "forgeRunDeck")
     deck_bottom = deck.mapToItem(window.contentItem(), QPointF(0, deck.height())).y()
     viewport_bottom = viewport.mapToItem(

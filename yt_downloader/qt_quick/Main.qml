@@ -949,7 +949,7 @@ Window {
     }
 
     readonly property real gutter: 12 + 8 * Math.max(0, Math.min(1, (width - 920) / 40))
-    property bool compactHeight: height < 640
+    property bool compactHeight: height < 690
     property int rowGap: compactHeight ? 8 : 14
     readonly property string forgeDensity: width < 920 || height < 690 ? "compact" :
         width < 1080 || height < 760 ? "balanced" : "wide"
@@ -1251,7 +1251,12 @@ Window {
         ScrollView {
             id: forgeViewport
             objectName: "forgeViewport"
-            Component.onCompleted: Qt.callLater(bridge.restorePausedComposer)
+            Component.onCompleted: {
+                // Internal activity/details panes retain their own scrolling;
+                // a trackpad must not drag the static dashboard as a page.
+                contentItem.interactive = false
+                Qt.callLater(bridge.restorePausedComposer)
+            }
             implicitHeight: 0
             implicitWidth: 0
             visible: bridge.selection === "Forge"
@@ -1265,12 +1270,15 @@ Window {
             contentWidth: availableWidth
             contentHeight: forgeScene.height
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+            ScrollBar.vertical.policy: ScrollBar.AlwaysOff
             ColumnLayout {
             id: forgeScene
             objectName: "forgeScene"
             width: forgeViewport.availableWidth
-            height: Math.max(forgeViewport.availableHeight, implicitHeight)
-            spacing: 8
+            // Forge is a dashboard, not an outer scrolling document. Let the
+            // bounded live pane yield height before pushing the deck offscreen.
+            height: forgeViewport.availableHeight
+            spacing: window.compactHeight ? 6 : 8
 
             RowLayout {
                 id: forgeCommandRow
@@ -1594,7 +1602,8 @@ Window {
             RowLayout {
                 Layout.fillWidth: true
                 Layout.preferredHeight: window.compactHeight ? 116 : 185
-                Layout.minimumHeight: window.compactHeight ? 157 : 185
+                // Use the live controls' actual minimum; the old hard 185px
+                // floor prevented the surrounding dashboard from fitting.
                 spacing: 16
                 ColumnLayout {
                     id: forgeLivePane

@@ -20,6 +20,20 @@ flags and key dispatch with modal priority; physical repaired pixels and content
 bounds remain a successor acceptance gate. Do not repaint over native insets or
 relabel offscreen results as native recovery.
 
+The same user investigation separately exposed Forge's outer scrolling policy:
+its root grew to max(viewport, implicitHeight), even though Forge must remain a
+fixed responsive dashboard. Idle source geometry independently measured608px in
+a556px viewport and486px in476px. The dashboard now uses viewport height, removes
+the hard live-row floor in favor of actual child minimums, and aligns compact
+height with the690px density boundary. Compact gaps yield space; inner activity
+and details scrolling remain. Only Forge's outer flicking/scrollbar is disabled.
+Twelve idle/active size cases at820–1280px widths and560–800px heights check
+visible root children, live-pane controls and the full Run Deck/footer. The old
+compact-notice test explicitly required whole-Forge scrolling; that expectation
+is superseded by Cooper's clarified fixed-dashboard requirement, rather than
+being retained as an unrelated failure. Library/sidebar sizing is unchanged;
+the initial sidebar-shrink report was explicitly retracted by the user.
+
 A toolkit-hidden window is not proof that an asynchronous native fullscreen
 transition has retired its on-screen window. Qt-only visibility regressions missed
 this boundary in the signed ARM904 fullscreen/Escape observation. The existing

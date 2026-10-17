@@ -57,6 +57,34 @@ def test_main_fullscreen_escape_is_window_scoped_and_preserves_modal_priority(
 
 
 @pytest.mark.parametrize(
+    "width,height",
+    [(820, 560), (920, 560), (1100, 560), (1100, 640), (1100, 740), (1280, 800)],
+)
+@pytest.mark.parametrize("idle", [False, True])
+def test_forge_fits_without_page_scroll(run_scene, width, height, idle):  # noqa: F811
+    _app, bridge, window, _button, _popup = run_scene
+    if idle:
+        bridge._runtime.active_job = None
+        bridge._runtime.history = []
+        bridge.runDeckChanged.emit()
+    window.resize(width, height)
+    QTest.qWait(100)
+    viewport = window.findChild(QObject, "forgeViewport")
+    scene = window.findChild(QObject, "forgeScene")
+    deck = window.findChild(QObject, "forgeRunDeck")
+    assert scene.height() <= viewport.height() + 0.5
+    assert deck.y() + deck.height() <= viewport.height() + 0.5
+    for child in scene.childItems():
+        if child.isVisible():
+            assert child.y() >= -0.5
+            assert child.y() + child.height() <= viewport.height() + 0.5
+    live = window.findChild(QObject, "forgeLivePane")
+    for child in live.childItems():
+        if child.isVisible():
+            assert child.y() + child.height() <= live.height() + 0.5
+
+
+@pytest.mark.parametrize(
     ("before", "after"),
     [
         ((919, 740), (920, 740)),
