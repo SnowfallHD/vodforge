@@ -1,5 +1,6 @@
 // Compile-time-only test harness. Not linked into the shipped installer.
 #define VF_INSTALLER_CORE_TEST 1
+#define VF_INSTALLER_UI_ROUTING_TEST 1
 #include "../scripts/macos_installer.m"
 
 static NSURL *Fixture(NSURL *parent, NSString *name, NSString *bytes, NSString *version) {
@@ -13,6 +14,28 @@ static NSURL *Fixture(NSURL *parent, NSString *name, NSString *bytes, NSString *
         atomically:YES encoding:NSUTF8StringEncoding error:nil];
     return app;
 }
+
+// Compile-time harness dependency only; production always uses defaultManager.
+@interface VFUnwritableFileManager : NSFileManager
+@end
+@implementation VFUnwritableFileManager
+- (BOOL)isWritableFileAtPath:(NSString *)path { return NO; }
+@end
+
+// Exercise the real routine-path method without creating NSApplication,
+// windows or panels. The boundary is overridden before any UI is requested.
+@interface VFDestinationRoutingProbe : VFInstaller
+@property(nonatomic, strong) NSURL *checkedFolder;
+@property(nonatomic) NSUInteger fallbackRequests;
+@end
+@implementation VFDestinationRoutingProbe
+- (void)checkFolder:(NSURL *)folder payload:(NSURL *)payload hash:(NSString *)hash info:(NSDictionary *)info {
+    self.checkedFolder = folder;
+}
+- (void)chooseAlternateFolderForPayload:(NSURL *)payload hash:(NSString *)hash info:(NSDictionary *)info {
+    self.fallbackRequests += 1;
+}
+@end
 
 static void Require(BOOL condition, NSString *label) {
     if (!condition) { fprintf(stderr, "FAIL: %s\n", label.UTF8String); exit(1); }
@@ -60,6 +83,40 @@ int main(void) {
         NSURL *destination = [root URLByAppendingPathComponent:@"VODForge.app"];
         NSString *hash = Digest([payload URLByAppendingPathComponent:@"Contents/MacOS/VODForge"]);
         NSError *error = nil;
+        Require([DefaultInstallationFolder().path isEqual:@"/Applications"],
+            @"routine destination is fixed system Applications");
+        NSDictionary *incoming = CheckApp(payload, hash, &error);
+        VFDestinationRoutingProbe *route = [VFDestinationRoutingProbe new];
+        [route chooseDestinationForPayload:payload hash:hash info:incoming];
+        Require([route.checkedFolder.path isEqual:@"/Applications"] && route.fallbackRequests == 0,
+            @"routine UI owner checks Applications without requesting a folder picker");
+        NSString *selectedSnapshot = nil;
+        NSURL *selected = CheckDestinationFolder(root, incoming, fm, &selectedSnapshot, &error);
+        Require([selected.path isEqual:destination.path] && !selectedSnapshot &&
+            ![fm fileExistsAtPath:destination.path], @"automatic fresh destination is selected without mutation");
+        NSURL *alternate = [root URLByAppendingPathComponent:@"Alternate Applications"];
+        [fm createDirectoryAtURL:alternate withIntermediateDirectories:NO attributes:nil error:nil];
+        error = nil;
+        selected = CheckDestinationFolder(alternate, incoming, fm, &selectedSnapshot, &error);
+        Require([selected.path isEqual:[alternate URLByAppendingPathComponent:@"VODForge.app"].path] &&
+            !selectedSnapshot && ![fm fileExistsAtPath:selected.path],
+            @"explicit fallback folder uses the same checked destination owner");
+        NSURL *folderLink = [root URLByAppendingPathComponent:@"linked-folder"];
+        [fm createSymbolicLinkAtURL:folderLink withDestinationURL:alternate error:nil];
+        error = nil;
+        Require(!CheckDestinationFolder(folderLink, incoming, fm, NULL, &error) && error,
+            @"unsafe default or fallback folder refuses before mutation");
+        error = nil;
+        Require(!CheckDestinationFolder(root, incoming, [VFUnwritableFileManager new], NULL, &error) && error &&
+            ![fm fileExistsAtPath:destination.path], @"unwritable destination requires explicit fallback without mutation");
+        NSURL *foreign = Fixture(alternate, @"VODForge.app", @"foreign", @"0.2.6");
+        [@{@"CFBundleIdentifier": @"invalid.foreign", @"CFBundleExecutable": @"VODForge",
+           @"CFBundleShortVersionString": @"0.2.6"} writeToURL:
+            [foreign URLByAppendingPathComponent:@"Contents/Info.plist"] atomically:YES];
+        NSString *foreignBefore = Snapshot(foreign);
+        error = nil;
+        Require(!CheckDestinationFolder(alternate, incoming, fm, NULL, &error) && error &&
+            [Snapshot(foreign) isEqual:foreignBefore], @"unverified existing destination is preserved and requires fallback");
         Require(!Install(payload, destination, @"wrong", nil, NULL, &error) &&
             ![fm fileExistsAtPath:destination.path], @"wrong payload hash makes no destination");
         VFTestRunning = YES;
@@ -72,6 +129,10 @@ int main(void) {
         Require([Digest([destination URLByAppendingPathComponent:@"Contents/MacOS/VODForge"]) isEqual:hash],
             @"installed bytes match payload");
         NSString *before = Snapshot(destination);
+        error = nil;
+        selected = CheckDestinationFolder(root, incoming, fm, &selectedSnapshot, &error);
+        Require([selected.path isEqual:destination.path] && [selectedSnapshot isEqual:before],
+            @"existing verified destination retains snapshot for explicit Replace confirmation");
         error = nil;
         Require(!Install(payload, destination, hash, @"stale", NULL, &error) &&
             [Snapshot(destination) isEqual:before], @"stale destination refuses without mutation");
@@ -93,6 +154,9 @@ int main(void) {
         Require(!CheckApp(link, hash, &error), @"symlinked app is refused");
         Fixture(root, @"VODForge.app", @"new", @"0.2.7");
         before = Snapshot(destination);
+        error = nil;
+        Require(!CheckDestinationFolder(root, incoming, fm, NULL, &error) && error &&
+            [Snapshot(destination) isEqual:before], @"newer destination preflight preserves app and requires fallback");
         error = nil;
         Require(!Install(payload, destination, hash, before, NULL, &error) &&
             [Snapshot(destination) isEqual:before], @"newer installed version is preserved");

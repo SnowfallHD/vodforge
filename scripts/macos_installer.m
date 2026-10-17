@@ -85,6 +85,32 @@ static NSDictionary *CheckApp(NSURL *app, NSString *expectedHash, NSError **erro
     return info;
 }
 
+// The normal destination is fixed, never an environment/QA override.
+static NSURL *DefaultInstallationFolder(void) {
+    return [NSURL fileURLWithPath:@"/Applications" isDirectory:YES];
+}
+
+// Read-only preflight. Choosing an alternate folder uses this same owner.
+static NSURL *CheckDestinationFolder(NSURL *folder, NSDictionary *incoming,
+                                    NSFileManager *fm, NSString **snapshot, NSError **error) {
+    if (!RealDirectory(folder) || ![fm isWritableFileAtPath:folder.path]) {
+        if (error) *error = Failure(@"This folder is not a writable, real directory. No administrator access will be requested and nothing has been installed.");
+        return nil;
+    }
+    NSURL *destination = [folder URLByAppendingPathComponent:@"VODForge.app"];
+    NSString *current = Snapshot(destination);
+    if (current) {
+        NSDictionary *previous = CheckApp(destination, nil, error);
+        if (!previous) return nil;
+        if ([previous[@"CFBundleShortVersionString"] compare:incoming[@"CFBundleShortVersionString"] options:NSNumericSearch] == NSOrderedDescending) {
+            if (error) *error = Failure(@"This folder contains a newer VODForge. It will not be replaced.");
+            return nil;
+        }
+    }
+    if (snapshot) *snapshot = current;
+    return destination;
+}
+
 #ifdef VF_INSTALLER_CORE_TEST
 static BOOL VFTestRunning = NO;
 #endif
@@ -180,7 +206,7 @@ static void PerformWork(dispatch_queue_t queue, dispatch_block_t work, dispatch_
     });
 }
 
-#ifndef VF_INSTALLER_CORE_TEST
+#if !defined(VF_INSTALLER_CORE_TEST) || defined(VF_INSTALLER_UI_ROUTING_TEST)
 static NSModalResponse Alert(NSString *title, NSString *body, NSArray<NSString *> *buttons) {
     NSCAssert(NSThread.isMainThread, @"Installer UI must run on the main thread");
     NSAlert *alert = [NSAlert new];
@@ -272,40 +298,35 @@ static NSModalResponse Alert(NSString *title, NSString *body, NSArray<NSString *
         [self stopWithTitle:@"Quit VODForge before installing" reason:@"Your open app and its work have been left untouched. Quit it yourself, then open this installer again."];
         return;
     }
-    [self.indicator stopAnimation:nil];
-    self.progressTitle.stringValue = @"Choose an installation folder";
-    self.progressDetail.stringValue = @"The included app is verified. Nothing will be copied until you choose a folder and confirm.";
+    // The routine path goes straight to the protected Install/Replace confirmation.
+    [self checkFolder:DefaultInstallationFolder() payload:payload hash:hash info:info];
+}
+- (void)chooseAlternateFolderForPayload:(NSURL *)payload hash:(NSString *)hash info:(NSDictionary *)info {
+    // This picker is reachable only after an unsafe/unwritable destination failed.
     NSOpenPanel *panel = [NSOpenPanel openPanel];
-    panel.title = @"Choose where to install VODForge";
-    panel.message = @"Choose Applications or another folder you can write to. No administrator access will be requested.";
+    panel.title = @"Choose another installation folder";
+    panel.message = @"Choose a folder you can write to. No administrator access will be requested. The app will be installed only after you confirm.";
     panel.prompt = @"Choose Folder";
     panel.canChooseFiles = NO; panel.canChooseDirectories = YES;
     panel.canCreateDirectories = YES; panel.allowsMultipleSelection = NO;
-    panel.directoryURL = [NSURL fileURLWithPath:@"/Applications" isDirectory:YES];
+    panel.directoryURL = [NSURL fileURLWithPath:NSHomeDirectory() isDirectory:YES];
     if (panel.runModal != NSModalResponseOK) { [NSApp terminate:nil]; return; }
-    NSURL *folder = panel.URL;
-    NSURL *destination = [folder URLByAppendingPathComponent:@"VODForge.app"];
-    [self showProgress:@"Checking the destination…" detail:@"Checking the selected folder and any existing app before asking you to confirm. Nothing has been replaced."];
+    [self checkFolder:panel.URL payload:payload hash:hash info:info];
+}
+- (void)checkFolder:(NSURL *)folder payload:(NSURL *)payload hash:(NSString *)hash info:(NSDictionary *)info {
+    [self showProgress:@"Checking the destination…" detail:@"Checking Applications or your selected folder and any existing app before asking you to confirm. Nothing has been replaced."];
     __block NSString *snapshot = nil;
     __block NSError *error = nil;
-    __block BOOL checked = NO;
+    __block NSURL *destination = nil;
     PerformWork(self.worker, ^{
-        if (!RealDirectory(folder) || ![NSFileManager.defaultManager isWritableFileAtPath:folder.path]) {
-            error = Failure(@"Choose a folder you can write to, such as Applications in your home folder. Nothing was installed.");
-            return;
-        }
-        snapshot = Snapshot(destination);
-        if (snapshot) {
-            NSDictionary *previous = CheckApp(destination, nil, &error);
-            if (!previous || [previous[@"CFBundleShortVersionString"] compare:info[@"CFBundleShortVersionString"] options:NSNumericSearch] == NSOrderedDescending) {
-                error = Failure(@"The destination contains an unverified or newer app. Nothing was changed. Choose another folder or keep your existing app.");
-                return;
-            }
-        }
-        checked = YES;
+        destination = CheckDestinationFolder(folder, info, NSFileManager.defaultManager, &snapshot, &error);
     }, ^{
-        if (!checked) {
-            [self stopWithTitle:@"Cannot use this destination" reason:error.localizedDescription ?: @"Nothing was installed."];
+        if (!destination) {
+            [self.indicator stopAnimation:nil];
+            NSString *reason = [NSString stringWithFormat:@"%@\n\nYou can choose another folder or cancel. Your existing app and data have not been changed.", error.localizedDescription ?: @"This installation folder is unavailable."];
+            if (Alert(@"Cannot install in this folder", reason, @[@"Choose another folder", @"Cancel"]) == NSAlertFirstButtonReturn)
+                [self chooseAlternateFolderForPayload:payload hash:hash info:info];
+            else [NSApp terminate:nil];
             return;
         }
         if (Running()) {
@@ -365,6 +386,7 @@ static NSModalResponse Alert(NSString *title, NSString *body, NSArray<NSString *
 }
 @end
 
+#ifndef VF_INSTALLER_CORE_TEST
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
         NSApplication *app = NSApplication.sharedApplication;
@@ -375,4 +397,5 @@ int main(int argc, const char *argv[]) {
     }
     return 0;
 }
+#endif
 #endif
