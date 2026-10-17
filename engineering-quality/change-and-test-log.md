@@ -3339,3 +3339,20 @@ rollback/source/runtime/work/dependencies/profiles/libraries/settings/media and
 receiptsallretained. Full33rowclassification+14proposal+DENIAL-AND-CLASSIFICATION.md
 underuniversal2base/cleanup-20261017. ZERO moves/deletions, no reclaimclaim. Intel
 retryevidencepreserved; no newconnectionattempt pendinguserTailscaleconfirmation.
+
+
+2026-10-17 CLARIFIED NARROW14 CLEANUP COMPLETE. Parent supplied exactCooper
+16:55:07cleanupinstruction and explicitlyauthorizedonly14 saferrecoverablemoves,
+other19hold; submittedreviewjustificationquotedcurrentauthority+classification/
+preflightpaths. Automaticreviewaccepted thisnarroweraction; no33bypass/retry.
+Freshprocess/mount/current191argdependencychecksPASS. Full selected/protected
+manifests captured. All14 samevolume renamex_np(RENAME_EXCL) succeeded; every
+file/symlinkmanifest/rootinode/device equalityPASSafterrename. ZEROdeletions;
+all7current/rollbackartifactfullmanifests identical; all3monitoredprofilefiles
+settings/installation/downloadhistorySHAunchangedfromcleanuppreflight. All19held
+rootidentities unchanged. Mainlatestapp presentprocessguard/noGUI/restart; no
+Windows/Julieconnection orremotechange. No diskreclaimclaim. Peritemoriginal/
+recoverymap,journal,beforeafterhashes:cleanup-20261017/narrow14-execution/
+RESULT.json+REPORT.md+preflight.json+move-journal.json. Source/dependencies/
+libraries/settings/media/receipts/rollbackprotected; remoteproposalsnotexecuted.
+Earlier33denial+Intelretryevidencepreserved; IntelworkwaitsuserTailscaleconfirmation.
