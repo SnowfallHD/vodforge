@@ -13,13 +13,16 @@ from scripts.macos_native_closure import ARCHES, MACHO, audit_payload
 
 
 def inspect_inputs(roots, run=subprocess.check_output):
-    rows, errors = [], []
+    rows, errors, excluded_debug = [], [], []
     seen = set()
     for root in roots:
         if not root.exists():
             errors.append({"path": str(root), "error": "missing input"})
             continue
         for path in [root] if root.is_file() else sorted(root.rglob("*")):
+            if any(parent.suffix == ".dSYM" for parent in path.parents):
+                excluded_debug.append(str(path))
+                continue
             if path.is_symlink() or not path.is_file() or path.resolve() in seen:
                 continue
             seen.add(path.resolve())
@@ -83,7 +86,12 @@ def inspect_inputs(roots, run=subprocess.check_output):
             errors.extend(graph["errors"])
     if not rows:
         errors.append({"error": "no native inputs inspected"})
-    return {"native_files": rows, "errors": errors, "qualified": not errors}
+    return {
+        "native_files": rows,
+        "errors": errors,
+        "qualified": not errors,
+        "excluded_debug_paths": excluded_debug,
+    }
 
 
 def package(source: Path, python: Path, tools: Path, output: Path, version: str):
@@ -95,10 +103,30 @@ def package(source: Path, python: Path, tools: Path, output: Path, version: str)
         ["git", "status", "--porcelain"], cwd=source, text=True
     ).strip():
         raise ValueError("Private candidate still requires clean source")
-    required = [python.resolve().parent.parent, python.parent.parent / "lib", tools]
+    runtime = json.loads(
+        subprocess.check_output(
+            [
+                str(python),
+                "-c",
+                "import sysconfig,sys,json;print(json.dumps(dict(base=sys.base_prefix,stdlib=sysconfig.get_path('stdlib'))))",
+            ],
+            text=True,
+        )
+    )
+    # Inspect runtime inputs, not the framework's unused Intel-only alternate
+    # launcher, static build objects or debug symbols.
+    required = [
+        python.resolve(),
+        (Path(runtime["base"]) / "Python").resolve(),
+        Path(runtime["stdlib"]) / "lib-dynload",
+        python.parent.parent / "lib",
+        tools,
+    ]
     preflight = inspect_inputs(required)
     if not preflight["qualified"]:
-        raise ValueError("Universal input qualification failed")
+        raise ValueError(
+            "Universal input qualification failed: " + json.dumps(preflight["errors"])
+        )
     for tool in ["ffmpeg", "ffprobe", "deno", "libsqlite3.dylib"]:
         if not (tools / tool).is_file():
             raise ValueError("Missing required tool: " + tool)

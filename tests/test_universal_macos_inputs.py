@@ -61,6 +61,13 @@ def test_private_recipe_selects_universal_target_and_retains_per_arch_policy(
     calls = []
 
     def git(args, **kwargs):
+        if args[0] != "git":
+            return json.dumps(
+                {
+                    "base": str(tmp_path / "python-base"),
+                    "stdlib": str(tmp_path / "stdlib"),
+                }
+            )
         return "" if "status" in args else "a" * 40
 
     def pyinstaller(args, **kwargs):
@@ -90,3 +97,15 @@ def test_private_recipe_selects_universal_target_and_retains_per_arch_policy(
     }
     assert info["CFBundleVersion"] == "0.2.6"
     assert json.loads((output / "build-receipt.json").read_text())["source"] == "a" * 40
+
+
+def test_input_preflight_excludes_debug_symbols_but_not_runtime_extensions(tmp_path):
+    debug = tmp_path / "module.so.dSYM/Contents/Resources/DWARF/module.so"
+    debug.parent.mkdir(parents=True)
+    debug.write_bytes(bytes.fromhex("cafebabe"))
+    result = inspect_inputs(
+        [tmp_path],
+        lambda *_a, **_k: pytest.fail("Debug symbols are not runtime inputs"),
+    )
+    assert not result["qualified"]  # A debug-only input is never a runtime pass.
+    assert str(debug) in result["excluded_debug_paths"]
