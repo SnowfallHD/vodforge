@@ -88,3 +88,19 @@ def test_rpath_resolution_uses_declared_loader_path_and_rejects_symlink_escape(
     (tmp_path / "lib/abi.dylib").unlink()
     (tmp_path / "lib/abi.dylib").symlink_to(outside)
     assert not audit_payload(tmp_path, run)["qualified"]
+
+
+def test_exact_loader_rpath_resolves_sibling_dependency(tmp_path):
+    from pathlib import Path
+
+    for name in ["entry", "abi.dylib"]:
+        (tmp_path / name).write_bytes(bytes.fromhex("cafebabe"))
+
+    def run(args):
+        if "lipo" in args[0]:
+            return "arm64 x86_64"
+        if Path(args[-1]).name == "entry":
+            return "Load command 0\n cmd LC_RPATH\n path @loader_path (offset 12)\nLoad command 1\n cmd LC_LOAD_DYLIB\n name @rpath/abi.dylib (offset 24)"
+        return ""
+
+    assert audit_payload(tmp_path, run)["qualified"]

@@ -84,6 +84,10 @@ def audit_payload(root: Path, run=None):
         return root
 
     def expand(value, loader, exedir):
+        if value == "@loader_path":
+            return loader.parent
+        if value == "@executable_path":
+            return exedir
         if value.startswith("@loader_path/"):
             return (loader.parent / value[13:]).resolve()
         if value.startswith("@executable_path/"):
