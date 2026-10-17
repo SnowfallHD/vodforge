@@ -99,6 +99,66 @@ def _new_toolbar() -> int:
         send(string, b"release", None)
 
 
+class _MainToolbarLifecycle:
+    """Keep the windowed traffic-light toolbar out of Qt's fullscreen header.
+
+    AppKit paints an empty unified toolbar over expanded Qt content in native
+    fullscreen. Qt signals own this observer; both exact native receivers are
+    retained while the toolbar is detached, without native Python callbacks.
+    """
+
+    def __init__(self, window: Any, native: Any, toolbar: int) -> None:
+        self._window = window
+        self._native = native
+        self._toolbar = toolbar
+        self._closed = False
+        self._toolbar_retained = False
+        native.retain()
+        try:
+            send(toolbar, b"retain", _POINTER)
+            self._toolbar_retained = True
+            window.visibilityChanged.connect(self.synchronize)
+            window.destroyed.connect(self.close)
+            self.synchronize()
+        except Exception:
+            self.close()
+            raise
+
+    def synchronize(self, *_visibility) -> None:
+        from PySide6.QtGui import QWindow
+
+        if self._closed:
+            return
+        # Read latest intent rather than a queued signal's superseded value.
+        visibility = self._window.visibility()
+        if visibility == QWindow.Visibility.FullScreen:
+            self._native.setToolbar_(None)
+        elif visibility in (
+            QWindow.Visibility.Windowed,
+            QWindow.Visibility.Maximized,
+        ):
+            self._native.setToolbar_(self._toolbar)
+        # Hidden/minimized Space retirement must not restore the overlay.
+
+    def close(self, *_destroyed) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        for signal_name, callback in (
+            ("visibilityChanged", self.synchronize),
+            ("destroyed", self.close),
+        ):
+            try:
+                getattr(self._window, signal_name).disconnect(callback)
+            except (RuntimeError, TypeError):
+                pass
+        try:
+            if self._toolbar_retained:
+                send(self._toolbar, b"release", None)
+        finally:
+            self._native.release()
+
+
 def integrate_qt_main_window(window: Any) -> bool:
     """Extend the QQuickWindow behind traffic lights using public scalar calls."""
     if sys.platform != "darwin":
@@ -131,6 +191,9 @@ def integrate_qt_main_window(window: Any) -> bool:
         # owner. Keep the established readable artwork fallback without asking
         # PyObjC to register executable struct wrappers on hardened Intel.
         window.setProperty("backgroundOpacity", 1.0)
+        window._native_toolbar_lifecycle = _MainToolbarLifecycle(
+            window, native, toolbar
+        )
         return True
     except Exception:  # noqa: BLE001 - preserve the usable Qt window
         if native is not None and "original_style" in locals():

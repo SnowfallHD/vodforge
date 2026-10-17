@@ -2964,3 +2964,78 @@ remainsFAILED/unqualified evenafterfocusready; retainedevidence explicitlynot
 repairacceptance. Actualsignedcandidatefirstopen→fullscreen→genuineEsc→restored
 3screens onBOTHIntel/ARM are stillrequired byCooper, notgreenbuttonsubstitute.
 ExistinguserquitoldJulie424himself; nooldbuildrelaunch authorized/attempted.
+
+InstallerdesignDMGnowAccepted e366c7c9-6997-4dbd-b29f-81b5a602bf22, stapled/
+strictsignature/Gatekeeper/hdiutilchecksumPASS. Exact573561287bytes SHA
+1e7b28131fb1587e19d37a08eda948155e82b2c0adc56715a711b80daeb5f6ce.
+TransferredonlytonewJulieQAroot, notqualifieduserdelivery. Firstreceiptfailed
+CLTPythonmissinghashlib.file_digest AFTERcompletebytestream; preservedpart;
+oneexistingpart streamingSHAverificationmatched+renamecompleted, notnewtransfer.
+Finder/nativeinstallationstillpending. Sourceb3908f2 nowcommitted/cleanprivate
+checkout; successorbuildPASS439nativeclosure, sourcebound122actualPYZ+47QML.
+EmptyentitlementDeveloperID/notaryunderway, no newapplaunch.
+
+2026-10-17 b3908f2 signed successor: Apple1093fc59-5749-456c-bd3b-baa8f5849c24
+Accepted/stapled/strict-allarchitectures/GatekeeperPASS, emptyentitlementsboth.
+SealedARM5808 exit0 10.101s andRosetta5817 exit0 50.142s withoutJITcontrols;
+exactexe c06180078c22ef62b4f1b13829f44b99a9147e6b9cbc2357257f12170322da19
+unchanged/strictsignatureaftertestsPASS. Prior90s x86failures retained, notrewritten.
+NativeQAarchive528450667bytes SHA571cd814f7744011a7c26e792bd219ec4adfbe1b08047dacf324a87bbc266738
+handedobserver forfreshJulieFIRST thenARM firstopen/fullscreen/genuineOSescape/
+restored3screens. No physicalIntel/UI passyet. Rootholdsheavyworkduringstartup.
+Evidence SIGNED-NATIVE-b3908f2-HANDOFF.json andsealed-smokes-b3908f2/receipt.json
+underbuild/universal2-implementation-20261017.
+
+ActualJulieFinderdesign-v1 pixels personallyinspected: ONEinstallerentry/concave
+stonebackground/brandedvolumeproxyiconPASS, NOApplications/TXT. Nativefilename
+blackondarklowcontrast andbottomexplanatorylineclipped: designFAIL retained, no
+visualacceptanceclaim. Post-b390packaging-onlycandidate removesclippedline and
+setsactualdarkFinderbackgroundRGB;9affectedwindowtestsPASS, actualv2pixelsnotyet
+observed. v1installer/payloadNOTlaunched. Ownimage detached, settled07:46:52UTC
+Finderbaseline1/ownedviews0/VODabsent; rootJulieUIreleasedtonativeobserver.
+Evidence installer-native-design-v1/finder-first.png andfinder-release-settled.json.
+
+2026-10-17 actualsignedb390Julie x86Cocoa30973: firstopenactualPNG08:00:51
+personallyviewedPASS1100x740/integratedheader/footer/staticForge. Readinessfirst
+observed07:59:09 after07:57:25launch(~103s), actualreadyinstantunknown; nofast/
+90sstartupclaim. ONEfullscreenactualwhole-displayPNGFAIL: AX0,0/1440x900 but
+~52ptlightgraytoolbarcoversQtbrand/navigation. ONEgenuineOSEscape08:02:47
+PASSreturnedoriginal30,30/1100x740, restoredPNGcorrectheader/footer. PriorQTest
+EscapeFAILretained synthetic-pathlimit, notrewritten. Normalcooperativequit
+processabsent08:04:07; JulieUIreleased. ARMexactb390journeyheldforaffected
+toolbarrepairtoavoidstaleacceptance. Source-nativeone-windowtoolbarattached/
+publicdetachcontrast authorizedmainhost, notcandidateacceptance. Nativeobserver
+result native-fullscreen-repair/b390-julie-native-result.json underbase.
+
+Installerappearancev2 firstattempt stoppedbeforeimagegeneration: wrongtooling
+venv lackedPillow. Failurelog+newstagepreserved. Correctmaintained.venvwithPillow
+thenbuild_dmgexit0, image573535335bytes SHA17dcafe96864bfb68c6dab4f64c519a43d4d9c6a2b1bd0fe3344fea9d1956989
+created08:04:42UTC. ThisUNSIGNEDappearance-onlyimage retainssignedd42helper/payload;
+noVODpayloadlaunch/delivery/nativeappclaim. FreshJulieQAtransferunderway, current
+Finderpixelsnotyetverified. PRIVATE-APPEARANCE-v2.json bindsartworksourcehash.
+
+Actualsource-native SAMEfullscreenwindow toolbarcontrast proves emptyNSToolbar
+isgrayoverlaycause: attachedgrayFAIL→publicsetToolbar:nil revealsentireQtrow
+withunchanged1440x900geometry→windowedrestore correct. ContrastPID17156exit0.
+New_mainToolbarLifecycleusesQtvisibilityChanged/lateststate, retains exact
+NSWindow+toolbar whilefullscreen detached, restoresWindowed/Maximized, keeps
+Hidden/Minimizedretirementdetached, disconnects/releasesonceonQt destroyed.
+Constructorrollback/stalesignal/latecallbackboundarycases +40affectedchecksPASS,
+Ruff/format/diffPASS. AutomaticproductionlifecycleCocoasourcePID17626 actual3
+PNGs personallyviewedPASS, toolbartrue→false→true; first/restoredSHAidentical,
+normalexit0/independentpsabsent08:13:25UTC. NOTsignedcandidateacceptance/programmatic
+returnnotgenuineEscape. NoEscape/QMLruntimechange. BothhostsUIreleased; corrected
+signedsuccessor both-Mac genuineEscape3screens remainrequired. Evidence
+native-fullscreen-repair/TOOLBAR-LIFECYCLE-HANDOFF.json bindsactualsourcehashes.
+
+V2actualFinder08:07:41 footerfitsbutfilenamestillblack/dark: contrastFAIL retained.
+V3source addsreadablerecessedlightstonelabelsurface, no fakebakedfilename;9affected
+windowtestsPASS, actualv3Finderstillpending. OnegenuineCGdoubleclick08:08:58
+startedexactAppleacceptedinstaller31221fromownedmountedimage.25s expectedpanel
+observationmissed; SAMEprocessactualfolderpanelpersonallyviewed08:10:31,no new
+launch. NativeCancelAXPressonce returnedCannotComplete-25204, exactPIDsubsequently
+absent08:14:00; no retry/no inventedexitcode0. Ownedimageonlydetached, Finder
+baseline1/ownedviews0/VODabsent08:15:32, Julieexplicitrelease. Slowmainthread
+signatureverificationhasvisible-responsivenessgap; separateinstallerowner
+preparingnonblockingprogresswithoutweakeningverification/atomicinstall. No
+installation/payloadOpen/normalprofile/securitychange. Alloriginalfailsretained.

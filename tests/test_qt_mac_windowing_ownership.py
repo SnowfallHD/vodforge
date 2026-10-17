@@ -58,6 +58,7 @@ def test_main_header_uses_public_scalar_calls_and_rolls_back(
     monkeypatch.setattr(
         mac_windowing, "send", lambda *args: calls.append(args), raising=False
     )
+    monkeypatch.setattr(mac_windowing, "_MainToolbarLifecycle", lambda *args: None)
     properties = {}
     window = SimpleNamespace(setProperty=lambda n, v: properties.update({n: v}))
     assert mac_windowing.integrate_qt_main_window(window) is not reject_toolbar
@@ -226,3 +227,86 @@ def test_native_toolbar_owns_identifier_without_autorelease_dependency(
     assert calls.count((111, b"release")) == (failure != "string")
     assert calls.count((112, b"release")) == (failure == "configuration")
     assert not any(selector == b"stringWithUTF8String:" for _, selector in calls)
+
+
+def test_main_toolbar_tracks_fullscreen_and_releases_exact_receivers(monkeypatch):
+    """An attached empty toolbar covers Qt's header in actual Cocoa fullscreen."""
+    from PySide6.QtGui import QWindow
+
+    calls, visibility_callbacks, destroy_callbacks = [], [], []
+    state = {"visibility": QWindow.Visibility.Windowed, "toolbar": 52}
+    window = SimpleNamespace(
+        visibility=lambda: state["visibility"],
+        visibilityChanged=SimpleNamespace(
+            connect=visibility_callbacks.append,
+            disconnect=lambda f: calls.append("disconnect_visibility"),
+        ),
+        destroyed=SimpleNamespace(
+            connect=destroy_callbacks.append,
+            disconnect=lambda f: calls.append("disconnect_destroyed"),
+        ),
+    )
+    native = SimpleNamespace(
+        retain=lambda: calls.append("retain_window"),
+        release=lambda: calls.append("release_window"),
+        setToolbar_=lambda value: state.update(toolbar=value),
+    )
+    monkeypatch.setattr(mac_windowing, "send", lambda *args: calls.append(args))
+    owner = mac_windowing._MainToolbarLifecycle(window, native, 52)
+    state["visibility"] = QWindow.Visibility.FullScreen
+    visibility_callbacks[0](state["visibility"])
+    assert state["toolbar"] is None
+    # Hidden during Space retirement must not reattach the occluding toolbar.
+    state["visibility"] = QWindow.Visibility.Hidden
+    visibility_callbacks[0](state["visibility"])
+    assert state["toolbar"] is None
+    state["visibility"] = QWindow.Visibility.Windowed
+    visibility_callbacks[0](QWindow.Visibility.FullScreen)  # stale signal, latest wins
+    assert state["toolbar"] == 52
+    destroy_callbacks[0](window)
+    owner.close()
+    state["visibility"] = QWindow.Visibility.FullScreen
+    visibility_callbacks[0](state["visibility"])
+    assert state["toolbar"] == 52  # late callback is inert
+    assert calls.count("retain_window") == calls.count("release_window") == 1
+    assert calls.count((52, b"retain", mac_windowing._POINTER)) == 1
+    assert calls.count((52, b"release", None)) == 1
+
+
+@pytest.mark.parametrize("failure", ["retain_toolbar", "connect", "initial_sync"])
+def test_main_toolbar_constructor_rollback_releases_only_acquired_receivers(
+    monkeypatch, failure
+):
+    from PySide6.QtGui import QWindow
+
+    calls = []
+
+    def send(*args):
+        if failure == "retain_toolbar" and args[1] == b"retain":
+            raise RuntimeError("retain refused")
+        calls.append(args)
+
+    def connect(_):
+        if failure == "connect":
+            raise RuntimeError("signal refused")
+
+    def set_toolbar(_):
+        if failure == "initial_sync":
+            raise RuntimeError("native receiver refused")
+
+    signal = SimpleNamespace(connect=connect, disconnect=lambda _: None)
+    window = SimpleNamespace(
+        visibilityChanged=signal,
+        destroyed=signal,
+        visibility=lambda: QWindow.Visibility.FullScreen,
+    )
+    native = SimpleNamespace(
+        retain=lambda: calls.append("retain_window"),
+        release=lambda: calls.append("release_window"),
+        setToolbar_=set_toolbar,
+    )
+    monkeypatch.setattr(mac_windowing, "send", send)
+    with pytest.raises(RuntimeError):
+        mac_windowing._MainToolbarLifecycle(window, native, 52)
+    assert calls.count("retain_window") == calls.count("release_window") == 1
+    assert calls.count((52, b"release", None)) == (failure != "retain_toolbar")
