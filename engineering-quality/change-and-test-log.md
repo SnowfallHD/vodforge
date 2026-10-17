@@ -3039,3 +3039,30 @@ baseline1/ownedviews0/VODabsent08:15:32, Julieexplicitrelease. Slowmainthread
 signatureverificationhasvisible-responsivenessgap; separateinstallerowner
 preparingnonblockingprogresswithoutweakeningverification/atomicinstall. No
 installation/payloadOpen/normalprofile/securitychange. Alloriginalfailsretained.
+
+2026-10-17 installerresponsiveness source-onlyrepair: prioractualsigned0c3b
+Julie31221 launch08:08:58/noPanel25s/panelobserved08:10:31afterblockingvalidation
+retained; AXCancel-25204 thenabsence08:14 notrewrittenasprovenCancel. No repeat.
+Installer nowshowsCheckingwindow+indeterminateprogress BEFOREdispatch; one serial
+workerperformsfullpayload/destinationverification andunchangedInstalltransaction;
+UI/completions/running-appqueriesmainthread. Explicitconfirmedinstallshowsbusy
+Installing; closebuttondisabled/windowcloseNO/ordinaryQuitNSTerminateCancel
+throughterminaltransaction, withvisibleexplanation; nonewcancelworkflow.
+CoreDigest/RealDirectory/Snapshot/CheckApp/MoveExclusive/Install exactunchanged.
+ProductionARMfloor26+x86floor15 compileexit0; compiledcore15assertionsPASS
+(5actualasync/serial/maincompletion+10retainedtransactions), compiletimefake
+signature/runningstateonly. No helperassembly/sign/nativeUI/remote/Applications/
+profileaction; renderedresponsiveness/busyQuit/actualsignedinstallremainUNTESTED.
+Sourcefiles scripts/macos_installer.m,tests/native_macos_installer_core.m;
+receipt+REPORT underuniversal2implementation/installer-responsiveness. Rootcommit
+andpackagingseparate; artworkuntouched.
+
+Installerresponsiveness requirednegativecontrol complete08:21:15UTC. ONLYtemporary
+PerformWork mutatedtosynchronous work/completion; same maintainedcoreharness now
+boundsreleasewait2s (notinfinite), assertions/admissionunchanged. Mutantcompile0/
+actualasyncassertFAILexit1 2.178s beforefilefixturecreation; currentproductsame
+harness15PASSexit0 0.115s. ProductinstallerSHA8f82c771...unchangedbefore/after,
+no needrestoreproductsource. InitialdriverparentindexassertfailedBEFOREcompile/
+execution, correctedfixtureonly; no extraactualcontrol. Exactlogs/hashes:
+installer-responsiveness/synchronous-scheduler-control/receipt.json underbase.
+No fullsuite/package/sign/remote/nativeUI, source-native limitsunchanged.

@@ -22,6 +22,37 @@ static void Require(BOOL condition, NSString *label) {
 int main(void) {
     @autoreleasepool {
         NSFileManager *fm = NSFileManager.defaultManager;
+        dispatch_queue_t worker = dispatch_queue_create("vf.installer.test.serial", DISPATCH_QUEUE_SERIAL);
+        dispatch_semaphore_t started = dispatch_semaphore_create(0);
+        dispatch_semaphore_t release = dispatch_semaphore_create(0);
+        __block BOOL completed = NO;
+        __block BOOL ranOnMain = YES;
+        __block NSInteger serialOrder = 0;
+        PerformWork(worker, ^{
+            ranOnMain = NSThread.isMainThread;
+            dispatch_semaphore_signal(started);
+            // Bound the negative control too: synchronous scheduling must fail
+            // the assertion below rather than hanging this source-only harness.
+            dispatch_semaphore_wait(release, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC));
+            serialOrder = 1;
+        }, ^{
+            Require(NSThread.isMainThread, @"worker completion returns to main thread");
+            completed = YES;
+        });
+        Require(dispatch_semaphore_wait(started, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC)) == 0 && !completed,
+            @"slow worker starts without blocking the caller/main thread");
+        Require(!ranOnMain, @"verification work runs off the main thread");
+        __block BOOL secondCompleted = NO;
+        PerformWork(worker, ^{
+            Require(serialOrder == 1, @"work queue serializes operations");
+            serialOrder = 2;
+        }, ^{ secondCompleted = YES; });
+        dispatch_semaphore_signal(release);
+        NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:3];
+        while ((!completed || !secondCompleted) && deadline.timeIntervalSinceNow > 0)
+            CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.01, true);
+        Require(completed && secondCompleted && serialOrder == 2,
+            @"main thread services completion while worker work is serialized");
         NSURL *root = [NSURL fileURLWithPath:[NSTemporaryDirectory()
             stringByAppendingPathComponent:[@"vf-installer-core-" stringByAppendingString:NSUUID.UUID.UUIDString]]];
         [fm createDirectoryAtURL:root withIntermediateDirectories:YES attributes:nil error:nil];

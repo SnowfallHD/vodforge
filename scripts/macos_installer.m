@@ -92,7 +92,13 @@ static BOOL Running(void) {
 #ifdef VF_INSTALLER_CORE_TEST
     return VFTestRunning;
 #else
-    return [NSRunningApplication runningApplicationsWithBundleIdentifier:VFIdentifier].count > 0;
+    __block BOOL running = NO;
+    void (^read)(void) = ^{
+        running = [NSRunningApplication runningApplicationsWithBundleIdentifier:VFIdentifier].count > 0;
+    };
+    if (NSThread.isMainThread) read();
+    else dispatch_sync(dispatch_get_main_queue(), read);
+    return running;
 #endif
 }
 
@@ -163,8 +169,20 @@ static BOOL Install(NSURL *payload, NSURL *destination, NSString *expectedHash,
     return CheckApp(destination, expectedHash, error) != nil;
 }
 
+// All expensive verification/copy work runs serially away from AppKit's thread.
+// The completion is always main-thread; no UI is accessed by the worker block.
+static void PerformWork(dispatch_queue_t queue, dispatch_block_t work, dispatch_block_t completion) {
+    dispatch_async(queue, ^{
+        @autoreleasepool {
+            work();
+            dispatch_async(dispatch_get_main_queue(), completion);
+        }
+    });
+}
+
 #ifndef VF_INSTALLER_CORE_TEST
 static NSModalResponse Alert(NSString *title, NSString *body, NSArray<NSString *> *buttons) {
+    NSCAssert(NSThread.isMainThread, @"Installer UI must run on the main thread");
     NSAlert *alert = [NSAlert new];
     alert.messageText = title;
     alert.informativeText = body;
@@ -172,23 +190,91 @@ static NSModalResponse Alert(NSString *title, NSString *body, NSArray<NSString *
     return alert.runModal;
 }
 
-@interface VFInstaller : NSObject <NSApplicationDelegate>
+@interface VFInstaller : NSObject <NSApplicationDelegate, NSWindowDelegate>
+@property(nonatomic, strong) NSWindow *progressWindow;
+@property(nonatomic, strong) NSTextField *progressTitle;
+@property(nonatomic, strong) NSTextField *progressDetail;
+@property(nonatomic, strong) NSProgressIndicator *indicator;
+@property(nonatomic, strong) dispatch_queue_t worker;
+@property(nonatomic) BOOL mutating;
 @end
+
 @implementation VFInstaller
+- (void)showProgress:(NSString *)title detail:(NSString *)detail {
+    NSCAssert(NSThread.isMainThread, @"Installer UI must run on the main thread");
+    if (!self.progressWindow) {
+        self.progressWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 470, 166)
+            styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
+            backing:NSBackingStoreBuffered defer:NO];
+        self.progressWindow.title = @"Install VODForge";
+        self.progressWindow.delegate = self;
+        self.progressWindow.releasedWhenClosed = NO;
+        self.progressTitle = [NSTextField labelWithString:title];
+        self.progressTitle.font = [NSFont boldSystemFontOfSize:17];
+        self.progressTitle.frame = NSMakeRect(24, 114, 422, 26);
+        self.progressDetail = [NSTextField wrappingLabelWithString:detail];
+        self.progressDetail.frame = NSMakeRect(24, 53, 422, 54);
+        self.indicator = [[NSProgressIndicator alloc] initWithFrame:NSMakeRect(24, 24, 422, 16)];
+        self.indicator.style = NSProgressIndicatorStyleBar;
+        self.indicator.indeterminate = YES;
+        self.indicator.usesThreadedAnimation = YES;
+        [self.progressWindow.contentView addSubview:self.progressTitle];
+        [self.progressWindow.contentView addSubview:self.progressDetail];
+        [self.progressWindow.contentView addSubview:self.indicator];
+        [self.progressWindow center];
+    }
+    self.progressTitle.stringValue = title;
+    self.progressDetail.stringValue = detail;
+    [[self.progressWindow standardWindowButton:NSWindowCloseButton] setEnabled:!self.mutating];
+    [self.indicator startAnimation:nil];
+    [self.progressWindow makeKeyAndOrderFront:nil];
+    [self.progressWindow displayIfNeeded];
+}
+- (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender {
+    if (!self.mutating) return NSTerminateNow;
+    self.progressDetail.stringValue = @"Installation is in progress. Keep this window open while the app is verified and safely placed. Your existing app and data are being protected.";
+    [self.progressWindow makeKeyAndOrderFront:nil];
+    NSBeep();
+    return NSTerminateCancel;
+}
+- (BOOL)windowShouldClose:(NSWindow *)sender {
+    if (self.mutating) return NO;
+    [NSApp terminate:nil];
+    return NO;
+}
+- (void)stopWithTitle:(NSString *)title reason:(NSString *)reason {
+    self.mutating = NO;
+    [self.indicator stopAnimation:nil];
+    Alert(title, reason, @[@"Close"]);
+    [NSApp terminate:nil];
+}
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
+    self.worker = dispatch_queue_create("com.snowfallhd.vodforge.installer.verify-install", DISPATCH_QUEUE_SERIAL);
     [NSApp activateIgnoringOtherApps:YES];
+    [self showProgress:@"Checking VODForge…" detail:@"Verifying the included app and its signature. This can take a little while. Nothing is being installed yet."];
     NSURL *payload = [NSBundle.mainBundle.resourceURL URLByAppendingPathComponent:@"VODForge.app"];
     NSString *hash = [NSBundle.mainBundle objectForInfoDictionaryKey:@"VFExecutableSHA256"];
-    NSError *error = nil;
-    NSDictionary *info = CheckApp(payload, hash, &error);
-    if (!info || hash.length != 64) {
-        Alert(@"Installer verification failed", error.localizedDescription ?: @"The installer is incomplete.", @[@"Close"]);
-        [NSApp terminate:nil]; return;
-    }
+    __block NSError *error = nil;
+    __block NSDictionary *info = nil;
+    PerformWork(self.worker, ^{
+        if ([hash isKindOfClass:NSString.class] && hash.length == 64)
+            info = CheckApp(payload, hash, &error);
+    }, ^{
+        if (!info) {
+            [self stopWithTitle:@"Installer verification failed" reason:error.localizedDescription ?: @"The installer is incomplete."];
+            return;
+        }
+        [self chooseDestinationForPayload:payload hash:hash info:info];
+    });
+}
+- (void)chooseDestinationForPayload:(NSURL *)payload hash:(NSString *)hash info:(NSDictionary *)info {
     if (Running()) {
-        Alert(@"Quit VODForge before installing", @"Your open app and its work have been left untouched. Quit it yourself, then open this installer again.", @[@"Close"]);
-        [NSApp terminate:nil]; return;
+        [self stopWithTitle:@"Quit VODForge before installing" reason:@"Your open app and its work have been left untouched. Quit it yourself, then open this installer again."];
+        return;
     }
+    [self.indicator stopAnimation:nil];
+    self.progressTitle.stringValue = @"Choose an installation folder";
+    self.progressDetail.stringValue = @"The included app is verified. Nothing will be copied until you choose a folder and confirm.";
     NSOpenPanel *panel = [NSOpenPanel openPanel];
     panel.title = @"Choose where to install VODForge";
     panel.message = @"Choose Applications or another folder you can write to. No administrator access will be requested.";
@@ -197,36 +283,69 @@ static NSModalResponse Alert(NSString *title, NSString *body, NSArray<NSString *
     panel.canCreateDirectories = YES; panel.allowsMultipleSelection = NO;
     panel.directoryURL = [NSURL fileURLWithPath:@"/Applications" isDirectory:YES];
     if (panel.runModal != NSModalResponseOK) { [NSApp terminate:nil]; return; }
-    NSURL *destination = [panel.URL URLByAppendingPathComponent:@"VODForge.app"];
-    if (!RealDirectory(panel.URL) || ![NSFileManager.defaultManager isWritableFileAtPath:panel.URL.path]) {
-        Alert(@"Choose a writable folder", @"Nothing was installed. Open the installer again and choose a folder you can write to, such as Applications in your home folder.", @[@"Close"]);
-        [NSApp terminate:nil]; return;
-    }
-    NSString *snapshot = Snapshot(destination);
-    NSString *body = [NSString stringWithFormat:@"Install VODForge %@ at %@? Your settings, history and saved media will not be moved or removed.", info[@"CFBundleShortVersionString"], destination.path];
-    if (snapshot) {
-        NSDictionary *previous = CheckApp(destination, nil, &error);
-        if (!previous || [previous[@"CFBundleShortVersionString"] compare:info[@"CFBundleShortVersionString"] options:NSNumericSearch] == NSOrderedDescending) {
-            Alert(@"Cannot replace this app", @"The destination contains an unverified or newer app. Nothing was changed. Choose another folder or keep your existing app.", @[@"Close"]);
+    NSURL *folder = panel.URL;
+    NSURL *destination = [folder URLByAppendingPathComponent:@"VODForge.app"];
+    [self showProgress:@"Checking the destination…" detail:@"Checking the selected folder and any existing app before asking you to confirm. Nothing has been replaced."];
+    __block NSString *snapshot = nil;
+    __block NSError *error = nil;
+    __block BOOL checked = NO;
+    PerformWork(self.worker, ^{
+        if (!RealDirectory(folder) || ![NSFileManager.defaultManager isWritableFileAtPath:folder.path]) {
+            error = Failure(@"Choose a folder you can write to, such as Applications in your home folder. Nothing was installed.");
+            return;
+        }
+        snapshot = Snapshot(destination);
+        if (snapshot) {
+            NSDictionary *previous = CheckApp(destination, nil, &error);
+            if (!previous || [previous[@"CFBundleShortVersionString"] compare:info[@"CFBundleShortVersionString"] options:NSNumericSearch] == NSOrderedDescending) {
+                error = Failure(@"The destination contains an unverified or newer app. Nothing was changed. Choose another folder or keep your existing app.");
+                return;
+            }
+        }
+        checked = YES;
+    }, ^{
+        if (!checked) {
+            [self stopWithTitle:@"Cannot use this destination" reason:error.localizedDescription ?: @"Nothing was installed."];
+            return;
+        }
+        if (Running()) {
+            [self stopWithTitle:@"Quit VODForge before installing" reason:@"Your open app and its work have been left untouched. Quit it yourself, then open this installer again."];
+            return;
+        }
+        [self.indicator stopAnimation:nil];
+        NSString *body = [NSString stringWithFormat:@"Install VODForge %@ at %@? Your settings, history and saved media will not be moved or removed.", info[@"CFBundleShortVersionString"], destination.path];
+        if (snapshot) body = [body stringByAppendingString:@" The previous app will be kept beside it as a named backup."];
+        if (Alert(snapshot ? @"Replace VODForge?" : @"Install VODForge?", body,
+                  @[snapshot ? @"Replace" : @"Install", @"Cancel"]) != NSAlertFirstButtonReturn) {
             [NSApp terminate:nil]; return;
         }
-        body = [body stringByAppendingString:@" The previous app will be kept beside it as a named backup."];
-    }
-    if (Alert(snapshot ? @"Replace VODForge?" : @"Install VODForge?", body,
-              @[snapshot ? @"Replace" : @"Install", @"Cancel"]) != NSAlertFirstButtonReturn) {
-        [NSApp terminate:nil]; return;
-    }
-    NSURL *backup = nil;
-    if (!Install(payload, destination, hash, snapshot, &backup, &error)) {
-        NSString *reason = error.localizedDescription ?: @"Installation did not finish.";
-        if (backup && [NSFileManager.defaultManager fileExistsAtPath:backup.path])
-            reason = [reason stringByAppendingFormat:@" Your previous app remains at %@.", backup.path];
-        Alert(@"Installation stopped", reason, @[@"Close"]);
-        [NSApp terminate:nil]; return;
-    }
-    NSString *complete = [NSString stringWithFormat:@"Installed at %@.%@", destination.path,
-        backup ? [NSString stringWithFormat:@" Previous app preserved at %@.", backup.path] : @""];
-    if (Alert(@"VODForge is installed", complete, @[@"Open VODForge", @"Done"]) == NSAlertFirstButtonReturn) {
+        [self installPayload:payload destination:destination hash:hash snapshot:snapshot];
+    });
+}
+- (void)installPayload:(NSURL *)payload destination:(NSURL *)destination hash:(NSString *)hash snapshot:(NSString *)snapshot {
+    self.mutating = YES;
+    [self showProgress:@"Installing VODForge…" detail:@"Copying and verifying the app, then safely placing it in your selected folder. Keep this window open until installation finishes."];
+    __block NSURL *backup = nil;
+    __block NSError *error = nil;
+    __block BOOL installed = NO;
+    PerformWork(self.worker, ^{
+        installed = Install(payload, destination, hash, snapshot, &backup, &error);
+    }, ^{
+        self.mutating = NO;
+        [[self.progressWindow standardWindowButton:NSWindowCloseButton] setEnabled:YES];
+        [self.indicator stopAnimation:nil];
+        if (!installed) {
+            NSString *reason = error.localizedDescription ?: @"Installation did not finish.";
+            if (backup && [NSFileManager.defaultManager fileExistsAtPath:backup.path])
+                reason = [reason stringByAppendingFormat:@" Your previous app remains at %@.", backup.path];
+            [self stopWithTitle:@"Installation stopped" reason:reason];
+            return;
+        }
+        NSString *complete = [NSString stringWithFormat:@"Installed at %@.%@", destination.path,
+            backup ? [NSString stringWithFormat:@" Previous app preserved at %@.", backup.path] : @""];
+        if (Alert(@"VODForge is installed", complete, @[@"Open VODForge", @"Done"]) != NSAlertFirstButtonReturn) {
+            [NSApp terminate:nil]; return;
+        }
         // User explicitly requests opening; installation alone never launches it.
         NSWorkspaceOpenConfiguration *configuration = [NSWorkspaceOpenConfiguration configuration];
         configuration.createsNewApplicationInstance = NO;
@@ -242,7 +361,7 @@ static NSModalResponse Alert(NSString *title, NSString *body, NSArray<NSString *
                 [NSApp terminate:nil];
             });
         }];
-    } else [NSApp terminate:nil];
+    });
 }
 @end
 
