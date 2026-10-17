@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -22,6 +23,33 @@ pytestmark = pytest.mark.skipif(
     sys.platform != "darwin" or os.environ.get("VODFORGE_NATIVE_UI_TESTS") != "1",
     reason="requires an isolated native macOS Qt run",
 )
+
+
+@pytest.fixture(scope="module")
+def source_window_control_library(tmp_path_factory):
+    """Native source tests explicitly build their helper, outside app startup."""
+    from pathlib import Path
+
+    from scripts.build_macos_fullscreen import build
+
+    root = Path(__file__).resolve().parents[1]
+    receipt = build(
+        root / "yt_downloader/platforms/macos/fullscreen_lifecycle.m",
+        tmp_path_factory.mktemp("source-window-controls") / "helper",
+        [platform.machine()],
+    )
+    assert receipt["qualified"]
+    return Path(receipt["library"])
+
+
+@pytest.fixture(autouse=True)
+def bind_source_window_control_library(source_window_control_library, monkeypatch):
+    from yt_downloader.platforms.macos import window_controls
+
+    window_controls._library.cache_clear()
+    monkeypatch.setattr(window_controls, "_LIBRARY", source_window_control_library)
+    yield
+    window_controls._library.cache_clear()
 
 
 def test_main_header_covers_native_frame_across_fullscreen_and_escape(

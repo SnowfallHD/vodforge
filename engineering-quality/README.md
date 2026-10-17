@@ -3747,3 +3747,24 @@ coverage now pairs classification with visible/technical next steps for direct,
 cause/context and provider-exc_info wrappers, retaining generic missing-file
 guidance and stronger disk-full evidence. Use existing access-source controls;
 do not infer expiration or ask for broader permissions from a missing database.
+
+Native window chrome must be qualified during transitions and system-chrome
+reveal, as well as at settled toolkit states. Qt's fullscreen visibility signal
+arrives after AppKit begins its animation; an end-state-only toolbar assertion
+cannot establish that the header stayed visible or that standard controls kept
+their alignment. The retained fullscreen-transition-20261017 experiments expose
+that gap: color-only and both toolbar-restoration timing policies failed distinct
+visible outcomes. A toolbar-free public-button layout is the bounded causal
+successor, with signed ARM/Intel entry/reveal/exit pixels still required.
+
+Native frame changes are a transaction over exact current receivers. Validate all
+three current standard buttons, their owning window, immediate parent coordinate
+systems and complete finite target rectangles before writing any frame. Preserve
+system spacing; never resize a private container or transplant a stale frame
+snapshot onto a replacement button or parent. Refused transitional geometry must
+remain inert and recover from the next current layout, without a pending toolbar
+attachment phase. Compiled geometry/lifetime tests and Python loader/cleanup
+tests complement actual native captures; neither substitutes for them. Package
+the helper at one fixed path with versioned typed ABI, bound source/compiler
+provenance and per-architecture closure/signature checks. Do not compile on
+startup or fall back to native executable Python callbacks.

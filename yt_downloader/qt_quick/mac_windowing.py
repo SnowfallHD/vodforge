@@ -7,7 +7,8 @@ import sys
 from collections.abc import Callable
 from typing import Any
 
-from yt_downloader.platforms.macos.native_runtime import class_pointer, send
+from yt_downloader.platforms.macos.native_runtime import send
+from yt_downloader.platforms.macos.window_controls import WindowControls
 
 _FULL_SIZE_CONTENT = 1 << 15
 _FULL_SCREEN = 1 << 14
@@ -46,12 +47,6 @@ class _NativeWindow:
     def toolbar(self):
         return send(self.pointer, b"toolbar", _POINTER)
 
-    def setToolbar_(self, toolbar):
-        send(self.pointer, b"setToolbar:", None, (_POINTER,), toolbar)
-
-    def setToolbarStyle_(self, style):
-        send(self.pointer, b"setToolbarStyle:", None, (ctypes.c_long,), style)
-
     def isVisible(self):
         return send(self.pointer, b"isVisible", ctypes.c_bool)
 
@@ -71,105 +66,19 @@ def _native_window(window: Any) -> _NativeWindow | None:
     return _NativeWindow(pointer) if pointer else None
 
 
-def _new_toolbar() -> int:
-    string = send(class_pointer(b"NSString"), b"alloc", _POINTER)
-    string = send(
-        string,
-        b"initWithUTF8String:",
-        _POINTER,
-        (ctypes.c_char_p,),
-        b"VODForge.QtMainHeader",
-    )
-    if not string:
-        raise RuntimeError("Native toolbar identifier allocation failed")
-    toolbar = None
-    try:
-        toolbar = send(class_pointer(b"NSToolbar"), b"alloc", _POINTER)
-        toolbar = send(toolbar, b"initWithIdentifier:", _POINTER, (_POINTER,), string)
-        if not toolbar:
-            raise RuntimeError("Native toolbar allocation failed")
-        send(toolbar, b"setAllowsUserCustomization:", None, (ctypes.c_bool,), False)
-        send(toolbar, b"setShowsBaselineSeparator:", None, (ctypes.c_bool,), False)
-        return toolbar
-    except Exception:
-        if toolbar:
-            send(toolbar, b"release", None)
-        raise
-    finally:
-        send(string, b"release", None)
-
-
-class _MainToolbarLifecycle:
-    """Keep the windowed traffic-light toolbar out of Qt's fullscreen header.
-
-    AppKit paints an empty unified toolbar over expanded Qt content in native
-    fullscreen. Qt signals own this observer; both exact native receivers are
-    retained while the toolbar is detached, without native Python callbacks.
-    """
-
-    def __init__(self, window: Any, native: Any, toolbar: int) -> None:
-        self._window = window
-        self._native = native
-        self._toolbar = toolbar
-        self._closed = False
-        self._toolbar_retained = False
-        native.retain()
-        try:
-            send(toolbar, b"retain", _POINTER)
-            self._toolbar_retained = True
-            window.visibilityChanged.connect(self.synchronize)
-            window.destroyed.connect(self.close)
-            self.synchronize()
-        except Exception:
-            self.close()
-            raise
-
-    def synchronize(self, *_visibility) -> None:
-        from PySide6.QtGui import QWindow
-
-        if self._closed:
-            return
-        # Read latest intent rather than a queued signal's superseded value.
-        visibility = self._window.visibility()
-        if visibility == QWindow.Visibility.FullScreen:
-            self._native.setToolbar_(None)
-        elif visibility in (
-            QWindow.Visibility.Windowed,
-            QWindow.Visibility.Maximized,
-        ):
-            self._native.setToolbar_(self._toolbar)
-        # Hidden/minimized Space retirement must not restore the overlay.
-
-    def close(self, *_destroyed) -> None:
-        if self._closed:
-            return
-        self._closed = True
-        for signal_name, callback in (
-            ("visibilityChanged", self.synchronize),
-            ("destroyed", self.close),
-        ):
-            try:
-                getattr(self._window, signal_name).disconnect(callback)
-            except (RuntimeError, TypeError):
-                pass
-        try:
-            if self._toolbar_retained:
-                send(self._toolbar, b"release", None)
-        finally:
-            self._native.release()
-
-
 def integrate_qt_main_window(window: Any) -> bool:
-    """Extend the QQuickWindow behind traffic lights using public scalar calls."""
+    """Use expanded Qt content and toolbar-free public native window controls."""
     if sys.platform != "darwin":
         return False
     from PySide6.QtGui import QGuiApplication
 
     if QGuiApplication.platformName() != "cocoa":
         return False
+    existing = getattr(window, "_native_window_controls", None)
+    if existing is not None and not existing.closed:
+        return True
     native = None
-    original_toolbar = None
-    toolbar = None
+    owner = None
     try:
         native = _native_window(window)
         if native is None:
@@ -177,39 +86,32 @@ def integrate_qt_main_window(window: Any) -> bool:
         original_style = native.styleMask()
         original_visibility = native.titleVisibility()
         original_transparency = native.titlebarAppearsTransparent()
-        original_toolbar = native.toolbar()
-        if original_toolbar:
-            send(original_toolbar, b"retain", _POINTER)
-        toolbar = _new_toolbar()
         native.setStyleMask_(original_style | _FULL_SIZE_CONTENT)
         native.setTitleVisibility_(1)  # NSWindowTitleHidden
         native.setTitlebarAppearsTransparent_(True)
-        native.setToolbar_(toolbar)
-        native.setToolbarStyle_(3)  # NSWindowToolbarStyleUnified
-        # Native frost remains an optional cosmetic capability. The actual Qt
-        # top-level parent is a private NSThemeFrame, not a supported sibling
-        # owner. Keep the established readable artwork fallback without asking
-        # PyObjC to register executable struct wrappers on hardened Intel.
+        # An empty unified toolbar obscures Qt during entry/reveal and changes
+        # traffic-light geometry during exit. The compiled public-button owner
+        # supplies alignment without attaching or cycling a toolbar.
+        owner = WindowControls(window, native.pointer)
         window.setProperty("backgroundOpacity", 1.0)
-        window._native_toolbar_lifecycle = _MainToolbarLifecycle(
-            window, native, toolbar
-        )
+        window._native_window_controls = owner
         return True
     except Exception:  # noqa: BLE001 - preserve the usable Qt window
+        if owner is not None:
+            try:
+                owner.close()
+            except RuntimeError:
+                # Do not mutate style underneath an owner whose GUI-thread
+                # cleanup was refused. Its connected destruction hook remains.
+                return False
         if native is not None and "original_style" in locals():
             try:
-                native.setToolbar_(original_toolbar)
                 native.setTitlebarAppearsTransparent_(original_transparency)
                 native.setTitleVisibility_(original_visibility)
                 native.setStyleMask_(original_style)
             except Exception:  # noqa: BLE001 - teardown can reject rollback
                 return False
         return False
-    finally:
-        if toolbar:
-            send(toolbar, b"release", None)
-        if original_toolbar:
-            send(original_toolbar, b"release", None)
 
 
 class _PresentationRetirement:

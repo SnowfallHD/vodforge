@@ -26,57 +26,49 @@ def _forbid_bridges(monkeypatch):
     monkeypatch.setattr(builtins, "__import__", guarded)
 
 
-@pytest.mark.parametrize("reject_toolbar", [False, True])
-def test_main_header_uses_public_scalar_calls_and_rolls_back(
-    monkeypatch, reject_toolbar
+@pytest.mark.parametrize("reject_controls", [False, True])
+def test_main_header_uses_public_native_owner_and_rolls_back(
+    monkeypatch, reject_controls
 ):
     _cocoa(monkeypatch)
     _forbid_bridges(monkeypatch)
-    state = {"style": 7, "title": 0, "transparent": False, "toolbar": 51}
+    state = {"style": 7, "title": 0, "transparent": False}
     calls = []
-
-    def set_toolbar(value):
-        if reject_toolbar and value == 52:
-            raise RuntimeError("Native toolbar refused")
-        state["toolbar"] = value
-
     native = SimpleNamespace(
+        pointer=61,
         styleMask=lambda: state["style"],
         titleVisibility=lambda: state["title"],
         titlebarAppearsTransparent=lambda: state["transparent"],
-        toolbar=lambda: state["toolbar"],
-        setStyleMask_=lambda v: state.update(style=v),
-        setTitleVisibility_=lambda v: state.update(title=v),
-        setTitlebarAppearsTransparent_=lambda v: state.update(transparent=v),
-        setToolbar_=set_toolbar,
-        setToolbarStyle_=lambda v: calls.append(("toolbar_style", v)),
+        setStyleMask_=lambda value: state.update(style=value),
+        setTitleVisibility_=lambda value: state.update(title=value),
+        setTitlebarAppearsTransparent_=lambda value: state.update(transparent=value),
     )
-    monkeypatch.setattr(
-        mac_windowing, "_native_window", lambda _: native, raising=False
-    )
-    monkeypatch.setattr(mac_windowing, "_new_toolbar", lambda: 52, raising=False)
-    monkeypatch.setattr(
-        mac_windowing, "send", lambda *args: calls.append(args), raising=False
-    )
-    monkeypatch.setattr(mac_windowing, "_MainToolbarLifecycle", lambda *args: None)
+    monkeypatch.setattr(mac_windowing, "_native_window", lambda _: native)
+    owner = SimpleNamespace(closed=False, close=lambda: calls.append("close"))
+
+    def controls(window, pointer):
+        assert pointer == 61
+        calls.append("create")
+        if reject_controls:
+            raise RuntimeError("Native control layout refused")
+        return owner
+
+    monkeypatch.setattr(mac_windowing, "WindowControls", controls)
     properties = {}
-    window = SimpleNamespace(setProperty=lambda n, v: properties.update({n: v}))
-    assert mac_windowing.integrate_qt_main_window(window) is not reject_toolbar
-    if reject_toolbar:
-        assert state == {"style": 7, "title": 0, "transparent": False, "toolbar": 51}
+    window = SimpleNamespace(
+        setProperty=lambda name, value: properties.update({name: value})
+    )
+    assert mac_windowing.integrate_qt_main_window(window) is not reject_controls
+    if reject_controls:
+        assert state == {"style": 7, "title": 0, "transparent": False}
         assert not properties
     else:
-        assert state == {
-            "style": 7 | (1 << 15),
-            "title": 1,
-            "transparent": True,
-            "toolbar": 52,
-        }
+        assert state == {"style": 7 | (1 << 15), "title": 1, "transparent": True}
         assert properties == {"backgroundOpacity": 1.0}
-        assert ("toolbar_style", 3) in calls
-    assert (51, b"retain", mac_windowing._POINTER) in calls
-    assert (51, b"release", None) in calls
-    assert (52, b"release", None) in calls
+        assert window._native_window_controls is owner
+        # Repeated integration never installs a competing native policy.
+        assert mac_windowing.integrate_qt_main_window(window)
+    assert calls == ["create"]
 
 
 def test_native_window_resolves_only_supplied_qt_view(monkeypatch):
@@ -84,7 +76,11 @@ def test_native_window_resolves_only_supplied_qt_view(monkeypatch):
     monkeypatch.setattr(mac_windowing, "send", lambda *args: calls.append(args) or 61)
     native = mac_windowing._native_window(SimpleNamespace(winId=lambda: 41))
     assert native.pointer == 61
-    assert calls == [(41, b"window", mac_windowing._POINTER)]
+    assert native.toolbar() == 61
+    assert calls == [
+        (41, b"window", mac_windowing._POINTER),
+        (61, b"toolbar", mac_windowing._POINTER),
+    ]
 
 
 @pytest.mark.parametrize(
@@ -196,117 +192,46 @@ def test_retirement_constructor_failure_releases_retained_native_window(monkeypa
     assert calls == ["retain", "release"]
 
 
-@pytest.mark.parametrize("failure", [None, "string", "toolbar", "configuration"])
-def test_native_toolbar_owns_identifier_without_autorelease_dependency(
-    monkeypatch, failure
+@pytest.mark.parametrize("close_refused", [False, True])
+def test_main_header_property_failure_closes_owner_before_style_rollback(
+    monkeypatch, close_refused
 ):
+    _cocoa(monkeypatch)
     calls = []
+    native = SimpleNamespace(
+        pointer=61,
+        styleMask=lambda: 7,
+        titleVisibility=lambda: 0,
+        titlebarAppearsTransparent=lambda: False,
+        setStyleMask_=lambda value: calls.append(("style", value)),
+        setTitleVisibility_=lambda value: calls.append(("title", value)),
+        setTitlebarAppearsTransparent_=lambda value: calls.append(
+            ("transparent", value)
+        ),
+    )
+    monkeypatch.setattr(mac_windowing, "_native_window", lambda _: native)
+
+    def close():
+        calls.append("close")
+        if close_refused:
+            raise RuntimeError("GUI-thread cleanup refused")
+
     monkeypatch.setattr(
-        mac_windowing, "class_pointer", lambda name: 11 if name == b"NSString" else 12
+        mac_windowing, "WindowControls", lambda *args: SimpleNamespace(close=close)
     )
 
-    def send(receiver, selector, restype, argtypes=(), *args):
-        calls.append((receiver, selector))
-        if selector == b"alloc":
-            return receiver + 100
-        if selector == b"initWithUTF8String:":
-            return 0 if failure == "string" else receiver
-        if selector == b"initWithIdentifier:":
-            assert args == (111,)
-            return 0 if failure == "toolbar" else receiver
-        if selector == b"setAllowsUserCustomization:" and failure == "configuration":
-            raise RuntimeError("Native configuration refused")
-        return None
+    def refuse_property(*_):
+        raise RuntimeError("Qt parent closing")
 
-    monkeypatch.setattr(mac_windowing, "send", send)
-    if failure is None:
-        assert mac_windowing._new_toolbar() == 112
+    assert not mac_windowing.integrate_qt_main_window(
+        SimpleNamespace(setProperty=refuse_property)
+    )
+    if close_refused:
+        assert calls[-1] == "close"  # no style mutation under a still-live owner
     else:
-        with pytest.raises(RuntimeError):
-            mac_windowing._new_toolbar()
-    assert calls.count((111, b"release")) == (failure != "string")
-    assert calls.count((112, b"release")) == (failure == "configuration")
-    assert not any(selector == b"stringWithUTF8String:" for _, selector in calls)
-
-
-def test_main_toolbar_tracks_fullscreen_and_releases_exact_receivers(monkeypatch):
-    """An attached empty toolbar covers Qt's header in actual Cocoa fullscreen."""
-    from PySide6.QtGui import QWindow
-
-    calls, visibility_callbacks, destroy_callbacks = [], [], []
-    state = {"visibility": QWindow.Visibility.Windowed, "toolbar": 52}
-    window = SimpleNamespace(
-        visibility=lambda: state["visibility"],
-        visibilityChanged=SimpleNamespace(
-            connect=visibility_callbacks.append,
-            disconnect=lambda f: calls.append("disconnect_visibility"),
-        ),
-        destroyed=SimpleNamespace(
-            connect=destroy_callbacks.append,
-            disconnect=lambda f: calls.append("disconnect_destroyed"),
-        ),
-    )
-    native = SimpleNamespace(
-        retain=lambda: calls.append("retain_window"),
-        release=lambda: calls.append("release_window"),
-        setToolbar_=lambda value: state.update(toolbar=value),
-    )
-    monkeypatch.setattr(mac_windowing, "send", lambda *args: calls.append(args))
-    owner = mac_windowing._MainToolbarLifecycle(window, native, 52)
-    state["visibility"] = QWindow.Visibility.FullScreen
-    visibility_callbacks[0](state["visibility"])
-    assert state["toolbar"] is None
-    # Hidden during Space retirement must not reattach the occluding toolbar.
-    state["visibility"] = QWindow.Visibility.Hidden
-    visibility_callbacks[0](state["visibility"])
-    assert state["toolbar"] is None
-    state["visibility"] = QWindow.Visibility.Windowed
-    visibility_callbacks[0](QWindow.Visibility.FullScreen)  # stale signal, latest wins
-    assert state["toolbar"] == 52
-    destroy_callbacks[0](window)
-    owner.close()
-    state["visibility"] = QWindow.Visibility.FullScreen
-    visibility_callbacks[0](state["visibility"])
-    assert state["toolbar"] == 52  # late callback is inert
-    assert calls.count("retain_window") == calls.count("release_window") == 1
-    assert calls.count((52, b"retain", mac_windowing._POINTER)) == 1
-    assert calls.count((52, b"release", None)) == 1
-
-
-@pytest.mark.parametrize("failure", ["retain_toolbar", "connect", "initial_sync"])
-def test_main_toolbar_constructor_rollback_releases_only_acquired_receivers(
-    monkeypatch, failure
-):
-    from PySide6.QtGui import QWindow
-
-    calls = []
-
-    def send(*args):
-        if failure == "retain_toolbar" and args[1] == b"retain":
-            raise RuntimeError("retain refused")
-        calls.append(args)
-
-    def connect(_):
-        if failure == "connect":
-            raise RuntimeError("signal refused")
-
-    def set_toolbar(_):
-        if failure == "initial_sync":
-            raise RuntimeError("native receiver refused")
-
-    signal = SimpleNamespace(connect=connect, disconnect=lambda _: None)
-    window = SimpleNamespace(
-        visibilityChanged=signal,
-        destroyed=signal,
-        visibility=lambda: QWindow.Visibility.FullScreen,
-    )
-    native = SimpleNamespace(
-        retain=lambda: calls.append("retain_window"),
-        release=lambda: calls.append("release_window"),
-        setToolbar_=set_toolbar,
-    )
-    monkeypatch.setattr(mac_windowing, "send", send)
-    with pytest.raises(RuntimeError):
-        mac_windowing._MainToolbarLifecycle(window, native, 52)
-    assert calls.count("retain_window") == calls.count("release_window") == 1
-    assert calls.count((52, b"release", None)) == (failure != "retain_toolbar")
+        assert calls[-4:] == [
+            "close",
+            ("transparent", False),
+            ("title", 0),
+            ("style", 7),
+        ]

@@ -32,10 +32,12 @@ fi
 
 "$python_bin" -m pip install --upgrade pip
 "$python_bin" -m pip install -r requirements-dev.txt -r engineering-quality/requirements.txt
+native_arch="$("$python_bin" -c 'import platform; print(platform.machine())')"
+minimum_macos="$("$python_bin" -c 'import os,sys; from scripts.build_macos_fullscreen import deployment_minimum; print(deployment_minimum(sys.argv[1], os.environ.get("VODFORGE_MACOS_MIN_VERSION")))' "$native_arch")"
 # Reject incompatible host inputs before source campaigns and PyInstaller work.
 # The sealed bundle and actual target OS still require their own qualification.
 "$python_bin" scripts/check_macos_runtime_inputs.py --python-inputs \
-  --maximum "${VODFORGE_MACOS_MIN_VERSION:-15.0}" \
+  --maximum "$minimum_macos" \
   --report "${VODFORGE_COMPATIBILITY_REPORT:-build/macos-input-compatibility.json}"
 "$python_bin" -m compileall -q yt_downloader main.py qt_main.py macos_smoke_test.py
 (
@@ -279,6 +281,14 @@ if [[ -z "$ffmpeg" || -z "$ffprobe" || -z "$deno" ]]; then
 fi
 vlc_args=(--exclude-module vlc --exclude-module tkinter --exclude-module PIL.ImageTk)
 
+# Build this candidate's native phase owner explicitly; app startup never
+# compiles or searches for an external helper. Keep failures/receipts for review.
+native_build_root="$(mktemp -d build/macos-fullscreen-XXXXXX)"
+"$python_bin" -m scripts.build_macos_fullscreen \
+  --source yt_downloader/platforms/macos/fullscreen_lifecycle.m \
+  --output "$native_build_root/helper" --arch "$native_arch"
+native_helper="$native_build_root/helper/libvodforge_fullscreen.dylib"
+
 # --clean only clears the selected cache; candidate-specific caches otherwise
 # accumulate. This wrapper owns and retires only this invocation's binary cache,
 # including command failure. PyInstaller work diagnostics and dist stay intact.
@@ -288,6 +298,7 @@ vlc_args=(--exclude-module vlc --exclude-module tkinter --exclude-module PIL.Ima
   --windowed \
   --onedir \
   --name "VODForge" \
+  --target-arch "$native_arch" \
   --distpath "$dist_dir" \
   --collect-all yt_dlp \
   --collect-all curl_cffi \
@@ -320,6 +331,7 @@ vlc_args=(--exclude-module vlc --exclude-module tkinter --exclude-module PIL.Ima
   --add-binary "$ffmpeg:." \
   --add-binary "$ffprobe:." \
   --add-binary "$deno:." \
+  --add-binary "$native_helper:yt_downloader/platforms/macos" \
   "${vlc_args[@]}" \
   "${qt_args[@]}" \
   "$entrypoint"
@@ -342,7 +354,7 @@ done
 
 # Match the input-floor gate above; this declares the package requirement and
 # does not lower deployment commands in any already compiled dependency.
-minimum_macos="${VODFORGE_MACOS_MIN_VERSION:-15.0}"
+: "${minimum_macos:?Target architecture minimum was not selected}"
 if /usr/libexec/PlistBuddy -c "Print :LSMinimumSystemVersion" "$app_plist" >/dev/null 2>&1; then
   /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion $minimum_macos" "$app_plist"
 else

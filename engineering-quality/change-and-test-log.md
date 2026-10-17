@@ -3374,3 +3374,153 @@ Allthree actualopen screenshots nowqualify; consolidated latest-open-b031f6d-
 20261017/RESULT.json+REPORT.md supersede historicalnetworkblocker. Julie
 RESULT.json/latest-open.png binds allfacts. Existing14recoverablelocalcleanup/
 19held and allfailureevidence preserved. No rebuild/publicrelease.
+
+
+2026-10-17 NEW usernativefullscreen TRANSITION/REVEAL report18:13:43. Rootand
+sourceadvisoractuallyviewedall5Libraryphotos; cachedhashmanifest underbuild/
+fullscreen-transition-20261017/user-evidence. Entrywhiteband/Qtbrandmissing,
+settledfullscreenlooksnormal, topmenurevealwhitecontrolstripcoversheader,
+exittrafficlightshigh→settledcentered. Angledphotosdon'testablishdimensions/
+frames/timing. FreshJulie18:17:45readonlyidentityONLY971exactb031exe10f08e38,
+notinstalledeed; windowed1440x805x0y25, fore971/noinput. Productiontoolbaronly
+QtvisibilityChanged; officialQt6.11 delivers atdidEnter/didExit, so priorendstate
+coverage missesanimationphase. Nativebackgroundcolorseparateframedtransparency
+surface; hypothesisnotyetcausallyproved. NoEscape regressioninference/no source
+fixclaimed. Advisoryreport/closurefreepublicbackgroundcontrastinstrumentation
+preparedoffline, no newJIT/PyObjCblocks/privateframeaccess. Rootuseravailability
+questionoptionalcontext; actualJulie18:24:07guardidle490s/nojobs/modal/callGUI/
+currentidentity allowedONEparentauthorizedboundedbaseline entry/reveal/exit
+wholeDISPLAYtimestampedcapture. Mainnewsourcefixturepreparedbutnotlaunchedyet;
+ordinaryapps/settings/profilespreserved. Sourceinitialfacts+hashes/limits in
+INITIAL-INVESTIGATION.json; source/runtimechangeswouldneednewsuccessorproof.
+
+2026-10-17 FULLSCREEN PHASE INVESTIGATION CONTINUED. Exact Julie b031/PID971
+baseline records 31 whole-display captures covering native entry, settled
+fullscreen, actual top-edge menu reveal, genuine Escape and settled windowed.
+Root inspected originals: entry and menu-reveal strips cover Qt header; settled
+fullscreen is clean. Result/timestamps under latest-open-b031f6d-20261017/julie/
+transition-baseline. Geometry restoration retains explicit 1pt height difference,
+not exact-restore PASS. No consent/profile/security change; ordinary app left open.
+Separate fresh ARM source-native fixture PID3721 compared default native color
+against theme background only: both actual transition images still hide header,
+so color-only change is NOT a fix. Native fullscreen mask precedes Qt fullscreen
+and toolbar detach by ~0.5s in both arms. 183 successful captures/9 skipped
+opportunities, not a paint benchmark; top-edge reveal did not occur on this host,
+so its reveal/safe-area behavior remains unqualified. Both Escape exits normal;
+fixture closed/event-loop0, exact PID absent; ordinary b03198256 untouched.
+New build-only compiled native will/did exact-window notification prototype
+compiles with warnings-as-errors. No executable Python callbacks/delegate override
+or private frame traversal. Next bounded fresh fixture tests phase causality and
+native+Qt safe-area values; cancellation/reversal/teardown recovery and shipping
+integration remain design/qualification gaps. No product-source fix/build claimed.
+
+2026-10-17 NATIVE PHASE CONTRASTS (fresh fictional homes, no product edit).
+PID4664 will-enter detach/did-exit restore: actual early-entry header now visible
+(root inspected capture0004), but exit0079->0083 shows high-to-centered traffic
+light shift. Native/Qt safe top remains0 during attempted top-edge reveal; actual
+menu reveal again absent on ARM, not a reveal PASS. Normal close/event-loop0.
+One justified early will-exit restoration contrast PID5405 avoids that late shift
+but leaves final buttons HIGH: AXclose38,38 versus normal48,48; toolbar present
+yet native safe top32 versus normal66. This policy is NOT an accepted fix.
+Normal close18:53:14UTC/event-loop0/exact PID absent; ordinary98256 retained.
+Receipts/captures under main-native-phase-01 and main-native-will-exit-01; no
+source policy or signed candidate claimed. Further source-only assessment must
+address AppKit toolbar layout ownership, not merely change notification timing.
+
+Next narrow diagnostic is justified by those two distinct timing failures:
+remove the empty toolbar in a NEW source fixture and align only the three public
+standardWindowButton frames. Native content-to-window/public-superview conversion
+must prove all three full rectangles fit before any write; preserve measured
+system spacing and exact button identities. No parent/container mutation or
+private ancestor lookup. This is a bounded causal experiment, not yet product
+source or an accepted replacement. Entry/exit capture is needed because the
+changed native layout mechanism invalidates neither old settled-media proofs nor
+the retained failed toolbar policies; it tests a different proposed cause.
+
+Build-integration preparation (source only, no candidate produced): shared
+scripts/build_macos_fullscreen.py plus universal and ordinary Mac recipes bind
+native source SHA, compiler commands, ARM26/Intel15 floors, exact slices/system
+load edges and final helper SHA. Compiler/source/floor failures stop packaging;
+startup never compiles or searches for a helper. 36 focused builder/metadata
+checks pass; Ruff/format, shell syntax and owned diff checks pass. Final native
+policy is not selected, so no packaging/signing/transition acceptance is claimed.
+Receipt: fullscreen-transition-20261017/source-assessment/
+build-integration-receipt.json. Existing unrelated dirty quality-harness files
+remain outside this work.
+
+Button diagnostic execution scope: initial automatic approval review rejected
+launch as an earlier read-only task; zero process created. Root supplied current
+parent native-experiment scope and exact bounded action to the same review;
+clarification accepted (no alternate path). Fresh source PID7955 admitted all3
+rectangles at19:19:21UTC: 14pt controls fit32pt parents; measured ARM23pt pitch
+preserved; each public center hit-test resolves to its standard button. This is
+geometry/hit-model evidence ONLY. At19:20:28 foreground/input guard stopped before
+PNG/entry: other foreground PID77202, idle0.195s. No entry queued, no activation
+after conflict. Cooper's concurrent 'looks fixed' report is not yet bound to
+ordinary b03198256 versus diagnostic7955 and is not signed-artifact acceptance.
+Direct fresh availability answer 'Mac is free; continue' authorizes same-process
+continuation after guards, not another launch. Separate user Windows edge-hover
+report is delegated to independent Windows owner; it does not take Mac input.
+
+Same PID7955 resumed after direct availability confirmation, no relaunch. Actual
+aligned startup PNG19:23:30 and one native entry show readable Qt header with
+toolbar absent; one genuine Escape's captured windowed frames retain centered
+controls. Final startup/restored window PNGs byte-identical, native window bounds
+30,30/1100x740 exact; AXcontrols47,47/70,47/93,47 retained (AXextends native14pt
+button by1pt). Transitional/foreign button layouts safely refused frame writes;
+current windowed alignment recovered. Root inspected aligned/entry/exit captures.
+Normal close/event-loop0/exact PID absent19:25:16. No ARM menu reveal performed
+again; actual Intel/signed qualification remains open. Production source now
+replaces toolbar phase cycling with a fixed-path compiled public-button owner;
+Python ABI/constructor/rollback/exact-once/late-callback tests23 pass. Native
+compiled driver is being qualified separately; no signed successor yet.
+
+2026-10-17 fullscreen native helper BUILD INTEGRATION SOURCE ONLY: shared explicit
+build_macos_fullscreen builder records sourceSHA/compilercommands/outputSHA and
+requires ARM26/Intel15 slices/exactfloor/system-only dependencies. New output only,
+missing source/compiler/ABI/floor/hostedge failures stop packaging and retain
+receipt. Universal owner audits fresh candidate/native-fullscreen, includes fixed
+yt_downloader/platforms/macos/libvodforge_fullscreen.dylib; normal recipe invokes
+same builder for Python targetarch, package minimum ARM26/Intel15, loweroverride
+refused/higher allowed.36focused mocked-compiler/packaging/actualPlistBuddy-owner
+cases PASS0.44s, Ruff/format/bashsyntax/diff PASS; no productionnative compile,
+package/sign/GUI. Initial35pass retained; added compile-refusal admission case
+justifies final36 repeat. Native .m transitionpolicy notyetaccepted, no completed
+fullscreenfix claim. Sourceonly receipt/sourceSHAs under build/fullscreen-
+transition-20261017/source-assessment/build-integration-receipt.json. No commit;
+root combinedreview pending/unrelateddirtyharness preserved.
+
+Production owner/source review completed after causal button-only pass. Native
+owner removes toolbar once; public DarkAqua is scoped to that exact dark-themed
+window, never a system preference. All3 finite contained frames admit together;
+snapshots bind both button and immediate-parent generations, avoiding stale
+coordinate restoration. Two compiled reparent cases fail before that correction;
+10 actual compiled headless cases pass after, including wrong-thread refusal,
+setter rollback, receiver/parent lifetime counts, native-close release-only and
+late notifications. NSApplication remains nil. Loader/mac integration/Qt resize
+and header-drag focused57 checks pass; source-native opt-in tests explicitly build
+their helper rather than relying on app-startup compilation. Build-source36 and
+Windows-frame19 checks remain valid. Exact signed/frozen platform qualification
+is still pending; these source passes do not close menu-reveal or release gates.
+
+2026-10-17 Windows edge resize/header composition report19:20–21UTC. Exact
+b031 privateunsignedexe0161d0a0…27e81/PID65324 actualnormalvisible foreground
+window1819x1112 verified19:26:44/session1/WinSta0/Default, idle294s/jobidle/queue0.
+Initial probe had missing HWND argument types causing omitted signextendedwindow
+handles; preserved invalidhidden-only receipts, correctedtypedreadback supersedes
+them. No guessedrestore/restart. Actual8edge/corner mouse drags19:28:53–58 all
+failedtosize; HTCLIENTall8, top/topLeft movedwholewindow instead. Eachchange
+restoredexactoriginal184,153→2003,1265; pointerrestored. ActualVOD-onlypixels
+showopaque32ptheadercoversbackdrop. Originalreceipts/PNGs underbuild/windows-
+resize-20261017; ordinaryprofile/app notmodified/restarted. SourceWindowsFrame
+had noresizeowner; existingfloating-chrome tests onlytestedcaptionbuttons,
+legacy native resize testreferences retiredrunner anddidnotcoverthisframeless
+owner. Narrowsharedframe adds8nonoverlappingedges/corners via Qtpublic
+startSystemResize/correcthovercursors, disablesoutsidewindowed/hidden/disabled/
+fixedaxes, transparenttitlebarlets existingwindowartcontinue. NoWndProc/native
+callback/newsubsystem. QMLactualdispatchfoundaccepted=false forwardedtoppress
+totitlebarmove (2failures); finalconsumespress. Newrenderedroute/pixeltests
+againstexactpriorframe9FAIL; corrected19PASSinclactualexistingtitlebarcontrols,
+fixedsingleaxes/client/outside/rightbutton/rejectedadmission. Sourcechecks are
+NOTOSnativeacceptance; exactprivateWindowsbuild+actualdrag/release/cursor/
+maximized+paintqualification remainsPENDING. NoCIpush/installer/publicrelease.

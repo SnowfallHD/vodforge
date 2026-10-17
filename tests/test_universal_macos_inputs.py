@@ -81,6 +81,15 @@ def test_private_recipe_selects_universal_target_and_retains_per_arch_policy(
     monkeypatch.setattr(
         "scripts.build_universal_macos.inspect_inputs", lambda _: {"qualified": True}
     )
+    monkeypatch.setattr(
+        "scripts.build_universal_macos.build_fullscreen",
+        lambda source, output, arches: {
+            "library": str(output / "libvodforge_fullscreen.dylib"),
+            "source_sha256": "b" * 64,
+            "architectures": arches,
+            "qualified": True,
+        },
+    )
     monkeypatch.setattr("scripts.build_universal_macos.subprocess.check_output", git)
     monkeypatch.setattr("scripts.build_universal_macos.subprocess.run", pyinstaller)
     monkeypatch.setattr(
@@ -88,6 +97,11 @@ def test_private_recipe_selects_universal_target_and_retains_per_arch_policy(
     )
     package(source, tmp_path / "venv/bin/python", tools, output, "0.2.6")
     assert calls[0][calls[0].index("--target-arch") + 1] == "universal2"
+    assert (
+        str(output / "native-fullscreen/libvodforge_fullscreen.dylib")
+        + ":yt_downloader/platforms/macos"
+        in calls[0]
+    )
     info = plistlib.loads(
         (output / "dist/VODForge.app/Contents/Info.plist").read_bytes()
     )
@@ -109,3 +123,35 @@ def test_input_preflight_excludes_debug_symbols_but_not_runtime_extensions(tmp_p
     )
     assert not result["qualified"]  # A debug-only input is never a runtime pass.
     assert str(debug) in result["excluded_debug_paths"]
+
+
+def test_native_compile_failure_stops_before_pyinstaller(tmp_path, monkeypatch):
+    import json
+
+    monkeypatch.setattr(
+        "scripts.build_universal_macos.inspect_inputs", lambda _: {"qualified": True}
+    )
+    monkeypatch.setattr(
+        "scripts.build_universal_macos.subprocess.check_output",
+        lambda args, **_: (
+            ""
+            if args[0] == "git"
+            else json.dumps({"base": str(tmp_path), "stdlib": str(tmp_path)})
+        ),
+    )
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    for name in ["ffmpeg", "ffprobe", "deno", "libsqlite3.dylib"]:
+        (tools / name).touch()
+
+    def fail(*_):
+        raise ValueError("controlled native compile refusal")
+
+    monkeypatch.setattr("scripts.build_universal_macos.build_fullscreen", fail)
+    monkeypatch.setattr(
+        "scripts.build_universal_macos.subprocess.run",
+        lambda *_a, **_k: pytest.fail("Must not package without helper"),
+    )
+    with pytest.raises(ValueError, match="native compile refusal"):
+        package(tmp_path, tmp_path / "python", tools, tmp_path / "candidate", "0.2.6")
+    assert not (tmp_path / "candidate/dist").exists()

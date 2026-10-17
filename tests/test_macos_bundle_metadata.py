@@ -8,22 +8,26 @@ from pathlib import Path
 
 import pytest
 
+from scripts.build_macos_fullscreen import deployment_minimum
+
 
 @pytest.mark.skipif(
     sys.platform != "darwin", reason="Native PlistBuddy metadata writer"
 )
 @pytest.mark.parametrize(
-    ("existing", "configured", "expected"),
+    ("arch", "existing", "configured", "expected"),
     [
-        (None, None, "15.0"),
-        ("26.0", None, "15.0"),
-        ("14.0", None, "15.0"),
-        (None, "16.0", "16.0"),
-        ("15.0", "16.0", "16.0"),
+        ("x86_64", None, None, "15.0"),
+        ("x86_64", "26.0", None, "15.0"),
+        ("x86_64", "14.0", None, "15.0"),
+        ("x86_64", None, "16.0", "16.0"),
+        ("x86_64", "15.0", "16.0", "16.0"),
+        ("arm64", "15.0", None, "26.0"),
+        ("arm64", None, "27.0", "27.0"),
     ],
 )
 def test_build_finalizes_the_configured_macos_minimum(
-    tmp_path, existing, configured, expected
+    tmp_path, arch, existing, configured, expected
 ):
     script = (Path(__file__).resolve().parents[1] / "build_macos.sh").read_text()
     block = script[script.index('app_plist="$app_bundle/Contents/Info.plist"') :]
@@ -42,6 +46,7 @@ def test_build_finalizes_the_configured_macos_minimum(
     env = os.environ.copy()
     env.pop("VODFORGE_MACOS_MIN_VERSION", None)
     env.update(app_bundle=str(app), build_version="0.2.6-dev.fixture")
+    env["minimum_macos"] = deployment_minimum(arch, configured)
     if configured is not None:
         env["VODFORGE_MACOS_MIN_VERSION"] = configured
     subprocess.run(

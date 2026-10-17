@@ -9,6 +9,8 @@ import re
 import subprocess
 from pathlib import Path
 
+from scripts.build_macos_fullscreen import PACKAGE_DESTINATION
+from scripts.build_macos_fullscreen import build as build_fullscreen
 from scripts.macos_native_closure import ARCHES, MACHO, audit_payload
 
 
@@ -131,6 +133,14 @@ def package(source: Path, python: Path, tools: Path, output: Path, version: str)
         if not (tools / tool).is_file():
             raise ValueError("Missing required tool: " + tool)
     output.mkdir(parents=True)
+    native_helper = build_fullscreen(
+        source / "yt_downloader/platforms/macos/fullscreen_lifecycle.m",
+        output / "native-fullscreen",
+        ["arm64", "x86_64"],
+    )
+    helper_preflight = inspect_inputs([Path(native_helper["library"])])
+    if not helper_preflight["qualified"]:
+        raise ValueError("Native fullscreen helper input qualification failed")
     revision = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=source, text=True
     ).strip()
@@ -182,6 +192,7 @@ def package(source: Path, python: Path, tools: Path, output: Path, version: str)
     ]
     for path in metadata.iterdir():
         command += ["--add-data", str(path) + ":."]
+    command += ["--add-binary", native_helper["library"] + ":" + PACKAGE_DESTINATION]
     command += [
         "--add-data",
         str(source / "assets") + ":assets",
@@ -219,6 +230,7 @@ def package(source: Path, python: Path, tools: Path, output: Path, version: str)
                 "source": revision,
                 "command": command,
                 "preflight": preflight,
+                "native_fullscreen": native_helper,
                 "scope": "Unsigned private output; signature/complete runtime closure/native OS compatibility/release gates NOT qualified",
             },
             indent=2,
