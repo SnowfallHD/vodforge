@@ -119,7 +119,7 @@ static void testBasic(void) {
     VFTestWindow *window = [VFTestWindow new]; writes = 0;
     NSObject *toolbar = [window->toolbarValue retain];
     void *owner = vf_window_controls_create(window, 18, 18);
-    assert(owner && vf_window_controls_abi_version() == 1 && vf_window_controls_status(owner) == 1);
+    assert(owner && vf_window_controls_abi_version() == 2 && vf_window_controls_status(owner) == 1);
     assert(!window.toolbar && [window.appearance.name isEqualToString:NSAppearanceNameDarkAqua]);
     assertAligned(window); assert(writes == 3);
     writes = 0; assert(vf_window_controls_reconcile(owner) == 1 && writes == 0);
@@ -208,6 +208,7 @@ static void testSetterFailure(void) {
     writes = 0; raiseAtWrite = 2;
     void *owner = vf_window_controls_create(window, 18, 18);
     assert(!owner && !raiseAtWrite && window->toolbarValue == toolbar && !window.appearance);
+    assert(vf_window_controls_diagnostic_reason() == 10);
     for (unsigned i = 0; i < 3; i++) assert(NSEqualRects(window->buttons[i].frame, NSMakeRect(9 + 23 * i, 9, 14, 14)));
     [toolbar release]; [window release];
 }
@@ -244,6 +245,8 @@ static void *wrongThread(void *raw) {
     @autoreleasepool {
         VFThreadInput *input = raw;
         assert(![NSThread isMainThread]);
+        assert(vf_window_controls_diagnostic_reason() == 1);
+        assert(isnan(vf_window_controls_diagnostic_geometry(0)));
         assert(!vf_window_controls_create(input->window, 18, 18));
         assert(vf_window_controls_reconcile(input->owner) == -1);
         assert(vf_window_controls_status(input->owner) == -1);
@@ -251,6 +254,28 @@ static void *wrongThread(void *raw) {
         assert(vf_window_controls_destroy(&same) == 0 && same == input->owner);
     }
     return NULL;
+}
+static void testDiagnostics(void) {
+    VFTestWindow *window = [VFTestWindow new];
+    NSObject *toolbar = [window->toolbarValue retain];
+    window->parents[0].bounds = NSMakeRect(0, 0, 1100, 22);
+    window->parents[0].windowOrigin = NSMakePoint(0, 718);
+    writes = 0;
+    void *owner = vf_window_controls_create(window, 18, 18);
+    assert(!owner && writes == 0 && vf_window_controls_diagnostic_reason() == 8);
+    assert(vf_window_controls_diagnostic_geometry(11) == 22);
+    assert(vf_window_controls_diagnostic_geometry(13) == -10);
+    assert(window->toolbarValue == toolbar && window.appearance == nil);
+    window->parents[0].bounds = NSMakeRect(0, 0, 1100, 32);
+    window->parents[0].windowOrigin = NSMakePoint(0, 708);
+    owner = vf_window_controls_create(window, 18, 18); assert(owner);
+    assert(vf_window_controls_diagnostic_reason() == 0);
+    VFTestWindow *foreign = [VFTestWindow new]; window->buttons[1].window = foreign;
+    assert(vf_window_controls_reconcile(owner) == 0 && vf_window_controls_diagnostic_reason() == 5);
+    window->buttons[1].window = window;
+    assert(vf_window_controls_reconcile(owner) == 1 && vf_window_controls_diagnostic_reason() == 0);
+    assert(isnan(vf_window_controls_diagnostic_geometry(40)));
+    vf_window_controls_destroy(&owner); [toolbar release]; [foreign release]; [window release];
 }
 static void testWrongThread(void) {
     VFTestWindow *window = [VFTestWindow new]; void *owner = vf_window_controls_create(window, 18, 18); assert(owner);
@@ -265,6 +290,7 @@ static void testWrongThread(void) {
     assert(pthread_join(thread, NULL) == 0);
     assert(writes == 0 && toolbarWrites == 0 && appearanceWrites == 0);
     assert(window.retainCount == windowRetains && vf_window_controls_status(owner) == 1);
+    assert(vf_window_controls_diagnostic_reason() == 0);
     for (unsigned i = 0; i < 3; i++) {
         assert(window->buttons[i].retainCount == buttonRetains[i]);
         assert(window->parents[i].retainCount == parentRetains[i]);
@@ -286,6 +312,7 @@ int main(int argc, const char **argv) {
         else if (!strcmp(argv[1], "reparent_reconcile")) testReparent(YES);
         else if (!strcmp(argv[1], "reparent_stale_close")) testReparent(NO);
         else if (!strcmp(argv[1], "wrong_thread")) testWrongThread();
+        else if (!strcmp(argv[1], "diagnostics")) testDiagnostics();
         else return 2;
         assert(NSApp == nil);
         printf("{\"case\":\"%s\",\"passed\":true,\"gui_created\":false}\n", argv[1]);

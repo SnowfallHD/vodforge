@@ -7817,6 +7817,9 @@ def main() -> int:
                         "window_id": int(window.winId()),
                         "visible": window.isVisible(),
                         "native_header_integrated": native_header_integrated,
+                        "native_header_diagnostic": getattr(
+                            window, "_native_header_diagnostic", None
+                        ),
                         "frame_top_px": window.frameMargins().top(),
                         "geometry": [
                             window.x(),

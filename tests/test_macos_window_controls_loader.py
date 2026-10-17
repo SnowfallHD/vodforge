@@ -16,7 +16,7 @@ class Function:
         return self.callback(*args)
 
 
-def library(calls, *, version=1, pointer=51, close_allowed=True):
+def library(calls, *, version=2, pointer=51, close_allowed=True):
     def destroy(handle):
         calls.append("destroy")
         if not close_allowed:
@@ -26,6 +26,10 @@ def library(calls, *, version=1, pointer=51, close_allowed=True):
 
     return SimpleNamespace(
         vf_window_controls_abi_version=Function(lambda: version),
+        vf_window_controls_diagnostic_reason=Function(lambda: 8),
+        vf_window_controls_diagnostic_geometry=Function(
+            lambda i: float("nan") if i == 0 else float(i)
+        ),
         vf_window_controls_create=Function(
             lambda *args: calls.append(("create", args)) or pointer
         ),
@@ -88,7 +92,7 @@ def test_exact_receiver_is_closed_once_and_late_callback_is_inert(
 @pytest.mark.parametrize("reason", ["absent", "wrong_abi", "missing_symbol"])
 def test_missing_or_incompatible_helper_never_creates_native_owner(monkeypatch, reason):
     calls = []
-    native = library(calls, version=2 if reason == "wrong_abi" else 1)
+    native = library(calls, version=1 if reason == "wrong_abi" else 2)
     if reason == "missing_symbol":
         del native.vf_window_controls_destroy
 
@@ -103,6 +107,22 @@ def test_missing_or_incompatible_helper_never_creates_native_owner(monkeypatch, 
     with pytest.raises((OSError, RuntimeError, AttributeError)):
         owner.WindowControls(parent, 73)
     assert not calls
+    assert parent._native_header_diagnostic == {
+        "stage": "load_library" if reason == "absent" else "bind_abi",
+        "helper_exists": owner._LIBRARY.is_file(),
+        "reason": {
+            "absent": "library_open_failed"
+            if owner._LIBRARY.is_file()
+            else "file_missing",
+            "wrong_abi": "abi_mismatch",
+            "missing_symbol": "export_missing",
+        }[reason],
+        "exception_class": {
+            "absent": "OSError",
+            "wrong_abi": "RuntimeError",
+            "missing_symbol": "AttributeError",
+        }[reason],
+    }
 
 
 @pytest.mark.parametrize("failure", ["null_receiver", "refused_layout", "signal"])
@@ -131,3 +151,39 @@ def test_wrong_thread_close_refusal_preserves_handle_for_gui_cleanup(monkeypatch
     native.vf_window_controls_destroy = library(calls).vf_window_controls_destroy
     controls.close()
     assert controls.closed
+
+
+def test_null_constructor_preserves_static_bounded_diagnostic(monkeypatch):
+    native = library([], pointer=0)
+    monkeypatch.setattr(owner.ctypes, "CDLL", lambda _: native)
+    parent, _ = window([])
+    with pytest.raises(RuntimeError):
+        owner.WindowControls(parent, 73)
+    assert parent._native_header_diagnostic["reason"] == "target_outside_parent"
+    assert parent._native_header_diagnostic["geometry"] == [None] + list(
+        map(float, range(1, 40))
+    )
+
+
+@pytest.mark.parametrize("present", [False, True])
+def test_library_open_diagnostic_discriminates_exact_fixed_file(
+    monkeypatch, tmp_path, present
+):
+    path = tmp_path / "fixed-helper.dylib"
+    if present:
+        path.write_bytes(b"diagnostic-only invalid library")
+    monkeypatch.setattr(owner, "_LIBRARY", path)
+
+    def fail(_):
+        raise OSError("private path and arbitrary loader text must not escape")
+
+    monkeypatch.setattr(owner.ctypes, "CDLL", fail)
+    parent, _ = window([])
+    with pytest.raises(OSError):
+        owner.WindowControls(parent, 73)
+    assert parent._native_header_diagnostic == {
+        "stage": "load_library",
+        "exception_class": "OSError",
+        "helper_exists": present,
+        "reason": "library_open_failed" if present else "file_missing",
+    }

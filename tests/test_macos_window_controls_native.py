@@ -57,6 +57,7 @@ def native_driver(tmp_path_factory: pytest.TempPathFactory) -> Path:
         "reparent_reconcile",
         "reparent_stale_close",
         "wrong_thread",
+        "diagnostics",
     ],
 )
 def test_actual_native_window_control_owner(native_driver: Path, case: str) -> None:

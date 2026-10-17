@@ -68,18 +68,22 @@ def _native_window(window: Any) -> _NativeWindow | None:
 
 def integrate_qt_main_window(window: Any) -> bool:
     """Use expanded Qt content and toolbar-free public native window controls."""
+    window._native_header_diagnostic = {"stage": "platform"}
     if sys.platform != "darwin":
         return False
     from PySide6.QtGui import QGuiApplication
 
+    window._native_header_diagnostic = {"stage": "platform_plugin"}
     if QGuiApplication.platformName() != "cocoa":
         return False
     existing = getattr(window, "_native_window_controls", None)
     if existing is not None and not existing.closed:
+        window._native_header_diagnostic = {"stage": "success"}
         return True
     native = None
     owner = None
     try:
+        window._native_header_diagnostic = {"stage": "native_receiver"}
         native = _native_window(window)
         if native is None:
             return False
@@ -95,8 +99,12 @@ def integrate_qt_main_window(window: Any) -> bool:
         owner = WindowControls(window, native.pointer)
         window.setProperty("backgroundOpacity", 1.0)
         window._native_window_controls = owner
+        window._native_header_diagnostic = {"stage": "success"}
         return True
-    except Exception:  # noqa: BLE001 - preserve the usable Qt window
+    except Exception as exc:  # noqa: BLE001 - preserve the usable Qt window
+        diagnostic = dict(getattr(window, "_native_header_diagnostic", {}))
+        diagnostic["exception_class"] = type(exc).__name__
+        window._native_header_diagnostic = diagnostic
         if owner is not None:
             try:
                 owner.close()

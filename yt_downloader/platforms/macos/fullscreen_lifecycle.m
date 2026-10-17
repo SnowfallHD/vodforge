@@ -3,6 +3,17 @@
 #import <AppKit/AppKit.h>
 #include <math.h>
 
+// Main-thread diagnostic scalars only. No user strings or private view data.
+static int VFDiagnosticReason;
+static double VFDiagnosticGeometry[40];
+static void VFResetDiagnostic(void) {
+    VFDiagnosticReason = 0;
+    for (unsigned i=0; i<40; i++) VFDiagnosticGeometry[i] = NAN;
+}
+static void VFRecordRect(unsigned offset, NSRect r) {
+    VFDiagnosticGeometry[offset] = r.origin.x; VFDiagnosticGeometry[offset+1] = r.origin.y;
+    VFDiagnosticGeometry[offset+2] = r.size.width; VFDiagnosticGeometry[offset+3] = r.size.height;
+}
 static BOOL VFValidRect(NSRect rect) {
     return isfinite(rect.origin.x) && isfinite(rect.origin.y)
         && isfinite(rect.size.width) && isfinite(rect.size.height)
@@ -44,7 +55,7 @@ static BOOL VFValidRect(NSRect rect) {
         _originalToolbar = [window.toolbar retain];
         _originalAppearance = [window.appearance retain];
         NSAppearance *dark = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
-        if (!dark) { [self release]; return nil; }
+        if (!dark) { VFDiagnosticReason = 3; [self release]; return nil; }
         // Every product theme is dark. Affect this exact window only, never the
         // application/global preference. Preserve nil (inherited) appearance too.
         window.appearance = dark;
@@ -62,6 +73,7 @@ static BOOL VFValidRect(NSRect rect) {
         [center addObserver:self selector:@selector(willClose:) name:NSWindowWillCloseNotification object:window];
     } @catch (NSException *exception) {
         (void)exception;
+        VFDiagnosticReason = 11;
         [self release];
         return nil;
     }
@@ -72,6 +84,7 @@ static BOOL VFValidRect(NSRect rect) {
     if (_closed || ![NSThread isMainThread]) return -1;
     if (_reconciling) return _status;
     _reconciling = YES;
+    VFResetDiagnostic();
     NSButton *candidates[3] = {nil, nil, nil};
     NSView *parents[3] = {nil, nil, nil};
     NSRect current[3], windowFrames[3], targets[3];
@@ -81,29 +94,34 @@ static BOOL VFValidRect(NSRect rect) {
     int result = 0;
     @try {
         NSView *content = _window.contentView;
-        if (!content || content.window != _window || !VFValidRect(content.bounds)) goto done;
+        if (!content || content.window != _window || !VFValidRect(content.bounds)) { VFDiagnosticReason=4; goto done; }
         NSRect contentWindow = [content convertRect:content.bounds toView:nil];
-        if (!VFValidRect(contentWindow)) goto done;
+        VFRecordRect(0, contentWindow);
+        if (!VFValidRect(contentWindow)) { VFDiagnosticReason=4; goto done; }
         for (unsigned i = 0; i < 3; i++) {
             candidates[i] = [_window standardWindowButton:(NSWindowButton)i];
-            if (!candidates[i] || candidates[i].window != _window) goto done;
+            if (!candidates[i] || candidates[i].window != _window) { VFDiagnosticReason=5; goto done; }
             // AppKit may temporarily reparent or replace fullscreen controls.
             // Inspect only each current public button and its immediate view.
             parents[i] = candidates[i].superview;
-            if (!parents[i] || parents[i].window != _window || !VFValidRect(parents[i].bounds)) goto done;
+            if (!parents[i] || parents[i].window != _window || !VFValidRect(parents[i].bounds)) { VFDiagnosticReason=6; goto done; }
+            VFRecordRect(8+12*i, parents[i].bounds);
             current[i] = candidates[i].frame;
-            if (!VFValidRect(current[i])) goto done;
+            if (!VFValidRect(current[i])) { VFDiagnosticReason=5; goto done; }
             windowFrames[i] = [parents[i] convertRect:current[i] toView:nil];
-            if (!VFValidRect(windowFrames[i])) goto done;
+            VFRecordRect(4+12*i, windowFrames[i]);
+            if (!VFValidRect(windowFrames[i])) { VFDiagnosticReason=5; goto done; }
         }
         for (unsigned i = 0; i < 3; i++) {
             double x = NSMinX(contentWindow) + _horizontalInset
                 + NSMinX(windowFrames[i]) - NSMinX(windowFrames[0]);
             double y = NSMaxY(contentWindow) - _topInset - windowFrames[i].size.height;
             NSRect windowTarget = NSMakeRect(x, y, windowFrames[i].size.width, windowFrames[i].size.height);
-            if (!VFValidRect(windowTarget)) goto done;
+            if (!VFValidRect(windowTarget)) { VFDiagnosticReason=7; goto done; }
             targets[i] = [parents[i] convertRect:windowTarget fromView:nil];
-            if (!VFValidRect(targets[i]) || !NSContainsRect(parents[i].bounds, targets[i])) goto done;
+            VFRecordRect(12+12*i, targets[i]);
+            if (!VFValidRect(targets[i])) { VFDiagnosticReason=7; goto done; }
+            if (!NSContainsRect(parents[i].bounds, targets[i])) { VFDiagnosticReason=8; goto done; }
         }
         // Retain replacements only after ALL current receivers and targets pass.
         for (unsigned i = 0; i < 3; i++) {
@@ -113,7 +131,7 @@ static BOOL VFValidRect(NSRect rect) {
         // Revalidate identity after admission and before the first mutation.
         for (unsigned i = 0; i < 3; i++) {
             if ([_window standardWindowButton:(NSWindowButton)i] != candidates[i]
-                || candidates[i].window != _window || candidates[i].superview != parents[i]) goto done;
+                || candidates[i].window != _window || candidates[i].superview != parents[i]) { VFDiagnosticReason=9; goto done; }
         }
         writesStarted = YES;
         for (unsigned i = 0; i < 3; i++) {
@@ -145,6 +163,7 @@ static BOOL VFValidRect(NSRect rect) {
             }
         }
         result = 0;
+        VFDiagnosticReason = writesStarted ? 10 : 11;
     }
 done:
     for (unsigned i = 0; i < 3; i++) {
@@ -198,15 +217,21 @@ done:
 - (void)dealloc { [self close]; [super dealloc]; }
 @end
 
-unsigned vf_window_controls_abi_version(void) { return 1; }
+unsigned vf_window_controls_abi_version(void) { return 2; }
+int vf_window_controls_diagnostic_reason(void) { return [NSThread isMainThread] ? VFDiagnosticReason : 1; }
+double vf_window_controls_diagnostic_geometry(unsigned index) {
+    return [NSThread isMainThread] && index < 40 ? VFDiagnosticGeometry[index] : NAN;
+}
 
 void *vf_window_controls_create(void *window, double xInset, double topInset) {
-    if (![NSThread isMainThread] || !window || !isfinite(xInset) || !isfinite(topInset)
-        || xInset < 0 || topInset < 0) return NULL;
+    if (![NSThread isMainThread]) return NULL;
+    VFResetDiagnostic();
+    if (!window || !isfinite(xInset) || !isfinite(topInset)
+        || xInset < 0 || topInset < 0) { VFDiagnosticReason=2; return NULL; }
     @try {
-        if (![(id)window isKindOfClass:[NSWindow class]]) return NULL;
+        if (![(id)window isKindOfClass:[NSWindow class]]) { VFDiagnosticReason=2; return NULL; }
         return [[VFWindowControlsOwner alloc] initWithWindow:window horizontal:xInset top:topInset];
-    } @catch (NSException *exception) { (void)exception; return NULL; }
+    } @catch (NSException *exception) { (void)exception; VFDiagnosticReason=11; return NULL; }
 }
 
 int vf_window_controls_reconcile(void *handle) {

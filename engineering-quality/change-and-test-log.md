@@ -3524,3 +3524,90 @@ againstexactpriorframe9FAIL; corrected19PASSinclactualexistingtitlebarcontrols,
 fixedsingleaxes/client/outside/rightbutton/rejectedadmission. Sourcechecks are
 NOTOSnativeacceptance; exactprivateWindowsbuild+actualdrag/release/cursor/
 maximized+paintqualification remainsPENDING. NoCIpush/installer/publicrelease.
+
+Windows exacte864privatebuild finalizedCOLLECT4212entries19:43:55UTC; outerPS
+wrapperFAILED onPyInstallerINFOstderr, nofinalstderrcompletionlog. Preserved;
+NOrebuild. IndependentrecoveryprovesinstalledTargetassemble→TOCsave, reconciles
+all4212outputs/882exportedsourcefiles; actualsmokePID60720wait0/markertrue.
+All123projectPYZ+47QMLexactbound,4212fileseal98426426…1351, exe4834c875…357d,
+NotSignedprivateportable. Receiptbuild/windows-resize-20261017/RESULT.json and
+candidate-e864f747fff4/. Nativeguard19:50:58 freshhumaninputSTOPbeforefixture/
+Popen; no successorwindow; ordinaryprofilehashesunchanged. Rootavailability
+questionpending/HOLD, noelapsed-idlefallback. InitialguardcleanupdidSetCursorPos
+samejust-sampledpointdespitenoPopen; no buttons/keys/windowcontrol, notclaimzero
+nativeAPIinput. Futurehelperrestorespointeronlyafterownedfixturelaunched; original
+script/receiptpreserved. ExactnativeWindowsacceptanceremainspending.
+
+2026-10-17 exact e864f747 private universal2 package builtONCE fromfreshdetached
+source matching882Gitarchivefiles, primarydirtyharness untouched. Candidate-local
+helper .m f263063...92ce compiledfat90fa1418...8874, ARMmin26/Intelmin15/SDK27,
+compilercommands/source/fatSHA receipt bound. Packaged440nativeclosure/123actual
+PYZ/47QML exactsource PASS. Single DeveloperID emptybotharch notary Accepted
+48fa46fd-989a-484a-b32c-795a20a9de94/strict/staple/Gatekeeper PASS. Restricted
+verification falsely failed unchangedhelper+app/Authorityunavailable; samebytes
+explicitallarch helper+app PASSauthorizedsigningcontext/fullcertificatechain.
+Bothstderr receipts retained, NOsigningrepair/resubmission/sourcefix inferred.
+Finalhelper25003808...ef327 bothCABI1/noNSApp loads PASS; SDK/floors/exports bound.
+Frozenguidance8cases/50actualPYZmodules/sourcefallbackrefused/network0 PASS.
+SignedARM9.75s/Rosetta52.83s offscreenexit0/OK;6343sealedentries unchangedaftertests,
+zerosidecarcache; manifest3505b66375451869f93982063679b927fc09cf01c58fe644c428d29f9778d06c.
+SourceCocoa integrationtrue/status1 underrootseparatefixture qualifiesconstructor
+ONLY; signedARM/Intelreadyfile/nativepixels/menuReveal/Escape stillpendingowners.
+NoGUI/provider/profile replacement/installer/publicrelease/cleanupfrombuilder.
+B031+eed exe/manifests verified/preserved; alloldattempts/inputs untouched.
+Evidence PRIVATE-window-controls-e864f747-REPORT.md and SIGNED-NATIVE-window-controls-
+e864f747-HANDOFF.json underbuild/universal2-implementation-20261017.
+
+Windows exact e864 private artifact independently recovered after PowerShell
+wrapper treated PyInstaller informational stderr as a fatal NativeCommandError.
+Original wrapper failure/missing final stderr retained. Installed Target owner
+saves COLLECT TOC after assemble; all4212 entries exist and are sealed; all123PYZ
+plus47QML match exact source; actual isolated smoke waits exit0/positive marker.
+No duplicate rebuild or wrapper-PASS claim. New exe
+4834c8755c469fcb2511f15907597f62c1d5ac5a408b787fb10636a110cf357d
+is private unsigned, not signed/public-release acceptance. First native guard
+stopped before launch on actual human input; after Cooper's fresh clearance,
+one fictional successor PID49172 opened but foreground guard stopped before
+edge input. Fresh foreground ProtonMail/input5s was honored; same process held
+without activation pending current availability. Ordinary65324/profile retained.
+Actual successor resize/paint/cursor acceptance remains pending.
+
+Windows exacte864 NATIVE SUCCESSOR PASS19:57:39–51UTC afterCooper'sfreshfree
+answer. SAMEPID49172fromfirstPopen(no relaunch) publicactivatedonce/idle187.796s.
+All8actualedge/cornerdragscorrectaxes/opposingedgesfixed; ninthright-edgeafter
+OSreleasepasses(no stuckQtgrab). CursorDrawIconExrasterhashesmatchstockOSwe/ns/
+bothdiagonals; maximizedrightcursorarrow. Actualtitlebar+40,+20movepreservessize;
+captionmaximize→restore1100x740→Closeexit0. Agent+rootpersonallyviewednormal/
+bottom_right/maximizedPNGs: artcontinuesheader/titlebar,nooldopaque32ptstrip;
+captionpositionscoherent; max8pxcapturepaddingOSborder. All4212sealedfiles
+unchanged19:59:25;20:00:00onlyordinaryb03165324remains/fourownedtasksremoved/
+noqueuedinput. Nineordinaryprofilehashesandcurrent/rollbackexeexactunchanged.
+Newfixtureclosed, userordinaryappNOTupdated. Final build/windows-resize-20261017/
+RESULT.json+REPORT.md; recoverywrapperFAIL/missingstderr/initialguard+foreground
+stopsretained. Native/heavy/inputownershipRELEASED; privateunsignedportableonly,
+noinstaller/registry/publicrelease/newcredentials. FloatingWindowsnativeedges/
+additionalDPI-monitors/fullscreen-native/physicaltimingnotclaimed.
+
+Actual e864 Intel ready failure20:00:46UTC: signed visible Cocoa PID1742 reports
+native_header_integrated=false after exact6,343file/helper/signature readback.
+No fullscreen/reveal input. Own logs lack caught-error detail; root inspected
+startup PNG showing default high buttons/native title. Cooperative close accepted
+20:04:39/PIDabsent20:04:57; fullseal/signatures and ordinary971/profile unchanged.
+Receipt build/latest-open-b031f6d-20261017/julie/e864-execution/REPORT.md. This
+invalidates a complete-Mac-fix claim, not Windows independent acceptance. Signed
+ARM remains unlaunched: repeated fresh HID mouse-down/movement resets confirmed
+actual input after directfree answer; rawall-events idle alone was ambiguous.
+
+Bounded successor diagnostics added without changing layout/admission policy:
+paired ABI2 rejects oldhelper, scalar staticreason and40 public owncontent/button/
+immediate-parent rectangle values; finitebounded scalars/null only in readyfile.
+Early platform/plugin/receiver, fixedpath missing/open/export/ABI, nativecreate
+and signal stages distinguished; exception CLASS only, no rawtext/path/pointer.
+Actual compiled22pt-coordinate refusal returns target_outside_parent/zerowrites/
+rollback; reset/recovery, foreignreceiver, setterfailure and wrong-thread getters
+qualified.36affected compiled/loader/integration pass plus3targeted setterchecks;
+final fixedpath present/absent classification12loaderchecks pass. Root readyfield
+Ruff/diffpass. Nativegeometry is hypothetical source coverage, NOT actual Intel
+cause. Evidence fullscreen-transition-20261017/source-assessment/
+ADMISSION-DIAGNOSTIC-HANDOFF.json. Need new exactfrozen readyreason before any
+layoutpolicy correction or fullscreen successclaim; no oldcandidate relabeling.
