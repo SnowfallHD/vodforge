@@ -80,6 +80,20 @@ def download_error_message(error: object) -> str:
     # Machine evidence takes priority over ambiguous provider wording.
     if "could not reset the batch failure report" in text and reason != "disk_full":
         return "Could not reset the batch failure report. Check that the log folder is writable, then retry."
+    # A known missing cookie store needs access-source recovery, not an output
+    # folder change. Keep stronger disk/resource/network evidence authoritative.
+    if (
+        diagnostic is not None
+        and diagnostic.failure_code == "cookies_unavailable"
+        and diagnostic.cookie_failure == "database_missing"
+        and reason in {"filesystem", "authentication_required", "unknown"}
+    ):
+        return (
+            "The selected browser's cookie database could not be found. "
+            "In Settings → YouTube access, choose an installed browser where you "
+            "can play the video, or provide cookies.txt. If the video needs no "
+            "sign-in, choose Public."
+        )
     if (
         diagnostic is not None
         and reason != "unknown"

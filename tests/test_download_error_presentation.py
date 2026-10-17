@@ -238,3 +238,59 @@ def test_path_budget_recovery_is_typed_not_provider_text():
     assert not hasattr(
         download_error_message(OutputPathBudgetError.user_message), "action"
     )
+
+
+@pytest.mark.parametrize("wrapper", ["direct", "cause", "context", "provider"])
+def test_missing_cookie_database_guidance_precedes_generic_filesystem(wrapper):
+    import errno
+
+    from yt_downloader.download_error_presentation import technical_download_error
+    from yt_downloader.failure_diagnostics import capture_failure
+
+    missing = FileNotFoundError(
+        errno.ENOENT,
+        "could not find firefox cookies database",
+        "/synthetic-cookie-profile",
+    )
+    error = missing
+    if wrapper != "direct":
+        error = RuntimeError("analysis failed")
+        if wrapper == "provider":
+            error.exc_info = (type(missing), missing, None)
+        else:
+            setattr(
+                error, "__cause__" if wrapper == "cause" else "__context__", missing
+            )
+    diagnostic = capture_failure(error)
+    assert diagnostic.reason == "filesystem"
+    assert diagnostic.failure_code == "cookies_unavailable"
+    assert diagnostic.cookie_failure == "database_missing"
+
+    message = download_error_message(error)
+    assert "cookie database could not be found" in message
+    assert "Settings → YouTube access" in message
+    assert "cookies.txt" in message
+    assert "Public" in message
+    assert "output folder" not in message
+    assert "permissions" not in message
+    assert "/synthetic-cookie-profile" not in message
+    assert len(message) < 320
+    assert technical_download_error(error).endswith("Next step: " + message)
+
+
+def test_cookie_prose_does_not_override_confirmed_disk_full():
+    import errno
+
+    error = OSError(errno.ENOSPC, "could not find cookies database")
+    assert "Free space" in download_error_message(error)
+    assert "Public" not in download_error_message(error)
+
+
+def test_non_cookie_missing_file_keeps_filesystem_recovery():
+    import errno
+
+    error = FileNotFoundError(
+        errno.ENOENT, "required file not found", "/synthetic-input"
+    )
+    assert "drive is connected" in download_error_message(error)
+    assert "Public" not in download_error_message(error)

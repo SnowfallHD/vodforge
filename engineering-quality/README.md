@@ -3737,3 +3737,13 @@ routing method before its UI boundary as well as fresh, verified-existing,
 foreign/newer, linked and unwritable destination admission. Pure transaction
 checks cannot detect an unnecessary picker inserted before confirmation. Native
 signed confirmation/default-path installation remains independent evidence.
+
+Recovery guidance must combine a broad failure category with its approved
+resource-specific diagnostic subtype. A missing cookie database is not repaired
+by changing an output folder, even when the actual exception is FileNotFoundError.
+The previous category-action matrix and cookie-diagnostic tests checked these
+owners separately and missed their presentation precedence. Representative
+coverage now pairs classification with visible/technical next steps for direct,
+cause/context and provider-exc_info wrappers, retaining generic missing-file
+guidance and stronger disk-full evidence. Use existing access-source controls;
+do not infer expiration or ask for broader permissions from a missing database.

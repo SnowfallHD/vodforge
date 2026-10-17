@@ -3186,3 +3186,29 @@ native-fullscreen-repair/FINAL-DEFAULT-APPLICATIONS-NATIVE-RESULT.json bindsall
 newnativephase/PNG/action/preservation/cleanup receipts. No remaining dependency
 for this private delivery; no public release/site change/new credentials/security
 settings. Allownednative/heavy/notary/transferactions completed/released.
+
+2026-10-17 SOURCE-ONLY cookie recovery guidance. Read diagnostic-owner evidence
+/Users/coop/Documents/Codex/2026-10-03/task-9/qualification-now/
+analysis-failures-20261017.md. Synthetic typed FileNotFoundError(ENOENT) with
+approved cookies_unavailable/database_missing facts previously reached generic
+filesystem/output-folder advice. Four direct/cause/context/provider-exc_info
+regressions FAIL BEFORE at the wrong-message assertion (classification already
+correct). Presenter now uses those existing facts ahead of generic filesystem/
+authentication/unknown guidance, directs Settings→YouTube access to an installed
+browser where video plays/cookies.txt or Public for no-sign-in videos. No profile
+chooser invented, access grant/decryption/expiration inference or classifier edit.
+Actual Settings UI supports Browser/cookies.txt/Public. Confirmed disk-full stays
+authoritative and ordinary missing-file recovery stays generic.
+
+Exact .venv/bin/python -m pytest -q tests/test_download_error_presentation.py
+-k missing_cookie_database_guidance BEFORE:4failed/40deselected. AFTER neighboring
+command tests/test_download_error_presentation.py tests/test_diagnostic_richness.py
+tests/test_telemetry_context.py:94PASS/0.45s. RuffcheckPASS; firstformatcheck flagged
+onlytwo test linewraps, formatter applied; finalcheck separatelyrecorded. Existing
+category-action/diagnostic-only tests missed the combined precedence; required
+representative bug-class learning added to README. Evidence under
+build/cookie-recovery-guidance-20261017 (before.log/after-neighbors.log/receipt.json).
+No media/provider/production request, new credentials/permissions, native input,
+app restart/build/sign/deploy/publish or private-artifact edit. Existing signed
+DMG/app remain unchanged and do not include this new source-only copy fix. Ten
+reported no-stream incidents remain unproven regression; no selector changes.
