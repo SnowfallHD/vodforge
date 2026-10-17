@@ -3140,3 +3140,49 @@ Install occurred. Julie scoped prerequisite normalhost09:00:48 confirms writable
 Applications and absent VODForge. Initial sandbox SSH deniedbeforeconnection is
 retained separately; established strict normalhost route readback succeeds. No
 new native launch or security change from this root phase.
+
+2026-10-17 defaultApplications helper a797f2a signed with existing DeveloperID
+76G5W4954G/emptyentitlementsboth; Apple0386da2c-15b9-4560-8678-a895677f188d
+Accepted/stapled/strictallarch/GatekeeperPASS. Helper990c9b046a76a2a01aa6045e3c8bf3ae7532ecb51ce65faa507dd1853cddebae, exactunchanged
+eedpayload68041bbe... . FinalfreshDMGbuild/sign/notary underway; no native new
+helper launch/install/userdelivery yet. No public release/normalreplacement.
+
+2026-10-17 FINAL defaultApplications private DMG Apple02c0659c-f425-4d7d-9ca0-
+a10fda9662aa Accepted/stapled/strict/Gatekeeper/hdiutilchecksumPASS. SHA256
+ebd9cb432ef58c530df9216e212ea388b2c2cae3cb4668ebd25d34d5d2f7170d; helpera797
+990c9b04.../payload eed68041bbe... . FinalnewQAtransfer toJulienewrootunderway
+09:18:43UTC, no launch/install/delivery yet. Native defaultApps protocol/handoff
+transferred tosoleobserver, waitingpositivecompletecopy guard; rootnoGUIinput.
+
+2026-10-17 PRIVATE UNIVERSAL2 DEFAULT-APPLICATIONS DELIVERY COMPLETE. Actual
+Julie ONEFinderlaunch31687, independentownedmodalPNG default/Applications
+(nofolderpicker), ONECGInstall09:26:41→actualInstalling→success09:27:43→
+DoneNOOpen09:28:36/helperabsent/appretained. Full6341installedfile+symlink
+exactset/hashPASS, strictallarchsignature0, three monitoredprofilepathsremain
+unchanged/absent, sevenunrelatedApplicationsentriespreserved. ActualFINAL Finder
+oneinstaller/concavestone/readablelabel/brandedproxy/full26ARM15IntelfooterPASS.
+UIrelease09:30:58/ownedmountdetached/Finderbaseline1. MainONEFinderlaunch66404
+defaultReplaceconfirmation→ONECGCancel09:36:28, neverReplace/Install/Open;
+existing0.2.4 rootidentity/exe92d064d5.../Infoa6784cd6.../version+threeprofile
+receipts exactbefore/after. Mainrelease09:36:54/helperabsent/ownedFinder+mount
+closed/baseline1. No ordinary main replacement or sourceapp native repetition.
+
+Both initial120sobserver window-selection timeouts and MISSINGinitialChecking
+screens retained, exactcauseunproven. Independentpositiveownedmodal captures
+from SAMEprocesses, no relaunch/backfill; actualInstalling/success/Finder/root
+visualreviews pass. OptionalOpen/mutatingQuit/nativebackup/restrictedfallback
+unperformed; compiledbackup/fallbackcoverage distinct, no exhaustiveuserdata/
+paint-timing/publicreleaseclaim. All prior failures/receipts/candidates retained.
+
+EXACTsealedDMG573363538bytes SHA256
+ebd9cb432ef58c530df9216e212ea388b2c2cae3cb4668ebd25d34d5d2f7170d
+COPIED09:32:06.915245UTC toNEW /Users/julie/Documents/Install-VODForge-universal2-
+applications-default-private.dmg (actualfilename has no linebreak), no overwrite/
+app launch, fullhashverified. Acceptedapp eed/helpera797/artwork2de06 provenance
+separate; runtimebothMacpasses preserved becausecontainedapp unchanged.
+Final evidence: build/universal2-implementation-20261017/
+PRIVATE-UNIVERSAL2-DELIVERY-RECEIPT.json and PRIVATE-UNIVERSAL2-DELIVERY-REPORT.md;
+native-fullscreen-repair/FINAL-DEFAULT-APPLICATIONS-NATIVE-RESULT.json bindsall
+newnativephase/PNG/action/preservation/cleanup receipts. No remaining dependency
+for this private delivery; no public release/site change/new credentials/security
+settings. Allownednative/heavy/notary/transferactions completed/released.
