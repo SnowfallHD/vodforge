@@ -24,11 +24,14 @@ def _library():
         "drain": (ctypes.c_int, [_POINTER]),
         "set_height": (ctypes.c_int, [_POINTER, ctypes.c_double]),
         "destroy": (ctypes.c_int, [ctypes.POINTER(_POINTER)]),
+        "bind_child": (ctypes.c_int, [_POINTER, _POINTER] + [ctypes.c_double] * 4),
+        "update_child": (ctypes.c_int, [_POINTER, _POINTER] + [ctypes.c_double] * 4),
+        "unbind_child": (ctypes.c_int, [_POINTER, _POINTER]),
     }
     for suffix, (result, arguments) in signatures.items():
         function = getattr(library, "vf_header_host_" + suffix)
         function.restype, function.argtypes = result, arguments
-    if library.vf_header_host_abi_version() != 1:
+    if library.vf_header_host_abi_version() != 2:
         raise RuntimeError("Incompatible native header host")
     return library
 
@@ -65,13 +68,25 @@ class HeaderHost:
         flags = self._library.vf_header_host_flags(self._handle)
         values = tuple(
             self._library.vf_header_host_geometry(self._handle, index)
-            for index in range(66)
+            for index in range(98)
         )
         return state, flags, values
 
     def set_height(self, height):
         if self._library.vf_header_host_set_height(self._handle, height) != 1:
             raise RuntimeError("Native header height ownership changed")
+
+    def bind_child(self, pointer: int, rect: tuple[float, float, float, float]):
+        if self._library.vf_header_host_bind_child(self._handle, pointer, *rect) != 1:
+            raise RuntimeError("Native header child binding refused")
+
+    def update_child(self, pointer: int, rect: tuple[float, float, float, float]):
+        if self._library.vf_header_host_update_child(self._handle, pointer, *rect) != 1:
+            raise RuntimeError("Native header child ownership changed")
+
+    def unbind_child(self, pointer: int):
+        if self._library.vf_header_host_unbind_child(self._handle, pointer) != 1:
+            raise RuntimeError("Native header child detach refused; retain exact owner")
 
     def close(self):
         if (

@@ -6,6 +6,11 @@ import QtQuick.Window
 // these selectors; QML editors use the currently focused item's public methods.
 MenuBar {
     id: menuBar
+    // Keep native menus visible, but constrain the zero-size Qt proxy subtree.
+    clip: true
+    // Qt accessibility falls back to implicit size for an empty visual rect.
+    implicitWidth: 0
+    implicitHeight: 0
     required property var appWindow
     required property var controller
     required property bool navigationAllowed

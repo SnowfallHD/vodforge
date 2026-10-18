@@ -90,7 +90,7 @@ static VFTestWindow *makeWindow(void) {
 }
 static void basic(void) {
     VFTestWindow *w=makeWindow();id delegate=w.delegate,old=[w.toolbar retain];
-    unsigned before=toolbarWrites;void *h=vf_header_host_create(w,50,12,300);assert(h&&vf_header_host_abi_version()==1);
+    unsigned before=toolbarWrites;void *h=vf_header_host_create(w,50,12,300);assert(h&&vf_header_host_abi_version()==2);
     assert(vf_header_host_state(h)==1&&vf_header_host_view(h));assert(w.delegate==delegate);
     assert(w.toolbarStyle==NSWindowToolbarStyleUnified&&toolbarWrites==before+1);
     VFHeaderHost *host=h;assert(host->_toolbar.delegate==(id)host&&!host->_toolbar.autosavesConfiguration);
@@ -161,7 +161,7 @@ static void autoresize(void) {
     VFTestWindow *w=makeWindow();void *h=vf_header_host_create(w,50,12,300);assert(h);
     NSView *host=vf_header_host_view(h),*child=[[[NSView alloc]initWithFrame:NSMakeRect(0,0,1,1)]autorelease];
     [host addSubview:child];host.frame=NSMakeRect(0,0,870,50);
-    assert(NSEqualRects(child.frame,host.bounds)&&host.isFlipped);
+    assert(NSEqualRects(child.frame,NSMakeRect(0,0,1,1))&&host.isFlipped); // Direct child geometry belongs to its explicit owner.
     assert(w.contentView.bounds.size.height==740&&w.contentLayoutRect.size.height==740);
     void *saved=h;int fd=vf_header_host_event_fd(h);
     assert(!vf_header_host_destroy(&h)&&h==saved&&vf_header_host_state(h)==1&&fcntl(fd,F_GETFD)>=0);

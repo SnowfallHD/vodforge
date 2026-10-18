@@ -143,127 +143,399 @@ def test_same_actual_header_moves_to_second_qt_surface_and_routes_real_clicks(
         _close(bridge, engine, window)
 
 
-@pytest.mark.parametrize("pending_attachment", [False, True])
-@pytest.mark.parametrize("height_refused", [False, True])
-def test_event_driven_owner_reparents_once_and_retires_notifier_before_fd_close(
-    tmp_path, monkeypatch, pending_attachment, height_refused
-):
+@pytest.fixture
+def native_owner_rig(tmp_path, monkeypatch):
+    """Real public Qt windows, fake only the explicit native host ABI."""
     import os
+    from types import SimpleNamespace
 
-    from PySide6.QtGui import QWindow
+    from PySide6 import QtCore, QtGui, QtQuick
+    from shiboken6 import isValid
 
     from yt_downloader.qt_quick import mac_header
 
     app, bridge, engine, window = _launch(tmp_path, monkeypatch, [])
-    events = []
     read_fd, write_fd = os.pipe()
     os.set_blocking(read_fd, False)
     state = {
+        "pending": False,
         "flags": 1 | 2 | 32,
-        "geometry": geometry(),
-        "current": 1,
+        "bound": False,
+        "rect": None,
         "refuse_height": False,
-        "refuse_close": False,
+        "partial_bind": False,
+        "refuse_unbind": False,
+        "stale_pointer": False,
+        "current": True,
+        "mismatch": False,
+        "notify_update": False,
     }
-    if pending_attachment:
-        state["flags"] = 1
-    foreign = QWindow()
-    owner = None
+    rig = SimpleNamespace(
+        app=app,
+        bridge=bridge,
+        engine=engine,
+        window=window,
+        header=window.findChild(QObject, "focusHeader"),
+        events=[],
+        state=state,
+        owner=None,
+        surface=None,
+        boundary=None,
+        notifier=None,
+        host=None,
+        drains=0,
+    )
+    rig.original_parent = rig.header.parentItem()
+
+    def reparented(*_):
+        if isValid(rig.header) and rig.header.parentItem() is rig.original_parent:
+            rig.events.append("header-restored")
+
+    rig.header.parentChanged.connect(reparented)
+    RealWindow, RealNotifier = QtQuick.QQuickWindow, QtCore.QSocketNotifier
+
+    class Surface(RealWindow):
+        def __init__(self, parent=None):
+            assert parent is window, "Qt surface must be logically parented to main"
+            super().__init__(parent)
+            rig.surface = self
+            rig.events.append("surface-created")
+
+        def setParent(self, *_):
+            raise AssertionError("No setParent repair loop is permitted")
+
+        def show(self):
+            assert not state["bound"], "show must precede native binding"
+            rig.events.append("show")
+            return super().show()
+
+        def winId(self):
+            value = int(super().winId())
+            return value + int(state["stale_pointer"])
+
+        def destroy(self):
+            assert self.parent() is window, "Main parent must survive Qt destroy"
+            assert not state["bound"], "Native unbind must precede Qt destroy"
+            rig.events.append("qt-destroy")
+            return super().destroy()
+
+    class Notifier(RealNotifier):
+        def __init__(self, *args):
+            super().__init__(*args)
+            rig.notifier = self
+
+        def setEnabled(self, enabled):
+            if not enabled:
+                assert rig.boundary is None or rig.boundary.retired
+                rig.events.append("notifier-retired")
+            return super().setEnabled(enabled)
+
+    real_boundary = mac_header.create_header_input_boundary
+
+    def boundary(main, surface):
+        result = real_boundary(main, surface)
+        rig.boundary = result
+        close = result.close
+
+        def retire():
+            close()
+            rig.events.append("input-retired")
+
+        result.close = retire
+        return result
 
     class Host:
         view = 1234
         descriptor = read_fd
+        closed = False
 
         def __init__(self, pointer, height, gutter, minimum):
-            assert pointer == 61 and height > 0 and gutter >= 0 and minimum > 0
-            events.append("create")
+            assert pointer == 61 and min(height, minimum) > 0 and gutter >= 0
+            rig.host = self
+            rig.events.append("host-created")
 
         def drain(self):
+            rig.drains += 1
             try:
                 return len(os.read(read_fd, 64))
             except BlockingIOError:
                 return 0
 
         def snapshot(self):
-            return state["current"], state["flags"], state["geometry"]
+            # Cocoa-style absolute screen rectangles are independently derived
+            # from the real main allocation plus the requested local child rect.
+            w, h = window.width(), window.height()
+            x, y, cw, ch = state["rect"] or (90, 6, 980, 44)
+            values = list(geometry()) + [math.nan] * 32
+            values[10:12] = [cw, ch]
+            values[27:31] = [100 + x, 200 + h - y - ch, cw, ch]
+            values[62:66] = [100, 200, w, h]
+            values[82:86] = [
+                100 + x + int(state["mismatch"]) * 8,
+                200 + h - y - ch,
+                cw,
+                ch,
+            ]
+            values[94:98] = [100, 200, w, h]
+            flags = 1 if state["pending"] else state["flags"]
+            if state["bound"]:
+                flags |= 256 | 1024
+                if state["current"]:
+                    flags |= 512
+            return 1, flags, tuple(values)
 
         def set_height(self, height):
             assert height > 0
             if state["refuse_height"]:
-                raise RuntimeError("Foreign native owner replaced header")
+                raise RuntimeError("Native height refused")
+
+        def bind_child(self, pointer, rect):
+            assert rig.surface.isVisible(), "Native bind requires prior Qt show"
+            assert rig.surface.parent() is window
+            assert pointer == int(rig.surface.winId())
+            assert rig.events.index("show") < len(rig.events)
+            rig.events.append("bind")
+            state["rect"], state["bound"] = tuple(rect), True
+            if state["partial_bind"]:
+                raise RuntimeError("Partial native bind refused")
+
+        def update_child(self, pointer, rect):
+            assert pointer == int(rig.surface.winId())
+            assert rig.surface.parent() is window
+            rig.events.append("update")
+            state["rect"] = tuple(rect)
+            if state["notify_update"]:
+                os.write(write_fd, b"u")
+
+        def unbind_child(self, _pointer):
+            assert rig.boundary.retired
+            assert not rig.notifier.isEnabled()
+            assert (
+                not isValid(rig.header)
+                or rig.header.parentItem() is rig.original_parent
+            )
+            rig.events.append("unbind-refused" if state["refuse_unbind"] else "unbind")
+            if state["refuse_unbind"]:
+                raise RuntimeError("Native detach refused")
+            state["bound"] = False
 
         def close(self):
-            assert owner is None or not owner._notifier.isEnabled()
-            if state["refuse_close"]:
-                state["refuse_close"] = False
-                events.append("close_refused")
-                raise RuntimeError("Native child teardown pending")
-            events.append("close")
+            if self.closed:
+                return
+            assert not state["bound"]
+            assert (
+                rig.surface is None
+                or not isValid(rig.surface)
+                or "qt-destroy" in rig.events
+            )
+            rig.events.append("host-close")
+            self.closed = True
             os.close(read_fd)
             os.close(write_fd)
 
+    monkeypatch.setattr(QtQuick, "QQuickWindow", Surface)
+    monkeypatch.setattr(QtCore, "QSocketNotifier", Notifier)
     monkeypatch.setattr(mac_header, "HeaderHost", Host)
-    monkeypatch.setattr(
-        QWindow, "fromWinId", lambda pointer: foreign if pointer == 1234 else None
-    )
-    header = window.findChild(QObject, "focusHeader")
-    original_parent = header.parentItem()
+    monkeypatch.setattr(mac_header, "create_header_input_boundary", boundary)
+
+    def foreign_forbidden(*_):
+        raise AssertionError("Foreign Qt parenting is forbidden")
+
+    monkeypatch.setattr(QtGui.QWindow, "fromWinId", foreign_forbidden)
+
+    def make(mutation=None):
+        cls = mac_header.IntegratedHeader
+        if mutation:
+            import inspect
+
+            source = inspect.getsource(cls)
+            if mutation == "foreign-parent":
+                source = source.replace("QQuickWindow(window)", "QQuickWindow()")
+            elif mutation == "show-after-bind":
+                source = source.replace("self._surface.show()", "pass")
+                source = source.replace(
+                    "self._child_bound = True",
+                    "self._child_bound = True\n            self._surface.show()",
+                )
+            elif mutation == "missing-input-retire":
+                source = source.replace("self._input_boundary.close()", "pass")
+            scope = dict(vars(mac_header))
+            exec(compile(source, "<header-owner-negative-control>", "exec"), scope)  # noqa: S102 - isolated mutation oracle
+            cls = scope["IntegratedHeader"]
+        rig.owner = cls(window, 61)
+        return rig.owner
+
+    rig.make = make
+    rig.notify = lambda: os.write(write_fd, b"n")
+
+    def settle():
+        for _ in range(8):
+            app.processEvents()
+
+    rig.settle = settle
     try:
-        owner = mac_header.IntegratedHeader(window, 61)
-        if pending_attachment:
-            assert header.parentItem() is original_parent
-            assert not window.property("nativeHeaderAttached")
-            assert window._native_header_diagnostic["stage"] == "native_header_pending"
-            state["flags"] = 1 | 2 | 32
-            os.write(write_fd, b"1")
-            for _ in range(5):
-                app.processEvents()
-        assert header.window() is owner._surface
-        assert window.property("nativeHeaderAttached")
-        assert window.property("nativeHeaderReserve") == 90
-        state["flags"] = 1 | 2 | 16 | 128
-        os.write(write_fd, b"1")
-        for _ in range(5):
-            app.processEvents()
-        assert window.property("nativeHeaderLeadingInset") == 0
-        assert not window.property("nativeHeaderRevealed")
-        assert window.property("nativeHeaderReserve") == 90
-        # Unknown controls preserve the preceding measured state, not a guess.
-        state["flags"] = 1 | 2 | 16
-        window.setProperty("nativeHeaderLeadingInset", 35)
-        os.write(write_fd, b"1")
-        for _ in range(5):
-            app.processEvents()
-        assert window.property("nativeHeaderLeadingInset") == 35
-        if height_refused:
-            state["refuse_height"] = True
-            with pytest.raises(RuntimeError, match="Foreign native owner"):
-                owner.update_height()
-            assert (
-                window._native_header_diagnostic["stage"]
-                == "native_header_height_refused"
-            )
-        if not pending_attachment and not height_refused:
-            state["refuse_close"] = True
-            with pytest.raises(RuntimeError, match="Native child teardown pending"):
-                owner.close()
-            assert owner.retired and not owner.closed
-            owner.synchronize()  # No reads of the retained FD after Qt retirement.
-        owner.close()
-        owner.close()
-        owner.synchronize()  # Already queued delivery is inert after teardown.
-        assert header.parentItem() is original_parent
-        assert not window.property("nativeHeaderAttached")
-        assert window.property("nativeHeaderSurface") is None
-        assert events == (
-            ["create", "close_refused", "close"]
-            if not pending_attachment and not height_refused
-            else ["create", "close"]
-        )
+        yield rig
     finally:
-        if owner is not None:
+        state["refuse_unbind"] = state["refuse_height"] = False
+        retained = rig.owner or getattr(window, "_native_window_controls", None)
+        if retained is not None and not retained.closed:
+            retained.close()
+        if isValid(window):
+            _close(bridge, engine, window)
+        else:
+            if isValid(engine):
+                engine.deleteLater()
+            bridge.close()
+        for descriptor in (read_fd, write_fd):
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+
+
+@pytest.mark.parametrize("pending", [False, True])
+def test_event_driven_owner_uses_main_parent_and_exact_order(native_owner_rig, pending):
+    rig = native_owner_rig
+    rig.state["pending"] = pending
+    owner = rig.make()
+    if pending:
+        assert rig.header.parentItem() is rig.original_parent
+        assert not owner._child_pointer and not rig.surface.isVisible()
+        assert rig.window._native_header_diagnostic["stage"] == "native_header_pending"
+        rig.state["pending"] = False
+        rig.notify()
+        rig.settle()
+    assert rig.surface.parent() is rig.window
+    assert rig.header.parentItem() is rig.surface.contentItem()
+    assert rig.window.property("nativeHeaderAttached")
+    before = list(rig.events)
+    rig.settle()
+    assert rig.events == before  # No self-sustaining event-loop reconciliation.
+    owner.close()
+    owner.close()
+    owner.synchronize()
+    assert owner.closed
+    assert rig.header.parentItem() is rig.original_parent
+    assert not rig.window.property("nativeHeaderAttached")
+    assert rig.window.property("nativeHeaderSurface") is None
+    assert rig.events.index("input-retired") < rig.events.index("notifier-retired")
+    assert rig.events.index("notifier-retired") < rig.events.index("header-restored")
+    assert rig.events.index("header-restored") < rig.events.index("unbind")
+    assert (
+        rig.events.index("unbind")
+        < rig.events.index("qt-destroy")
+        < rig.events.index("host-close")
+    )
+
+
+def test_refused_height_retires_actual_owner(native_owner_rig):
+    rig = native_owner_rig
+    owner = rig.make()
+    rig.state["refuse_height"] = True
+    with pytest.raises(RuntimeError, match="Native height refused"):
+        owner.update_height()
+    assert owner.closed
+    assert (
+        rig.window._native_header_diagnostic["stage"] == "native_header_height_refused"
+    )
+
+
+@pytest.mark.parametrize("partial", [False, True])
+def test_refused_unbind_retains_both_owners_for_retry(native_owner_rig, partial):
+    rig = native_owner_rig
+    rig.state.update(partial_bind=partial, refuse_unbind=True)
+    if partial:
+        with pytest.raises(RuntimeError, match="Native detach refused"):
+            rig.make()
+        owner = rig.window._native_window_controls
+    else:
+        owner = rig.make()
+        with pytest.raises(RuntimeError, match="Native detach refused"):
             owner.close()
-        _close(bridge, engine, window)
+    assert owner.retired and not owner.closed
+    assert rig.state["bound"] and rig.surface.isVisible()
+    assert "qt-destroy" not in rig.events and "host-close" not in rig.events
+    drains = rig.drains
+    owner.synchronize()
+    assert rig.drains == drains
+    rig.state["refuse_unbind"] = False
+    owner.close()
+    assert owner.closed and not rig.state["bound"]
+
+
+def test_partial_bind_is_detached_before_qt_destroy(native_owner_rig):
+    rig = native_owner_rig
+    rig.state["partial_bind"] = True
+    with pytest.raises(RuntimeError, match="Partial native bind refused"):
+        rig.make()
+    assert (
+        rig.events.index("unbind")
+        < rig.events.index("qt-destroy")
+        < rig.events.index("host-close")
+    )
+
+
+@pytest.mark.parametrize(
+    "failure", ["stale-pointer", "native-generation", "global-mismatch"]
+)
+def test_bound_child_generation_and_global_geometry_refuse(native_owner_rig, failure):
+    rig = native_owner_rig
+    owner = rig.make()
+    if failure == "native-generation":
+        rig.state["current"] = False
+    else:
+        rig.state["stale_pointer" if failure == "stale-pointer" else "mismatch"] = True
+    with pytest.raises(
+        RuntimeError, match="replaced|generation changed|coordinates disagree"
+    ):
+        owner.synchronize()
+    assert owner.closed and not rig.state["bound"]
+
+
+def test_one_external_update_does_not_create_feedback(native_owner_rig):
+    rig = native_owner_rig
+    owner = rig.make()
+    rig.state["rect"] = (96, 6, 984, 44)
+    rig.state["notify_update"] = True
+    owner.synchronize()
+    rig.settle()
+    assert rig.events.count("show") == rig.events.count("bind") == 1
+    assert rig.events.count("update") == 1
+    assert rig.drains <= 3
+
+
+def test_actual_main_destroy_callback_closes_owned_generation(native_owner_rig):
+    from PySide6.QtCore import QCoreApplication, QEvent
+
+    rig = native_owner_rig
+    owner = rig.make()
+    rig.window.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+    assert owner.closed and rig.host.closed
+
+
+@pytest.mark.parametrize(
+    "mutation", ["foreign-parent", "show-after-bind", "missing-input-retire"]
+)
+def test_owner_boundary_oracles_detect_negative_controls(native_owner_rig, mutation):
+    rig = native_owner_rig
+    if mutation == "missing-input-retire":
+        owner = rig.make(mutation)
+        with pytest.raises(AssertionError):
+            owner.close()
+        # Retain negative evidence, then close the exact real filter for cleanup.
+        rig.boundary.close()
+        rig.events.append("input-retired")
+        # The mutation deliberately interrupted retirement midway. Use the
+        # unchanged production cleanup on this exact test owner, not the mutant.
+        from yt_downloader.qt_quick import mac_header
+
+        owner._retired = False
+        owner._input_boundary = rig.boundary
+        mac_header.IntegratedHeader.close(owner)
+    else:
+        with pytest.raises(AssertionError):
+            rig.make(mutation)
 
 
 @pytest.mark.parametrize("reduced", [False, True])
@@ -305,45 +577,6 @@ def test_single_measured_inset_moves_brand_and_navigation_together_not_utilities
             assert all(value in (0, 90) for value in samples)
         else:
             assert any(0 < value < 90 for value in samples)
-    finally:
-        _close(bridge, engine, window)
-
-
-def test_constructor_cleanup_refusal_retains_exact_owner_and_destroyed_hook(
-    tmp_path, monkeypatch
-):
-    from PySide6.QtGui import QWindow
-
-    from yt_downloader.qt_quick import mac_header
-
-    _app, bridge, engine, window = _launch(tmp_path, monkeypatch, [])
-    closes = []
-
-    class Host:
-        view = 1234
-        descriptor = 9
-
-        def __init__(self, *_):
-            pass
-
-        def close(self):
-            closes.append("close")
-            if len(closes) == 1:
-                raise RuntimeError("Native child teardown pending")
-
-    monkeypatch.setattr(mac_header, "HeaderHost", Host)
-    monkeypatch.setattr(QWindow, "fromWinId", lambda _: None)
-    try:
-        with pytest.raises(RuntimeError, match="Native child teardown pending"):
-            mac_header.IntegratedHeader(window, 61)
-        retained = window._native_window_controls
-        assert retained.retired and not retained.closed
-        assert (
-            window._native_header_diagnostic["stage"]
-            == "native_header_teardown_pending"
-        )
-        retained.close()
-        assert retained.closed and closes == ["close", "close"]
     finally:
         _close(bridge, engine, window)
 

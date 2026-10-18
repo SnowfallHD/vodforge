@@ -10,6 +10,8 @@
 #endif
 
 @class VFHeaderHost;
+@class VFHeaderChildBinding;
+static void VFHeaderHostWillRemoveSubview(VFHeaderHost *,NSView *);
 static void VFHeaderLayoutChanged(VFHeaderHost *owner);
 int vf_header_host_state(void *handle);
 unsigned vf_header_host_flags(void *handle);
@@ -43,9 +45,37 @@ static NSString * const VFHeaderItemID=@"org.vodforge.qa.integrated-header";
 - (void)dealloc{_owner=nil;[_preferredWidth release];[_heightConstraint release];[super dealloc];}
 - (NSSize)intrinsicContentSize{return NSMakeSize(NSViewNoIntrinsicMetric,_itemHeight);}
 - (void)resizeSubviewsWithOldSize:(NSSize)oldSize {
-    (void)oldSize;
-    for(NSView *child in self.subviews)child.frame=self.bounds;
+    (void)oldSize; // Qt child frame and inverse-container geometry have exact owners.
+    VFHeaderLayoutChanged(_owner);
 }
+- (void)didAddSubview:(NSView *)view{[super didAddSubview:view];VFHeaderLayoutChanged(_owner);}
+- (void)willRemoveSubview:(NSView *)view{VFHeaderHostWillRemoveSubview(_owner,view);[super willRemoveSubview:view];}
+@end
+
+// One exact public Qt child. Qt alone authors its frame; this binding owns only
+// the inverse container and its event/lifetime bookkeeping.
+@interface VFHeaderOffsetContainer:NSView {
+@public VFHeaderChildBinding *_binding; // borrowed, cleared before release
+}
+@end
+@interface VFHeaderChildBinding:NSObject {
+@public VFHeaderHost *_owner; // borrowed; host retains binding
+    NSView *_child,*_originalParent;
+    VFHeaderOffsetContainer *_container;
+    BOOL _closed,_mutating,_lost,_observing,_frameFlag,_boundsFlag,_frameWritten,_boundsWritten;
+    NSRect _expected;
+}
+- (instancetype)initWithOwner:(VFHeaderHost *)owner child:(NSView *)child rect:(NSRect)rect;
+- (BOOL)current;
+- (BOOL)fit;
+- (BOOL)update:(NSRect)rect;
+- (BOOL)unbind;
+- (void)releaseOnly;
+- (void)changed:(NSNotification *)notification;
+- (void)layoutChanged;
+- (void)willRemove:(NSView *)view;
+- (BOOL)stopObserving:(BOOL)restore;
+- (double)geometry:(unsigned)index;
 @end
 
 @interface VFHeaderHost : NSObject<NSToolbarDelegate> {
@@ -54,12 +84,13 @@ static NSString * const VFHeaderItemID=@"org.vodforge.qa.integrated-header";
     NSToolbar *_toolbar,*_originalToolbar;
     NSToolbarItem *_item;
     VFHeaderContainer *_view;
+    VFHeaderChildBinding *_childBinding;
     id _windowDelegate;
     NSAppearance *_originalAppearance,*_ownedAppearance;
     NSWindowToolbarStyle _originalStyle;
     BOOL _closed,_closing,_styleWritten,_toolbarAssigned,_appearanceWritten,_nativeClosed;
     BOOL _layingOut,_layoutValid,_eventPending,_pipeFailed,_haveEventSnapshot;
-    double _eventSnapshot[66];unsigned _eventFlags;int _eventStatus;
+    double _eventSnapshot[98];unsigned _eventFlags;int _eventStatus;
     int _eventRead,_eventWrite;
     double _gutter,_minWidth;
     NSButton *_observedButtons[3];
@@ -78,6 +109,129 @@ static NSString * const VFHeaderItemID=@"org.vodforge.qa.integrated-header";
 - (void)willClose:(NSNotification *)notification;
 - (void)close;
 @end
+static BOOL VFChildFinite(NSRect r){return isfinite(r.origin.x)&&isfinite(r.origin.y)&&isfinite(r.size.width)&&isfinite(r.size.height)&&fabs(r.origin.x)<=16384&&fabs(r.origin.y)<=16384&&r.size.width>0&&r.size.height>0&&r.size.width<=16384&&r.size.height<=16384;}
+static BOOL VFChildNear(NSRect a,NSRect b){return fabs(a.origin.x-b.origin.x)<.02&&fabs(a.origin.y-b.origin.y)<.02&&fabs(a.size.width-b.size.width)<.02&&fabs(a.size.height-b.size.height)<.02;}
+@implementation VFHeaderOffsetContainer
+- (BOOL)isFlipped{return YES;}
+- (BOOL)isOpaque{return NO;}
+- (void)setFrame:(NSRect)r{BOOL changed=!NSEqualRects(self.frame,r);[super setFrame:r];if(changed)[_binding layoutChanged];}
+- (void)setBounds:(NSRect)r{BOOL changed=!NSEqualRects(self.bounds,r);[super setBounds:r];if(changed)[_binding layoutChanged];}
+- (void)viewDidMoveToWindow{[super viewDidMoveToWindow];[_binding layoutChanged];}
+- (void)viewDidMoveToSuperview{[super viewDidMoveToSuperview];[_binding layoutChanged];}
+- (void)didAddSubview:(NSView *)view{[super didAddSubview:view];[_binding layoutChanged];}
+- (void)willRemoveSubview:(NSView *)view{[_binding willRemove:view];[super willRemoveSubview:view];}
+@end
+@implementation VFHeaderChildBinding
+- (instancetype)initWithOwner:(VFHeaderHost *)owner child:(NSView *)child rect:(NSRect)rect {
+    self=[super init];if(!self)return nil;_owner=owner;_mutating=YES;
+    _child=[child retain];_originalParent=[child.superview retain];
+    _container=[[VFHeaderOffsetContainer alloc]initWithFrame:NSMakeRect(0,0,rect.size.width,rect.size.height)];
+    if(_container)_container->_binding=self;_container.autoresizesSubviews=NO;
+    // Install into the host only after the caller has shown/positioned its Qt
+    // child normally. Constructor writes remain transactionally reachable.
+    @try {
+        [owner->_view addSubview:_container];[_container addSubview:child];
+    } @catch(NSException *exception){(void)exception;_lost=YES;}
+    _mutating=NO;
+    if([self current]&&[self update:rect]) {
+        @try {
+            NSNotificationCenter *center=NSNotificationCenter.defaultCenter;
+            _frameFlag=child.postsFrameChangedNotifications;_boundsFlag=child.postsBoundsChangedNotifications;
+            _observing=YES; // cleanup covers each partial setter/registration
+            _frameWritten=YES;child.postsFrameChangedNotifications=YES;
+            _boundsWritten=YES;child.postsBoundsChangedNotifications=YES;
+            _container.postsFrameChangedNotifications=YES;_container.postsBoundsChangedNotifications=YES;
+            [center addObserver:self selector:@selector(changed:) name:NSViewFrameDidChangeNotification object:child];
+            [center addObserver:self selector:@selector(changed:) name:NSViewBoundsDidChangeNotification object:child];
+            [center addObserver:self selector:@selector(changed:) name:NSViewFrameDidChangeNotification object:_container];
+            [center addObserver:self selector:@selector(changed:) name:NSViewBoundsDidChangeNotification object:_container];
+        } @catch(NSException *exception){(void)exception;_lost=YES;}
+    }
+    return self; // host retains even a refused partial generation for cleanup
+}
+- (BOOL)current {
+    return !_closed&&!_lost&&_owner&&!_owner->_nativeClosed&&[_owner current]
+        &&_owner->_window.contentView==_originalParent&&_originalParent.window==_owner->_window
+        &&_container.superview==_owner->_view&&_child.superview==_container
+        &&_owner->_view.subviews.count==1&&_owner->_view.subviews[0]==_container
+        &&_container.subviews.count==1&&_container.subviews[0]==_child
+        &&_child.window&&_child.window==_owner->_view.window;
+}
+- (BOOL)fit {
+    return [self current]&&VFChildNear(_child.frame,_expected)
+        &&VFChildNear([_child convertRect:_child.bounds toView:_owner->_view],NSMakeRect(0,0,_expected.size.width,_expected.size.height));
+}
+- (BOOL)update:(NSRect)r {
+    if(![self current]||!VFChildFinite(r)||!_child.isFlipped||!_owner->_view.isFlipped
+        ||!VFChildNear(_child.frame,r)||!VFChildNear(_child.bounds,NSMakeRect(0,0,r.size.width,r.size.height)))return NO;
+    NSRect bounds=NSMakeRect(fmin(0,r.origin.x),fmin(0,r.origin.y),r.size.width+fabs(r.origin.x),r.size.height+fabs(r.origin.y));
+    NSRect frame=NSMakeRect(bounds.origin.x-r.origin.x,bounds.origin.y-r.origin.y,bounds.size.width,bounds.size.height);
+    NSRect oldF=_container.frame,oldB=_container.bounds,oldExpected=_expected;BOOL ok=NO;_mutating=YES;
+    @try {
+        if(!NSEqualRects(_container.frame,frame))_container.frame=frame;
+        if(!NSEqualRects(_container.bounds,bounds))_container.bounds=bounds;
+        _expected=r;ok=[self fit];
+        if(!ok&&[self current]){_container.frame=oldF;_container.bounds=oldB;_expected=oldExpected;}
+    } @catch(NSException *exception) {
+        (void)exception;
+        @try{if([self current]){_container.frame=oldF;_container.bounds=oldB;_expected=oldExpected;}}@catch(NSException *ignored){(void)ignored;}
+    }
+    _mutating=NO;[_owner signal];return ok;
+}
+- (void)layoutChanged {if(!_closed&&!_mutating&&NSThread.isMainThread)[_owner signal];}
+- (void)willRemove:(NSView *)view {
+    if(!_closed&&!_mutating&&view==_child&&NSThread.isMainThread){_lost=YES;[_owner signal];}
+}
+- (void)changed:(NSNotification *)notification {
+    if(notification.object==_child||notification.object==_container)[self layoutChanged];
+}
+- (BOOL)stopObserving:(BOOL)restore {
+    if(_observing){[NSNotificationCenter.defaultCenter removeObserver:self];_observing=NO;}
+    // Retain failed flag-restoration intent for a same-generation cleanup retry.
+    if(!restore){_frameWritten=NO;_boundsWritten=NO;return YES;}
+    @try{if(_frameWritten){_child.postsFrameChangedNotifications=_frameFlag;if(_child.postsFrameChangedNotifications==_frameFlag)_frameWritten=NO;}}@catch(NSException *exception){(void)exception;}
+    @try{if(_boundsWritten){_child.postsBoundsChangedNotifications=_boundsFlag;if(_child.postsBoundsChangedNotifications==_boundsFlag)_boundsWritten=NO;}}@catch(NSException *exception){(void)exception;}
+    return !_frameWritten&&!_boundsWritten;
+}
+- (BOOL)unbind {
+    if(_closed)return YES;if(!_owner)return NO;
+    NSView *host=_owner->_view;
+    BOOL hostCurrent=[_owner current]&&_container.superview==host&&host.subviews.count==1&&host.subviews[0]==_container;
+    BOOL attached=hostCurrent&&_child.superview==_container&&_container.subviews.count==1&&_container.subviews[0]==_child;
+    BOOL detached=hostCurrent&&_container.subviews.count==0&&(_child.superview==nil||(_child.superview==_originalParent&&_originalParent==_owner->_window.contentView));
+    BOOL untouched=[_owner current]&&!_container.superview&&host.subviews.count==0
+        &&_container.subviews.count==0&&_child.superview==_originalParent&&_originalParent==_owner->_window.contentView;
+    if(!attached&&!detached&&!untouched)return NO;
+    _mutating=YES;
+    @try {
+        if(![self stopObserving:attached||_child.superview==_originalParent]){_mutating=NO;return NO;}
+        if(attached)[_child removeFromSuperview];
+        if(_child.superview==_container||_container.subviews.count){_mutating=NO;return NO;}
+        if(_container)_container->_binding=nil;[_container removeFromSuperview];_closed=YES;
+    } @catch(NSException *exception){(void)exception;_mutating=NO;return NO;}
+    _mutating=NO;return YES;
+}
+- (void)releaseOnly {
+    if(_closed)return;[self stopObserving:NO];if(_container)_container->_binding=nil;_closed=YES;_owner=nil;
+}
+- (double)geometry:(unsigned)index {
+    if(index>=32||![self current])return NAN;NSRect r;
+    switch(index/4){
+        case 0:r=_child.frame;break;case 1:r=_child.bounds;break;
+        case 2:r=_container.frame;break;case 3:r=_container.bounds;break;
+        case 4:r=[_child.window convertRectToScreen:[_child convertRect:_child.bounds toView:nil]];break;
+        case 5:r=[_child convertRect:_child.bounds toView:_owner->_view];break;
+        case 6:r=[_owner->_view.window convertRectToScreen:[_owner->_view convertRect:_owner->_view.bounds toView:nil]];break;
+        default:r=[_owner->_window convertRectToScreen:[_originalParent convertRect:_originalParent.bounds toView:nil]];break;
+    }
+    double a[]={r.origin.x,r.origin.y,r.size.width,r.size.height};return a[index%4];
+}
+- (void)dealloc {
+    [self stopObserving:NO];if(_container)_container->_binding=nil;
+    [_container release];[_child release];[_originalParent release];[super dealloc];
+}
+@end
+
 @implementation VFHeaderHost
 - (instancetype)initWithWindow:(NSWindow *)window height:(CGFloat)height gutter:(double)gutter minWidth:(double)minWidth {
     self=[super init];if(!self)return nil;
@@ -150,15 +304,15 @@ static NSString * const VFHeaderItemID=@"org.vodforge.qa.integrated-header";
     if(_closed||![NSThread isMainThread]||_eventWrite<0||_eventPending)return;
     // Window updates can be frequent. Wake Qt only for actual bounded state
     // changes, never a read->same setter->native update feedback loop.
-    double snapshot[66];BOOL changed=!_haveEventSnapshot;
+    double snapshot[98];BOOL changed=!_haveEventSnapshot;
     unsigned flags=vf_header_host_flags(self);int status=vf_header_host_state(self);
     if(flags!=_eventFlags||status!=_eventStatus)changed=YES;
-    for(unsigned i=0;i<66;i++) {
+    for(unsigned i=0;i<98;i++) {
         snapshot[i]=vf_header_host_geometry(self,i);
         if(!((isnan(snapshot[i])&&isnan(_eventSnapshot[i]))||snapshot[i]==_eventSnapshot[i]))changed=YES;
     }
     if(!changed)return;
-    for(unsigned i=0;i<66;i++)_eventSnapshot[i]=snapshot[i];
+    for(unsigned i=0;i<98;i++)_eventSnapshot[i]=snapshot[i];
     _eventFlags=flags;_eventStatus=status;_haveEventSnapshot=YES;
     unsigned char byte=1;ssize_t result;
     do{result=write(_eventWrite,&byte,1);}while(result<0&&errno==EINTR);
@@ -265,6 +419,7 @@ static NSString * const VFHeaderItemID=@"org.vodforge.qa.integrated-header";
 }
 - (void)close {
     if(_closed)return;_closed=YES;
+    if(_childBinding){[_childBinding releaseOnly];[_childBinding release];_childBinding=nil;}
     if(_view)_view->_owner=nil;[self stopButtons];
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     // Setter history distinguishes failed construction from a user later
@@ -310,7 +465,7 @@ static NSString * const VFHeaderItemID=@"org.vodforge.qa.integrated-header";
 }
 - (void)dealloc{[self close];[super dealloc];}
 @end
-unsigned vf_header_host_abi_version(void){return 1;}
+unsigned vf_header_host_abi_version(void){return 2;}
 void *vf_header_host_create(void *window,double height,double gutter,double minWidth) {
     if(![NSThread isMainThread]||!window||!isfinite(height)||height<=0||height>256
         ||!isfinite(gutter)||gutter<0||gutter>256||!isfinite(minWidth)||minWidth<=0||minWidth>16384)return NULL;
@@ -333,9 +488,10 @@ void *vf_header_host_view(void *handle) {
     return vf_header_host_state(handle)==1?((VFHeaderHost *)handle)->_view:NULL;
 }
 double vf_header_host_geometry(void *handle,unsigned index) {
-    if(vf_header_host_state(handle)!=1||index>=66)return NAN;
+    if(vf_header_host_state(handle)!=1||index>=98)return NAN;
     VFHeaderHost *h=handle;
     @try {
+        if(index>=66)return h->_childBinding?[h->_childBinding geometry:index-66]:NAN;
         NSRect rects[5]={h->_window.contentView.bounds,h->_window.contentLayoutRect,
             h->_view.bounds,[h->_view convertRect:h->_view.bounds toView:nil],h->_window.frame};
         if(index<20){NSRect r=rects[index/4];double v[4]={r.origin.x,r.origin.y,r.size.width,r.size.height};return v[index%4];}
@@ -376,7 +532,8 @@ int vf_header_host_destroy(void **handle) {
     // The caller must retire its Qt native child while its foreign parent is
     // still assigned. Keep this owner/FD alive if that public detach did not
     // complete; releasing underneath a live QNSView risks stale Qt callbacks.
-    if(host->_view&&host->_view.subviews.count)return 0;
+    if(host->_childBinding&&!host->_nativeClosed)return 0;
+    if(!host->_nativeClosed&&host->_view&&host->_view.subviews.count)return 0;
     *handle=NULL;[host close];[host release];return 1;
 }
 
@@ -413,6 +570,7 @@ unsigned vf_header_host_flags(void *handle) {
             else if(b.window.visible)flags|=32;
         }
         if(h->_layoutValid)flags|=64;
+        if(h->_childBinding){flags|=256;if([h->_childBinding current])flags|=512;if([h->_childBinding fit])flags|=1024;}
     } @catch(NSException *exception){(void)exception;}
     return flags;
 }
@@ -432,4 +590,40 @@ int vf_header_host_set_height(void *handle,double height) {
         @catch(NSException *rollbackException){(void)rollbackException;}
         return 0;
     }
+}
+
+static void VFHeaderHostWillRemoveSubview(VFHeaderHost *owner,NSView *view) {
+    if(!owner||owner->_closed||owner->_nativeClosed||!NSThread.isMainThread)return;
+    VFHeaderChildBinding *b=owner->_childBinding;
+    if(b&&view==b->_container&&!b->_mutating){b->_lost=YES;[owner signal];}
+}
+int vf_header_host_bind_child(void *handle,void *child,double x,double y,double w,double h) {
+    if(vf_header_host_state(handle)!=1||!child)return 0;VFHeaderHost *owner=handle;
+    NSView *view=child;NSRect r=NSMakeRect(x,y,w,h);
+    @try {
+        if(owner->_childBinding||![view isKindOfClass:NSView.class]||!VFChildFinite(r)
+            ||view==owner->_view||view.window!=owner->_window||view.superview!=owner->_window.contentView
+            ||owner->_view.subviews.count||!view.isFlipped||!owner->_view.isFlipped
+            ||!VFChildNear(view.frame,r)||!VFChildNear(view.bounds,NSMakeRect(0,0,w,h)))return 0;
+        owner->_childBinding=[[VFHeaderChildBinding alloc]initWithOwner:owner child:view rect:r];
+        if(!owner->_childBinding)return 0;
+        if([owner->_childBinding current]&&[owner->_childBinding fit]){[owner signal];return 1;}
+        if([owner->_childBinding unbind]){[owner->_childBinding release];owner->_childBinding=nil;}
+        [owner signal];return 0;
+    } @catch(NSException *exception){(void)exception;[owner signal];return 0;}
+}
+int vf_header_host_update_child(void *handle,void *child,double x,double y,double w,double h) {
+    if(vf_header_host_state(handle)!=1||!child)return 0;VFHeaderHost *owner=handle;
+    @try{return owner->_childBinding&&owner->_childBinding->_child==(NSView *)child
+        ?[owner->_childBinding update:NSMakeRect(x,y,w,h)]:0;}
+    @catch(NSException *exception){(void)exception;return 0;}
+}
+int vf_header_host_unbind_child(void *handle,void *child) {
+    if(!NSThread.isMainThread||!handle||!child)return 0;VFHeaderHost *owner=handle;
+    @try {
+        if(owner->_closed||!owner->_childBinding||owner->_childBinding->_child!=(NSView *)child)return 0;
+        if(owner->_nativeClosed)[owner->_childBinding releaseOnly];
+        else if(![owner->_childBinding unbind])return 0;
+        [owner->_childBinding release];owner->_childBinding=nil;[owner signal];return 1;
+    } @catch(NSException *exception){(void)exception;return 0;}
 }

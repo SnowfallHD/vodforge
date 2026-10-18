@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 from PySide6.QtCore import QMetaObject, QObject, QPointF, Qt, QUrl
-from PySide6.QtGui import QKeySequence, QWindow
+from PySide6.QtGui import QAccessible, QKeySequence, QWindow
 from PySide6.QtQml import QQmlComponent, QQmlEngine
 from PySide6.QtQuick import QQuickWindow
 from PySide6.QtTest import QTest
@@ -212,3 +212,74 @@ def test_main_menu_can_enter_and_leave_native_fullscreen(navigation_allowed):
         menu.deleteLater()
         engine.deleteLater()
         app.processEvents()
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="Native menu loader is macOS-only")
+def test_native_menu_proxy_has_no_in_window_visual_or_accessible_allocation(
+    tmp_path, monkeypatch
+):
+    from tests.test_qt_interaction_invariants import _close, _launch
+    from tests.test_qt_scene_port import polish_scene
+
+    app, bridge, engine, window = _launch(tmp_path, monkeypatch, [])
+    try:
+        QTest.qWait(80)
+        for _ in range(3):
+            app.processEvents()
+            polish_scene(window.contentItem())
+        menu = next(
+            item
+            for item in window.findChildren(QObject)
+            if item.metaObject().className().startswith("ApplicationMenuBar_QMLTYPE")
+        )
+        loader = menu.parentItem()
+        assert menu.isVisible() and menu.isEnabled()
+        assert menu.width() == menu.height() == 0
+        assert loader.width() == loader.height() == 0
+        assert menu.clip()
+        assert menu.property("count") == 5
+        action = window.findChild(QObject, "mainFullscreenAction")
+        assert action is not None and action.property("enabled")
+        assert action.property("shortcut") == QKeySequence.StandardKey.FullScreen.value
+        interface = QAccessible.queryAccessibleInterface(menu)
+        assert interface is not None
+        assert interface.rect().isEmpty()
+        # A clipped zero allocation must not expose overflowing descendants at
+        # the titlebar gap. Actual OS-menu accessibility remains a native gate.
+        point = window.mapToGlobal(QPointF(88, 26).toPoint())
+        assert interface.childAt(point.x(), point.y()) is None
+    finally:
+        _close(bridge, engine, window)
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="Native menu loader is macOS-only")
+def test_native_menu_allocation_stays_empty_when_style_padding_changes(
+    tmp_path, monkeypatch
+):
+    from tests.test_qt_interaction_invariants import _close, _launch
+    from tests.test_qt_scene_port import polish_scene
+
+    app, bridge, engine, window = _launch(tmp_path, monkeypatch, [])
+    try:
+        menu = next(
+            item
+            for item in window.findChildren(QObject)
+            if item.metaObject().className().startswith("ApplicationMenuBar_QMLTYPE")
+        )
+        loader = menu.parentItem()
+        for width, padding in ((820, 52), (1440, 0)):
+            window.resize(width, 740)
+            menu.setProperty("topPadding", padding)
+            app.processEvents()
+            polish_scene(window.contentItem())
+            assert menu.isVisible() and menu.isEnabled()
+            assert menu.width() == menu.height() == 0
+            assert menu.implicitWidth() == menu.implicitHeight() == 0
+            assert loader.width() == loader.height() == 0
+            interface = QAccessible.queryAccessibleInterface(menu)
+            assert interface is not None and interface.rect().isEmpty()
+            point = window.mapToGlobal(QPointF(88, 26).toPoint())
+            assert interface.childAt(point.x(), point.y()) is None
+            assert menu.property("count") == 5
+    finally:
+        _close(bridge, engine, window)

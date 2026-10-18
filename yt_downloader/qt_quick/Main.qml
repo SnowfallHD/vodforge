@@ -20,6 +20,9 @@ Window {
             !(outputFolderDialog && outputFolderDialog.visible) && !urlListDialog.visible
     // Native panels use the application's standard editing menu selectors.
     Loader {
+        // A native macOS menu has no in-window visual allocation.
+        width: 0
+        height: 0
         active: Qt.platform.os === "osx"
         sourceComponent: Component {
             ApplicationMenuBar {

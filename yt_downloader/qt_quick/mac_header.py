@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any
+from typing import Any, ClassVar
 
 from yt_downloader.platforms.macos.header_host import HeaderHost
 
@@ -58,16 +58,167 @@ def measured_layout(flags: int, geometry: tuple[float, ...]):
     }
 
 
+def create_header_input_boundary(main: Any, surface: Any):
+    """Keep the main overlay authoritative across this owner's exact Qt surface.
+
+    Qt imports stay lazy for non-GUI runtime and package import checks. One
+    existing gate decides admission; no popup list or input diagnostics persist.
+    """
+    from PySide6.QtCore import QCoreApplication, QEvent, QObject, QPointF, Qt
+    from PySide6.QtGui import QMouseEvent, QWheelEvent
+    from shiboken6 import isValid
+
+    class HeaderInputBoundary(QObject):
+        TYPES: ClassVar[set] = {
+            QEvent.Type.MouseButtonPress,
+            QEvent.Type.MouseButtonRelease,
+            QEvent.Type.MouseButtonDblClick,
+            QEvent.Type.MouseMove,
+            QEvent.Type.Wheel,
+        }
+
+        def __init__(self, main, surface):
+            super().__init__(surface)
+            self.main = main
+            self.surface = surface
+            self.owned = False
+            self.retired = False
+            self.cancelled_gesture = False
+            surface.installEventFilter(self)
+            self.main.menuNavigationAllowedChanged.connect(self._gate_changed)
+            self._gate_changed()
+
+        def eventFilter(self, watched, event):
+            if watched is not self.surface:
+                return False
+            if event.type() in {
+                QEvent.Type.WindowDeactivate,
+                QEvent.Type.Hide,
+                QEvent.Type.Close,
+            }:
+                if self.owned:
+                    self.owned = False
+                    self.cancelled_gesture = True
+                return False
+            if event.type() not in self.TYPES:
+                return False
+            if self.retired or not isValid(self.main) or (not isValid(self.surface)):
+                return True
+            try:
+                if not self.main.isVisible() or not self.surface.isVisible():
+                    self.owned = False
+                    return True
+                press = event.type() in {
+                    QEvent.Type.MouseButtonPress,
+                    QEvent.Type.MouseButtonDblClick,
+                }
+                if self.cancelled_gesture:
+                    if event.type() == QEvent.Type.MouseButtonPress:
+                        self.cancelled_gesture = False
+                    else:
+                        if (
+                            event.type() == QEvent.Type.MouseButtonRelease
+                            and event.buttons() == Qt.NoButton
+                        ):
+                            self.cancelled_gesture = False
+                        return True
+                if press and (not bool(self.main.property("menuNavigationAllowed"))):
+                    self.owned = True
+                gated_passive = event.type() in {
+                    QEvent.Type.MouseMove,
+                    QEvent.Type.Wheel,
+                } and (not bool(self.main.property("menuNavigationAllowed")))
+                if not self.owned and (not gated_passive):
+                    return False
+                global_pos = event.globalPosition()
+                base = global_pos.toPoint()
+                local = (
+                    QPointF(self.main.mapFromGlobal(base)) + global_pos - QPointF(base)
+                )
+                if event.type() == QEvent.Type.Wheel:
+                    forwarded = QWheelEvent(
+                        local,
+                        global_pos,
+                        event.pixelDelta(),
+                        event.angleDelta(),
+                        event.buttons(),
+                        event.modifiers(),
+                        event.phase(),
+                        event.inverted(),
+                        event.source(),
+                        event.pointingDevice(),
+                    )
+                else:
+                    forwarded = QMouseEvent(
+                        event.type(),
+                        local,
+                        local,
+                        global_pos,
+                        event.button(),
+                        event.buttons(),
+                        event.modifiers(),
+                        event.source(),
+                        event.pointingDevice(),
+                    )
+                forwarded.setTimestamp(event.timestamp())
+                QCoreApplication.sendEvent(self.main, forwarded)
+                if (
+                    event.type() == QEvent.Type.MouseButtonRelease
+                    and event.buttons() == Qt.NoButton
+                ):
+                    self.owned = False
+                event.accept()
+                return True
+            except RuntimeError:
+                self.owned = False
+                return True
+
+        def _gate_changed(self):
+            if self.retired or not isValid(self.main) or (not isValid(self.surface)):
+                return
+            try:
+                if not bool(self.main.property("menuNavigationAllowed")):
+                    QCoreApplication.sendEvent(self.surface, QEvent(QEvent.Type.Leave))
+            except RuntimeError:
+                pass
+
+        def close(self):
+            if self.retired:
+                return
+            self.retired = True
+            self.owned = False
+            self.cancelled_gesture = False
+            if isValid(self.main):
+                try:
+                    self.main.menuNavigationAllowedChanged.disconnect(
+                        self._gate_changed
+                    )
+                except (RuntimeError, TypeError):
+                    pass
+            if isValid(self.surface):
+                self.surface.removeEventFilter(self)
+
+    return HeaderInputBoundary(main, surface)
+
+
 class IntegratedHeader:
-    """Event-driven GUI-thread ownership, with teardown before borrowed FD close."""
+    """One main-parent Qt surface, bound to the exact public native toolbar."""
+
+    _BOUND = 256
+    _CURRENT = 512
+    _FIT = 1024
 
     def __init__(self, window: Any, native_pointer: int):
         from PySide6.QtCore import QObject, QSocketNotifier, Qt
-        from PySide6.QtGui import QColor, QWindow
+        from PySide6.QtGui import QColor
         from PySide6.QtQuick import QQuickWindow
 
         self._window = window
-        self._host = self._foreign = self._surface = self._notifier = None
+        self._host = self._surface = self._notifier = None
+        self._input_boundary = None
+        self._child_pointer = 0
+        self._child_bound = False
+        self._last_rect = None
         self._closed = False
         self._retired = False
         self._synchronizing = False
@@ -89,15 +240,15 @@ class IntegratedHeader:
             )
             if not self._host.view or self._host.descriptor < 0:
                 raise RuntimeError("Native header view or descriptor is unavailable")
-            self._foreign = QWindow.fromWinId(self._host.view)
-            if self._foreign is None:
-                raise RuntimeError("Qt refused the exact foreign native header view")
-            self._surface = QQuickWindow(self._foreign)
+            # A foreign QWindow inside Qt's own NSWindow has local Cocoa geometry.
+            # Keep the real main window as Qt's logical parent for global/AX/focus.
+            self._surface = QQuickWindow(window)
             self._surface.setObjectName("nativeHeaderSurface")
             self._surface.setFlags(
                 Qt.WindowType.SubWindow | Qt.WindowType.FramelessWindowHint
             )
             self._surface.setColor(QColor("transparent"))
+            self._input_boundary = create_header_input_boundary(window, self._surface)
             self._notifier = QSocketNotifier(
                 self._host.descriptor, QSocketNotifier.Type.Read, window
             )
@@ -110,9 +261,7 @@ class IntegratedHeader:
             try:
                 self.close()
             except Exception:
-                # Construction has not returned an owner to the caller yet.
-                # Keep its exact native handle reachable; do not roll styles
-                # back underneath a refused live native generation.
+                # Retain the exact native generation when safe teardown refuses.
                 window._native_window_controls = self
                 window._native_header_diagnostic = {
                     "stage": "native_header_teardown_pending"
@@ -124,6 +273,53 @@ class IntegratedHeader:
     def closed(self):
         return self._closed
 
+    def _place_surface(self, layout):
+        from PySide6.QtCore import QPoint, QRect
+
+        if self._surface.parent() is not self._window:
+            raise RuntimeError("Qt header lost its exact logical main parent")
+        rect = tuple(
+            round(layout[key])
+            for key in ("relative_x", "relative_y", "width", "height")
+        )
+        changed = rect != self._last_rect
+        if changed:
+            self._surface.setGeometry(QRect(*rect))
+        if not self._child_pointer:
+            # Qt visibility reconciliation can reassert its native parent.
+            # Complete it BEFORE binding, never show/setParent as a repair loop.
+            self._surface.show()
+            self._child_pointer = int(self._surface.winId())
+            self._host.bind_child(self._child_pointer, rect)
+            self._child_bound = True
+        else:
+            if int(self._surface.winId()) != self._child_pointer:
+                raise RuntimeError("Qt replaced the bound native header view")
+            state, flags, _geometry = self._host.snapshot()
+            if state != 1 or not flags & self._CURRENT:
+                raise RuntimeError("Native header child generation changed")
+            if changed or not flags & self._FIT:
+                self._host.update_child(self._child_pointer, rect)
+        state, flags, geometry = self._host.snapshot()
+        required = 1 | self._BOUND | self._CURRENT | self._FIT
+        if state != 1 or flags & required != required or len(geometry) != 98:
+            raise RuntimeError("Native header child binding is not current and fitted")
+        # Independent public native screen geometry must agree with Qt's model.
+        # Each native screen rect was converted through its own current window.
+        cx, cy, cw, ch = geometry[82:86]
+        mx, my, mw, mh = geometry[94:98]
+        if not all(math.isfinite(v) for v in (cx, cy, cw, ch, mx, my, mw, mh)):
+            raise RuntimeError("Native header global geometry is unavailable")
+        if min(cw, ch, mw, mh) <= 0:
+            raise RuntimeError("Native header global geometry is empty")
+        main_global = self._window.mapToGlobal(QPoint(0, 0))
+        actual = self._surface.mapToGlobal(QPoint(0, 0))
+        expected = (main_global.x() + cx - mx, main_global.y() + my + mh - cy - ch)
+        if max(abs(actual.x() - expected[0]), abs(actual.y() - expected[1])) > 1:
+            raise RuntimeError("Qt and native header global coordinates disagree")
+        self._last_rect = rect
+        return flags
+
     def synchronize(self, *_notification):
         if self._retired or self._synchronizing:
             return
@@ -132,12 +328,19 @@ class IntegratedHeader:
             if self._host.drain() < 0:
                 raise RuntimeError("Native header event channel closed")
             state, flags, geometry = self._host.snapshot()
-            if state != 1:
+            if state != 1 or len(geometry) != 98:
                 raise RuntimeError("Native header generation changed")
-            layout = measured_layout(flags, geometry)
-            self._surface.resize(round(layout["width"]), round(layout["height"]))
-            # The native host contains the gutter after the actual lights. A
-            # single shared inset animates brand/navigation; utilities stay right.
+            layout = measured_layout(flags, geometry[:66])
+            # Moving native ancestors may temporarily lack a screen allocation.
+            # Keep the existing owner; do not manufacture success or reparent it.
+            if not layout["screen_ready"]:
+                self._window._native_header_diagnostic = {
+                    "stage": "native_header_pending",
+                    "flags": flags,
+                    "layout": layout,
+                }
+                return
+            child_flags = self._place_surface(layout)
             self._window.setProperty("nativeHeaderWidth", layout["width"])
             self._window.setProperty("nativeHeaderFullscreen", bool(flags & 16))
             self._window.setProperty(
@@ -149,16 +352,15 @@ class IntegratedHeader:
                 self._window.setProperty("nativeHeaderReserve", layout["reserve"])
             if layout["revealed"] is not None:
                 self._window.setProperty("nativeHeaderRevealed", layout["revealed"])
-            if layout["screen_ready"] and not self._attached:
+            if not self._attached:
                 self._window.setProperty("nativeHeaderSurface", self._surface)
                 self._header.setParentItem(self._surface.contentItem())
                 self._window.setProperty("nativeHeaderAttached", True)
                 self._attached = True
                 self.update_height()
-                self._surface.show()
             self._window._native_header_diagnostic = {
-                "stage": "success" if self._attached else "native_header_pending",
-                "flags": flags,
+                "stage": "success",
+                "flags": child_flags,
                 "layout": layout,
             }
         except Exception as exc:
@@ -190,11 +392,14 @@ class IntegratedHeader:
     def close(self, *_destroyed):
         if self._closed:
             return
+        from shiboken6 import isValid
+
         if not self._retired:
             self._retired = True
-            from shiboken6 import isValid
-
-            # QObject event delivery is retired before native destroy closes the FD.
+            if self._input_boundary is not None:
+                self._input_boundary.close()
+                self._input_boundary = None
+            # No event delivery may outlive the exact native generation/FD.
             if self._notifier is not None and isValid(self._notifier):
                 self._notifier.setEnabled(False)
                 self._notifier.activated.disconnect(self.synchronize)
@@ -211,20 +416,26 @@ class IntegratedHeader:
             if isValid(self._window):
                 self._window.setProperty("nativeHeaderAttached", False)
                 self._window.setProperty("nativeHeaderSurface", None)
-            # Release Qt's retained foreign NSView before native owner tears it down.
-            if self._surface is not None:
+        if self._host is not None and self._child_pointer:
+            # A refused bind may retain a partial native generation. Query it
+            # before destroying Qt; an unbind refusal retains both live owners.
+            bound = self._child_bound
+            if not bound:
+                _state, flags, _geometry = self._host.snapshot()
+                bound = bool(flags & self._BOUND)
+            if bound:
+                self._host.unbind_child(self._child_pointer)
+                self._child_bound = False
+        if self._surface is not None:
+            if isValid(self._surface):
+                # Detach first; hide can reconcile native parenting in Cocoa.
                 self._surface.hide()
-                # Keep its foreign parent through platform destruction: Cocoa's
-                # child-window destructor removes the embedded NSView only then.
                 self._surface.destroy()
                 self._surface.deleteLater()
-            if self._foreign is not None:
-                self._foreign.destroy()
-                self._foreign.deleteLater()
+            self._surface = None
+        self._child_pointer = 0
         if self._host is not None:
             self._host.close()
-        from shiboken6 import isValid
-
         if self._destroy_connected and isValid(self._window):
             try:
                 self._window.destroyed.disconnect(self.close)
