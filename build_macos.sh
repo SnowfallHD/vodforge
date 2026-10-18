@@ -81,6 +81,14 @@ minimum_macos="$("$python_bin" -c 'import os,sys; from scripts.build_macos_fulls
     --ignore=tests/test_qt_library_section_selection.py \
     --ignore=tests/test_qt_popup_toggle_order.py \
     --ignore=tests/test_qt_watch_close_hero_refresh.py \
+    --ignore=tests/test_qt_mac_native_runtime.py \
+    --ignore=tests/test_qt_mac_preferences.py \
+    --ignore=tests/test_qt_native_header_host.py \
+    --ignore=tests/test_qt_native_header_modal_boundary.py \
+    --ignore=tests/test_qt_optional_sidecar_recovery.py \
+    --ignore=tests/test_qt_run_artwork.py \
+    --ignore=tests/test_qt_sidecar_recovery_controls.py \
+    --ignore=tests/test_qt_windows_frame_resize.py \
     --ignore=tests/test_qt_artwork_image.py \
     --ignore=tests/test_qt_metadata_preview.py \
     --ignore=tests/test_qt_presentation_diagnostics.py \
@@ -174,6 +182,14 @@ minimum_macos="$("$python_bin" -c 'import os,sys; from scripts.build_macos_fulls
     tests/test_qt_library_section_selection.py \
     tests/test_qt_popup_toggle_order.py \
     tests/test_qt_watch_close_hero_refresh.py \
+    tests/test_qt_mac_native_runtime.py \
+    tests/test_qt_mac_preferences.py \
+    tests/test_qt_native_header_host.py \
+    tests/test_qt_native_header_modal_boundary.py \
+    tests/test_qt_optional_sidecar_recovery.py \
+    tests/test_qt_run_artwork.py \
+    tests/test_qt_sidecar_recovery_controls.py \
+    tests/test_qt_windows_frame_resize.py \
     tests/test_qt_artwork_image.py \
     tests/test_qt_metadata_preview.py \
     tests/test_qt_presentation_diagnostics.py \

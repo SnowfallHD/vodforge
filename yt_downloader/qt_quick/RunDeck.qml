@@ -328,7 +328,8 @@ Item {
             StoneButton {
                 visible: deck.selectedRecord.kind === "terminal"
                 objectName: "runResumeOrRetry"
-                label: deck.selectedRecord.status === "Paused" ? "Resume" : "Retry run"
+                label: deck.selectedRecord.retryLabel || (deck.selectedRecord.status === "Paused" ? "Resume" : "Retry run")
+                enabled: deck.selectedRecord.retryEnabled !== false
                 Layout.fillWidth: true
                 onActivated: { deck.appBridge.retryTerminal(deck.selectedRecord.runId); actionsPopup.close() }
             }

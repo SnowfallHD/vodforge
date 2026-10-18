@@ -230,6 +230,13 @@ from yt_downloader.qt_quick.scene_projection import (
     watch_progress,
     watch_scene,
 )
+from yt_downloader.qt_quick.sidecar_recovery import (
+    SidecarReceipt,
+    optional_outcome,
+    optional_target,
+    repair_sidecars,
+    target_current,
+)
 from yt_downloader.qt_quick.subtitle_session import SubtitleSession
 from yt_downloader.qt_quick.support import QtSupportSession
 from yt_downloader.qt_quick.update_session import QtUpdateSession
@@ -508,6 +515,8 @@ class Bridge(QObject):
         self._installation_path = installation_state_path(
             data_dir=self._runtime.history_path.parent
         )
+        self._sidecar_work = ArchiveWorkOwner()
+        self._sidecar_target = None
         self._cloud_work = ArchiveWorkOwner()
         self._cloud_seen_attempted = False
         self._cloud_seen_install_id = ""
@@ -1054,6 +1063,7 @@ class Bridge(QObject):
             or self._local_running
             or self._import_pending
             or self._file_action_busy
+            or self._sidecar_work.busy
             or self._files.busy
             or self._runtime.recovery_notice
         ):
@@ -3272,9 +3282,41 @@ class Bridge(QObject):
                         "_artwork_info": preview,
                     }
                 )
+        # Coalesce only exact proven optional-file warnings, never titles or batches.
+        sidecar_runs = set()
+        for record in records:
+            if record["kind"] != "terminal":
+                continue
+            job = next(
+                (j for j in self._runtime.recovered if j.run_id == record["runId"]),
+                None,
+            )
+            target = optional_target(job, self._runtime.history) if job else None
+            record["retrySidecarsOnly"] = target is not None
+            record["retryEnabled"] = not self._sidecar_work.busy and (
+                not self._update_work_pending()
+                if target is not None
+                else not (job and optional_outcome(job))
+            )
+            if target is not None:
+                sidecar_runs.add(job.run_id)
+                record["retryLabel"] = target.label
+                record["detail"] = (
+                    "Video saved; optional artwork / metadata unavailable"
+                    if target.metadata
+                    else "Video saved; artwork unavailable"
+                )
+                record["progress"] = 100
+                record["owner"] = history_archive_owner(target.info)
+                record["_artwork_info"] = target.info
         projected = self._projected_library()
         for record in persisted_run_deck_records(projected, completed_jobs=()):
             index = record.get("metadata_index")
+            if (
+                isinstance(index, int)
+                and projected[index].get("vodforge_run_id") in sidecar_runs
+            ):
+                continue
             if not isinstance(index, int):
                 continue
             item = projected[index]
@@ -6810,6 +6852,42 @@ class Bridge(QObject):
         stay_in_issues: bool = False,
     ) -> bool:
         try:
+            if self._closed:
+                raise RuntimeError("The application is closing.")
+            if self._sidecar_work.busy:
+                raise RuntimeError("Finish the artwork recovery before retrying.")
+            job = next((j for j in self._runtime.recovered if j.run_id == run_id), None)
+            target = optional_target(job, self._runtime.history) if job else None
+            if target is not None:
+                if self._update_work_pending():
+                    raise RuntimeError("Finish current work before recovering artwork.")
+                generation = self._sidecar_work.submit(
+                    "sidecars",
+                    lambda cancelled: repair_sidecars(
+                        target,
+                        self._runtime.history_path.parent,
+                        cancelled,
+                        current=lambda: (
+                            not self._closed
+                            and any(
+                                job is target.job for job in self._runtime.recovered
+                            )
+                            and target_current(target, self._runtime.history)
+                        ),
+                    ),
+                )
+                if generation is None:
+                    raise RuntimeError("Artwork recovery is already pending.")
+                self._sidecar_target = target
+                self._file_action_busy = True
+                self._status = "Recovering optional files; saved video is unchanged."
+                self.statusChanged.emit()
+                self.runDeckChanged.emit()
+                return True
+            if job is not None and optional_outcome(job):
+                raise RuntimeError(
+                    "Saved output evidence changed; artwork recovery was not started."
+                )
             if self._relink.active:
                 raise RuntimeError("Finish the saved-location review before retrying.")
             if self._import_pending:
@@ -6876,6 +6954,35 @@ class Bridge(QObject):
             self._check_batch_list_file()
         if self._closed:
             return
+        repaired = self._sidecar_work.poll()
+        if repaired is not None:
+            target = self._sidecar_target
+            self._sidecar_target = None
+            self._file_action_busy = self._files.uncertain
+            current = (
+                target is not None
+                and any(job is target.job for job in self._runtime.recovered)
+                and target_current(target, self._runtime.history)
+            )
+            if (
+                isinstance(repaired.value, SidecarReceipt)
+                and repaired.value.unchanged()
+                and not repaired.error
+                and current
+            ):
+                try:
+                    if not self._runtime.dismiss_terminal(target.job.run_id):
+                        raise RuntimeError("The retained warning changed.")
+                    self._status = "Optional files recovered; saved video is unchanged."
+                except (OSError, RuntimeError, ValueError):
+                    self._status = (
+                        "Files recovered; the retained issue could not be cleared."
+                    )
+            else:
+                self._status = "Artwork recovery did not finish. The saved video and issue are retained."
+            self.statusChanged.emit()
+            self.runDeckChanged.emit()
+            self.historyChanged.emit()
         availability = self._availability_work.poll()
         if availability is not None and availability.kind == "folder_list":
             current_path = self._folder_browser.path
@@ -7447,6 +7554,7 @@ class Bridge(QObject):
             )
         self._import_work.close()
         self._availability_work.close()
+        self._sidecar_work.close()
         self._cloud_work.close()
         self._relink.close()
         self._storage.close()

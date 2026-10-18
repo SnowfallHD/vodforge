@@ -1664,9 +1664,11 @@ Window {
                     spacing: 8
                     StoneButton {
                         objectName: "forgeFailedRetry"
-                        label: window.selectedForgeRun.status === "Paused" ? "Resume" : "Retry"; size: "inline"; width: 82; deepHover: true
+                        label: window.selectedForgeRun.retryLabel || (window.selectedForgeRun.status === "Paused" ? "Resume" : "Retry")
+                        enabled: window.selectedForgeRun.retryEnabled !== false
+                        size: "inline"; width: window.selectedForgeRun.retrySidecarsOnly === true ? 136 : 82; deepHover: true
                         onActivated: {
-                            if (window.selectedForgeRun.status === "Paused") { bridge.retryTerminal(window.selectedForgeRun.runId); return }
+                            if (window.selectedForgeRun.status === "Paused" || window.selectedForgeRun.retrySidecarsOnly === true) { bridge.retryTerminal(window.selectedForgeRun.runId); return }
                             forgeRetryPopup.runId = window.selectedForgeRun.runId
                             forgeRetryPopup.anchorItem = this
                             forgeRetryPopup.toggleFrom(this)
