@@ -7783,13 +7783,24 @@ def attest_qt_launch(bridge: Bridge, window: Any) -> Path | None:
     )
 
 
-def main() -> int:
+def _argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("--event-log", type=Path)
     parser.add_argument("--ready-file", type=Path)
     parser.add_argument("--runtime-smoke", action="store_true")
     parser.add_argument("--analytics-qa-receipt", type=Path)
-    args = parser.parse_args()
+    # Process-local visual comparison only; never changes saved preferences.
+    parser.add_argument(
+        "--native-header-style",
+        choices=("shadow", "concave"),
+        default="shadow",
+        help=argparse.SUPPRESS,
+    )
+    return parser
+
+
+def main() -> int:
+    args = _argument_parser().parse_args()
     if args.analytics_qa_receipt is not None:
         from yt_downloader.analytics_qa import validate_qa_receipt
 
@@ -7834,6 +7845,7 @@ def main() -> int:
             smoke_home.cleanup()
         return 2
     bridge._window = engine.rootObjects()[0]
+    bridge._window.setProperty("nativeHeaderStyle", args.native_header_style)
     native_header_integrated = integrate_qt_main_window(bridge._window)
     try:
         attest_qt_launch(bridge, bridge._window)

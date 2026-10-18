@@ -346,3 +346,17 @@ def test_constructor_cleanup_refusal_retains_exact_owner_and_destroyed_hook(
         assert retained.closed and closes == ["close", "close"]
     finally:
         _close(bridge, engine, window)
+
+
+@pytest.mark.parametrize("style", ["shadow", "concave"])
+def test_native_style_comparison_argument_is_closed_and_process_local(style):
+    from yt_downloader.qt_quick.main import _argument_parser
+
+    parser = _argument_parser()
+    assert parser.parse_args([]).native_header_style == "shadow"
+    assert (
+        parser.parse_args(["--native-header-style", style]).native_header_style == style
+    )
+    with pytest.raises(SystemExit) as invalid:
+        parser.parse_args(["--native-header-style", "arbitrary"])
+    assert invalid.value.code == 2
