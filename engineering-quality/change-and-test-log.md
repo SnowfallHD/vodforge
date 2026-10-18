@@ -3696,3 +3696,261 @@ never exercised neededgrowth/16pxIntelcontrols; that coverage gap is explicit.
 No visible Intel transition/Qt/signed success yet. Standalone Regular AppKit
 prospective diagnostic prepared/compiled only, distinct from Qt artifact proof;
 no GUI/main foreground during email ownership. Root joint review/commit pending.
+
+
+## 2026-10-17 private universal2 Intel-controls 1b79d3bc sealing
+
+Exact1b79d3bc01ff3edffee00b6a97f20ee550c164d5 built from fresh clean detached source, 882 tracked files bound to Git archive; existing127/e864/b031/eed candidates preserved. Canonical build440native closure/zeroerrors,123actualPYZ+47QML sourcebinding pass. Native helper source71456496f47001db935d94cb0252642420544fb67cc89337af5ea17d21376ba7; explicitARM26/Intel15 compiler receipt and signed helper3b7431be0aad8431445f99e9a636f17e54e7e513c08b0b5a3bf2d1d3d7ec1c8b bound. AppleAccepted a86d1998-46ae-49d1-bf55-5e5d3a86de7e; strictallarch/staple/Gatekeeper/emptyentitlements pass. SignedABI2/getters bothslices pass with NSAppnil; signedARM9.13s/Rosetta53.96s isolatedoffscreen smoke exit0. All6343poststaple entries unchanged after tests/no bytecode sidecars. Unchanged guidance8 retained by explicit source equivalence, not repeated.
+
+Immutable handoff `build/universal2-implementation-20261017/SIGNED-NATIVE-intel-controls-1b79d3bc-HANDOFF.json`; report `PRIVATE-intel-controls-1b79d3bc-REPORT.md` adjacent. Executable198383a65b5aeb5e33568510b61f27d329144d214738b26d1aaf9c0cede446c8; QA ZIP528499228bytes SHAfbfad4c4e41edf56dc102d090afb15d774efd8d0bbe2798ae26d542453bd0c1d; sealedmanifest0994334b9d9725c5469972b4f7d9a6403c9411ef8f7ebd25a10b763aeecebd83. NoGUI/profile/provider/publicrelease action. NativeCocoa/header/physicalIntel/fullscreen acceptance remains pending separately; prior127reason8 failure retained. Heavy/sign and final artifact reservations released; no further artifact mutation. Primary unrelated harness dirty files untouched.
+
+2026-10-17 Julie foreground prerequisite: Cooper explicitly instructed trying
+to close the Air dialog and continuing. Exact static AX inspection identified
+UserNotificationCenter2049 Python crash notice, not a permission prompt. One
+revalidated enabled Ignore nativeAXPress returned0 at21:48:20, but settled
+21:48:41 still reported one same-text notice. Preaction window identifier was
+not retained, so original-versus-next-notice identity is UNKNOWN. No Reopen,
+Report, Help, service termination or QA launch. A separate bounded same-process
+CFEqual outcome discriminator was approved to distinguish retained original
+from another identical notice; no repeated-click loop. Regularv2 fixture is
+unconsumed. Evidence under build/latest-open-b031f6d-20261017/julie/
+regular-native-probe-preparation/. Main-Mac foreground remains separately held.
+
+Julie dismissal outcome discriminator2488 exited0/no timeout/stderr0. One
+fresh revalidated Ignore nativeAXPress returned0; retained original window
+identifier_NS:91 and same-process reference comparisons. Three settled reads
+21:51:56/58/59UTC found zero owner windows and no Python notice. This establishes
+dismissal after the distinct second attempt; first attempt identity remains
+unresolved. No Reopen/Report/servicequit/security change. Evidence
+regular-native-probe-preparation/dialog-ignore-outcome. Same previously
+unconsumed Regularv2 source-native fixture may now pass its fresh guards;
+actual rendered/native and exact signed Intel acceptance remain pending.
+
+## Actual Intel Regularv2 result
+
+The authorized crash-notice dismissal succeeded before launch. Fresh guarded
+Regularv2 process2517 produced an actual visible source-native window with
+ownerstatus1 and complete circles/readable synthetic header. ONE green-button
+entry, top-edge menu reveal, OS Escape exit, public AX resize/restore and owned
+AXClose completed; exit0 at21:53:24.976, no timeout/force/stalehandle. Root and
+observer personally inspected startup, settled fullscreen, reveal, exit and
+restored original captures. Settled fullscreen and restored window headers
+remain readable/full circles, exact original bounds30,60/1100x740 restored.
+BUT top-menu-reveal.png shows a gray native strip below the macOS menu which
+covers the synthetic header: reveal preservation FAIL, not overall fixPASS.
+Full/reveal source observations report toolbarabsent/status0/buttonsnull;
+restoredstatus1 with parentbounds originY−24/H34 is a separate mapping
+observation, not yet a proven rendering cause. All24frame originals retained.
+
+Evidence: build/latest-open-b031f6d-20261017/julie/regular-native-probe-preparation/
+evidence/phases/ and evidence/observations/{state.json,timeline.json}. This is
+a standalone AppKit source fixture, NOT Qt or signed-product acceptance.
+Ordinary971/path/three known profile hashes or absence and pointer preserved;
+ownedsourceprocess absent/lease released21:55:09. No Regularrepeat. Exact signed
+1b79 transfer/verification may proceed independently; GUI launch held pending
+read-only assessment of actual reveal evidence, to avoid repeating the known
+failing path without a causal change.
+
+Scope clarification: exact signed1b79 Qt product remains untested and has a
+real support-transaction delta from failed127. Standalone Regular AppKit
+reveal failure cannot substitute for its Qt flags/layout/integration outcome.
+Therefore fresh transfer/seal verification and ONE isolated telemetry-off
+signed startup discriminator are prepared; green/fullscreen remains held
+until actual product ready/PNG review. This is necessary successor coverage,
+not a repeat of a valid unaffected product pass. No new speculative source
+fix/build is authorized from the synthetic strip alone.
+
+Exact1b79 Julie transfer matched528499228bytes/archiveSHAfbfad4c4…bd0c1d.
+Initial ditto extraction/full6343seal/outerstrict/Gatekeeper assertions passed,
+but stapler nonzero stopped wrapper before positive results were persisted;
+assertion omitted captured stdout, so original failure cannot be diagnosed
+from that wrapper. Distinct read-only durable stapler validation21:59:33
+returned0, stdout The validate action worked!, no stderr. Exe/helper/manifest
+hashes match; helperallarchstrict0, metadata ticketstapled/DeveloperID/min15.
+Original failure retained/causeUNKNOWN/artifactunchanged, not called repaired
+by a network explanation. Missing positive fullseal/trust receipt is completed
+read-only (no reextract or mutation) before approved exactstartup-only.
+
+Actualsigned1b79 Intel PID2821 launched22:02:37.237UTC, actualCocoaready
+22:03:01 reports native_header_integrated=true/diagnostic success. Startup
+22:03:31.771→32.043PNG SHA9adb487e544539c8be30eb2da13bd8e99be2b64e128a07be90cede7173948887
+personallyviewed byroot/observer: fullthreecircles/readablebrand/nav/header,
+no coveringnativebar; exactAX30,30/1100x740. NewisolatedHOME/telemetryglobally
+disabled/updateroff, ordinary971 preserved. This establishes correctedactual
+Intelstartup admission, distinct from failed127reason8. ONEboundedactualQt
+entry/reveal/Escape/normalclose phase cleared afterrootpixelreview; no phase
+result yet, no overallfullscreen/revealpass. Evidence julie/1b79d3b-execution/
+{setup.json,launch.json,startup.json,startup.png}.
+
+ActualsignedQt1b79 ONEboundedphase:23captures, observerfailure=null, genuine
+green→fullscreen/reveal→OSEscape→normalownedAXClose; process2821 absent at
+22:04:27.513UTC, no postcloseAX. Actualapp exitcodeUNOBSERVED, not claimed0.
+Root+observer personallyviewed entry-settled/top-menu-reveal/returned-windowed:
+settledfullscreen headerreadable, returnedfullcircles/headerreadable; REVEAL
+FAIL—nativegraycontrolstrip coversactualQtbrand/nav, matchingRegularfixture.
+No unrelatedrightheadernotification inthese3keyframes. No repeats/resize.
+Ready-filediagnostic success is STARTUPONLY and cannotmeanrevealfix. Evidence
+julie/1b79d3b-execution/key-evidence/. All23rawcaptures retained; finalseal/
+ordinaryprofilepreservation readback underway. Nextboundeddiscriminator is
+publiccontentLayoutRect/KVO/contentViewframebounds; no speculativeproduction
+change/build untilmeasured.
+
+Final1b79 Intelpreservation22:06:47 passed:6343sealedentries/exe/helperunchanged,
+strictallarch0. ONEownedAXClose22:04:26.870→processabsence22:04:27.513; noactual
+exitcodeavailable. Ordinary971b031exe/settings+installationhashes/historyabsence
+unchanged, pointerexactrestored, foregroundFinder396. Native/inputlease released,
+no queuedrelaunch. ActualQt revealedgraystrip failure remains; nextdiagnostic
+sourcev3 measurespubliccontentLayoutRect/contentViewframebounds/layoutGuide
+withKVO and fixture-only exact-object bounded metadata sample requests. No
+productionfix/build assumed; no privateforeignbar mutation/globalUIsetting.
+
+Root additionally inspected a derived contact sheet of all16existing signed1b79
+entry/exit header samples and originalentry01/exit01. Entry01 shows compositor
+crossfade/duplicated content, not assigned an appcause; entry02..07 andexit01..07
+show readableheaders/fullcircles without coveringgrayappbar. Exit00 graystrip
+captureinterval22:04:20.361549→20.612765 startsbeforeEscape20.499060; it cannot
+establish post-Escape gray persistence. Revealcapture independently proves
+coveringstrip. Sampling~0.3s captures is not continuous/subframe/FPS/latency proof.
+Derivedanalysis sheet build/fullscreen-transition-20261017/
+intel-1b79-burst-header-contact.png; alloriginalframes unmodified under
+julie/1b79d3b-execution/evidence/phase-one/.
+
+Prepared public-layout diagnostic v3a/v3b remain UNEXECUTED. Root prelaunch
+review caught two prerequisite defects before GUI: opaqueguide receiverguard
+needed BOTH frame/owningView selectors; then controller waited on phase=explicit
+in mutablelateststate.json, which ordinaryDidUpdate/KVO could overwrite after
+successfuldelivery. v3c will retain one separately atomic checkpoint.json and
+admit atmostone request; observer reads that exact bound receipt. This is a
+measurement-receipt correction, not a productfix or actualfailedGUIprobe. All
+priorpreparedsource/binaries preserved; productionowner714unchanged, no valid
+ownerchecks repeated. Nextlaunch waits finalhash/protocolreview andfreshguard.
+
+Actualv3c PID3083 completedONEphase22:16:21, observerfailure=null andindependent
+childwait exit0/no timeout/stdoutstderr0. Exactdurable checkpointserial1/PID/UUID/
+owner714/mainthread at22:16:17.504932→17.505010: contentLayoutRect, publicguide
+windowrect andcontentView all[0,0,1440,900], safe_top0; nativebuttonsnull/status0.
+Root+observer personallyviewed correspondingreveal-measured.png: graynative
+stripstillcoverssyntheticheader. Getter/capturetimestamps separate, notatomic.
+This DISPROVES using a reserved publiclayoutinset/guideasfix inthisstate; no
+padding/guide-binding applied. Requestreceiptactualdeliveryworkedandpersisted
+independentlyoflateststate. Evidence julie/layout-guide-v3c-preparation/
+key-evidence/{observations/checkpoint.json,phases/reveal-measured.png}.
+No moreGUIlaunches pending; finalpreservationreadbackunderway. Sourceowner
+assessesdocumentedfullscreenpresentation APIs/platformlimits read-only before
+anothercausalcontrast; no speculativeproductchange/build.
+
+PARENTcriterion clarification received afterv3c: preservestandardmacOSfullscreen;
+removeabnormalthickwhite/graybar/contentdisplacement, but acceptstandard-sized
+transientnative menuoverlay. DoNOTforcepadding/navbelowmerelytokeepvisible.
+PriorrevealFAILlabels record stricter always-visible-header criterion and are
+retained; they are not evidence ofanabnormalpersistentstrip underclarifiedgoal.
+Rootactual1b79pixelanalysis: fullscreenPNG2880x1800 for1440x900 display, menu
+physicalrows0..47 (24logicalpt), graycontrolstrip48..91 (22logicalpt), appcontent
+below. No persistentcoveringbarintheboundedentry02..07/exit01..07/startup/full/
+returnedcaptures; subframe/continuousanimationunqualified. PublicAutoHideToolbar
+contractdescribesdetachedrolloverbehavior. v4presentationcontrastpreparedONLY,
+unexecuted: itwouldchange nativepresentation andisnotneeded merelytosuppress
+the acceptedrollover. No arbitrarypadding/globalpref/Qtdelegatereplacement.
+
+ExactsealedQtCoreframeworkInfo.plistmetadata: CFBundleVersion6.11.2,
+CFBundleShortVersionString6.11; officialQt6.11boundedsourceinspection family
+related, not exactpatchproof. MainMac ARM exact1b79next: read-onlyfreshguard and
+planpreparation undernewtrustedparentCooperaway +Krydenownerreportedendedcall/
+app/resourcesreleased. No GUIuntilreview/freshactualidle-call-modalpermissions
+guard; no newpermissiongrants or normalappreplacement.
+
+
+### Final signed1b79 Silicon native qualification — 2026-10-17
+
+Exact local runtime1b79d3bc completed one isolated ARM launch PID5491 at22:26:45.675UTC after fresh permission/activity/call guards. Actual Cocoa ready22:26:51.725 reported integrated header/diagnostic success. Root and observer personally inspected startup, settled fullscreen, attempted reveal, restored-window originals, all16 sampled entry/exit headers and original entry01/exit01. Genuine green22:27:41.705–41.960 and OS Escape22:27:46.690–46.974 restored exact30,30/1100×740 bounds. No abnormal opaque thick bar in inspected bounded samples. Early compositor crossfade/duplicated content retained without assigning an app defect. The ONE top-edge attempt did not reveal the native menu: ARM menu reveal UNQUALIFIED, no repeat. Standard transient native overlay remains accepted under Cooper's clarified criterion; v4 presentation experiment remains unexecuted.
+
+Owned close and actual child wait exited0 at22:27:51.192772; independent PID absence22:27:51.330. Final normal-host preservation22:29:05 passed all6,343 sealed entries/no extras and unchanged ordinary settings/installation/canonical download-history.json; legacy underscore history absent. Initial sandbox ps EPERM prevented its positive receipt and is retained as a context failure; no app retry. RESULT SHA210aa9d0e2afdc31eba7300252dcbb09db250b5953667868a931562720615a91. Evidence build/fullscreen-transition-20261017/frozen-arm-1b79d3bc-01/{REPORT.md,RESULT.json}.
+
+Final aggregate report build/fullscreen-transition-20261017/QUALIFICATION.md binds current Mac1b79 signed/notarized artifact, physical Intel bounded native checks and separate Windows e864 resize/artwork proof. Intel actual exitcode unobserved despite cooperative close/PID absence; Windows artifact unsigned/private. Bounded captures do not prove continuous/subframe animation/FPS/latency. All native/heavy/sign resources released, no queued input. No public release/push/ordinary replacement, permissions/provider mutation or cleanup. Unrelated dirty quality-harness files excluded.
+
+
+### Remaining reveal and private three-machine delivery authorized — 2026-10-17
+
+Parent explicitly directs completing remaining Silicon menu-reveal qualification on exact signed1b79 under standard macOS overlay expectations, then latest private placement/open on main Mac, Windows and Julie Intel Air, plus recoverable superseded-test cleanup. No Kryden voice is active per parent; fresh platform guards still apply. Prior valid entry/return/resize checks are retained rather than repeated. Silicon's prior top-edge attempt did not reveal menu, so a bounded successor observation has a concrete evidence gap. Current Mac1b79 and separate Windows e864 hashes will stay distinct; Windows unsigned/private limitation remains. Exact placement/open must retain libraries/settings/rollback, no public release. Cleanup is recoverable task-owned binary moves only, not deletion; completed narrow14 is not repeated. Main, Julie and Windows input owners are separately coordinated.
+
+
+## 2026-10-17 superseded127/e864 expanded-app inventory only
+
+Parent-authorized READONLY cleanup assessment limited to candidate-native-diagnostic-127bf2ef/dist/VODForge.app and candidate-window-controls-e864f747/dist/VODForge.app. Both6343-entry trees match retained sealed manifests/noextras; both retained QA ZIPs freshly match exact archive size/SHA. Combined2,862,190,810 logicalbytes/2,819,180KiB allocated; proposed recoverable same-volume move does NOT reclaim disk. Current1b79 executable matches handoff, all1744symlinks internal, no nativeclosure references to old trees; retained fresh source/runtime/helper inputs independent. Authorized exactpath ps readback empty, targeted lsof both empty/exit1, mountedimages systemsimulators only. Initial restricted ps EPERM preserved as context limit; actual guard supersedes it. Initial systemPython inventory failed on unavailable hashlib.file_digest before proposal, existing3.13 run succeeded. No binary moves/deletions/GUI/processcontrol; prior narrow14 untouched. Exact proposal, hashes, destinations and fresh-execution prerequisites under build/universal2-implementation-20261017/cleanup-20261017/superseded-two-inventory/{proposal.json,REPORT.md}. Root owns any later recoverable move after current placement/GUI clearance; current1b79/b031/eed/source/work/runtime/archives/receipts/profiles/settings all excluded. No native/heavy/sign lease.
+
+
+Root exact-two recoverable Mac cleanup completed 2026-10-17T22:35:10.509727+00:00: only expanded127/e864 test apps moved by exclusive same-volume rename into cleanup-20261017/superseded-two-recovery. Both6,343-entry trees/root inode/device match before/after; retained ZIPs freshly match. Current1b79/b031/eed/Applications024/dist010 executable+Info identity and settings/installation/canonical history/legacy absence unchanged. Fresh exact ps/lsof/mount guards passed. Zero deletions/no disk reclaim; prior narrow14 not repeated. Restore map/RESULT/journal at build/universal2-implementation-20261017/cleanup-20261017/superseded-two-execution/. Current main/Julie/Windows ordinary delivery continues independently; no native input performed by cleanup.
+
+
+### Latest private builds actually open on all three machines — 2026-10-17
+
+Main signed1b79 ordinary LaunchServices open22:41:43 created PID8210 at build/private-delivery-1b79-20261017/main/app/VODForge.app, exactexe198383a6…446c8/actualARM cputype16777228/readyCocoa integratedsuccess. An early capture guard stopped while PID was not yet foreground; fresh22:42:23 read showed samePID already front/nonmodal, no activation or relaunch. Actual window captured22:43:12.453–.609, SHAec15eb6aef04e4ee1b1d4281ddca43135c635ef942c3e2de96db6d2337baae14, personally viewed by root and observer: fullcontrols/readableheader/retainedForgeRunDeck. All119 bounded app-data files/settings/install/canonicalhistory unchanged, all6343seal entries unchanged, Applications024/dist010/b031 rollback inode/Info/exe unchanged. Left open for Cooper; no queued input. Main RESULT/REPORT adjacent.
+
+Julie signed1b79 new versioned private path /Users/julie/Documents/Codex/VODForge-latest-1b79d3bc-20261017/app/VODForge.app passed6343seal/trust. Old971 cooperatively quit22:34:51/absence; actual newPID3326 ready/rendered22:35:21 exact198383…446c8. Root+observer personally viewed latest-open.png fullcontrols/Ready header. Settings/installation/historyabsence/installed andb031 rollbacks unchanged. Left open; no privacy/media/fullscreen repetition. Exact10 task-owned superseded binary units recoverably moved after guards/fulltree/inode checks, no deletion; restoremap/report at build/latest-open-b031f6d-20261017/julie/current-placement-1b79d3bc/.
+
+Windows latest qualified e864—not relabeled1b79—placed at E:\Applications\VODForge-private-e864f747fff4\VODForge.exe, exact4834c875…cf357d. Old65324 normalWM_CLOSE22:36:38 exited0; new57996 actual ready/window22:36:39–43 personally viewed by root/observer. All4212sealed files and9ordinaryJSON hashes unchanged at22:42:32; b031/installed rollback retained. Unsigned/private-only, no installer/publicrelease claim. Later Mac commits only affect macOS controls and additive ready metadata; Windows frame proof remains valid, not rerun. Cleanup has separate automatic-review gap/proof and is not implied complete by actual delivery.
+
+Remaining Silicon menu method: one isolated7528 actualgreen→fullscreen then ONE Control-F2 produced no visible OS menu, focus remained own AXWindow. Root+observer viewed actual menu-focused.png8142f004…bc8839: no native menu/bar or abnormal thick band. No menu-dismiss key was sent on false ownership; one windowEscape+normalownedClose exited0 at22:38:11.720516, seal/profile checks unchanged. Fn variant was suggested only after normal close and was NOT attempted/no relaunch. This is a method-unavailable observation, not product failure or evidence menu settings are disabled. Exactgap remains actual Silicon standard menu reveal+hide; prior startup/fullscreen/Escape pass retained. Parent's independent-delivery clause used truthfully while gap remains. Evidence frozen-arm-1b79d3bc-menu-02/RESULT.json.
+
+
+### Windows latest private placement and exact-three recoverable retirement — 2026-10-17
+
+Parent-authorized exact e864 Windows private app copied to NEW E:\Applications\VODForge-private-e864f747fff4; all4212 sealed files verified. Old b031 PID65324 normally WM_CLOSE/wait exit0, retained binary unchanged; latest PID57996 opened once22:36:39UTC, exactexe4834c875…357d/sourcee864. Actual renderedForge/retainedRunDeck/headerartwork reviewed personally by Windows owner+root; no modal. All9 ordinary JSON hashes byte-identical after oldquit/newopen/finalcleanup, ordinary023rollback b583c805…aa02 preserved. PID57996 LEFTOPEN for Cooper. Unsigned/NotSignedprivateportable, no installer/publicrelease/security/consent change; process telemetry-off options carried forward, natural updatecheck observed so not zero-network. No repeated native resize campaign; prior exact e864 proof retained.
+
+Cleanup first guard STOP/moves0 on shipped demoMP4s, preserved. Incomplete v2 whitelist AUTO-REVIEW REJECTED before upload/execution because unknown file types insufficiently blocked; no bypass. Independent ALL-file authority classification then established every12730file/all dirs match original f961sealed4258,583portable4212,043retainedarchive4260; no extras/reparse/unknown dirs. Separately reviewed stronger v3 immutableauthoritySHA4005736f…6e9 +fresh fulltree equality/owner/profile/rollback guards accepted. Exact3 same-volume recoverable renames completed22:45:26UTC, allentry identities/hash/size equal after move;2725830550logicalbytes relocated, zero deletes/zero space reclaim. Parent profile/source/native evidence/media fixtures/archives/current/rollback excluded. Final current4212seal+all9profile+bothrollback hashes unchanged, latest57996open. Evidence/restoremap/earlierrejection under build/windows-latest-placement-20261017/{RESULT.json,REPORT.md,cleanup-result-v3.json,historical-all-file-proof.json,restore-map.json}. All Windows native/input/cleanup ownership RELEASED; no queued input/further launch. Mac source/artifact separate; no commit/push/build from this delivery.
+
+
+Final parent-directed three-machine private delivery and recoverable cleanup consolidated at build/private-delivery-1b79-20261017/{REPORT.md,RESULT.json}. Main8210/Julie3326 exactsigned1b79 and Windows57996 exactunsignedprivatee864 left open, each process/path/hash/rendered window personally reviewed by root+owner. All owned input/launch tasks released; no further automated action. Main119appdata/6343seal, Julie6343seal+knownprofile/rollbacks and Windows4212seal+9JSON/rollbacks preserved. No ordinary installed replacement/publicrelease/sourcepush/provider/permissions action. Current-private pointer updated; older narrative retained verbatim in before-delivery1b79 backup.
+
+Cleanup final:15 additional exact superseded binary units recoverably moved (main2/Julie10/Windows3), zero permanent deletion/no space reclaim; earlier completed14 not repeated. Windows media guard stopped moves0; incomplete-v2 payload guard automatically rejected before upload/execution. Safer v3 supplied authoritative4258/4212/4260 all-file manifests/archive bindings and all-directory allowlists, rejected ANY extra or changed entry, received fresh review acceptance and completed22:45:26. All12,730 old files/2,725,830,550bytes verified before/after and current4212/profile/rollback checks passed. All failure/rejection receipts retained, no bypass. Restore maps linked in finalreport.
+
+Remaining exact gap stays Silicon actual native fullscreen menu reveal/retract; Control-F2 unavailable/ownAXWindow/no OSmenu, Fnnotattemptedafterclose. Do not relabel aspass or infer disabledconfiguration. Prior bounded fullscreen/return captures remain qualified, no every-frame/FPS/latency assertion. All independent deliverables finished under parent instruction; no extra userapproval required for completed safercleanup.
+
+
+### Scheduled production backend health — 2026-10-18 02:21 UTC
+
+Authenticated managed Cloudflare reads succeeded, without foreground/build interruption or credential access. Compared parent20:28UTC minute-resolution baseline: Worker20:28:00–02:20:00 window737 invocations/zero runtime errors/all success; prior2050 requests had no exact comparable window supplied, so no rate-regression claim. D1primary02:21:00.089 has6714accepted versus6567 (+147), all147new macOS0.2.3/production rows received01:57:34–02:09:57, no new accepted failure/rejection groups. Other-version silence/absence0.2.6 is not failed delivery without expected permitted-client attempt/outbox/HTTPrefusal context. Worker execution success is not allHTTP/admission evidence.
+
+D1quick_checkok/noFK violations,31migrations latest0032 appliedOct16 21:08:14 consistentbaseline; current40-object schema fingerprint recorded, exact20:28DDL snapshot unavailable locally so no fullschema equality assertion. EightSELECT/PRAGMA statements rows_written0/changed_dbfalse. Publichomepage/GitHub latestfeed02:21:26HTTP200/publicstable0.2.5/non-draft/non-prerelease; allfiveasset names/sizes/digests match retainedOct14feed. No binary transfer/trackeddownload/SDK/browser/synthetictelemetry. No productiondata/deploy/access/monitoring/notification-state changes; existing gaps deduplicated/no newalerts. Receipt build/recovery-20261011/backend-monitor-20261018T0220/{REPORT.md,comparison.json,SHA256.json}; managedD1raw/exactquery/publicbodies retained. Workerobserved response is honestly labeled structuredtranscription ofactualtooloutput, not byte-original capture.
+
+### New Intel native menu-reveal clipping failure — 2026-10-18
+
+Cooper's inspection invalidates only the prior reveal acceptance: a capture-only
+request at05:24:25.566826–05:24:25.873216UTC produced actual2880x1800 pixels,
+SHA42ee3d659d978d1cf189994377d4c53d994dedc291cff4df4329401ac1eaef30.
+Root viewed the original: black native menu overlaps the upper portions of all
+three traffic-light controls. The standard transient strip/nav overlay remains
+accepted; clipped controls FAIL. Prior bounded entry/Escape/return observations
+and raw receipts remain unchanged. Evidence:
+build/fullscreen-reveal-clipping-20261018/user-held-052425/{display.png,receipt.json}.
+Read-only05:29:50 process binding identifies solePID3326, exact private1b79 path
+and exe198383a65b5aeb5e33568510b61f27d329144d214738b26d1aaf9c0cede446c8.
+No input/activation/window/restart/permission action. Air remains HARD HOLD while
+Cooper inspects during voice use; public release remains held.
+
+The owner applies18pt windowed alignment on every phase without inspecting the
+native fullscreen mask. Earlier revealed controls were foreign/unavailable, so
+direct writes at that moment are not established; windowed geometry carryover is
+a causal hypothesis awaiting actual comparison. Two compiled actual-owner phase
+regressions fail unchanged .m71456496; candidate geometry-only handoff now passes
+32 cases including8 new boundaries. It sets deferral before WillEnter setters,
+restores exact current owned frames/support, suppresses windowed alignment through
+pre-mask/actual fullscreen, and rebaselines on confirmed DidExit. Toolbar and
+appearance are retained. No delegate replacement/timer/global preference/padding.
+Canceled entry without a public completion signal safely stays native baseline
+and deferred/status0; no fabricated recovery. These non-GUI checks do not prove
+clipping repaired. Reports/before failure/checkpoint:
+build/fullscreen-reveal-clipping-20261018/source-assessment/.
+Existing24 cases rerun because this same reconciliation/cleanup owner changed;
+unaffected packaged campaigns are not repeated. Signed successor and actual
+Intel+Silicon revealed-menu/full-controls/hide pixels remain pending.
+
+DMG clarification: final single-icon concave stone installer actually completed
+Intel defaultApplications Install/Done (no Open), finalDMG SHAebd9cb432ef58c530df9216e212ea388b2c2cae3cb4668ebd25d34d5d2f7170d,
+AppleAccepted02c0659c-f425-4d7d-9ca0-a10fda9662aa,6341installed entries verified.
+It embeds OLDER eed300f, not1b79 or this repair. ARM observed Replace/Cancel only.
+Native Open/replacement-backup-rollback/protected fallback/busyQuit unperformed.
+PRIVATE-UNIVERSAL2-DELIVERY-RECEIPT.json, PRIVATE-INSTALLER-applications-default-SEALED.json
+and native-fullscreen-repair/FINAL-DEFAULT-APPLICATIONS-NATIVE-RESULT.json under
+build/universal2-implementation-20261017 retain exact evidence. Direct current
+runtime delivery does not update or qualify that old-payload DMG.

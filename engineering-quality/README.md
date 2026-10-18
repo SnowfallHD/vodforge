@@ -3779,3 +3779,15 @@ the current resized width and top, rather than restore constructor dimensions.
 Partial setters, temporary foreign receivers, replacement and residual bounds
 need independent refusal/recovery cases. A hidden geometry pass establishes
 neither OS hit routing nor visible fullscreen behavior; retain those gates.
+
+Window ownership is not geometry ownership during a native transition. AppKit
+may still return the same standard buttons while taking over fullscreen rollover
+chrome. Relinquish only the exact owned windowed frames/support before takeover,
+without restoring a toolbar or changing appearance. Suppress windowed alignment
+through the pre-mask transition and actual fullscreen; rebaseline only at a
+confirmed windowed completion. No completion signal means native baseline stays
+deferred, not a timer-based claim of recovery. The prior geometry/generation
+cases missed this phase boundary. Compiled cases now cover pre-mask reentrancy,
+same-receiver fullscreen, cancellation, replacement, rollback and lifetime;
+actual menu-revealed full traffic-light pixels and hidden-again captures on each
+architecture remain a separate acceptance requirement.

@@ -71,6 +71,14 @@ def native_driver(tmp_path_factory: pytest.TempPathFactory) -> Path:
         "support_replacement",
         "support_necessary_growth",
         "support_thread",
+        "fullscreen_own_controls",
+        "fullscreen_relinquish_before_mask",
+        "fullscreen_canceled_enter",
+        "fullscreen_confirmed_recovery",
+        "fullscreen_replacement",
+        "fullscreen_handoff_failure",
+        "fullscreen_resized_support",
+        "fullscreen_native_close",
     ],
 )
 def test_actual_native_window_control_owner(native_driver: Path, case: str) -> None:

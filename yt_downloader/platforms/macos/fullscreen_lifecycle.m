@@ -174,11 +174,13 @@ finish:
     BOOL _closed;
     BOOL _reconciling;
     BOOL _closingWindow;
+    BOOL _fullscreenHandoff;
     int _status;
     VFSupportAdjustment *_support;
 }
 - (instancetype)initWithWindow:(NSWindow *)window horizontal:(double)x top:(double)top;
 - (int)reconcile;
+- (BOOL)relinquishGeometry;
 - (void)changed:(NSNotification *)notification;
 - (void)willClose:(NSNotification *)notification;
 - (void)close;
@@ -221,11 +223,59 @@ finish:
     return self;
 }
 
+// Give native fullscreen its original real controls, not our windowed
+// optical alignment. This intentionally preserves appearance/toolbar/lifetime.
+- (BOOL)relinquishGeometry {
+    NSRect before[3]; BOOL restore[3]={NO,NO,NO};
+    BOOL valid=NO;
+    @try {
+        for(unsigned i=0;i<3;i++) {
+            if(!_buttons[i])continue;
+            if([_window standardWindowButton:(NSWindowButton)i]!=_buttons[i]
+                ||_buttons[i].window!=_window||_buttons[i].superview!=_parents[i])continue;
+            if(!VFValidRect(_originalFrames[i])||!VFValidRect(_buttons[i].frame)
+                ||!NSContainsRect(_parents[i].bounds,_originalFrames[i]))return NO;
+            before[i]=_buttons[i].frame;restore[i]=YES;
+        }
+        for(unsigned i=0;i<3;i++)if(restore[i]) {
+            if([_window standardWindowButton:(NSWindowButton)i]!=_buttons[i]
+                ||_buttons[i].window!=_window||_buttons[i].superview!=_parents[i])goto finish;
+            if(!NSEqualRects(_buttons[i].frame,_originalFrames[i]))_buttons[i].frame=_originalFrames[i];
+        }
+        if(_support&&[_support current]&&![_support collapse])goto finish;
+        valid=YES;
+    } @catch(NSException *exception) {(void)exception;}
+finish:
+    if(!valid) {
+        // A setter/inverse failure retains ownership and rolls back only exact
+        // current receivers. Never repair a foreign/replaced native view.
+        for(unsigned i=0;i<3;i++)if(restore[i]) @try {
+            if([_window standardWindowButton:(NSWindowButton)i]==_buttons[i]
+                &&_buttons[i].window==_window&&_buttons[i].superview==_parents[i])
+                _buttons[i].frame=before[i];
+        } @catch(NSException *exception) {(void)exception;}
+        return NO;
+    }
+    for(unsigned i=0;i<3;i++) {
+        [_buttons[i] release];_buttons[i]=nil;
+        [_parents[i] release];_parents[i]=nil;
+    }
+    [_support release];_support=nil;
+    return YES;
+}
+
 - (int)reconcile {
     if (_closed || ![NSThread isMainThread]) return -1;
     if (_reconciling) return _status;
     _reconciling = YES;
     VFResetDiagnostic();
+    // AppKit owns rollover control placement. Its controls can still report
+    // this same window during takeover; identity alone is not permission to
+    // impose windowed coordinates. A canceled enter without a public end
+    // signal safely leaves native baseline geometry until confirmed DidExit.
+    if(_fullscreenHandoff||(_window.styleMask&NSWindowStyleMaskFullScreen)) {
+        _status=0;_reconciling=NO;return 0;
+    }
     NSButton *candidates[3] = {nil, nil, nil};
     NSView *parents[3] = {nil, nil, nil};
     NSRect current[3], windowFrames[3], targets[3];
@@ -346,6 +396,20 @@ done:
 
 - (void)changed:(NSNotification *)notification {
     if (_closed || ![NSThread isMainThread] || notification.object != _window) return;
+    if([notification.name isEqualToString:NSWindowWillEnterFullScreenNotification]) {
+        _fullscreenHandoff=YES; // Set before setters can emit nested resize.
+        [self relinquishGeometry];
+        _status=0;
+        return;
+    }
+    if([notification.name isEqualToString:NSWindowDidExitFullScreenNotification]
+        &&!(_window.styleMask&NSWindowStyleMaskFullScreen)) {
+        _fullscreenHandoff=YES; // Also guard nested resize after a missed WillEnter.
+        // Native ended fullscreen: discard/restore only current owned geometry
+        // before admitting the present windowed generation, not old snapshots.
+        if(![self relinquishGeometry]) {_status=0;return;}
+        _fullscreenHandoff=NO;
+    }
     [self reconcile];
 }
 
@@ -361,9 +425,10 @@ done:
     _status = -1;
     // Remove even partially registered observations after initializer failure.
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+    BOOL nativeFullscreen=(_window.styleMask&NSWindowStyleMaskFullScreen)!=0;
     for (unsigned i = 0; i < 3; i++) {
         @try {
-            if (!_closingWindow && _buttons[i] && [_window standardWindowButton:(NSWindowButton)i] == _buttons[i]
+            if (!_closingWindow && !nativeFullscreen && _buttons[i] && [_window standardWindowButton:(NSWindowButton)i] == _buttons[i]
                 && _buttons[i].window == _window && _buttons[i].superview
                 && _buttons[i].superview == _parents[i]
                 && VFValidRect(_originalFrames[i])
@@ -374,12 +439,12 @@ done:
         [_parents[i] release]; _parents[i] = nil;
     }
     if(_support) {
-        if(!_closingWindow)[_support collapse];
+        if(!_closingWindow&&!nativeFullscreen)[_support collapse];
         [_support release];_support=nil;
     }
     // A native close is already mutating/compositing the window. Release only:
     // restoring inherited light chrome here could flash or disturb that close.
-    if (!_closingWindow) {
+    if (!_closingWindow&&!nativeFullscreen) {
         @try { _window.toolbar = _originalToolbar; } @catch (NSException *exception) { (void)exception; }
         @try { _window.appearance = _originalAppearance; } @catch (NSException *exception) { (void)exception; }
     }

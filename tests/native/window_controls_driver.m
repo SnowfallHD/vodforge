@@ -103,6 +103,7 @@ static unsigned supportWrites, raiseSupportAt;
     NSObject *toolbarValue;
     NSAppearance *appearanceValue;
 }
+@property NSWindowStyleMask styleMask;
 - (NSView *)contentView;
 - (NSButton *)standardWindowButton:(NSWindowButton)which;
 - (NSToolbar *)toolbar;
@@ -469,6 +470,126 @@ static void testWrongThread(void) {
     assert(vf_window_controls_destroy(&owner) == 1 && !owner); [window release];
     assert(deallocButtons == 3 && deallocViews == 7 && deallocWindows == 1);
 }
+// Fullscreen rollover controls remain native-owned even while their public
+// button/window identities temporarily match the application window.
+static void testFullscreenOwnControls(void) {
+    VFTestWindow *w=supportWindow();
+    void *owner=vf_window_controls_create(w,18,18);assert(owner);
+    w.styleMask=NSWindowStyleMaskFullScreen;
+    NSRect native[3];
+    for(unsigned i=0;i<3;i++) {
+        native[i]=NSMakeRect(7+20*i,6,14,16);
+        w->buttons[i].frame=native[i];
+    }
+    writes=supportWrites=0;
+    post(w,NSWindowDidEnterFullScreenNotification);
+    post(w,NSWindowDidResizeNotification);
+    vf_window_controls_reconcile(owner);
+    assert(writes==0&&supportWrites==0);
+    for(unsigned i=0;i<3;i++)assert(NSEqualRects(w->buttons[i].frame,native[i]));
+    unsigned toolbarBefore=toolbarWrites,appearanceBefore=appearanceWrites;
+    vf_window_controls_destroy(&owner);assert(writes==0&&supportWrites==0);
+    assert(toolbarWrites==toolbarBefore&&appearanceWrites==appearanceBefore);[w release];
+}
+static void testFullscreenRelinquishBeforeMask(void) {
+    VFTestWindow *w=supportWindow();
+    NSRect original[3];for(unsigned i=0;i<3;i++)original[i]=w->buttons[i].frame;
+    void *owner=vf_window_controls_create(w,18,18);assert(owner);
+    assert(w.styleMask==0&&w->parents[0].bounds.size.height==34);
+    unsigned toolbarBefore=toolbarWrites,appearanceBefore=appearanceWrites;
+    post(w,NSWindowWillEnterFullScreenNotification);
+    assert(w->parents[0].bounds.size.height==28);
+    for(unsigned i=0;i<3;i++)assert(NSEqualRects(w->buttons[i].frame,original[i]));
+    // Relinquishing geometry must not bring back the obsolete toolbar or light
+    // inherited appearance, nor destroy lifetime/notification ownership.
+    assert(toolbarWrites==toolbarBefore&&appearanceWrites==appearanceBefore);
+    writes=supportWrites=0;
+    post(w,NSWindowDidResizeNotification); // Native mask has not changed yet.
+    assert(writes==0&&supportWrites==0);
+    vf_window_controls_destroy(&owner);[w release];
+}
+
+static void testFullscreenCanceledEnter(void) {
+    VFTestWindow *w=supportWindow();NSRect native[3];
+    for(unsigned i=0;i<3;i++)native[i]=w->buttons[i].frame;
+    void *owner=vf_window_controls_create(w,18,18);assert(owner);
+    post(w,NSWindowWillEnterFullScreenNotification);
+    writes=supportWrites=0;
+    // No native mask transition and no end signal: do not invent completion.
+    for(unsigned i=0;i<3;i++) {post(w,NSWindowDidResizeNotification);vf_window_controls_reconcile(owner);}
+    assert(writes==0&&supportWrites==0&&vf_window_controls_status(owner)==0);
+    for(unsigned i=0;i<3;i++)assert(NSEqualRects(w->buttons[i].frame,native[i]));
+    assert(w->parents[0].bounds.size.height==28&&!w.toolbar);
+    vf_window_controls_destroy(&owner);assert(writes==0&&supportWrites==0);[w release];
+}
+static void testFullscreenConfirmedRecovery(void) {
+    VFTestWindow *w=supportWindow();void *owner=vf_window_controls_create(w,18,18);assert(owner);
+    post(w,NSWindowWillEnterFullScreenNotification);
+    // A canceled attempt can be followed by a real retry; still no early align.
+    post(w,NSWindowWillEnterFullScreenNotification);w.styleMask=NSWindowStyleMaskFullScreen;
+    writes=supportWrites=0;post(w,NSWindowDidEnterFullScreenNotification);
+    post(w,NSWindowWillExitFullScreenNotification);
+    post(w,NSWindowDidExitFullScreenNotification); // Failed exit: mask still full.
+    assert(writes==0&&supportWrites==0&&vf_window_controls_status(owner)==0);
+    w.styleMask=0;post(w,NSWindowDidExitFullScreenNotification);
+    assert(vf_window_controls_status(owner)==1&&w->parents[0].bounds.size.height==34);
+    vf_window_controls_destroy(&owner);assert(w->parents[0].bounds.size.height==28);[w release];
+}
+static void testFullscreenReplacement(void) {
+    VFTestWindow *w=[VFTestWindow new],*foreign=[VFTestWindow new];
+    void *owner=vf_window_controls_create(w,18,18);assert(owner);
+    post(w,NSWindowWillEnterFullScreenNotification);w.styleMask=NSWindowStyleMaskFullScreen;
+    for(unsigned i=0;i<3;i++)replaceButton(w,i,NSMakeRect(7+20*i,8,14,14));
+    w->buttons[1].window=foreign;
+    writes=supportWrites=0;post(w,NSWindowDidEnterFullScreenNotification);post(w,NSWindowDidResizeNotification);
+    assert(writes==0&&supportWrites==0);
+    w->buttons[1].window=w;w.styleMask=0;post(w,NSWindowDidExitFullScreenNotification);
+    assert(vf_window_controls_status(owner)==1);
+    for(unsigned i=0;i<3;i++)assert(w->buttons[i].frame.origin.x==18+20*i);
+    vf_window_controls_destroy(&owner);
+    for(unsigned i=0;i<3;i++)assert(NSEqualRects(w->buttons[i].frame,NSMakeRect(7+20*i,8,14,14)));
+    [foreign release];[w release];
+}
+static void testFullscreenHandoffFailure(void) {
+    for(unsigned mode=0;mode<2;mode++) {
+        VFTestWindow *w=supportWindow();void *owner=vf_window_controls_create(w,18,18);assert(owner);
+        NSRect aligned[3];for(unsigned i=0;i<3;i++)aligned[i]=w->buttons[i].frame;
+        if(mode==0)raiseAtWrite=writes+2;else raiseSupportAt=supportWrites+1;
+        post(w,NSWindowWillEnterFullScreenNotification);
+        assert(w->parents[0].bounds.size.height==34);
+        for(unsigned i=0;i<3;i++)assert(NSEqualRects(w->buttons[i].frame,aligned[i]));
+        writes=supportWrites=0;post(w,NSWindowDidResizeNotification);
+        assert(writes==0&&supportWrites==0&&vf_window_controls_status(owner)==0);
+        // A confirmed end retries owned rollback before a fresh admission.
+        post(w,NSWindowDidExitFullScreenNotification);assert(vf_window_controls_status(owner)==1);
+        vf_window_controls_destroy(&owner);assert(w->parents[0].bounds.size.height==28);[w release];
+    }
+}
+
+static void testFullscreenResizedSupport(void) {
+    VFTestWindow *w=supportWindow();void *owner=vf_window_controls_create(w,18,18);assert(owner);
+    VFTestView *p=w->parents[0];NSRect frame=p.frame;frame.size.width=1400;p.frame=frame;
+    w->content.bounds=NSMakeRect(0,0,1400,740);
+    post(w,NSWindowWillEnterFullScreenNotification);
+    assert(p.frame.size.width==1400&&p.bounds.size.width==1400&&p.bounds.size.height==28);
+    assert(NSMaxY([p convertRect:p.bounds toView:nil])==740);
+    w.styleMask=NSWindowStyleMaskFullScreen;
+    post(w,NSWindowWillExitFullScreenNotification);w.styleMask=0;
+    post(w,NSWindowDidExitFullScreenNotification);assert(vf_window_controls_status(owner)==1);
+    assert(p.bounds.size.width==1400&&p.bounds.size.height==34);
+    vf_window_controls_destroy(&owner);assert(p.bounds.size.width==1400&&p.bounds.size.height==28);[w release];
+}
+static void testFullscreenNativeClose(void) {
+    VFTestWindow *w=supportWindow();void *owner=vf_window_controls_create(w,18,18);assert(owner);
+    post(w,NSWindowWillEnterFullScreenNotification);w.styleMask=NSWindowStyleMaskFullScreen;
+    writes=supportWrites=toolbarWrites=appearanceWrites=0;
+    post(w,NSWindowWillCloseNotification);
+    post(w,NSWindowDidExitFullScreenNotification);
+    assert(writes==0&&supportWrites==0&&toolbarWrites==0&&appearanceWrites==0);
+    assert(vf_window_controls_status(owner)==-1);
+    vf_window_controls_destroy(&owner);vf_window_controls_destroy(&owner);[w release];
+}
+
 int main(int argc, const char **argv) {
     @autoreleasepool {
         assert(argc == 2); assert([NSThread isMainThread]); assert(NSApp == nil);
@@ -496,6 +617,14 @@ int main(int argc, const char **argv) {
         else if (!strcmp(argv[1], "support_replacement")) testSupportReplacement();
         else if (!strcmp(argv[1], "support_necessary_growth")) testSupportNecessaryGrowth();
         else if (!strcmp(argv[1], "support_thread")) testSupportThread();
+        else if (!strcmp(argv[1], "fullscreen_own_controls")) testFullscreenOwnControls();
+        else if (!strcmp(argv[1], "fullscreen_relinquish_before_mask")) testFullscreenRelinquishBeforeMask();
+        else if (!strcmp(argv[1], "fullscreen_canceled_enter")) testFullscreenCanceledEnter();
+        else if (!strcmp(argv[1], "fullscreen_confirmed_recovery")) testFullscreenConfirmedRecovery();
+        else if (!strcmp(argv[1], "fullscreen_replacement")) testFullscreenReplacement();
+        else if (!strcmp(argv[1], "fullscreen_handoff_failure")) testFullscreenHandoffFailure();
+        else if (!strcmp(argv[1], "fullscreen_resized_support")) testFullscreenResizedSupport();
+        else if (!strcmp(argv[1], "fullscreen_native_close")) testFullscreenNativeClose();
         else return 2;
         assert(NSApp == nil);
         printf("{\"case\":\"%s\",\"passed\":true,\"gui_created\":false}\n", argv[1]);
