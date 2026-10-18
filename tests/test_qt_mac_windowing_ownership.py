@@ -53,7 +53,7 @@ def test_main_header_uses_public_native_owner_and_rolls_back(
             raise RuntimeError("Native control layout refused")
         return owner
 
-    monkeypatch.setattr(mac_windowing, "WindowControls", controls)
+    monkeypatch.setattr(mac_windowing, "IntegratedHeader", controls)
     properties = {}
     window = SimpleNamespace(
         setProperty=lambda name, value: properties.update({name: value})
@@ -217,7 +217,7 @@ def test_main_header_property_failure_closes_owner_before_style_rollback(
             raise RuntimeError("GUI-thread cleanup refused")
 
     monkeypatch.setattr(
-        mac_windowing, "WindowControls", lambda *args: SimpleNamespace(close=close)
+        mac_windowing, "IntegratedHeader", lambda *args: SimpleNamespace(close=close)
     )
 
     def refuse_property(*_):
@@ -235,3 +235,31 @@ def test_main_header_property_failure_closes_owner_before_style_rollback(
             ("title", 0),
             ("style", 7),
         ]
+
+
+def test_constructor_retained_native_owner_prevents_unsafe_style_rollback(monkeypatch):
+    _cocoa(monkeypatch)
+    mutations = []
+    native = SimpleNamespace(
+        pointer=61,
+        styleMask=lambda: 7,
+        titleVisibility=lambda: 0,
+        titlebarAppearsTransparent=lambda: False,
+        setStyleMask_=lambda value: mutations.append(("style", value)),
+        setTitleVisibility_=lambda value: mutations.append(("title", value)),
+        setTitlebarAppearsTransparent_=lambda value: mutations.append(
+            ("transparent", value)
+        ),
+    )
+    monkeypatch.setattr(mac_windowing, "_native_window", lambda _: native)
+    retained = SimpleNamespace(closed=False, retired=True)
+    window = SimpleNamespace()
+
+    def create(*_):
+        window._native_window_controls = retained
+        raise RuntimeError("Native teardown refused")
+
+    monkeypatch.setattr(mac_windowing, "IntegratedHeader", create)
+    assert not mac_windowing.integrate_qt_main_window(window)
+    assert mutations == [("style", 7 | (1 << 15)), ("title", 1), ("transparent", True)]
+    assert not mac_windowing.integrate_qt_main_window(window)

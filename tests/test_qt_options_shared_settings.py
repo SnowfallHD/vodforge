@@ -1,6 +1,7 @@
 """Quick Options and Settings bind the same existing preference owner."""
 
 import json
+from copy import deepcopy
 
 import pytest
 from PySide6.QtCore import QMetaObject, QObject, QPointF, Qt
@@ -411,5 +412,138 @@ def test_custom_resize_relocates_extras_and_keeps_scroll_owners_independent(
                 <= max(0, viewport.property("contentHeight") - viewport.height()) + 1
             )
         assert len(window.findChildren(QObject, "composerExtraTagsInput")) == 1
+    finally:
+        _close(bridge, engine, window)
+
+
+@pytest.mark.parametrize("output_format", ["MP4", "MP3", "Original audio"])
+@pytest.mark.parametrize("size", [(1100, 740), (820, 560)])
+def test_options_playlist_choice_and_full_settings_are_reachable(
+    tmp_path, monkeypatch, output_format, size
+):
+    """A quick form must not strand format-independent download preferences."""
+    app, bridge, engine, window = _launch(tmp_path, monkeypatch, [])
+    try:
+        window.resize(*size)
+        bridge.setOutputFormat(output_format)
+        popup = window.findChild(QObject, "optionsMenu")
+        popup.open()
+        QTest.qWait(100)
+        control = window.findChild(QObject, "composerDownloadOption_single_video_only")
+        assert control is not None, "Ignore playlists missing from quick Options"
+        body = window.findChild(
+            QObject,
+            "composerExtrasScroll"
+            if popup.property("sideBySideExtras")
+            else "composerOptionsScroll",
+        )
+        viewport = body.property("contentItem")
+        _scroll_subtitle_button_into_view(
+            app, popup.property("contentItem"), control, viewport
+        )
+        expected = not bridge.downloadOptions["single_video_only"]
+        QTest.mouseClick(
+            window,
+            Qt.LeftButton,
+            pos=control.mapToScene(
+                QPointF(control.width() / 2, control.height() / 2)
+            ).toPoint(),
+        )
+        app.processEvents()
+        assert bridge.downloadOptions["single_video_only"] == expected
+        assert control.property("selected") == expected
+        all_settings = window.findChild(QObject, "composerAllSettingsButton")
+        assert all_settings is not None, "Canonical controls need a route from Options"
+        _scroll_subtitle_button_into_view(
+            app, popup.property("contentItem"), all_settings, viewport
+        )
+        QTest.mouseClick(
+            window,
+            Qt.LeftButton,
+            pos=all_settings.mapToScene(
+                QPointF(all_settings.width() / 2, all_settings.height() / 2)
+            ).toPoint(),
+        )
+        app.processEvents()
+        assert not popup.property("visible")
+        assert window.findChild(QObject, "downloadSettingsPopup").property("visible")
+        canonical_body = window.findChild(QObject, "settingsBodyViewport")
+        assert canonical_body.isVisible()
+        for name in (
+            "settingsOutputBrowse",
+            "settingsLoadUrlList",
+            "settingsDownloadOption_single_video_only",
+            "settingsYouTubeAccessButton",
+            "extraTagsInput",
+            "settingsAppearanceThemeButton",
+            "settingsAutomaticUpdatesToggle",
+            "settingsAnalyticsToggle",
+        ):
+            item = window.findChild(QObject, name)
+            assert item is not None and item.isVisible(), name
+            # Inspect reachability without activating OS dialogs or consent.
+            # Analytics may deliberately be disabled in this isolated fixture.
+            flick = canonical_body.property("contentItem")
+            point = item.mapToItem(flick, QPointF(0, item.height() / 2))
+            flick.setProperty(
+                "contentY",
+                min(
+                    max(0, flick.property("contentHeight") - flick.height()),
+                    max(0, flick.property("contentY") + point.y() - flick.height() / 2),
+                ),
+            )
+            polish_scene(canonical_body)
+            app.processEvents()
+            point = item.mapToItem(flick, QPointF(item.width() / 2, item.height() / 2))
+            assert 0 <= point.x() < flick.width() and 0 <= point.y() < flick.height(), (
+                name,
+                point,
+            )
+    finally:
+        _close(bridge, engine, window)
+
+
+def test_options_playlist_choice_matches_settings_and_durable_owner(
+    tmp_path, monkeypatch
+):
+    from tests.test_run_identity import make_job
+
+    app, bridge, engine, window = _launch(tmp_path, monkeypatch, [])
+    try:
+        active = make_job(tmp_path)
+        bridge._runtime.active_job = active
+        before = deepcopy(active)
+        popup = window.findChild(QObject, "optionsMenu")
+        popup.open()
+        QTest.qWait(100)
+        quick = window.findChild(QObject, "composerDownloadOption_single_video_only")
+        assert quick is not None, "Ignore playlists missing from quick Options"
+        expected = not bridge.downloadOptions["single_video_only"]
+        assert QMetaObject.invokeMethod(quick, "activated")
+        app.processEvents()
+        assert quick.property("selected") == expected
+        bridge._save_preferences()
+        assert load_settings(bridge._settings_path)["single_video_only"] == expected
+        assert bridge._runtime.active_job is active and active == before
+        assert QMetaObject.invokeMethod(
+            window.findChild(QObject, "composerAllSettingsButton"), "activated"
+        )
+        app.processEvents()
+        canonical = window.findChild(
+            QObject, "settingsDownloadOption_single_video_only"
+        )
+        assert canonical.property("selected") == expected
+        assert QMetaObject.invokeMethod(canonical, "activated")
+        app.processEvents()
+        assert bridge.downloadOptions["single_video_only"] == (not expected)
+        window.findChild(QObject, "downloadSettingsPopup").close()
+        popup.open()
+        app.processEvents()
+        assert quick.property("selected") == (not expected)
+        bridge._save_preferences()
+        assert load_settings(bridge._settings_path)["single_video_only"] == (
+            not expected
+        )
+        assert bridge._runtime.active_job is active and active == before
     finally:
         _close(bridge, engine, window)

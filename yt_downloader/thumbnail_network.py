@@ -7,6 +7,8 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
+from .updates import update_ssl_context
+
 THUMBNAIL_DOWNLOAD_MAX_BYTES = 10 * 1024 * 1024
 THUMBNAIL_DOWNLOAD_CHUNK_BYTES = 64 * 1024
 
@@ -157,7 +159,12 @@ def download_bounded_url_bytes(
 
     policy = policy or ThumbnailUrlPolicy.for_source(source_url)
     requested_url = policy.validate(url)
-    opener = urllib.request.build_opener(_PolicyRedirectHandler(policy))
+    # Frozen Python may not have a usable system CA path. Reuse the same
+    # shipped public roots + platform trust as updates, retaining strict TLS.
+    opener = urllib.request.build_opener(
+        _PolicyRedirectHandler(policy),
+        urllib.request.HTTPSHandler(context=update_ssl_context()),
+    )
     request = urllib.request.Request(
         requested_url, headers={"User-Agent": "VODForge thumbnail fetcher"}
     )

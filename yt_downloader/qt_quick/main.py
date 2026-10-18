@@ -36,7 +36,14 @@ from PySide6.QtCore import (
     Signal,
     Slot,
 )
-from PySide6.QtGui import QDesktopServices, QFont, QGuiApplication, QImage, QWindow
+from PySide6.QtGui import (
+    QCursor,
+    QDesktopServices,
+    QFont,
+    QGuiApplication,
+    QImage,
+    QWindow,
+)
 from PySide6.QtMultimedia import QMediaPlayer, QVideoFrame, QVideoSink
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickImageProvider, QQuickItem
@@ -408,6 +415,7 @@ def _system_reduced_motion() -> bool:
 
 class Bridge(QObject):
     pointerGestureEnded = Signal()
+    pointerMoved = Signal(int)
     outputFolderRecoveryRequested = Signal(str)
     statusChanged = Signal()
     operationFeedback = Signal(str)
@@ -3176,7 +3184,7 @@ class Bridge(QObject):
             "creator": str(info.get("uploader") or info.get("channel") or ""),
             "status": str(record.get("status") or ""),
             "type": str(record.get("type") or ""),
-            "artwork": self._artwork.request(info) if info else "",
+            "artwork": self._artwork.request(info, role="run") if info else "",
             "canStart": bool(
                 is_metadata_preview(info) and record.get("phase") == "complete"
             ),
@@ -3291,6 +3299,12 @@ class Bridge(QObject):
                     "_artwork_info": item,
                 }
             )
+        # The journal appends/upserts terminal attempts in finish order. It has
+        # no completion timestamp; use that durable ordinal rather than title,
+        # provider date or admission time, only within the existing buckets.
+        terminal_order = {
+            job.run_id: ordinal for ordinal, job in enumerate(self._runtime.recovered)
+        }
         records.sort(
             key=lambda record: (
                 1.5
@@ -3303,7 +3317,10 @@ class Bridge(QObject):
                     "terminal": 3
                     if record.get("runId") == self._recent_interrupted_run_id
                     else 5,
-                }.get(str(record["kind"]), 5)
+                }.get(str(record["kind"]), 5),
+                -terminal_order.get(str(record.get("runId")), -1)
+                if record["kind"] == "terminal"
+                else 0,
             )
         )
         visible_work = 0
@@ -3311,7 +3328,14 @@ class Bridge(QObject):
             info = record.pop("_artwork_info", None)
             if info is not None:
                 record["artwork"] = (
-                    self._artwork.request(info) if visible_work < 4 and info else ""
+                    self._artwork.request(
+                        info,
+                        role="run"
+                        if record["kind"] in {"active", "queued", "terminal"}
+                        else "media",
+                    )
+                    if visible_work < 4 and info
+                    else ""
                 )
             if record["kind"] != "preview":
                 visible_work += 1
@@ -3356,7 +3380,14 @@ class Bridge(QObject):
             record = job.preview_info if job else None
         else:
             return ""
-        return self._artwork.request(record) if record else ""
+        return (
+            self._artwork.request(
+                record,
+                role="run" if kind in {"active", "queued", "terminal"} else "media",
+            )
+            if record
+            else ""
+        )
 
     @Property(_QVARIANT_MAP, notify=runDeckChanged)
     def forgeSelection(self) -> dict[str, Any]:
@@ -4732,6 +4763,35 @@ class Bridge(QObject):
     def isPointerPressed(self) -> bool:
         return QGuiApplication.mouseButtons() != Qt.MouseButton.NoButton
 
+    @Slot(result=int)
+    def pointerMotionSequence(self) -> int:
+        return getattr(self, "_hover_pointer_sequence", 0)
+
+    @Slot(QObject, result=bool)
+    def isPointerOverItem(self, item: QObject) -> bool:
+        # mapFromGlobal uses the item's actual native host without exporting a
+        # transient QQuickItem.window() wrapper into Python ownership.
+        try:
+            window = self._window
+            if (
+                not isinstance(item, QQuickItem)
+                or not item.isVisible()
+                or not item.isEnabled()
+                or item.width() <= 0
+                or item.height() <= 0
+                or window is None
+                or not window.isVisible()
+            ):
+                return False
+            origin = item.mapToGlobal(QPointF())
+            expected = QPointF(window.mapToGlobal(item.mapToScene(QPointF()).toPoint()))
+            if abs(origin.x() - expected.x()) > 1 or abs(origin.y() - expected.y()) > 1:
+                return False
+            return bool(item.contains(item.mapFromGlobal(QPointF(QCursor.pos()))))
+        except RuntimeError:
+            # A queued hover may outlive its QML item or bound window.
+            return False
+
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         if isinstance(watched, QWindow):
             if event.type() in {
@@ -4742,6 +4802,15 @@ class Bridge(QObject):
                 QEvent.Type.Wheel,
             }:
                 self._social_idle_since = time.monotonic()
+            if event.type() == QEvent.Type.MouseMove and watched is self._window:
+                position = cast(Any, event).globalPosition().toPoint()
+                if position != getattr(self, "_hover_pointer_position", None):
+                    self._hover_pointer_position = position
+                    self._hover_pointer_sequence = self.pointerMotionSequence() + 1
+                    self._hover_pointer_admissible = not self.isPointerPressed()
+                    if not getattr(self, "_hover_pointer_pending", False):
+                        self._hover_pointer_pending = True
+                        QTimer.singleShot(0, self._notify_pointer_motion)
             if event.type() == QEvent.Type.MouseButtonPress:
                 self._pointer_press = (watched, QPointF(cast(Any, event).position()))
             elif event.type() == QEvent.Type.MouseButtonRelease:
@@ -4750,6 +4819,11 @@ class Bridge(QObject):
                 # dismissal can consume the click before the trigger sees it.
                 QTimer.singleShot(0, self._notify_pointer_release)
         return False
+
+    def _notify_pointer_motion(self) -> None:
+        self._hover_pointer_pending = False
+        if not self._closed and getattr(self, "_hover_pointer_admissible", False):
+            self.pointerMoved.emit(self.pointerMotionSequence())
 
     def _notify_pointer_release(self) -> None:
         if not self._closed and self._pointer_press is None:

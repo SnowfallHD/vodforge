@@ -230,3 +230,56 @@ def test_nonpositive_resource_bounds_are_rejected(
             timeout_seconds=timeout_seconds,
             max_bytes=max_bytes,
         )
+
+
+def test_thumbnail_https_uses_existing_bundled_root_context(monkeypatch):
+    """A frozen Python without system roots still receives shipped public CAs."""
+    import ssl
+
+    from yt_downloader.updates import update_ssl_context
+
+    context = update_ssl_context()
+    assert context.check_hostname is True
+    assert context.verify_mode == ssl.CERT_REQUIRED
+    assert context.cert_store_stats()["x509_ca"] > 0
+    response = _Response()
+    captured = []
+
+    def build(*handlers):
+        https = [
+            h
+            for h in handlers
+            if isinstance(h, thumbnail_network.urllib.request.HTTPSHandler)
+        ]
+        assert len(https) == 1, "Thumbnail helper omitted bundled-root HTTPS handler"
+        assert https[0]._context is context
+        captured.extend(handlers)
+        return _Opener(response)
+
+    monkeypatch.setattr(
+        thumbnail_network, "update_ssl_context", lambda: context, raising=False
+    )
+    monkeypatch.setattr(thumbnail_network.urllib.request, "build_opener", build)
+    assert (
+        download_bounded_url_bytes("https://i.ytimg.com/vi/fixture/hqdefault.jpg")
+        == b"thumbnail"
+    )
+    assert any(
+        isinstance(h, thumbnail_network._PolicyRedirectHandler) for h in captured
+    )
+
+
+def test_thumbnail_trust_setup_failure_never_falls_back_to_unverified(monkeypatch):
+    import ssl
+
+    def refuse():
+        raise ssl.SSLError("Isolated missing packaged roots")
+
+    monkeypatch.setattr(thumbnail_network, "update_ssl_context", refuse, raising=False)
+    monkeypatch.setattr(
+        thumbnail_network.urllib.request,
+        "build_opener",
+        lambda *_: pytest.fail("Trust failure must stop before network"),
+    )
+    with pytest.raises(ssl.SSLError, match="missing packaged roots"):
+        download_bounded_url_bytes("https://i.ytimg.com/vi/fixture/hqdefault.jpg")

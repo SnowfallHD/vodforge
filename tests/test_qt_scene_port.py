@@ -3105,7 +3105,7 @@ def test_run_deck_requests_artwork_for_each_visible_card_after_sorting(
     ]
     requests = []
 
-    def artwork(record):
+    def artwork(record, *args, **kwargs):
         requests.append(record["title"])
         return "file:///visible-artwork.png"
 
@@ -3331,7 +3331,17 @@ def test_qt_forge_and_run_deck_use_shared_terminal_progress_tones(
         preview_statuses = [
             item for item in _visual_items(deck) if item.objectName() == "runDeckStatus"
         ]
-        assert preview_statuses[0].property("color") == QColor(THEME["danger"])
+        # Run Deck excludes metadata previews; visual child order is not a
+        # stable identity after terminal records are sorted newest-first.
+        assert len(preview_statuses) == 3
+        assert {
+            item.property("text"): item.property("color").name()
+            for item in preview_statuses
+        } == {
+            "Failed": QColor(THEME["danger"]).name(),
+            "Stopped": QColor(THEME["warning"]).name(),
+            "Skipped": QColor(THEME["warning"]).name(),
+        }
     finally:
         window.close()
         engine.deleteLater()
@@ -7169,7 +7179,9 @@ def test_batch_current_metadata_and_whole_batch_progress(
     runtime.active_job = job
     runtime._reset_active_feedback(job)
     monkeypatch.setattr(
-        bridge._artwork, "request", lambda info, *args: info.get("thumbnail", "")
+        bridge._artwork,
+        "request",
+        lambda info, *args, **kwargs: info.get("thumbnail", ""),
     )
     worker = DownloadWorkerCore()
     worker.events = _WorkerEventQueue(runtime.events, job)

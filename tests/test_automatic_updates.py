@@ -501,7 +501,7 @@ def test_automatic_off_preserves_explicit_manual_restart(
 
 
 @pytest.mark.parametrize("enabled", [False, True])
-def test_startup_check_and_notice_are_independent_of_automatic_preference(
+def test_startup_check_result_is_independent_of_automatic_preference(
     update_notice_scene, monkeypatch, enabled
 ):
     from tests.test_qt_scene_port import polish_scene
@@ -525,7 +525,8 @@ def test_startup_check_and_notice_are_independent_of_automatic_preference(
         bridge._pump()
         polish_scene(window.contentItem())
         assert bridge._updates.ready is None
-        assert window.findChild(QObject, "updateNoticeButton").property("visible")
+        assert bridge._updates.available
+        assert window.findChild(QObject, "updateNoticeButton") is None
         assert not window.findChild(QObject, "updatePopup").property("visible")
 
 
@@ -566,7 +567,7 @@ def test_install_now_promotes_same_payload_without_second_download(
         session, "download", lambda **_: pytest.fail("duplicate download")
     )
     bridge.updateChanged.emit()
-    window.findChild(QObject, "updateNoticeButton").activated.emit()
+    window.findChild(QObject, "updatePopup").open()
     polish_scene(window.contentItem())
     primary = window.findChild(QObject, "updatePrimary")
     assert primary.property("visible") and primary.property("label") == "Install now"
@@ -594,7 +595,7 @@ def test_dismiss_auto_download_offer_keeps_quit_install_intent(
     session.busy = True
     session.available = True
     bridge.updateChanged.emit()
-    window.findChild(QObject, "updateNoticeButton").activated.emit()
+    window.findChild(QObject, "updatePopup").open()
     polish_scene(window.contentItem())
     popup = window.findChild(QObject, "updatePopup")
     assert popup.property("visible")
@@ -618,7 +619,7 @@ def test_recovery_primary_retries_repair_even_with_retained_ready_payload(
     monkeypatch.setattr(bridge, "repairUpdate", lambda: actions.append("repair"))
     monkeypatch.setattr(bridge, "installUpdateNow", lambda: actions.append("install"))
     bridge.updateChanged.emit()
-    window.findChild(QObject, "updateNoticeButton").activated.emit()
+    window.findChild(QObject, "updatePopup").open()
     polish_scene(window.contentItem())
     primary = window.findChild(QObject, "updatePrimary")
     assert primary.property("visible")

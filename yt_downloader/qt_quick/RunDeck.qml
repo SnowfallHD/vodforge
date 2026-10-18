@@ -7,15 +7,23 @@ Item {
     id: deck
     property var appBridge
     property bool compact: false
+    // One measured slot keeps active controls in the deck's header allocation.
+    property Component headerActions: null
+    property bool headerActionsEnabled: true
+    readonly property real headerActionsAvailableWidth: Math.max(0, width - deckHeading.implicitWidth -
+        (allRunsButton.visible ? allRunsButton.width : 0) - 2 * deckHeader.spacing)
     implicitHeight: deckLayout.implicitHeight
     readonly property var projection: appBridge.runDeck
     // Keep interrupted work visible even after newer runs complete.
     readonly property var workRecords: (projection.records || []).filter(
         record => ["active", "queued", "completed", "terminal"].indexOf(record.kind) >= 0)
-    readonly property var allRunsRecords: workRecords.slice().sort((left, right) => {
+    // Qt's Array.sort does not preserve equal-priority order. Carry the
+    // canonical model ordinal explicitly: terminal finish order and saved
+    // history recency must survive this presentation-only bucket sort.
+    readonly property var allRunsRecords: workRecords.map((record, ordinal) => ({record, ordinal})).sort((left, right) => {
         const priority = record => record.status === "Paused" ? 0.5 : ({active: 0, queued: 1, terminal: 2, completed: 3}[record.kind] ?? 4)
-        return priority(left) - priority(right)
-    })
+        return priority(left.record) - priority(right.record) || left.ordinal - right.ordinal
+    }).map(entry => entry.record)
     readonly property var visibleRecords: allRunsRecords.slice(0, 4)
     readonly property string workSummary: {
         if (workRecords.length === 0) return "No runs in progress"
@@ -28,6 +36,35 @@ Item {
         }
         return workRecords.length + " run" + (workRecords.length === 1 ? "" : "s") +
                "  •  " + parts.join("  •  ")
+    }
+    property int hoverFence: 0
+    function retireHover() {
+        hoverFence = deck.appBridge.pointerMotionSequence()
+        allRunsButton.liveHover = false
+        hoverClose.stop()
+        allRunsPopup.close()
+    }
+    function reconcilePointerMotion() {
+        if (!allRunsButton.visible || !deck.visible) { retireHover(); return }
+        const overTrigger = deck.appBridge.isPointerOverItem(allRunsButton)
+        const overPopup = allRunsPopup.visible && deck.appBridge.isPointerOverItem(allRunsPopup.contentItem.parent)
+        allRunsButton.liveHover = !deck.appBridge.isPointerPressed() && overTrigger
+        if (!deck.appBridge.isPointerPressed() && overTrigger) {
+            hoverClose.stop()
+            allRunsPopup.triggerItem = allRunsButton
+            allRunsPopup.open()
+        } else if (allRunsPopup.visible && !overPopup && !actionsPopup.visible) hoverClose.restart()
+    }
+    Connections {
+        target: deck.appBridge
+        function onPointerMoved(sequence) {
+            if (sequence > deck.hoverFence) deck.reconcilePointerMotion()
+        }
+    }
+    Connections {
+        target: deck.Window.window
+        function onWidthChanged() { deck.retireHover() }
+        function onHeightChanged() { deck.retireHover() }
     }
     function showActions(record, anchor) {
         const trigger = anchor || allRunsButton
@@ -54,10 +91,11 @@ Item {
             else deck.selectedRecord = current
         }
     }
-    function openActiveActions() {
+    function openActiveActions() { openActiveActionsFrom(null) }
+    function openActiveActionsFrom(anchor) {
         for (let record of projection.records || []) {
             if (record.kind === "active") {
-                showActions(record)
+                showActions(record, anchor)
                 return
             }
         }
@@ -70,7 +108,15 @@ Item {
         RowLayout {
             id: deckHeader
             Layout.fillWidth: true
-            Text { text: "RUN DECK"; color: theme.muted; font.pixelSize: 12; font.bold: true; elide: Text.ElideRight; Layout.minimumWidth: 0; Layout.fillWidth: true }
+            Text { id: deckHeading; objectName: "runDeckHeading"; text: "RUN DECK"; color: theme.muted; font.pixelSize: 12; font.bold: true; elide: Text.ElideRight; Layout.minimumWidth: 0; Layout.fillWidth: true }
+            Loader {
+                id: headerActionsLoader
+                objectName: "runDeckHeaderActions"
+                sourceComponent: deck.headerActions
+                visible: deck.headerActionsEnabled && item !== null
+                Layout.preferredWidth: item ? Math.min(item.implicitWidth, deck.headerActionsAvailableWidth) : 0
+                Layout.preferredHeight: item ? item.implicitHeight : 0
+            }
             // This hover trigger has one held face. Pointer presses navigate;
             // they do not introduce StoneButton's separate click-face state.
             Item {
@@ -79,7 +125,8 @@ Item {
                 visible: deck.workRecords.length > 0
                 readonly property string label: "All " + deck.workRecords.length +
                        (deck.workRecords.length === 1 ? " run" : " runs")
-                readonly property bool hovered: allRunsMouse.containsMouse
+                property bool liveHover: false
+                readonly property bool hovered: liveHover
                 readonly property bool held: hovered || allRunsPopup.visible
                 signal activated()
                 implicitHeight: buttonMetrics.inline.height
@@ -111,23 +158,26 @@ Item {
                 }
                 MouseArea {
                     id: allRunsMouse
+                    objectName: "allRunsPointerArea"
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: allRunsButton.activated()
+                    onContainsMouseChanged: {
+                        if (!containsMouse) allRunsButton.liveHover = false
+                    }
                 }
                 Keys.onReturnPressed: activated()
                 Keys.onSpacePressed: activated()
                 onHoveredChanged: {
-                    if (hovered) {
-                        hoverClose.stop()
-                        allRunsPopup.triggerItem = allRunsButton; allRunsPopup.open()
-                    } else if (allRunsPopup.visible) hoverClose.restart()
+                    // Never admit from cached hover: geometry changes can
+                    // synthesize it while native resizing owns the pointer.
+                    if (!hovered && allRunsPopup.visible) hoverClose.restart()
                 }
                 onActivated: {
                     deck.appBridge.select("Library")
                 }
-                onVisibleChanged: { if (!visible) allRunsPopup.close() }
+                onVisibleChanged: { if (!visible) deck.retireHover() }
             }
         }
         StoneField {
@@ -313,6 +363,10 @@ Item {
     AnchoredPopup {
         id: allRunsPopup
         objectName: "allRunsPopup"
+        onClosed: {
+            deck.hoverFence = deck.appBridge.pointerMotionSequence()
+            hoverClose.stop()
+        }
         parent: deck.parent
         anchorItem: allRunsButton
         preferAbove: true
@@ -344,7 +398,7 @@ Item {
             objectName: "allRunsPopupHover"
             parent: allRunsPopup.contentItem.parent
             onHoveredChanged: {
-                if (hovered) hoverClose.stop()
+                if (hovered && deck.appBridge.isPointerOverItem(allRunsPopup.contentItem.parent)) hoverClose.stop()
                 else if (allRunsPopup.visible) hoverClose.restart()
             }
         }
@@ -379,7 +433,9 @@ Item {
         id: hoverClose
         interval: 100
         onTriggered: {
-            if (!actionsPopup.visible && !allRunsButton.hovered && !popupHover.hovered) allRunsPopup.close()
+            if (!actionsPopup.visible &&
+                    (deck.appBridge.isPointerPressed() || !deck.appBridge.isPointerOverItem(allRunsButton)) &&
+                    !deck.appBridge.isPointerOverItem(allRunsPopup.contentItem.parent)) allRunsPopup.close()
         }
     }
 }

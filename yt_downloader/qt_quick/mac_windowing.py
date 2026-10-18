@@ -8,7 +8,7 @@ from collections.abc import Callable
 from typing import Any
 
 from yt_downloader.platforms.macos.native_runtime import send
-from yt_downloader.platforms.macos.window_controls import WindowControls
+from yt_downloader.qt_quick.mac_header import IntegratedHeader
 
 _FULL_SIZE_CONTENT = 1 << 15
 _FULL_SCREEN = 1 << 14
@@ -67,7 +67,7 @@ def _native_window(window: Any) -> _NativeWindow | None:
 
 
 def integrate_qt_main_window(window: Any) -> bool:
-    """Use expanded Qt content and toolbar-free public native window controls."""
+    """Embed the one Qt header in a guarded public native toolbar host."""
     window._native_header_diagnostic = {"stage": "platform"}
     if sys.platform != "darwin":
         return False
@@ -78,8 +78,7 @@ def integrate_qt_main_window(window: Any) -> bool:
         return False
     existing = getattr(window, "_native_window_controls", None)
     if existing is not None and not existing.closed:
-        window._native_header_diagnostic = {"stage": "success"}
-        return True
+        return not getattr(existing, "retired", False)
     native = None
     owner = None
     try:
@@ -93,18 +92,25 @@ def integrate_qt_main_window(window: Any) -> bool:
         native.setStyleMask_(original_style | _FULL_SIZE_CONTENT)
         native.setTitleVisibility_(1)  # NSWindowTitleHidden
         native.setTitlebarAppearsTransparent_(True)
-        # An empty unified toolbar obscures Qt during entry/reveal and changes
-        # traffic-light geometry during exit. The compiled public-button owner
-        # supplies alignment without attaching or cycling a toolbar.
-        owner = WindowControls(window, native.pointer)
+        # The toolbar contains the actual shared QML header, not an empty strip
+        # or a duplicate. Native controls and the Qt delegate remain system owned.
+        owner = IntegratedHeader(window, native.pointer)
         window.setProperty("backgroundOpacity", 1.0)
         window._native_window_controls = owner
-        window._native_header_diagnostic = {"stage": "success"}
+        if window._native_header_diagnostic.get("stage") not in {
+            "success",
+            "native_header_pending",
+        }:
+            window._native_header_diagnostic = {"stage": "success"}
         return True
     except Exception as exc:  # noqa: BLE001 - preserve the usable Qt window
         diagnostic = dict(getattr(window, "_native_header_diagnostic", {}))
         diagnostic["exception_class"] = type(exc).__name__
         window._native_header_diagnostic = diagnostic
+        if owner is None:
+            retained = getattr(window, "_native_window_controls", None)
+            if retained is not None and not retained.closed:
+                return False  # Constructor preserved a refused native teardown.
         if owner is not None:
             try:
                 owner.close()

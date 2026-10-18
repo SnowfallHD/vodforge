@@ -9,6 +9,7 @@ import math
 import threading
 import time
 from collections import OrderedDict
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs
@@ -18,6 +19,7 @@ from PySide6.QtCore import QSize, QUrl
 from PySide6.QtGui import QImage
 from PySide6.QtQuick import QQuickImageProvider
 
+from yt_downloader.archive_work import ArchiveWorkOwner
 from yt_downloader.download_service import (
     THUMBNAIL_MAX_BYTES,
     best_thumbnail_for_download,
@@ -25,7 +27,6 @@ from yt_downloader.download_service import (
     existing_cached_thumbnail_path,
     save_cached_thumbnail_bytes,
 )
-from yt_downloader.archive_work import ArchiveWorkOwner
 from yt_downloader.history import history_archive_owner, history_output_path
 from yt_downloader.library_artwork_source import LibraryArtworkSource
 from yt_downloader.private_files import write_private_bytes
@@ -128,6 +129,8 @@ class QtArtwork:
         self._cancelled = threading.Event()
         self._pending: dict[str, tuple[dict[str, Any], tuple[int, int], str]] = {}
         self._active_key: str | None = None
+        self._active_source: tuple[str, ...] | None = None
+        self._request_sources: dict[str, tuple[str, ...]] = {}
         self._ready: dict[str, str] = {}
         self._cached_fallback: dict[str, str] = {}
         self._unavailable: dict[str, float] = {}
@@ -178,6 +181,20 @@ class QtArtwork:
             return "unavailable"
         return "idle"
 
+    @staticmethod
+    def _request_source(record: dict[str, Any]) -> tuple[str, ...]:
+        thumbnail = best_thumbnail_for_download(record) or {}
+        return tuple(
+            str(value or "")
+            for value in (
+                thumbnail.get("url"),
+                record.get("webpage_url"),
+                record.get("preview_thumbnail_path"),
+                record.get("vodforge_output_path"),
+                record.get("vodforge_output_dir"),
+            )
+        )
+
     def request(
         self,
         record: dict[str, Any],
@@ -190,6 +207,16 @@ class QtArtwork:
         if not owner:
             return ""
         key = self._key(owner, size, role)
+        source = self._request_source(record)
+        if self._request_sources.get(key, source) != source:
+            # Early metadata can precede thumbnail discovery. A new source must
+            # not inherit a prior negative lookup or publish an in-flight old one.
+            self._unavailable.pop(key, None)
+            self._ready.pop(key, None)
+            self._cached_fallback.pop(key, None)
+            if key in self._pending:
+                self._pending[key] = (dict(record), size, role)
+        self._request_sources[key] = source
         if key in self._ready:
             return self._ready[key]
         fallback = (
@@ -200,7 +227,7 @@ class QtArtwork:
         if (
             self._unavailable.get(key, 0) > time.monotonic()
             or key in self._pending
-            or len(self._pending) >= (16 if role == "media" else 12)
+            or len(self._pending) >= (16 if role in {"media", "run"} else 12)
         ):
             return fallback
         self._unavailable.pop(key, None)
@@ -218,17 +245,30 @@ class QtArtwork:
         # Visible media cards take precedence over decorative group artwork.
         # Keep a few queue slots for cards when a page has many channel avatars.
         key, (record, size, role) = next(
-            ((key, task) for key, task in self._pending.items() if task[2] == "media"),
+            (
+                (key, task)
+                for key, task in self._pending.items()
+                if task[2] in {"media", "run"}
+            ),
             next(iter(self._pending.items())),
         )
         if (
             self._owner.submit(
                 "qt_artwork",
-                lambda cancelled: self._resolve(record, size, role, cancelled),
+                lambda cancelled: self._resolve(
+                    record,
+                    size,
+                    role,
+                    cancelled,
+                    current=lambda: (
+                        self._request_source(record) == self._request_sources.get(key)
+                    ),
+                ),
             )
             is not None
         ):
             self._active_key = key
+            self._active_source = self._request_source(record)
 
     def channel_profile(self, record: dict[str, Any]) -> dict[str, str]:
         return self._source.channels.snapshot(record)
@@ -239,6 +279,8 @@ class QtArtwork:
         size: tuple[int, int],
         role: str,
         cancelled: threading.Event,
+        *,
+        current: Callable[[], bool] = lambda: True,
     ) -> str:
         asset = self._source.resolve_asset(record, size, role, cancelled)
         if asset is not None and role == "avatar" and not cancelled.is_set():
@@ -246,7 +288,7 @@ class QtArtwork:
                 asset.path, self._source.cache_dir / "avatars", size
             )
             return QUrl.fromLocalFile(str(avatar)).toString() if avatar else ""
-        if asset is None and role == "hero" and not cancelled.is_set():
+        if asset is None and role in {"hero", "run"} and not cancelled.is_set():
             thumbnail = best_thumbnail_for_download(record)
             url = str((thumbnail or {}).get("url") or "").strip()
             if url:
@@ -256,7 +298,7 @@ class QtArtwork:
                         source_url=str(record.get("webpage_url") or "") or None,
                         timeout_seconds=15,
                     )
-                    if not cancelled.is_set():
+                    if not cancelled.is_set() and current():
                         path = save_cached_thumbnail_bytes(
                             record, data, data_dir=self._source.cache_dir.parent
                         )
@@ -276,6 +318,12 @@ class QtArtwork:
             return False
         key = self._active_key
         self._active_key = None
+        active_source = self._active_source
+        self._active_source = None
+        if active_source != self._request_sources.get(key):
+            # Keep the newer queued snapshot; old completion cannot retire it.
+            self._start_next()
+            return False
         self._pending.pop(key, None)
         fallback = self._cached_fallback.get(key, "")
         if result.value and not result.error:
@@ -292,6 +340,7 @@ class QtArtwork:
         self._source.close()
         self._owner.close()
         self._pending.clear()
+        self._request_sources.clear()
         self._cached_fallback.clear()
 
 

@@ -148,6 +148,8 @@ def update_notice_scene(tmp_path, monkeypatch):
     app = qt_app()
     bridge = qt_main.Bridge(None)
     bridge._timer.stop()
+    bridge._engagement.presented_welcome()
+    bridge._settings["whats_new_seen"] = qt_main.SHOWCASE_ID
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
     bridge._window = window
@@ -158,7 +160,7 @@ def update_notice_scene(tmp_path, monkeypatch):
     bridge.close()
 
 
-def notice_click(window, item):
+def update_click(window, item):
     polish_scene(window.contentItem())
     point = item.mapToScene(QPointF(item.width() / 2, item.height() / 2))
     assert 0 < point.x() < window.width()
@@ -167,161 +169,22 @@ def notice_click(window, item):
     QTest.qWait(180)
 
 
-@pytest.mark.parametrize("width", [620, 1100])
-def test_available_update_is_discoverable_without_automatic_popup(
-    update_notice_scene, monkeypatch, width
-):
-    from yt_downloader.qt_quick import update_session
-
-    app, bridge, window = update_notice_scene
-    window.setWidth(width)
-    window.setHeight(520)
-    notice = window.findChild(QObject, "updateNoticeButton")
-    popup = window.findChild(QObject, "updatePopup")
-    assert notice is not None
-    assert not notice.property("visible")
-    session = bridge._updates
-    start_inline(session, monkeypatch)
-    release = updates.ReleaseInfo(
-        "99.0.0",
-        "v99.0.0",
-        "Fixture update",
-        "https://github.com/SnowfallHD/vodforge/releases/latest",
-        "",
-        (),
-    )
-    monkeypatch.setattr(update_session, "fetch_latest_release", lambda: release)
-    monkeypatch.setattr(
-        update_session, "release_asset_for_platform", lambda _: object()
-    )
-    assert session.check(automatic=True) and session.poll()
-    assert session.available
-    bridge.updateChanged.emit()
-    app.processEvents()
-    for route in ("Forge", "Library", "Watch", "Activity"):
-        bridge.selectHome(route, False)
-        polish_scene(window.contentItem())
-        assert notice.property("visible") and notice.property("enabled")
-        assert notice.property("label") == "Update available"
-        point = notice.mapToScene(QPointF())
-        assert 0 <= point.x() and point.x() + notice.width() <= window.width()
-        assert 0 <= point.y() and point.y() + notice.height() <= window.height()
-        assert not popup.property("visible")
-        assert not window.findChild(QObject, "downloadSettingsPopup").property(
-            "visible"
-        )
-    assert not bridge._updates._shown
-    current = updates.ReleaseInfo(
-        session.current_version,
-        "v" + session.current_version,
-        "Fixture current",
-        "https://github.com/SnowfallHD/vodforge/releases/latest",
-        "",
-        (),
-    )
-    monkeypatch.setattr(update_session, "fetch_latest_release", lambda: current)
-    assert session.check(automatic=True) and session.poll()
-    bridge.updateChanged.emit()
-    app.processEvents()
-    assert not notice.property("visible")
-    assert not popup.property("visible")
-
-
-@pytest.mark.parametrize("width", [620, 1100])
-def test_update_notice_later_reopens_without_starting_work(
-    update_notice_scene, tmp_path, monkeypatch, width
-):
-    from tests.worker_fixtures import _worker_test_job
-    from yt_downloader.qt_quick import update_session
-
-    _app, bridge, window = update_notice_scene
-    window.setWidth(width)
-    window.setHeight(520)
-    session = bridge._updates
-    session.available = True
-    session.status = "VODForge v0.2.6 is available."
-    bridge.updateChanged.emit()
-    starts = []
-    monkeypatch.setattr(session, "_start", lambda *_: starts.append(True))
-    observed = []
-    monkeypatch.setattr(
-        update_session,
-        "operation",
-        lambda _owner, _feature, action, *_args, **_kwargs: observed.append(action),
-    )
-    active = _worker_test_job(tmp_path)
-    queued = _worker_test_job(tmp_path)
-    bridge._runtime.active_job = active
-    bridge._runtime.queued.append(queued)
-    notice = window.findChild(QObject, "updateNoticeButton")
-    popup = window.findChild(QObject, "updatePopup")
-    assert notice is not None
-    notice_click(window, notice)
-    assert popup.property("visible")
-    assert (
-        window.findChild(QObject, "updatePrimary").property("label")
-        == "Download update"
-    )
-    # A repeated background pointer click while the modal is open must not
-    # start an operation, dismiss/reopen it or record another offer exposure.
-    notice_click(window, notice)
-    assert popup.property("visible")
-    dismiss = window.findChild(QObject, "updateDismiss")
-    assert dismiss.property("label") == "Later"
-    notice_click(window, dismiss)
-    assert not popup.property("visible") and notice.property("visible")
-    notice_click(window, notice)
-    assert popup.property("visible")
-    notice_click(window, dismiss)
-    assert not popup.property("visible") and notice.property("visible")
-    assert starts == []
-    assert session.available and not session.pending_install
-    assert observed.count("shown") == 1
-    assert observed.count("deferred") == 2
-    assert bridge._runtime.active_job is active
-    assert bridge._runtime.queued == [queued]
-    assert bridge.selection == "Forge"
-    assert not session.busy
-
-
-@pytest.mark.parametrize("key", [Qt.Key_Return, Qt.Key_Space])
-def test_update_notice_keyboard_opens_existing_offer(update_notice_scene, key):
-    _app, bridge, window = update_notice_scene
-    bridge._updates.available = True
-    bridge.updateChanged.emit()
-    polish_scene(window.contentItem())
-    notice = window.findChild(QObject, "updateNoticeButton")
-    assert notice.property("accessibilityLabel") == "Update available"
-    assert notice.property("activeFocusOnTab")
-    notice.forceActiveFocus(Qt.TabFocusReason)
-    assert notice.property("activeFocus")
-    QTest.keyClick(window, key)
-    QTest.qWait(180)
-    assert window.findChild(QObject, "updatePopup").property("visible")
-    assert bridge._updates.available and not bridge._updates.pending_install
-
-
-@pytest.mark.parametrize(
-    "state, label, visible",
-    [
-        ("current", "Update available", False),
-        ("check", "Checking for updates", True),
-        ("available", "Update available", True),
-        ("manual", "Update available", True),
-        ("download", "Updating VODForge", True),
-        ("repair", "Updating VODForge", True),
-        ("recovery", "Update needs attention", True),
-        ("check_failed", "Update check unavailable", True),
-        ("ready", "Update ready", True),
-        ("waiting", "Update ready", True),
-        ("handoff", "Restarting VODForge", True),
-    ],
+UPDATER_STATES = (
+    "current",
+    "check",
+    "available",
+    "manual",
+    "download",
+    "repair",
+    "recovery",
+    "check_failed",
+    "ready",
+    "waiting",
+    "handoff",
 )
-def test_update_notice_tracks_existing_owner_states(
-    update_notice_scene, tmp_path, state, label, visible
-):
-    _app, bridge, window = update_notice_scene
-    session = bridge._updates
+
+
+def set_update_state(session, tmp_path, state):
     session.available = state in {"available", "download"}
     session.manual = state == "manual"
     session.recovery = state == "recovery"
@@ -337,24 +200,149 @@ def test_update_notice_tracks_existing_owner_states(
     session.ready = tmp_path / "verified" if state in {"ready", "waiting"} else None
     session.pending_install = state == "waiting"
     session.handoff_started = state == "handoff"
-    bridge.updateChanged.emit()
-    polish_scene(window.contentItem())
-    notice = window.findChild(QObject, "updateNoticeButton")
-    assert notice is not None
-    assert notice.property("visible") == visible
-    assert notice.property("label") == label
-    popup = window.findChild(QObject, "updatePopup")
-    assert not popup.property("visible")
-    if visible:
-        notice_click(window, notice)
-        assert popup.property("visible")
-        primary = window.findChild(QObject, "updatePrimary")
-        assert primary.property("visible") == (
-            state not in {"check", "download", "repair", "manual", "waiting", "handoff"}
+
+
+@pytest.mark.parametrize("size", [(1100, 740), (820, 560)])
+@pytest.mark.parametrize("route", ["Forge", "Library", "Watch", "Activity"])
+def test_update_states_never_insert_row_or_reflow_body(
+    update_notice_scene, tmp_path, size, route
+):
+    app, bridge, window = update_notice_scene
+    window.resize(*size)
+    bridge.selectHome(route, False)
+    viewport = window.findChild(QObject, "forgeViewport")
+    layout = viewport.parentItem()
+
+    def geometry():
+        polish_scene(window.contentItem())
+        app.processEvents()
+        items = list(layout.childItems())
+        items.extend(
+            window.findChild(QObject, name)
+            for name in ("forgeComposerShell", "forgeCommandRow", "forgeScene")
         )
-        if state == "recovery":
-            assert primary.property("label") == "Repair VODForge"
-        if state == "check_failed":
-            assert primary.property("label") == "Check again"
-        assert session.pending_install == (state == "waiting")
-        assert session.handoff_started == (state == "handoff")
+        result = [
+            (
+                item.objectName(),
+                item.mapToScene(QPointF()).x(),
+                item.mapToScene(QPointF()).y(),
+                item.width(),
+                item.height(),
+            )
+            for item in items
+            if item.isVisible() and item.objectName() != "updateNoticeRow"
+        ]
+        if route == "Forge":
+            result.append(
+                (
+                    "forgeScroll",
+                    viewport.property("contentItem").property("contentY"),
+                    viewport.property("contentHeight"),
+                )
+            )
+        return result
+
+    set_update_state(bridge._updates, tmp_path, "current")
+    bridge.updateChanged.emit()
+    baseline = geometry()
+    changes = {}
+    for state in UPDATER_STATES:
+        set_update_state(bridge._updates, tmp_path, state)
+        bridge.updateChanged.emit()
+        current = geometry()
+        if current != baseline:
+            changes[state] = {"before": baseline, "after": current}
+        assert not window.findChild(QObject, "updatePopup").property("visible")
+    assert not changes, changes
+    assert window.findChild(QObject, "updateNoticeRow") is None
+    assert window.findChild(QObject, "updateNoticeButton") is None
+
+
+@pytest.mark.parametrize("state", UPDATER_STATES)
+def test_settings_check_opens_existing_popup_for_every_update_state(
+    update_notice_scene, tmp_path, monkeypatch, state
+):
+    app, bridge, window = update_notice_scene
+    set_update_state(bridge._updates, tmp_path, state)
+    bridge.updateChanged.emit()
+    checks = []
+    monkeypatch.setattr(bridge._updates, "check", lambda: checks.append(True) or False)
+    # Reach the real Settings form using its existing header action.
+    update_click(window, window.findChild(QObject, "headerSettingsButton"))
+    settings = window.findChild(QObject, "downloadSettingsPopup")
+    assert settings.property("visible")
+    update_click(window, window.findChild(QObject, "settingsCheckForUpdatesButton"))
+    app.processEvents()
+    assert checks == [True]
+    assert not settings.property("visible")
+    popup = window.findChild(QObject, "updatePopup")
+    assert popup.property("visible")
+    primary = window.findChild(QObject, "updatePrimary")
+    assert primary.property("visible") == (
+        state not in {"check", "download", "repair", "manual", "waiting", "handoff"}
+    )
+    assert window.findChild(QObject, "updateProgress").property("visible") == (
+        state in {"check", "download", "repair"}
+    )
+    if state == "check":
+        assert "Looking for the latest" in window.findChild(
+            QObject, "updateBody"
+        ).property("text")
+    if state == "recovery":
+        assert primary.property("label") == "Repair VODForge"
+    if state == "check_failed":
+        assert primary.property("label") == "Check again"
+    assert bridge._updates.pending_install == (state == "waiting")
+    assert bridge._updates.handoff_started == (state == "handoff")
+    update_click(window, window.findChild(QObject, "updateDismiss"))
+    assert not popup.property("visible")
+
+
+@pytest.mark.parametrize(
+    "state,expected",
+    [
+        ("current", "check"),
+        ("check_failed", "check"),
+        ("available", "download"),
+        ("recovery", "repair"),
+        ("ready", "install"),
+    ],
+)
+def test_update_popup_primary_keeps_existing_dispatch(
+    update_notice_scene, tmp_path, monkeypatch, state, expected
+):
+    _app, bridge, window = update_notice_scene
+    session = bridge._updates
+    set_update_state(session, tmp_path, state)
+    calls = []
+    monkeypatch.setattr(session, "check", lambda: calls.append("check") or False)
+    monkeypatch.setattr(
+        session,
+        "download",
+        lambda **kwargs: (
+            calls.append("repair" if kwargs.get("repair") else "download") or False
+        ),
+    )
+    monkeypatch.setattr(
+        session, "request_install_now", lambda: calls.append("install") or False
+    )
+    bridge.updateChanged.emit()
+    window.findChild(QObject, "updatePopup").open()
+    QTest.qWait(100)
+    update_click(window, window.findChild(QObject, "updatePrimary"))
+    assert calls == [expected]
+
+
+@pytest.mark.parametrize("key", [Qt.Key_Return, Qt.Key_Space])
+def test_settings_check_keyboard_dispatch(update_notice_scene, monkeypatch, key):
+    _app, bridge, window = update_notice_scene
+    calls = []
+    monkeypatch.setattr(bridge._updates, "check", lambda: calls.append(True) or False)
+    window.findChild(QObject, "downloadSettingsPopup").open()
+    QTest.qWait(100)
+    button = window.findChild(QObject, "settingsCheckForUpdatesButton")
+    button.forceActiveFocus(Qt.TabFocusReason)
+    QTest.keyClick(window, key)
+    QTest.qWait(100)
+    assert calls == [True]
+    assert window.findChild(QObject, "updatePopup").property("visible")

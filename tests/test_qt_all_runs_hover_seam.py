@@ -10,6 +10,7 @@ from PySide6.QtCore import (
     QPointF,
     Qt,
 )
+from PySide6.QtGui import QCursor
 from PySide6.QtQuick import QQuickItem
 from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtTest import QTest
@@ -32,8 +33,13 @@ def run_scene(tmp_path, monkeypatch):
     bridge._runtime.active_job = make_job(tmp_path)
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
+    bridge._window = window
     window.show()
     app.processEvents()
+    # QTest offscreen events do not own the hardware cursor. Mirror their
+    # delivered global coordinates only for the public pointer-query oracle.
+    window.setProperty("qaPointerPosition", window.mapToGlobal(QPoint(2, 2)))
+    monkeypatch.setattr(QCursor, "pos", lambda: window.property("qaPointerPosition"))
     QTest.mouseMove(window, QPoint(2, 2))
     QTest.qWait(120)
     button = window.findChild(QObject, "allRunsButton")
@@ -46,6 +52,7 @@ def run_scene(tmp_path, monkeypatch):
 
 
 def move(window, point):
+    window.setProperty("qaPointerPosition", window.mapToGlobal(point.toPoint()))
     QTest.mouseMove(window, QPoint(round(point.x()), round(point.y())))
     QTest.qWait(160)  # Longer than the auto-close timer, including popup padding.
 
@@ -182,3 +189,109 @@ def test_hovering_overflow_ellipsis_keeps_listing_open(run_scene):
     QTest.qWait(250)
     assert action.property("hovered")
     assert popup.property("visible")
+
+
+def test_stale_hover_delivery_after_pointer_left_cannot_open(run_scene, monkeypatch):
+    from PySide6.QtGui import QCursor
+
+    _app, _bridge, window, button, popup = run_scene
+    # A delayed Qt hover can arrive after native resize/capture moved the real
+    # pointer elsewhere. Keep the current global position independently away.
+    monkeypatch.setattr(QCursor, "pos", lambda: window.mapToGlobal(QPoint(2, 2)))
+    move(window, button.mapToScene(QPointF(button.width() / 2, button.height() / 2)))
+    assert button.findChild(QObject, "allRunsPointerArea").property("containsMouse")
+    assert not button.property("hovered")
+    assert not popup.property("visible")
+
+
+@pytest.mark.parametrize("size", [(820, 560), (1400, 900)])
+def test_primed_hover_is_retired_on_resize_with_pointer_at_corner(
+    run_scene, monkeypatch, size
+):
+    from PySide6.QtGui import QCursor
+
+    _app, _bridge, window, button, popup = run_scene
+    move(window, button.mapToScene(QPointF(button.width() / 2, button.height() / 2)))
+    assert popup.property("visible")
+    # No Qt move delivery: native resize capture can keep containsMouse stale.
+    monkeypatch.setattr(
+        QCursor,
+        "pos",
+        lambda: window.mapToGlobal(QPoint(window.width() - 2, window.height() - 2)),
+    )
+    for width, height in (size, (1100, 740), size):
+        window.resize(width, height)
+        QTest.qWait(150)
+        assert not popup.property("visible")
+    popup.close()
+    window.resize(1100, 740)
+    QTest.qWait(150)
+    assert not popup.property("visible")
+
+
+@pytest.mark.parametrize("primed", [False, True])
+def test_held_corner_cross_requires_release_and_new_motion(run_scene, primed):
+    _app, bridge, window, button, popup = run_scene
+    center = lambda: button.mapToScene(QPointF(button.width() / 2, button.height() / 2))
+    if primed:
+        move(window, center())
+        assert popup.property("visible")
+    corner = QPoint(window.width() - 2, window.height() - 2)
+    move(window, QPointF(corner))
+    assert not popup.property("visible")
+    QTest.mousePress(window, Qt.LeftButton, pos=corner)
+    assert bridge.isPointerPressed()
+    move(window, center())
+    assert not popup.property("visible")
+    QTest.mouseRelease(window, Qt.LeftButton, pos=center().toPoint())
+    QTest.qWait(120)
+    assert not popup.property("visible")
+    move(window, center() + QPointF(1, 0))
+    assert popup.property("visible")
+    popup.close()
+    for size in ((1400, 900), (820, 560), (1100, 740), (820, 560)):
+        window.resize(*size)
+        QTest.qWait(130)
+        assert not popup.property("visible")
+    move(window, center())
+    assert popup.property("visible")
+
+
+@pytest.mark.parametrize("dismiss", ["resize", "keyboard"])
+def test_pending_motion_cannot_reopen_after_geometry_or_dismiss(run_scene, dismiss):
+    _app, _bridge, window, button, popup = run_scene
+    point = button.mapToScene(QPointF(button.width() / 2, button.height() / 2))
+    move(window, point)
+    assert popup.property("visible")
+    # Queue another legitimate move, then invalidate it before the deferred
+    # admission callback. Neither resize nor Escape may resurrect that motion.
+    point += QPointF(1, 0)
+    window.setProperty("qaPointerPosition", window.mapToGlobal(point.toPoint()))
+    QTest.mouseMove(window, point.toPoint())
+    if dismiss == "resize":
+        window.resize(1400, 900)
+    else:
+        QTest.keyClick(window, Qt.Key_Escape)
+    QTest.qWait(160)
+    assert not popup.property("visible")
+
+
+def test_public_pointer_query_checks_live_rect_visibility_and_stale_item(run_scene):
+    _app, bridge, window, button, _popup = run_scene
+    point = button.mapToScene(QPointF(button.width() / 2, button.height() / 2))
+    window.setProperty("qaPointerPosition", window.mapToGlobal(point.toPoint()))
+    assert bridge.isPointerOverItem(button)
+    window.setProperty("qaPointerPosition", window.mapToGlobal(QPoint(2, 2)))
+    assert not bridge.isPointerOverItem(button)
+    window.setProperty("qaPointerPosition", window.mapToGlobal(point.toPoint()))
+    button.setEnabled(False)
+    assert not bridge.isPointerOverItem(button)
+    button.setEnabled(True)
+    item = QQuickItem(window.contentItem())
+    item.setWidth(10)
+    item.setHeight(10)
+    item.setVisible(False)
+    assert not bridge.isPointerOverItem(item)
+    item.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+    assert not bridge.isPointerOverItem(item)

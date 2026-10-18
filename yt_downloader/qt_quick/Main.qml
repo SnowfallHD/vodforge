@@ -57,6 +57,17 @@ Window {
     }
     WindowsFrame { id: mainFrame; appWindow: window }
     color: Qt.platform.os === "osx" ? "transparent" : theme.bg
+    // One live header is reparented into the public Cocoa toolbar host. The
+    // body's fixed slot never follows native reveal/contentLayoutRect changes.
+    property var nativeHeaderSurface: null
+    property bool nativeHeaderAttached: false
+    property real nativeHeaderWidth: width - 2 * gutter
+    property real nativeHeaderLeadingInset: 0
+    property real nativeHeaderReserve: 0
+    property bool nativeHeaderFullscreen: false
+    property bool nativeHeaderReducedMotion: false
+    property bool nativeHeaderRevealed: false
+    property string nativeHeaderStyle: "shadow"
     property real backgroundOpacity: 1.0
     readonly property color glassSurfaceColor: theme.bg
     readonly property real glassControlOpacity: backgroundOpacity < 1.0 ? 0.64 : 1.0
@@ -75,8 +86,10 @@ Window {
         settingsPopup.close()
     }
     property real playerVolume: 0.8
-    readonly property bool editingText: activeFocusItem instanceof TextInput ||
-                                       activeFocusItem instanceof TextEdit
+    readonly property var currentEditingItem: nativeHeaderSurface && nativeHeaderSurface.activeFocusItem
+        ? nativeHeaderSurface.activeFocusItem : activeFocusItem
+    readonly property bool editingText: currentEditingItem instanceof TextInput ||
+                                       currentEditingItem instanceof TextEdit
     function retireHiddenSceneFocus() {
         const item = window.activeFocusItem
         // A route can hide an editor without Qt releasing its keyboard focus.
@@ -962,6 +975,85 @@ Window {
     property string selectedSavedOwner: ""
     property var pendingFileOwners: []
 
+    Component {
+        id: forgeActiveActionsComponent
+        Item {
+            id: activeActions
+            objectName: "forgeActiveHeaderActions"
+            readonly property real inlineWidth: (activeControl0.action.label ? activeControl0.implicitWidth : 0) +
+                (activeControl1.action.label ? activeControl1.implicitWidth : 0) +
+                (activeControl2.action.label ? activeControl2.implicitWidth : 0) +
+                Math.max(0, bridge.runControls.length - 1) * 8
+            readonly property bool showInline: !window.compactHeight && inlineWidth <= forgeRunDeck.headerActionsAvailableWidth
+            implicitWidth: showInline ? inlineWidth : activeActionsButton.implicitWidth
+            implicitHeight: buttonMetrics.inline.height
+            Row {
+                anchors.right: parent.right
+                height: parent.height
+                spacing: 8
+                visible: activeActions.showInline
+                StoneButton {
+                    id: activeControl0
+                    objectName: "forgeControl0"
+                    property var action: (bridge.runControls || [])[0] || ({})
+                    visible: !!action.label
+                    label: action.label || ""
+                    Accessible.description: action.description || ""
+                    LiquidToolTip { singleLine: true; visible: parent.hovered; text: parent.action.description || "" }
+                    size: "inline"
+                    width: Math.min(implicitWidth, forgeRunDeck.headerActionsAvailableWidth); height: parent.height
+                    onActivated: {
+                        if (action.operation === "cancel") bridge.cancel()
+                        else if (action.operation === "skip_item") bridge.skipItem()
+                        else bridge.skipSource()
+                    }
+                }
+                StoneButton {
+                    id: activeControl1
+                    objectName: "forgeControl1"
+                    property var action: (bridge.runControls || [])[1] || ({})
+                    visible: !!action.label
+                    label: action.label || ""
+                    Accessible.description: action.description || ""
+                    LiquidToolTip { singleLine: true; visible: parent.hovered; text: parent.action.description || "" }
+                    size: "inline"
+                    width: Math.min(implicitWidth, forgeRunDeck.headerActionsAvailableWidth); height: parent.height
+                    onActivated: {
+                        if (action.operation === "cancel") bridge.cancel()
+                        else if (action.operation === "skip_item") bridge.skipItem()
+                        else bridge.skipSource()
+                    }
+                }
+                StoneButton {
+                    id: activeControl2
+                    objectName: "forgeControl2"
+                    property var action: (bridge.runControls || [])[2] || ({})
+                    visible: !!action.label
+                    label: action.label || ""
+                    Accessible.description: action.description || ""
+                    LiquidToolTip { singleLine: true; visible: parent.hovered; text: parent.action.description || "" }
+                    size: "inline"
+                    width: Math.min(implicitWidth, forgeRunDeck.headerActionsAvailableWidth); height: parent.height
+                    onActivated: {
+                        if (action.operation === "cancel") bridge.cancel()
+                        else if (action.operation === "skip_item") bridge.skipItem()
+                        else bridge.skipSource()
+                    }
+                }
+            }
+            StoneButton {
+                id: activeActionsButton
+                objectName: "forgeRunActionsButton"
+                anchors.right: parent.right
+                visible: !activeActions.showInline
+                label: "Run actions"
+                size: "inline"
+                width: Math.min(implicitWidth, parent.width); height: parent.height
+                onActivated: forgeRunDeck.openActiveActionsFrom(this)
+            }
+        }
+    }
+
     Item {
         id: forgeNoticeLayer
         parent: window.contentItem
@@ -1026,36 +1118,63 @@ Window {
         }
     }
 
-    ColumnLayout {
-        anchors.fill: parent
-        anchors.leftMargin: window.gutter
-        anchors.rightMargin: window.gutter
-        anchors.topMargin: 5 + mainFrame.headerHeight
-        anchors.bottomMargin: 10 + 4 * Math.max(0, Math.min(1, (window.width - 920) / 40))
-        spacing: 2
-
         Item {
             id: focusHeader
             objectName: "focusHeader"
-            Layout.fillWidth: true
-            Layout.preferredHeight: stacked ? 100 : 44
+            x: window.nativeHeaderAttached ? 0 : window.gutter
+            y: window.nativeHeaderAttached ? 0 : 5 + mainFrame.headerHeight
+            width: window.nativeHeaderAttached ? window.nativeHeaderWidth : window.width - 2 * window.gutter
+            height: stacked ? 100 : 44
+            z: 50
+            Shortcut {
+                objectName: "nativeHeaderFullscreenEscape"
+                sequence: "Escape"
+                context: Qt.WindowShortcut
+                enabled: window.nativeHeaderAttached && window.visibility === Window.FullScreen && window.menuNavigationAllowed
+                onActivated: window.showNormal()
+            }
             // Keep the compact lockup until the expanded brand and minimum
             // search field fit. A fixed 960px switch briefly wrapped this row,
             // then unwrapped it a few pixels later, shrinking Watch in between.
-            readonly property bool compact: window.width < 960 || width <
-                nativeHeaderInset + 150 + navWidth +
+            readonly property bool compact: window.width < 960 || layoutWidth <
+                layoutInset + 150 + navWidth +
                 ((bridge.selection === "Library" || bridge.selection === "Watch") ? 193 : 0) + 72
-            readonly property int nativeHeaderInset: Qt.platform.os === "osx" ? 82 : 0
-            readonly property int brandWidth: nativeHeaderInset + (compact ? 46 : 150)
+            property real nativeHeaderInset: window.nativeHeaderAttached
+                ? window.nativeHeaderLeadingInset : (Qt.platform.os === "osx" ? 82 : 0)
+            Behavior on nativeHeaderInset {
+                enabled: window.nativeHeaderAttached && window.nativeHeaderFullscreen && !bridge.reducedMotion && !window.nativeHeaderReducedMotion
+                NumberAnimation { duration: 140; easing.type: Easing.InOutCubic }
+            }
+            readonly property real layoutInset: window.nativeHeaderAttached
+                ? window.nativeHeaderReserve : (Qt.platform.os === "osx" ? 82 : 0)
+            readonly property real layoutWidth: window.width - 2 * window.gutter
+            readonly property real brandWidth: nativeHeaderInset + (compact ? 46 : 150)
             readonly property int searchWidth: Math.max(compact ? 124 : 185,
                 Math.min(compact ? 186 : 285,
-                    width - brandWidth - navWidth - 88))
+                    layoutWidth - layoutInset - (compact ? 46 : 150) - navWidth - 88))
             readonly property int navWidth: navigationRow.implicitWidth
             readonly property int utilityWidth:
                 (bridge.selection === "Library" || bridge.selection === "Watch"
                     ? searchWidth + 8 : 0) + 64
-            readonly property bool stacked: brandWidth + navWidth + utilityWidth + 8 > width
+            readonly property bool stacked: layoutInset + (compact ? 46 : 150) + navWidth + utilityWidth + 8 > layoutWidth
 
+            Image {
+                objectName: "nativeHeaderShadow"
+                visible: window.nativeHeaderAttached && window.nativeHeaderRevealed && window.nativeHeaderStyle === "shadow"
+                x: -18; y: -8; width: parent.width + 36; height: parent.height + 28; z: -3
+                source: "image://vodforge/popup-shadow/" + Math.round(parent.width) + "/" + Math.round(parent.height)
+                smooth: true
+            }
+            Rectangle {
+                objectName: "nativeHeaderFlatSurface"
+                visible: window.nativeHeaderAttached && window.nativeHeaderRevealed && window.nativeHeaderStyle === "shadow"
+                anchors.fill: parent; radius: 5; color: theme.bg; border.color: theme.border; z: -2
+            }
+            StoneField {
+                objectName: "nativeHeaderConcaveSurface"
+                visible: window.nativeHeaderAttached && window.nativeHeaderRevealed && window.nativeHeaderStyle === "concave"
+                anchors.fill: parent; surfaceOpacity: 1.0; z: -2
+            }
             MouseArea {
                 id: headerDragArea
                 objectName: "headerDragArea"
@@ -1210,42 +1329,26 @@ Window {
             }
         }
 
+    ColumnLayout {
+        anchors.fill: parent
+        anchors.leftMargin: window.gutter
+        anchors.rightMargin: window.gutter
+        anchors.topMargin: 5 + mainFrame.headerHeight
+        anchors.bottomMargin: 10 + 4 * Math.max(0, Math.min(1, (window.width - 920) / 40))
+        spacing: 2
+
+        Item {
+            objectName: "headerGeometrySlot"
+            Layout.fillWidth: true
+            Layout.preferredHeight: focusHeader.height
+        }
+
         Rectangle {
             objectName: "focusHeaderDivider"
             Layout.fillWidth: true
             Layout.preferredHeight: 1
             Layout.topMargin: 0
             color: theme.border
-        }
-
-        RowLayout {
-            objectName: "updateNoticeRow"
-            Layout.fillWidth: true
-            Layout.preferredHeight: 40
-            visible: bridge.updateAvailable || bridge.updateManualAvailable ||
-                bridge.updateRecovery || bridge.updateCheckFailed ||
-                bridge.updateReady || bridge.updateRestartPending ||
-                bridge.updateBusy
-            Item { Layout.fillWidth: true }
-            StoneButton {
-                objectName: "updateNoticeButton"
-                label: bridge.updateBusy ?
-                    (bridge.updateStage === "check" ? "Checking for updates" : "Updating VODForge") :
-                    bridge.updateRestartPending ?
-                        (bridge.updateReady ? "Update ready" : "Restarting VODForge") :
-                    bridge.updateRecovery ? "Update needs attention" :
-                    bridge.updateCheckFailed ? "Update check unavailable" :
-                    bridge.updateReady ? "Update ready" : "Update available"
-                emphasized: true
-                Layout.preferredHeight: 36
-                onActivated: {
-                    if (!updatePopup.visible) {
-                        settingsPopup.close()
-                        window.closeDownloadSettings()
-                        updatePopup.toggleFrom(this)
-                    }
-                }
-            }
         }
 
         ScrollView {
@@ -1661,59 +1764,6 @@ Window {
                             }
                         }
                     }
-                    RowLayout {
-                        visible: bridge.running && !window.compactHeight
-                        spacing: 8
-                        StoneButton {
-                            objectName: "forgeControl0"
-                            property var action: (bridge.runControls || [])[0] || ({})
-                            visible: !!action.label
-                            label: action.label || ""
-                            Accessible.description: action.description || ""
-                            LiquidToolTip { singleLine: true; visible: parent.hovered; text: parent.action.description || "" }
-                            Layout.preferredHeight: 36
-                            onActivated: {
-                                if (action.operation === "cancel") bridge.cancel()
-                                else if (action.operation === "skip_item") bridge.skipItem()
-                                else bridge.skipSource()
-                            }
-                        }
-                        StoneButton {
-                            objectName: "forgeControl1"
-                            property var action: (bridge.runControls || [])[1] || ({})
-                            visible: !!action.label
-                            label: action.label || ""
-                            Accessible.description: action.description || ""
-                            LiquidToolTip { singleLine: true; visible: parent.hovered; text: parent.action.description || "" }
-                            Layout.preferredHeight: 36
-                            onActivated: {
-                                if (action.operation === "cancel") bridge.cancel()
-                                else if (action.operation === "skip_item") bridge.skipItem()
-                                else bridge.skipSource()
-                            }
-                        }
-                        StoneButton {
-                            objectName: "forgeControl2"
-                            property var action: (bridge.runControls || [])[2] || ({})
-                            visible: !!action.label
-                            label: action.label || ""
-                            Accessible.description: action.description || ""
-                            LiquidToolTip { singleLine: true; visible: parent.hovered; text: parent.action.description || "" }
-                            Layout.preferredHeight: 36
-                            onActivated: {
-                                if (action.operation === "cancel") bridge.cancel()
-                                else if (action.operation === "skip_item") bridge.skipItem()
-                                else bridge.skipSource()
-                            }
-                        }
-                    }
-                    StoneButton {
-                        visible: bridge.running && window.compactHeight
-                        label: "Run actions"
-                        size: "inline"
-                        Layout.preferredWidth: 110
-                        onActivated: forgeRunDeck.openActiveActions()
-                    }
                     StoneButton {
                         visible: bridge.batchSummary !== "No URL list loaded"
                         label: "Clear URL list"
@@ -1764,6 +1814,8 @@ Window {
                 objectName: "forgeRunDeck"
                 appBridge: bridge
                 compact: window.compactHeight
+                headerActions: forgeActiveActionsComponent
+                headerActionsEnabled: bridge.running
                 Layout.fillWidth: true
                 Layout.preferredHeight: implicitHeight
                 Layout.minimumHeight: implicitHeight
@@ -2780,18 +2832,19 @@ Window {
                             LiquidToolTip { visible: settingsDestinationHover.hovered; text: bridge.outputPath }
                             Text { anchors.fill: parent; anchors.leftMargin: 14; anchors.rightMargin: 14; verticalAlignment: Text.AlignVCenter; text: bridge.outputPath; color: theme.text; elide: Text.ElideMiddle; font.pixelSize: 14 }
                         }
-                        StoneButton { label: "Browse"; Layout.preferredWidth: 95; Layout.preferredHeight: 40; LiquidToolTip { visible: parent.hovered; text: bridge.outputPath } onActivated: window.openOutputFolderDialog() }
+                        StoneButton { objectName: "settingsOutputBrowse"; label: "Browse"; Layout.preferredWidth: 95; Layout.preferredHeight: 40; LiquidToolTip { visible: parent.hovered; text: bridge.outputPath } onActivated: window.openOutputFolderDialog() }
                     }
                     Text { text: "BATCH AND PLAYLISTS"; color: theme.accent; font.pixelSize: 13; font.bold: true }
                     RowLayout {
                         Layout.fillWidth: true
-                        StoneButton { label: "Load URL list"; Layout.preferredWidth: 154; Layout.preferredHeight: 40; onActivated: urlListDialog.open() }
+                        StoneButton { objectName: "settingsLoadUrlList"; label: "Load URL list"; Layout.preferredWidth: 154; Layout.preferredHeight: 40; onActivated: urlListDialog.open() }
                         Text { text: bridge.batchSummary; color: theme.muted; font.pixelSize: 13; elide: Text.ElideRight; Layout.fillWidth: true }
                     }
                     RowLayout {
                         Layout.fillWidth: true; Layout.preferredHeight: 39
                         Text { text: "Ignore playlists"; color: theme.text; font.pixelSize: 14; Layout.fillWidth: true }
                         StoneButton {
+                            objectName: "settingsDownloadOption_single_video_only"
                             label: bridge.downloadOptions.single_video_only ? "On" : "Off"
                             selected: bridge.downloadOptions.single_video_only
                             Layout.preferredWidth: 74; Layout.preferredHeight: 36
@@ -2971,6 +3024,7 @@ Window {
                         Layout.fillWidth: true
                         Text { text: "Theme"; color: theme.muted; font.pixelSize: 13 }
                         StoneButton {
+                            objectName: "settingsAppearanceThemeButton"
                             label: bridge.appearanceTheme + "  ▾"
                             Layout.fillWidth: true; Layout.preferredHeight: 40
                             onActivated: { appearanceThemeMenu.anchorItem = this; appearanceThemeMenu.toggleFrom(this) }
@@ -3047,7 +3101,7 @@ Window {
                     Layout.preferredWidth: 100; Layout.preferredHeight: 40
                     onActivated: { helpMenu.anchorItem = this; helpMenu.toggleFrom(this) }
                 }
-                StoneButton { label: "Check for updates"; Layout.preferredWidth: 165; Layout.preferredHeight: 40; onActivated: { window.closeDownloadSettings(); updatePopup.toggleFrom(this); bridge.checkForUpdates() } }
+                StoneButton { objectName: "settingsCheckForUpdatesButton"; label: "Check for updates"; Layout.preferredWidth: 165; Layout.preferredHeight: 40; onActivated: { window.closeDownloadSettings(); updatePopup.toggleFrom(this); bridge.checkForUpdates() } }
                 Item { Layout.fillWidth: true }
                 StoneButton {
                     objectName: "settingsDoneButton"
@@ -3600,6 +3654,17 @@ Window {
                         label: "YouTube access: " + bridge.cookieSource
                         onActivated: { accessPopup.returnToSettings = true; accessPopup.returnToOptions = true; optionsMenu.close(); accessPopup.toggleFrom(this) }
                     }
+                    RowLayout {
+                        width: parent.width; height: 38
+                        Text { text: "Ignore playlists"; color: theme.text; font.pixelSize: 13; Layout.fillWidth: true }
+                        StoneButton {
+                            objectName: "composerDownloadOption_single_video_only"
+                            label: bridge.downloadOptions.single_video_only ? "On" : "Off"
+                            selected: bridge.downloadOptions.single_video_only
+                            Layout.preferredWidth: 74; Layout.preferredHeight: 36
+                            onActivated: bridge.setDownloadOption("single_video_only", !bridge.downloadOptions.single_video_only)
+                        }
+                    }
                     Repeater {
                         model: [
                             { key: "mp3_quality", title: "Encoding quality", choices: bridge.mp3QualityOptions },
@@ -3682,6 +3747,12 @@ Window {
                             text: bridge.extraTags
                             onEditingFinished: { if (!bridge.setExtraTags(text)) text = bridge.extraTags }
                         }
+                    }
+                    StoneButton {
+                        objectName: "composerAllSettingsButton"
+                        width: parent.width; height: 40
+                        label: "All settings"
+                        onActivated: settingsPopup.open()
                     }
                 }
                 Column {

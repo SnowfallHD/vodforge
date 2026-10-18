@@ -46,6 +46,7 @@ def compiler(tmp_path, *, wrong_arch=False, floor=None, foreign=False):
 @pytest.mark.parametrize("arches", [["arm64"], ["x86_64"], ["arm64", "x86_64"]])
 def test_explicit_helper_targets_and_source_output_provenance(tmp_path, arches):
     source = tmp_path / "owner.m"
+    (tmp_path / "header_toolbar.m").write_text("// header fixture")
     source.write_text("// controlled source, not compiled by this unit fixture\n")
     output = tmp_path / "native"
     run, _calls = compiler(tmp_path)
@@ -65,6 +66,18 @@ def test_explicit_helper_targets_and_source_output_provenance(tmp_path, arches):
         receipt["output_sha256"]
         == hashlib.sha256((output / LIBRARY).read_bytes()).hexdigest()
     )
+    assert receipt["source_inputs"] == [
+        {
+            "path": str(source.resolve()),
+            "sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+        },
+        {
+            "path": str((tmp_path / "header_toolbar.m").resolve()),
+            "sha256": hashlib.sha256(
+                (tmp_path / "header_toolbar.m").read_bytes()
+            ).hexdigest(),
+        },
+    ]
     commands = receipt["commands"]
     for arch in arches:
         command = next(
@@ -74,6 +87,7 @@ def test_explicit_helper_targets_and_source_output_provenance(tmp_path, arches):
             "-mmacosx-version-min=" + {"arm64": "26.0", "x86_64": "15.0"}[arch]
             in command
         )
+        assert str(source) in command and str(tmp_path / "header_toolbar.m") in command
         assert "-fno-objc-arc" in command and "-Werror" in command
         assert command[command.index("-install_name") + 1] == "@rpath/" + LIBRARY
     assert any("-create" in c for c in commands) == (len(arches) == 2)
@@ -85,6 +99,7 @@ def test_explicit_helper_targets_and_source_output_provenance(tmp_path, arches):
 )
 def test_helper_rejects_wrong_abi_floor_and_host_dependency(tmp_path, options):
     source = tmp_path / "owner.m"
+    (tmp_path / "header_toolbar.m").write_text("// header fixture")
     source.write_text("// fixture")
     run, _ = compiler(tmp_path, **options)
     with pytest.raises(ValueError):
@@ -96,6 +111,7 @@ def test_helper_rejects_wrong_abi_floor_and_host_dependency(tmp_path, options):
 
 def test_compile_failure_preserved_and_never_published_as_helper(tmp_path):
     source = tmp_path / "owner.m"
+    (tmp_path / "header_toolbar.m").write_text("// header fixture")
     source.write_text("// fixture")
 
     def fail(args):
@@ -116,6 +132,7 @@ def test_missing_source_existing_output_and_invalid_targets_stop_before_command(
     with pytest.raises(ValueError, match="source is missing"):
         build(source, tmp_path / "out", ["arm64"], run)
     assert not (tmp_path / "out").exists()
+    (tmp_path / "header_toolbar.m").write_text("// header fixture")
     source.write_text("// fixture")
     (tmp_path / "out").mkdir()
     with pytest.raises(ValueError, match="existing"):
@@ -133,3 +150,39 @@ def test_lower_or_malformed_package_minimum_refused(arch, configured):
 
     with pytest.raises(ValueError):
         deployment_minimum(arch, configured)
+
+
+def test_header_missing_refuses_before_output_or_compiler(tmp_path):
+    source = tmp_path / "owner.m"
+    source.write_text("// owner")
+    with pytest.raises(ValueError, match="header toolbar source is missing"):
+        build(
+            source,
+            tmp_path / "output",
+            ["arm64"],
+            lambda *_: pytest.fail("No compiler"),
+        )
+    assert not (tmp_path / "output").exists()
+
+
+@pytest.mark.parametrize("changed", ["owner.m", "header_toolbar.m"])
+def test_each_bound_source_mutation_refuses_qualification(tmp_path, changed):
+    source = tmp_path / "owner.m"
+    source.write_text("// owner")
+    header = tmp_path / "header_toolbar.m"
+    header.write_text("// header")
+    run, _ = compiler(tmp_path)
+
+    def mutating_run(args):
+        result = run(args)
+        if args[0] == "/usr/bin/xcrun":
+            (tmp_path / changed).write_text("// changed during compile")
+        if args[0] == "/usr/bin/lipo" and args[-1].endswith(LIBRARY):
+            return "arm64"
+        return result
+
+    with pytest.raises(ValueError, match="source changed during compilation"):
+        build(source, tmp_path / "output", ["arm64"], mutating_run)
+    receipt = json.loads((tmp_path / "output/build-receipt.json").read_text())
+    assert not receipt["qualified"]
+    assert len(receipt["source_inputs"]) == 2

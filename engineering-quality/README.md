@@ -3791,3 +3791,28 @@ cases missed this phase boundary. Compiled cases now cover pre-mask reentrancy,
 same-receiver fullscreen, cancellation, replacement, rollback and lifetime;
 actual menu-revealed full traffic-light pixels and hidden-again captures on each
 architecture remain a separate acceptance requirement.
+
+
+Verification receipts must persist each independently achieved boundary before
+ancillary diagnostics. An optional artwork comparison must not erase an already
+observed payload/signature result or silently become a native visual oracle. Bind
+each boundary to actual input hashes, scope and time; retain failed observers and
+false comparisons. Unchanged renderer source does not imply identical generated
+raster bytes: record measured differences and distinguish decoded asset review
+from actual Finder pixels. If a diagnostic imposed a stronger condition than the
+requested contract, document that distinction explicitly while preserving its
+failure; never relax the required payload, trust or declared visual criteria.
+
+## Early metadata and alternate-control parity — 2026-10-18
+
+A valid offline saved-media policy must not accidentally govern active-work artwork. Test the actual metadata-event → admitted runtime owner → bounded async fetch/cache → model-notification path before terminal persistence, and independently decode a changed source. Negative/pending cache ownership must include the relevant source generation: new metadata invalidates a previous miss, old completion cannot retire or publish over the new request, and close refuses late publication. Retain bounded failure cooldown and independent warm-cache/offline checks. The early-run fix adds these invariants without relaxing Library's local-only policy.
+
+Alternate preference views must expose format-independent choices through the same durable owner and retain active-job input snapshots. Enumerating only some quick-form controls missed Ignore playlists. Cover output formats, compact geometry, actual value-changing clicks, both directions between views, durable saves, and reachability of the canonical complete form. Do not duplicate general Settings owners or silently reverse a user's retained quick-form layout instruction.
+
+Native embedded surfaces must keep a single logical UI owner and fixed body layout across native reveal phases. Observe exact owned view/window geometry and positive visibility states; unavailable metadata is not proof hidden. Retire Qt notification delivery and embedded platform children before closing borrowed native descriptors/containers; failed teardown must retain ownership for guarded closure. Headless foreign-surface tests and compiled NSApp-nil fixtures establish source contracts, never live Cocoa allocation or fullscreen pixel acceptance.
+
+HTTPS helpers for optional artwork must use the maintained bundled-and-platform trust context, with certificate and hostname verification enabled, rather than a second implicit system-only opener. Optional sidecar failures remain durable warnings associated by stable run identity, never title-based deduplication or a fabricated media failure. Completion/queue-advance/late-event checks must preserve the next active owner and independently verified saved output.
+
+Grouped presentation sorts must explicitly retain canonical within-group order. Do not assume the deployed Qt JavaScript engine implements stable Array.sort when a comparator returns zero; decorate with the original model ordinal and use it as a final tie-break. Preserve the correct history/Library/Watch owners and group priorities. Cover three/six-record tie sets, repeated projection refresh, stable selection identities and mixed status groups; two tied records can conceal the defect.
+
+Hover admission and retention must use the current exact pointer geometry and current drag state, not cached containsMouse. Resize/capture/dismissal invalidate queued admission generations and the held visual face. Permit a new real pointer motion to re-admit legitimate hover; do not make width changes or release-only events manufacture hover. Keep observers scoped/coalesced and preserve menu-seam traversal and actual cancellation actions.

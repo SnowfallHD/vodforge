@@ -84,6 +84,10 @@ def build(source: Path, output: Path, arches, run=None):
     output = output.absolute()
     if not source.is_file():
         raise ValueError("Required native fullscreen source is missing")
+    header_source = source.with_name("header_toolbar.m")
+    if not header_source.is_file():
+        raise ValueError("Required native header toolbar source is missing")
+    sources = (source, header_source)
     if output.exists():
         raise ValueError("Refusing existing native fullscreen build output")
     if run is None:
@@ -94,6 +98,9 @@ def build(source: Path, output: Path, arches, run=None):
     receipt = {
         "source": str(source),
         "source_sha256": _sha(source),
+        "source_inputs": [
+            {"path": str(item), "sha256": _sha(item)} for item in sources
+        ],
         "architectures": list(arches),
         "deployment_floors": {a: FLOORS[a] for a in arches},
         "commands": [],
@@ -121,7 +128,7 @@ def build(source: Path, output: Path, arches, run=None):
                 "Foundation",
                 "-install_name",
                 "@rpath/" + LIBRARY,
-                str(source),
+                *map(str, sources),
                 "-o",
                 str(target),
             ]
@@ -143,8 +150,13 @@ def build(source: Path, output: Path, arches, run=None):
             receipt["commands"].append(command)
             run(command)
         _validate(library, arches, run)
-        if _sha(source) != receipt["source_sha256"]:
-            raise ValueError("Native fullscreen source changed during compilation")
+        if any(
+            _sha(item) != bound["sha256"]
+            for item, bound in zip(sources, receipt["source_inputs"])
+        ):
+            raise ValueError(
+                "Native fullscreen/header source changed during compilation"
+            )
         receipt.update(
             library=str(library), output_sha256=_sha(library), qualified=True
         )
