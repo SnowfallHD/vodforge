@@ -434,7 +434,7 @@ def test_options_playlist_choice_and_full_settings_are_reachable(
         body = window.findChild(
             QObject,
             "composerExtrasScroll"
-            if popup.property("sideBySideExtras")
+            if output_format != "Original audio" and popup.property("sideBySideExtras")
             else "composerOptionsScroll",
         )
         viewport = body.property("contentItem")
@@ -454,6 +454,9 @@ def test_options_playlist_choice_and_full_settings_are_reachable(
         assert control.property("selected") == expected
         all_settings = window.findChild(QObject, "composerAllSettingsButton")
         assert all_settings is not None, "Canonical controls need a route from Options"
+        viewport = window.findChild(QObject, "composerExtrasScroll").property(
+            "contentItem"
+        )
         _scroll_subtitle_button_into_view(
             app, popup.property("contentItem"), all_settings, viewport
         )

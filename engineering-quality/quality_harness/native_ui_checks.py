@@ -49,6 +49,7 @@ QT_REPORTED_REGRESSIONS = [
     "tests/test_qt_inspector_description_geometry.py",
     "tests/test_qt_folder_columns_responsive.py",
     "tests/test_qt_composer_custom_options.py",
+    "tests/test_qt_options_rendered_presence.py",
     "tests/test_qt_composer_feedback.py",
     "tests/test_qt_all_runs_hover_seam.py",
     "tests/test_qt_output_path_layout.py",

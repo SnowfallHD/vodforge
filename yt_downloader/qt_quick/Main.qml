@@ -3504,11 +3504,12 @@ Window {
         }
         readonly property real columnMinimum: 250
         readonly property real columnGap: 16
-        readonly property real baseWidth: Math.min(window.outputFormat === "MP4" ? 3 * columnMinimum + 2 * columnGap + 16 : 550, window.width - 40)
+        readonly property real baseWidth: Math.min(window.outputFormat === "MP4" ? 3 * columnMinimum + 2 * columnGap + 16 : 2 * columnMinimum + columnGap + 16, window.width - 40)
         readonly property real expandedWidth: Math.min(4 * columnMinimum + 3 * columnGap + 16, window.width - 40)
-        readonly property bool sideBySideExtras: window.outputFormat === "MP4" && (customReveal === 0 || window.width - 40 >= 4 * columnMinimum + 3 * columnGap + 16)
+        readonly property bool sideBySideExtras: window.outputFormat !== "MP4" || customReveal === 0 || window.width - 40 >= 4 * columnMinimum + 3 * columnGap + 16
         width: baseWidth + (expandedWidth - baseWidth) * customReveal
-        readonly property real customColumnWidth: sideBySideExtras
+        readonly property real customColumnWidth: window.outputFormat !== "MP4"
+            ? (availableWidth - columnGap) / 2 : sideBySideExtras
             ? (availableWidth - columnGap * (2 + customReveal)) / (3 + customReveal)
             : (availableWidth - columnGap) / 2
         readonly property real collapsedHeight: Math.min(window.height - 40, 540,
@@ -3585,11 +3586,11 @@ Window {
             id: composerQuickChoices
             objectName: "composerQuickChoices"
             width: parent.width
-            visible: window.outputFormat === "MP4"
-            height: visible ? 339 : 0
+            height: window.outputFormat === "MP4" ? 339 : composerAudioOptions.implicitHeight
             spacing: 16
             Column {
                 objectName: "composerOutputModes"
+                visible: window.outputFormat === "MP4"
                 width: (parent.width - 16) / 2
                 spacing: 3
                 Text { text: "OUTPUT MODE"; color: theme.accent; font.pixelSize: 12; font.bold: true; font.letterSpacing: 1; height: 32; leftPadding: 8; verticalAlignment: Text.AlignVCenter }
@@ -3617,6 +3618,7 @@ Window {
             }
             Column {
                 objectName: "composerQualities"
+                visible: window.outputFormat === "MP4"
                 width: (parent.width - 16) / 2
                 spacing: 3
                 Text { text: "QUALITY"; color: theme.accent; font.pixelSize: 12; font.bold: true; font.letterSpacing: 1; height: 32; leftPadding: 8; verticalAlignment: Text.AlignVCenter }
@@ -3629,6 +3631,63 @@ Window {
                         selected: bridge.quality === modelData
                         onActivated: bridge.setQuality(modelData)
                     }
+                }
+            }
+            Column {
+                id: composerAudioOptions
+                objectName: "composerAudioOptions"
+                visible: window.outputFormat !== "MP4"
+                width: parent.width
+                spacing: 8
+                Item {
+                    width: parent.width; height: 27
+                    Text {
+                        text: window.outputFormat === "MP3" ? "AUDIO ENCODING" : "ACCESS"
+                        color: theme.accent; font.pixelSize: 12; font.bold: true; font.letterSpacing: 1
+                        width: parent.width; height: 32; leftPadding: 8
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
+                Loader {
+                    active: window.outputFormat === "Original audio"
+                    width: parent.width
+                    height: item ? item.implicitHeight : 0
+                    sourceComponent: composerAccessGroup
+                }
+                Repeater {
+                    model: [
+                        { key: "mp3_quality", title: "Encoding quality", choices: bridge.mp3QualityOptions },
+                        { key: "mp3_sample_rate", title: "Sample rate", choices: bridge.mp3SampleRateOptions },
+                        { key: "mp3_channels", title: "Channels", choices: bridge.mp3ChannelOptions },
+                        { key: "mp3_cover_art_mode", title: "Cover art", choices: bridge.mp3CoverOptions }
+                    ]
+                    StoneButton {
+                        required property var modelData
+                        objectName: "composerMp3Option_" + modelData.key
+                        visible: window.outputFormat === "MP3"
+                        width: parent.width; height: visible ? 40 : 0
+                        label: modelData.title + ": " + bridge.mp3Values[modelData.key]
+                        onActivated: {
+                            const choices = modelData.choices
+                            const next = choices[(choices.indexOf(bridge.mp3Values[modelData.key]) + 1) % choices.length]
+                            if (modelData.key === "mp3_cover_art_mode" && next === "Custom art" && !bridge.mp3CoverAvailable) mp3CoverDialog.open()
+                            else bridge.setMp3Value(modelData.key, next)
+                        }
+                    }
+                }
+                StoneButton {
+                    objectName: "composerMp3Metadata"
+                    visible: window.outputFormat === "MP3"
+                    width: parent.width; height: visible ? 40 : 0
+                    label: "Embed title, artist, and tags: " + (bridge.mp3Values.mp3_embed_metadata ? "On" : "Off")
+                    selected: bridge.mp3Values.mp3_embed_metadata
+                    onActivated: bridge.setMp3Metadata(!bridge.mp3Values.mp3_embed_metadata)
+                }
+                Row {
+                    visible: window.outputFormat === "MP3" && bridge.mp3Values.mp3_cover_art_mode === "Custom art"
+                    width: parent.width; spacing: 6
+                    StoneButton { width: parent.width - 78; height: 38; label: "Replace image"; onActivated: mp3CoverDialog.open() }
+                    StoneButton { width: 72; height: 38; label: "Clear"; onActivated: bridge.clearMp3Cover() }
                 }
             }
         }
@@ -3647,69 +3706,17 @@ Window {
                         height: 27
                         Text {
                             objectName: "composerSettingsHeading"
-                            text: "SETTINGS"; color: theme.accent
+                            text: window.outputFormat === "Original audio" ? "METADATA" : "SETTINGS"; color: theme.accent
                             font.pixelSize: 12; font.bold: true; font.letterSpacing: 1
                             width: parent.width; height: 32; leftPadding: 8
                             verticalAlignment: Text.AlignVCenter
                         }
                     }
-                    StoneButton {
-                        objectName: "composerYouTubeAccessButton"
-                        width: parent.width - (optionsMenu.sideBySideExtras || window.outputFormat !== "MP4" ? 36 : 0); height: 40
-                        label: "YouTube access: " + bridge.cookieSource
-                        onActivated: { accessPopup.returnToSettings = true; accessPopup.returnToOptions = true; optionsMenu.close(); accessPopup.toggleFrom(this) }
-                    }
-                    RowLayout {
-                        width: parent.width; height: 38
-                        Text { text: "Ignore playlists"; color: theme.text; font.pixelSize: 13; Layout.fillWidth: true }
-                        StoneButton {
-                            objectName: "composerDownloadOption_single_video_only"
-                            label: bridge.downloadOptions.single_video_only ? "On" : "Off"
-                            selected: bridge.downloadOptions.single_video_only
-                            Layout.preferredWidth: 74; Layout.preferredHeight: 36
-                            onActivated: bridge.setDownloadOption("single_video_only", !bridge.downloadOptions.single_video_only)
-                        }
-                    }
-                    Repeater {
-                        model: [
-                            { key: "mp3_quality", title: "Encoding quality", choices: bridge.mp3QualityOptions },
-                            { key: "mp3_sample_rate", title: "Sample rate", choices: bridge.mp3SampleRateOptions },
-                            { key: "mp3_channels", title: "Channels", choices: bridge.mp3ChannelOptions },
-                            { key: "mp3_cover_art_mode", title: "Cover art", choices: bridge.mp3CoverOptions }
-                        ]
-                        StoneButton {
-                            required property var modelData
-                            objectName: "composerMp3Option_" + modelData.key
-                            visible: window.outputFormat === "MP3"
-                            width: parent.width; height: visible ? 40 : 0
-                            label: modelData.title + ": " + bridge.mp3Values[modelData.key]
-                            onActivated: {
-                                const choices = modelData.choices
-                                const next = choices[(choices.indexOf(bridge.mp3Values[modelData.key]) + 1) % choices.length]
-                                if (modelData.key === "mp3_cover_art_mode" && next === "Custom art" && !bridge.mp3CoverAvailable) mp3CoverDialog.open()
-                                else bridge.setMp3Value(modelData.key, next)
-                            }
-                        }
-                    }
-                    StoneButton {
-                        objectName: "composerMp3Metadata"
-                        visible: window.outputFormat === "MP3"
-                        width: parent.width; height: visible ? 40 : 0
-                        label: "Embed title, artist, and tags: " + (bridge.mp3Values.mp3_embed_metadata ? "On" : "Off")
-                        selected: bridge.mp3Values.mp3_embed_metadata
-                        onActivated: bridge.setMp3Metadata(!bridge.mp3Values.mp3_embed_metadata)
-                    }
-                    Row {
-                        visible: window.outputFormat === "MP3" && bridge.mp3Values.mp3_cover_art_mode === "Custom art"
-                        width: parent.width; spacing: 6
-                        StoneButton { width: parent.width - 78; height: 38; label: "Replace image"; onActivated: mp3CoverDialog.open() }
-                        StoneButton { width: 72; height: 38; label: "Clear"; onActivated: bridge.clearMp3Cover() }
-                    }
-                    Text {
-                        visible: window.outputFormat === "Original audio"
-                        width: parent.width; wrapMode: Text.WordWrap
-                        text: "Keep the source audio without extra compression."
-                        color: theme.muted; font.pixelSize: 13
+                    Loader {
+                        active: window.outputFormat !== "Original audio"
+                        width: parent.width
+                        height: item ? item.implicitHeight : 0
+                        sourceComponent: composerAccessGroup
                     }
                     Repeater {
                         model: [
@@ -3802,13 +3809,42 @@ Window {
                 }
             }
         }
+        // The same control definition is composed in its active column;
+        // no live control crosses the two clipped scroll content owners.
+        Component {
+            id: composerAccessGroup
+            Column {
+                objectName: "composerAccessControls"
+                width: parent ? parent.width : 0
+                spacing: 8
+                StoneButton {
+                    objectName: "composerYouTubeAccessButton"
+                    width: parent.width - (optionsMenu.sideBySideExtras || window.outputFormat !== "MP4" ? 36 : 0); height: 40
+                    label: "YouTube access: " + bridge.cookieSource
+                    onActivated: { accessPopup.returnToSettings = true; accessPopup.returnToOptions = true; optionsMenu.close(); accessPopup.toggleFrom(this) }
+                }
+                RowLayout {
+                    width: parent.width; height: 38
+                    Text { text: "Ignore playlists"; color: theme.text; font.pixelSize: 13; Layout.fillWidth: true }
+                    StoneButton {
+                        objectName: "composerDownloadOption_single_video_only"
+                        label: bridge.downloadOptions.single_video_only ? "On" : "Off"
+                        selected: bridge.downloadOptions.single_video_only
+                        Layout.preferredWidth: 74; Layout.preferredHeight: 36
+                        onActivated: bridge.setDownloadOption("single_video_only", !bridge.downloadOptions.single_video_only)
+                    }
+                }
+            }
+        }
         ScrollView {
             id: composerExtrasScroll
             objectName: "composerExtrasScroll"
             VerticalScrollChain { nestedScrollView: composerExtrasScroll }
             visible: optionsMenu.sideBySideExtras
             x: optionsMenu.availableWidth - width
-            width: visible ? (optionsMenu.availableWidth - customOptionsColumn.width - optionsMenu.columnGap * optionsMenu.customReveal - 2 * optionsMenu.columnGap) / 3 : 0
+            width: !visible ? 0 : window.outputFormat !== "MP4"
+                ? (optionsMenu.availableWidth - optionsMenu.columnGap) / 2
+                : (optionsMenu.availableWidth - customOptionsColumn.width - optionsMenu.columnGap * optionsMenu.customReveal - 2 * optionsMenu.columnGap) / 3
             height: optionsMenu.availableHeight
             contentWidth: availableWidth
             clip: true

@@ -60,6 +60,7 @@ minimum_macos="$("$python_bin" -c 'import os,sys; from scripts.build_macos_fulls
     --ignore=tests/test_qt_completed_run_menu.py \
     --ignore=tests/test_qt_update_check_guidance.py \
     --ignore=tests/test_qt_options_shared_settings.py \
+    --ignore=tests/test_qt_options_rendered_presence.py \
     --ignore=tests/test_qt_watch_scroll_extent.py \
     --ignore=tests/test_qt_resize_continuity.py \
     --ignore=tests/test_qt_player_responsive_stage.py \
@@ -161,6 +162,7 @@ minimum_macos="$("$python_bin" -c 'import os,sys; from scripts.build_macos_fulls
     tests/test_qt_completed_run_menu.py \
     tests/test_qt_update_check_guidance.py \
     tests/test_qt_options_shared_settings.py \
+    tests/test_qt_options_rendered_presence.py \
     tests/test_qt_watch_scroll_extent.py \
     tests/test_qt_resize_continuity.py \
     tests/test_qt_player_responsive_stage.py \

@@ -3816,3 +3816,23 @@ HTTPS helpers for optional artwork must use the maintained bundled-and-platform 
 Grouped presentation sorts must explicitly retain canonical within-group order. Do not assume the deployed Qt JavaScript engine implements stable Array.sort when a comparator returns zero; decorate with the original model ordinal and use it as a final tie-break. Preserve the correct history/Library/Watch owners and group priorities. Cover three/six-record tie sets, repeated projection refresh, stable selection identities and mixed status groups; two tied records can conceal the defect.
 
 Hover admission and retention must use the current exact pointer geometry and current drag state, not cached containsMouse. Resize/capture/dismissal invalidate queued admission generations and the held visual face. Permit a new real pointer motion to re-admit legitimate hover; do not make width changes or release-only events manufacture hover. Keep observers scoped/coalesced and preserve menu-seam traversal and actual cancellation actions.
+
+### Format-dependent popup layout and rendered presence — 2026-10-18
+
+A control's QObject existence, effective visibility and positive mapped bounds do
+not by themselves prove that the composed window paints that control. The Options
+column correction exposed this boundary: a live access group moved between two
+clipped scroll-content owners had valid metadata yet absent control pixels. Keep
+one control definition and compose it inside the active static owner instead of
+moving a live group across clipped content trees. This is a bounded ownership
+finding, not a claim of a general Qt rendering defect.
+
+For format-responsive forms, test the actual trigger and transitions in both
+directions at normal and compact sizes. Check format-appropriate controls,
+per-column reachability, uniqueness, representative left/right control paint in
+the full window, durable preference effects and active-job immutability. A default
+MP4 column test plus audio toggle tests cannot establish audio column policy or
+live layout restoration. Preserve explicitly changed product expectations
+separately from failures of the prior supported contract. These headless checks do
+not qualify native header compositing or motion; those require actual current
+geometry and timestamped frames after a coordinated GUI release.
