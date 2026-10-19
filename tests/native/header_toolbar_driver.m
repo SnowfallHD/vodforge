@@ -78,6 +78,7 @@ int main(int argc,char **argv){@autoreleasepool{
    object_setClass(o->_view,VFHeaderContainer.class);brandWindow=nil;
  }
  if([test isEqual:@"brand"]){
+ [o->_view setFrame:NSMakeRect(0,0,64,44)];
  REQUIRE(vf_header_host_set_background(h,0.188,0.169,0.227,1));
  REQUIRE(o->_view->_brandColor);
  NSBitmapImageRep *bitmap=[[[NSBitmapImageRep alloc]initWithBitmapDataPlanes:NULL pixelsWide:64 pixelsHigh:44 bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:0 bitsPerPixel:0]autorelease];
@@ -86,6 +87,19 @@ int main(int argc,char **argv){@autoreleasepool{
  NSColor *pixel=[[bitmap colorAtX:32 y:22]colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
  REQUIRE(fabs(pixel.redComponent-.188)<.01&&fabs(pixel.greenComponent-.169)<.01&&fabs(pixel.blueComponent-.227)<.01);
  REQUIRE(!vf_header_host_set_background(h,2,0,0,1)&&!vf_header_host_set_background(h,0,0,0,0));
+ }
+ if([test isEqual:@"brand_clip"]||[test isEqual:@"brand_empty_clip"]||[test isEqual:@"brand_shifted_clip"]){
+ REQUIRE(vf_header_host_set_background(h,.188,.169,.227,1));
+ BOOL empty=[test isEqual:@"brand_empty_clip"];
+ [o->_view setFrame:empty?NSZeroRect:NSMakeRect(0,0,64,44)];
+ if([test isEqual:@"brand_shifted_clip"])[o->_view setBoundsOrigin:NSMakePoint(10,20)];
+ NSBitmapImageRep *bitmap=[[[NSBitmapImageRep alloc]initWithBitmapDataPlanes:NULL pixelsWide:128 pixelsHigh:128 bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:0 bitsPerPixel:0]autorelease];
+ [NSGraphicsContext saveGraphicsState];[NSGraphicsContext setCurrentContext:[NSGraphicsContext graphicsContextWithBitmapImageRep:bitmap]];
+ [NSColor.redColor setFill];NSRectFill(NSMakeRect(0,0,128,128));
+ [o->_view drawRect:NSMakeRect(-20,-20,200,200)];[NSGraphicsContext restoreGraphicsState];
+ NSColor *outside=[[bitmap colorAtX:90 y:90]colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+ REQUIRE(outside.redComponent>.99&&outside.greenComponent<.01&&outside.blueComponent<.01);
+ if(!empty){NSColor *inside=[[bitmap colorAtX:32 y:96]colorUsingColorSpace:NSColorSpace.sRGBColorSpace];REQUIRE(fabs(inside.redComponent-.188)<.01&&fabs(inside.greenComponent-.169)<.01&&fabs(inside.blueComponent-.227)<.01);}
  }
  if([test isEqual:@"guards"]){REQUIRE(!vf_header_host_create(NULL,44,20,64));REQUIRE(!vf_header_host_create(w,32,20,64));REQUIRE(!vf_header_host_create(w,NAN,20,64));REQUIRE(!vf_header_host_create(w,44,-1,64));REQUIRE(!vf_header_host_create(w,44,20,0));}
  if([test isEqual:@"duplicate_host"]){REQUIRE(!vf_header_host_create(w,44,20,64));REQUIRE(w.toolbar==o->_carrier->_toolbar);}

@@ -97,7 +97,10 @@ def native_owner_rig(tmp_path, monkeypatch):
             return value + int(state["stale_pointer"])
 
         def destroy(self):
-            assert self.parent() is window, "Main parent must survive Qt destroy"
+            if isValid(window):
+                assert QObject.parent(self) is window, (
+                    "Main parent must survive Qt destroy"
+                )
             assert not state["bound"], "Native unbind must precede Qt destroy"
             rig.events.append("qt-destroy")
             return super().destroy()
@@ -259,7 +262,7 @@ def native_owner_rig(tmp_path, monkeypatch):
 
         def bind_child(self, pointer, rect):
             assert rig.surface.isVisible(), "Native bind requires prior Qt show"
-            assert rig.surface.parent() is window
+            assert QObject.parent(rig.surface) is window
             assert pointer == int(rig.surface.winId())
             assert rig.events.index("show") < len(rig.events)
             rig.events.append("bind")
@@ -269,7 +272,7 @@ def native_owner_rig(tmp_path, monkeypatch):
 
         def update_child(self, pointer, rect):
             assert pointer == int(rig.surface.winId())
-            assert rig.surface.parent() is window
+            assert QObject.parent(rig.surface) is window
             rig.events.append("update")
             state["rect"] = tuple(rect)
             if state["notify_update"]:
@@ -279,9 +282,10 @@ def native_owner_rig(tmp_path, monkeypatch):
 
         def unbind_child(self, _pointer):
             assert rig.boundary.retired
-            assert not rig.notifier.isEnabled()
+            assert not isValid(rig.notifier) or not rig.notifier.isEnabled()
             assert (
-                not isValid(rig.header)
+                not isValid(rig.original_parent)
+                or not isValid(rig.header)
                 or rig.header.parentItem() is rig.original_parent
             )
             rig.events.append("unbind-refused" if state["refuse_unbind"] else "unbind")
@@ -747,7 +751,12 @@ def test_reveal_reallocation_keeps_right_edge_and_left_clearance_in_same_turn(
 ):
     rig = native_owner_rig
     owner = rig.make()
-    rig.state.update(fullscreen=True, button_x=119)
+    # Establish the fullscreen intent first; the loop below changes ONLY the
+    # native aperture. It must compensate in the same turn with motion enabled.
+    rig.window.setProperty("nativeHeaderReducedMotion", True)
+    rig.state.update(fullscreen=True, button_x=119, rect=(10, 6, 1022, 44))
+    rig.native_callback()
+    rig.window.setProperty("nativeHeaderReducedMotion", False)
     brand = rig.window.findChild(QObject, "brandRow")
     utility = rig.window.findChild(QObject, "utilitiesRow")
     lefts, rights = [], []
@@ -888,3 +897,97 @@ def test_retired_header_restores_content_origin_not_stale_native_packet(
     owner.close()
     assert rig.header.parentItem() is rig.original_parent
     assert (rig.header.x(), rig.header.y()) == before
+
+
+def test_native_header_transfer_preserves_rendered_body_controls(
+    native_owner_rig, tmp_path
+):
+    """Real Qt body pixels must survive; fake ABI cannot prove native exposure."""
+    from PySide6.QtCore import QPointF
+
+    from tests.test_qt_scene_port import visual_item
+
+    rig = native_owner_rig
+    rig.window.resize(1100, 740)
+    rig.settle()
+    before = rig.window.grabWindow()
+    assert not before.isNull()
+    button = visual_item(rig.window.contentItem(), "forgeDownloadButton")
+    before.save(str(tmp_path / "body-before.png"))
+    point = button.mapToScene(QPointF(0, 0))
+    box = (
+        round(point.x()),
+        round(point.y()),
+        round(button.width()),
+        round(button.height()),
+    )
+
+    def colors(frame, rect):
+        x, y, w, h = rect
+        return len(
+            {
+                frame.pixelColor(px, py).rgba()
+                for px in range(x, x + w, 2)
+                for py in range(y, y + h, 2)
+            }
+        )
+
+    assert colors(before, box) > 8
+    rig.make()
+    rig.settle()
+    after = rig.window.grabWindow()
+    after.save(str(tmp_path / "body-after.png"))
+    assert not after.isNull() and colors(after, box) > 8
+
+
+def test_retirement_discards_native_packet_before_normal_layout_resumes(
+    native_owner_rig,
+):
+    rig = native_owner_rig
+    owner = rig.make()
+    assert rig.window.property("diagnosticHeaderPacketReady") is True
+    owner.close()
+    rig.bridge.selectHome("Library")
+    rig.window.resize(820, 740)
+    rig.settle()
+    slot = rig.window.findChild(QObject, "headerGeometrySlot")
+    assert rig.window.property("nativeRowPacket") == {}
+    assert rig.window.property("diagnosticHeaderPacketReady") is False
+    assert slot.height() == rig.header.height()
+
+
+def test_retiring_during_header_motion_cannot_replay_old_geometry(
+    native_owner_rig, monkeypatch
+):
+    from yt_downloader.qt_quick import main as qt_main
+
+    monkeypatch.setattr(qt_main, "_system_reduced_motion", lambda: False)
+    rig = native_owner_rig
+    rig.state.update(
+        fullscreen=True,
+        controls_inside=True,
+        controls_hidden=True,
+        rect=(10, 6, 1022, 44),
+    )
+    owner = rig.make()
+    rig.state["controls_hidden"] = False
+    rig.native_callback()
+    QTest.qWait(45)
+    anchor = rig.header.property("nativeContentScreenX")
+    target = rig.window.property("nativeRowPacket")["host_screen"][0] + 89
+    assert 110 < anchor < target
+    owner.close()
+    rig.settle()
+    restored = (
+        rig.header.x(),
+        rig.header.y(),
+        rig.header.property("nativeContentScreenX"),
+    )
+    QTest.qWait(270)
+    assert (
+        rig.header.x(),
+        rig.header.y(),
+        rig.header.property("nativeContentScreenX"),
+    ) == restored
+    assert rig.window.property("nativeRowPacket") == {}
+    assert rig.window.property("nativeHeaderInputReady") is False

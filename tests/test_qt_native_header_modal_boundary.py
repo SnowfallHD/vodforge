@@ -62,6 +62,9 @@ def test_original_main_overlay_dismisses_and_consumes_same_header_gesture(
 
 @pytest.fixture
 def child_header(tmp_path, monkeypatch):
+    from yt_downloader.qt_quick import main as qt_main
+
+    monkeypatch.setattr(qt_main, "_system_reduced_motion", lambda: False)
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     monkeypatch.setenv("VODFORGE_POSTHOG_ENABLED", "false")
     app, bridge, engine, main = _launch(tmp_path, monkeypatch, [])
@@ -120,6 +123,7 @@ def test_current_packet_centers_route_all_six_header_targets(child_header, monke
                 "schema_version": 1,
                 "width": width,
                 "height": 44,
+                "host_screen": [0, 0, width, 44],
                 "leading": leading,
                 "reserve": 0,
                 "fullscreen": fullscreen,
@@ -362,3 +366,117 @@ def test_unallocated_native_row_blocks_pointer_until_current_allocation(child_he
     click(child, header, "navigationButton_Library")
     settle(app, header)
     assert bridge.selection == "Library"
+
+
+@pytest.mark.parametrize("route", ["Forge", "Library", "Watch", "Activity"])
+def test_header_material_distinguishes_rest_hover_and_held_press(
+    child_header, route, tmp_path
+):
+    app, bridge, _main, header, child, _boundary = child_header
+    bridge.selectHome(route)
+    settle(app, header)
+    button = visual_item(header, "navigationButton_" + route)
+    faces = [
+        item
+        for item in button.childItems()
+        if str(item.property("source")).startswith(
+            "PySide6.QtCore.QUrl('image://vodforge/button/"
+        )
+    ]
+    if not faces:
+        faces = [
+            item
+            for item in button.childItems()
+            if hasattr(item.property("source"), "toString")
+            and item.property("source")
+            .toString()
+            .startswith("image://vodforge/button/")
+        ]
+    assert len(faces) == 1
+
+    def state():
+        return faces[0].property("source").toString().split("/")[6]
+
+    QTest.mouseMove(child, QPoint(2, 55))
+    settle(app, header)
+    child.grabWindow().save(str(tmp_path / (route + "-rest.png")))
+    assert state() == "normal", (
+        "Selected route must not impersonate a held or hover face"
+    )
+    point = center(header, "navigationButton_" + route)
+    QTest.mouseMove(child, point)
+    settle(app, header)
+    assert button.property("hovered") and state() == "hover"
+    child.grabWindow().save(str(tmp_path / (route + "-hover.png")))
+    try:
+        QTest.mousePress(child, Qt.LeftButton, pos=point)
+        settle(app, header)
+        assert state() == "pressed"
+        child.grabWindow().save(str(tmp_path / (route + "-pressed.png")))
+    finally:
+        QTest.mouseRelease(child, Qt.LeftButton, pos=point)
+    settle(app, header)
+    assert bridge.selection == route and state() == "hover"
+    QTest.mouseMove(child, QPoint(2, 55))
+    settle(app, header)
+    assert state() == "normal"
+
+
+def test_fullscreen_content_inset_glides_with_live_pointer_geometry(child_header):
+    app, bridge, main, header, child, _boundary = child_header
+    from PySide6.QtCore import QPointF
+
+    main.resize(1440, 900)
+    child.setGeometry(20, 0, 1400, 44)
+    main.setProperty("nativeHeaderWidth", 1400)
+
+    def publish(leading, origin=0):
+        main.setProperty(
+            "nativeRowPacket",
+            {
+                "schema_version": 1,
+                "width": 1400,
+                "height": 44,
+                "host_screen": [origin, 0, 1400, 44],
+                "leading": leading,
+                "reserve": leading,
+                "fullscreen": True,
+                "state": "controls-visible" if leading else "controls-hidden",
+                "body_slot_height": 44,
+            },
+        )
+
+    publish(0)
+    settle(app, header)
+    body = main.findChild(QObject, "headerGeometrySlot").parentItem()
+    bounds = (body.x(), body.y(), body.width(), body.height())
+    publish(89)
+    QTest.qWait(45)
+    current = header.property("nativeHeaderInset")
+    assert 0 < current < 89, "Own content shift must interpolate instead of snapping"
+    anchor = header.property("nativeContentScreenX")
+    child.setGeometry(37, 0, 1400, 44)
+    publish(72, 17)  # Same screen destination; moving aperture must not restart it.
+    assert header.property("nativeContentScreenX") == anchor
+    assert header.property("nativeHeaderInset") == max(0, anchor - 17)
+    values = [anchor]
+    for route in ("Library", "Watch", "Activity", "Forge"):
+        button = visual_item(header, "navigationButton_" + route)
+        point = button.mapToScene(
+            QPointF(button.width() / 2, button.height() / 2)
+        ).toPoint()
+        QTest.mouseClick(child, Qt.LeftButton, pos=point)
+        app.processEvents()
+        assert bridge.selection == route, (
+            "Painted moving control and pointer geometry diverged"
+        )
+        QTest.qWait(32)
+        values.append(header.property("nativeContentScreenX"))
+    QTest.qWait(130)
+    values.append(header.property("nativeContentScreenX"))
+    assert values == sorted(values) and values[-1] == 89
+    assert (body.x(), body.y(), body.width(), body.height()) == bounds
+    main.setProperty("nativeHeaderReducedMotion", True)
+    publish(0)
+    app.processEvents()
+    assert header.property("nativeHeaderInset") == 0

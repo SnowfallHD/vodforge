@@ -1141,8 +1141,19 @@ Window {
             readonly property bool compact: layoutWidth < 960 || layoutWidth <
                 layoutInset + 150 + navWidth +
                 ((bridge.selection === "Library" || bridge.selection === "Watch") ? 193 : 0) + 72
-            property real nativeHeaderInset: window.nativeHeaderAttached
-                ? window.nativeHeaderLeadingInset : (Qt.platform.os === "osx" ? 82 : 0)
+            readonly property real nativeHostScreenX: window.nativeHeaderAttached && window.diagnosticHeaderPacketReady
+                ? window.diagnosticHeaderPacket.host_screen[0] : 0
+            // Pace one content destination in screen coordinates. Subtract the
+            // CURRENT native aperture immediately: never animate that correction.
+            property real nativeContentScreenX: nativeHostScreenX + (window.nativeHeaderAttached
+                ? window.nativeHeaderLeadingInset : (Qt.platform.os === "osx" ? 82 : 0))
+            readonly property real nativeHeaderInset: window.nativeHeaderAttached
+                ? Math.max(0, nativeContentScreenX - nativeHostScreenX) : nativeContentScreenX
+            Behavior on nativeContentScreenX {
+                enabled: window.nativeHeaderAttached && window.nativeHeaderInputReady &&
+                    window.nativeHeaderFullscreen && !bridge.reducedMotion && !window.nativeHeaderReducedMotion
+                NumberAnimation { duration: 220; easing.type: Easing.InOutCubic }
+            }
             readonly property real layoutInset: window.nativeHeaderAttached
                 ? window.nativeHeaderLeadingInset : (Qt.platform.os === "osx" ? 82 : 0)
             readonly property real layoutWidth: window.nativeHeaderAttached ? window.nativeHeaderWidth : window.width - 2 * window.gutter
@@ -1237,6 +1248,7 @@ Window {
                     StoneButton {
                         required property string modelData
                         objectName: "navigationButton_" + modelData
+                        persistentMaterial: false
                         label: modelData
                         selected: bridge.selection === modelData
                         icon: "image://vodforge/icon/" + (

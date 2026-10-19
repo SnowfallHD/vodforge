@@ -118,7 +118,6 @@ class HeaderHost:
     def __init__(self, pointer: int, height: float, gutter: float, minimum: float):
         self._row = None
         self._callback = None
-        self._retired_callback = None
         self._handle = _POINTER()
         self._library = _library()
         self._handle.value = self._library.vf_header_host_create(

@@ -85,7 +85,12 @@ static unsigned VFVisibleRect(NSView *view,NSRect *out);
 @end
 @implementation VFHeaderContainer
 - (BOOL)isFlipped{return YES;}
-- (void)drawRect:(NSRect)dirty {if(_brandColor){[_brandColor setFill];NSRectFill(dirty);}}
+- (void)drawRect:(NSRect)dirty {
+    // AppKit's invalidation rectangle is not the view's drawing ownership.
+    // A toolbar item must never cover the main window's content underneath it.
+    NSRect paint=NSIntersectionRect(dirty,self.bounds);
+    if(_brandColor&&!NSIsEmptyRect(paint)){[_brandColor setFill];NSRectFill(paint);}
+}
 - (void)setFrame:(NSRect)frame {
     _frameMutation++;@try{[super setFrame:frame];}@finally{_frameMutation--;}
     if(!_frameMutation)VFHeaderLayoutChanged(_owner);

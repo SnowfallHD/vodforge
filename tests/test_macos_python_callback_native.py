@@ -27,7 +27,6 @@ def test_header_callback_registration_does_not_allocate_runtime_trampoline(monke
     host._library = native
     host._handle = ctypes.c_void_p(1)
     host._callback = None
-    host._retired_callback = None
     callback = lambda: None
     host.set_change_callback(callback)
     assert len(calls) == 1

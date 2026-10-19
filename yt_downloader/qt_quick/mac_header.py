@@ -237,9 +237,12 @@ class IntegratedHeader:
         return self._closed
 
     def _place_surface(self, layout):
-        from PySide6.QtCore import QPoint, QRect
+        from PySide6.QtCore import QObject, QPoint, QRect
 
-        if self._surface.parent() is not self._window:
+        # QWindow.parent() invalidates its returned PySide wrapper when the
+        # child is deleted (even though the parent C++ window remains alive).
+        # The typed QObject relation verifies the same owner without that rule.
+        if QObject.parent(self._surface) is not self._window:
             raise RuntimeError("Qt header lost its exact logical main parent")
         rect = tuple(
             round(layout[key])
@@ -322,7 +325,7 @@ class IntegratedHeader:
         try:
             if self._host.drain() < 0:
                 raise RuntimeError("Native header event channel closed")
-            state, flags, geometry = self._host.snapshot()
+            state, _flags, geometry = self._host.snapshot()
             if state != 1 or len(geometry) != 98:
                 raise RuntimeError("Native header generation changed")
             sample = self._host.row_sample()
@@ -407,15 +410,6 @@ class IntegratedHeader:
                     return
                 raise
             layout["screen_ready"] = True
-            # Moving native ancestors may temporarily lack a screen allocation.
-            # Keep the existing owner; do not manufacture success or reparent it.
-            if not layout["screen_ready"]:
-                self._window._native_header_diagnostic = {
-                    "stage": "native_header_pending",
-                    "flags": flags,
-                    "layout": layout,
-                }
-                return
             child_flags = self._place_surface(layout)
             # Single QML transaction after native+Qt global binding validation.
             self._window.setProperty("nativeRowPacket", layout)
@@ -486,6 +480,11 @@ class IntegratedHeader:
             if isValid(self._window):
                 self._window.setProperty("nativeHeaderAttached", False)
                 self._window.setProperty("nativeHeaderSurface", None)
+                # A retired generation is diagnostic evidence, never live QML
+                # layout input (including the normal header's body reservation).
+                self._window.setProperty("nativeRowPacket", {})
+            self._attached = False
+            self._last_rect = None
         if self._host is not None and self._child_pointer:
             # A refused bind may retain a partial native generation. Query it
             # before destroying Qt; an unbind refusal retains both live owners.

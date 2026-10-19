@@ -13,6 +13,8 @@ Item {
     property bool primary: false
     property bool transientMaterial: true
     property bool hoverMaterial: true
+    // Navigation selection uses its label/underline, not a persistent hover.
+    property bool persistentMaterial: true
     property bool deepHover: false
     property bool interactive: true
     property bool doubleActivationEnabled: false
@@ -21,7 +23,8 @@ Item {
     readonly property bool overflowGlyph: !icon.length && !sceneIcon.length &&
             ["⋯", "⋮", "…"].indexOf(label) >= 0
     readonly property bool hovered: mouse.containsMouse
-    readonly property bool activeFace: (hoverMaterial && hovered) || activeFocus || selected
+    readonly property bool activeFace: (hoverMaterial && hovered) ||
+            (persistentMaterial && (activeFocus || selected))
     // Artwork cards keep their content inside the same inset face in every state.
     readonly property int artworkFaceInset: 7 + (activeFace && transientMaterial ? 2 : 0)
     signal activated()
@@ -56,6 +59,16 @@ Item {
         fillMode: Image.Stretch
         cache: true
         smooth: true
+    }
+    Rectangle {
+        objectName: "stoneKeyboardFocusRing"
+        anchors.fill: parent
+        anchors.margins: 5
+        radius: 8
+        color: "transparent"
+        border.width: 1
+        border.color: theme.accent
+        visible: !control.persistentMaterial && control.activeFocus
     }
     Row {
         anchors.centerIn: control.quiet ? undefined : parent
