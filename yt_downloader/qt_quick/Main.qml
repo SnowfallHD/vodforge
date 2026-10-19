@@ -1150,9 +1150,13 @@ Window {
             readonly property real nativeHeaderInset: window.nativeHeaderAttached
                 ? Math.max(0, nativeContentScreenX - nativeHostScreenX) : nativeContentScreenX
             Behavior on nativeContentScreenX {
+                id: nativeHeaderMotion
+                property int movementDuration: 220
+                onTargetValueChanged: movementDuration = targetValue < focusHeader.nativeContentScreenX ? 110 : 220
                 enabled: window.nativeHeaderAttached && window.nativeHeaderInputReady &&
                     window.nativeHeaderFullscreen && !bridge.reducedMotion && !window.nativeHeaderReducedMotion
-                NumberAnimation { duration: 220; easing.type: Easing.InOutCubic }
+                // Preserve the slower reveal; finish the menu-dismissal return sooner.
+                NumberAnimation { duration: nativeHeaderMotion.movementDuration; easing.type: Easing.InOutCubic }
             }
             readonly property real layoutInset: window.nativeHeaderAttached
                 ? window.nativeHeaderLeadingInset : (Qt.platform.os === "osx" ? 82 : 0)

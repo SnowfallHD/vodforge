@@ -556,3 +556,48 @@ def test_enter_keeps_ready_modal_and_retired_guards(child_header):
     assert item.property("hovered") is True
     boundary.close()
     assert boundary.eventFilter(child, event()) is True
+
+
+def test_menu_dismissal_returns_left_sooner_without_speeding_reveal(child_header):
+    app, bridge, main, header, child, _boundary = child_header
+    main.resize(1440, 900)
+    child.setGeometry(20, 0, 1400, 44)
+
+    def publish(leading):
+        main.setProperty(
+            "nativeRowPacket",
+            {
+                "schema_version": 1,
+                "width": 1400,
+                "height": 44,
+                "host_screen": [0, 0, 1400, 44],
+                "leading": leading,
+                "reserve": leading,
+                "fullscreen": True,
+                "state": "controls-visible" if leading else "controls-hidden",
+                "body_slot_height": 44,
+            },
+        )
+
+    main.setProperty("nativeHeaderReducedMotion", True)
+    publish(89)
+    settle(app, header)
+    main.setProperty("nativeHeaderReducedMotion", False)
+    publish(0)
+    QTest.qWait(45)
+    left = header.property("nativeContentScreenX")
+    assert 0 < left < 89
+    button = visual_item(header, "navigationButton_Activity")
+    at = button.mapToScene(QPointF(button.width() / 2, button.height() / 2)).toPoint()
+    QTest.mouseClick(child, Qt.LeftButton, pos=at)
+    assert bridge.selection == "Activity"
+    QTest.qWait(95)
+    assert header.property("nativeContentScreenX") <= 1, (
+        "Dismissal must finish sooner than the 220ms reveal"
+    )
+    publish(89)
+    QTest.qWait(140)
+    reveal = header.property("nativeContentScreenX")
+    assert 1 < reveal < 85, "Keep the liked slower reveal pacing"
+    QTest.qWait(120)
+    assert header.property("nativeContentScreenX") == 89
