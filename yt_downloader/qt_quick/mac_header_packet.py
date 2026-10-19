@@ -44,7 +44,6 @@ def packet(sample, body_slot, sequence, control_gap=0):
         sample.get(k) is True
         for k in (
             "current",
-            "host_visible",
             "toolbar_owned",
             "delegate_unchanged",
             "full_size",
@@ -53,8 +52,19 @@ def packet(sample, body_slot, sequence, control_gap=0):
         )
     ):
         raise NativeRowRefused("native owner is not current and visible")
-    if sample.get("transition") != 0:
-        raise NativeRowRefused("native transition has not settled")
+    if type(sample.get("transition")) is not int or sample["transition"] not in (
+        0,
+        1,
+        2,
+    ):
+        raise NativeRowRefused("unknown native transition")
+    # AppKit may temporarily hide its real overlay during fullscreen reparenting.
+    # Its current allocation is still authoritative; do not freeze the old size,
+    # nor report that the hidden native window is visible.
+    if type(sample.get("host_visible")) is not bool or (
+        not sample["host_visible"] and sample["transition"] == 0
+    ):
+        raise NativeRowRefused("native host visibility is not current")
     host = rect(sample["host"])
     content = rect(sample["content"])
     hx, hy, hw, hh = host
@@ -120,7 +130,7 @@ def packet(sample, body_slot, sequence, control_gap=0):
         "schema_version": 1,
         "sequence": sequence,
         "owner": "unified-toolbar",
-        "host_visible": True,
+        "host_visible": sample["host_visible"],
         "state": "controls-visible" if visible else "controls-hidden",
         "host_screen": list(host),
         "native_row_screen": list(row),
@@ -131,6 +141,7 @@ def packet(sample, body_slot, sequence, control_gap=0):
         "relative_x": hx - cx,
         "relative_y": cy + ch - hy - hh,
         "fullscreen": sample["fullscreen"],
+        "transition": sample["transition"],
         "body_slot_height": float(body_slot),
         "pixel_acceptance": False,
     }

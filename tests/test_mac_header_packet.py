@@ -132,3 +132,24 @@ def test_visible_control_clearance_has_one_target_through_native_reallocation():
         row = packet(current, 44, 1, 20)
         targets.append(row["host_screen"][0] + row["leading"])
     assert targets == [right + 20] * 4
+
+
+@pytest.mark.parametrize("transition", [1, 2])
+def test_authoritative_inflight_native_row_is_not_a_stale_settled_packet(transition):
+    s = entered()
+    s["transition"] = transition
+    p = packet(s, 44, 1, 20)
+    assert p["host_screen"] == s["host"]
+    assert p["width"] == s["host"][2]
+
+
+def test_hidden_native_overlay_during_reparenting_keeps_geometry_without_claiming_visibility():
+    s = entered()
+    s.update(transition=1, host_visible=False)
+    for button in s["buttons"]:
+        button.update(visibility="hidden", visible_screen=[0, 0, 0, 0])
+    p = packet(s, 44, 1, 20)
+    assert p["host_screen"] == s["host"] and p["host_visible"] is False
+    s["transition"] = 0
+    with pytest.raises(NativeRowRefused):
+        packet(s, 44, 2, 20)

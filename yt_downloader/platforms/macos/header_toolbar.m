@@ -20,22 +20,30 @@ static unsigned VFVisibleRect(NSView *view,NSRect *out);
 
 @interface VFHeaderContainer : NSView {
 @public
+    NSUInteger _frameMutation;
     CGFloat _itemHeight;
+    NSColor *_brandColor;
     VFHeaderHost *_owner;
     NSLayoutConstraint *_preferredWidth,*_heightConstraint;
 }
 @end
 @implementation VFHeaderContainer
 - (BOOL)isFlipped{return YES;}
-- (void)setFrameSize:(NSSize)size {[super setFrameSize:size];VFHeaderLayoutChanged(_owner);}
-- (void)setBoundsSize:(NSSize)size {[super setBoundsSize:size];VFHeaderLayoutChanged(_owner);}
+- (void)drawRect:(NSRect)dirty {if(_brandColor){[_brandColor setFill];NSRectFill(dirty);}}
+- (void)setFrame:(NSRect)frame {
+    _frameMutation++;@try{[super setFrame:frame];}@finally{_frameMutation--;}
+    if(!_frameMutation)VFHeaderLayoutChanged(_owner);
+}
+- (void)setFrameOrigin:(NSPoint)origin {[super setFrameOrigin:origin];if(!_frameMutation)VFHeaderLayoutChanged(_owner);}
+- (void)setFrameSize:(NSSize)size {[super setFrameSize:size];if(!_frameMutation)VFHeaderLayoutChanged(_owner);}
+- (void)setBoundsSize:(NSSize)size {[super setBoundsSize:size];if(!_frameMutation)VFHeaderLayoutChanged(_owner);}
 - (void)viewDidMoveToWindow {[super viewDidMoveToWindow];VFHeaderLayoutChanged(_owner);}
 - (void)viewDidMoveToSuperview {[super viewDidMoveToSuperview];VFHeaderLayoutChanged(_owner);}
-- (void)dealloc{_owner=nil;[_preferredWidth release];[_heightConstraint release];[super dealloc];}
+- (void)dealloc{_owner=nil;[_brandColor release];[_preferredWidth release];[_heightConstraint release];[super dealloc];}
 - (NSSize)intrinsicContentSize{return NSMakeSize(NSViewNoIntrinsicMetric,NSViewNoIntrinsicMetric);}
 - (void)resizeSubviewsWithOldSize:(NSSize)oldSize {
     (void)oldSize; // Qt child frame and inverse-container geometry have exact owners.
-    VFHeaderLayoutChanged(_owner);
+    if(!_frameMutation)VFHeaderLayoutChanged(_owner);
 }
 - (void)didAddSubview:(NSView *)view{[super didAddSubview:view];VFHeaderLayoutChanged(_owner);}
 - (void)willRemoveSubview:(NSView *)view{VFHeaderHostWillRemoveSubview(_owner,view);[super willRemoveSubview:view];}
@@ -173,12 +181,15 @@ static NSString *const VFItemID=@"org.vodforge.qa.unified44.item";
     BOOL _buttonFrameFlags[3],_buttonBoundsFlags[3],_buttonKVOHidden[3],_buttonKVOWindow[3],_buttonKVOAlpha[3];
     NSWindow *_buttonWindows[3];
     CGFloat _height;
+    NSMapTable *_paintWindows;
     unsigned _transition;
+    void (*_changeCallback)(void *);void *_changeContext;
 }
 - (instancetype)initWithWindow:(NSWindow *)window height:(CGFloat)height gutter:(double)gutter minWidth:(double)minWidth;
 - (void)layoutChanged;
 - (void)changed:(NSNotification *)notification;
 - (void)signal;
+- (void)applyBrand;
 - (void)refreshButtons;
 - (void)stopButtons;
 - (BOOL)current;
@@ -349,7 +360,7 @@ static BOOL VFChildNear(NSRect a,NSRect b){return fabs(a.origin.x-b.origin.x)<.0
 }
 - (BOOL)current { return !_closed&&!_nativeClosed&&!_pipeFailed&&_layoutValid&&[self ownedGeneration]; }
 - (void)signal {
-    if(_closed||![NSThread isMainThread]||_eventWrite<0||_eventPending)return;
+    if(_closed||![NSThread isMainThread]||_eventWrite<0)return;
     // Window updates can be frequent. Wake Qt only for actual bounded state
     // changes, never a read->same setter->native update feedback loop.
     double snapshot[98];BOOL changed=!_haveEventSnapshot;
@@ -379,10 +390,15 @@ static BOOL VFChildNear(NSRect a,NSRect b){return fabs(a.origin.x-b.origin.x)<.0
     for(unsigned i=0;i<3;i++)_eventButtonIDs[i]=identities[i];
     for(unsigned i=0;i<98;i++)_eventSnapshot[i]=snapshot[i];
     _eventFlags=flags;_eventStatus=status;_haveEventSnapshot=YES;
+    if(!_eventPending){
     unsigned char byte=1;ssize_t result;
     do{result=write(_eventWrite,&byte,1);}while(result<0&&errno==EINTR);
     if(result==1||(result<0&&(errno==EAGAIN||errno==EWOULDBLOCK)))_eventPending=YES;
     else if(result<0&&errno!=EINTR)_pipeFailed=YES;
+    }
+    // Same-main-thread layout delivery precedes drawing; FD remains a wake-up
+    // fallback, not the sole owner of a later corrective inset/width update.
+    if(_changeCallback)_changeCallback(_changeContext);
 }
 - (void)stopButtons {
     NSNotificationCenter *center=[NSNotificationCenter defaultCenter];
@@ -453,9 +469,18 @@ static BOOL VFChildNear(NSRect a,NSRect b){return fabs(a.origin.x-b.origin.x)<.0
     if([notification.name isEqual:NSWindowDidEnterFullScreenNotification]||[notification.name isEqual:NSWindowDidExitFullScreenNotification])_transition=0;
     [self refreshButtons];[self layoutChanged];[self signal];
 }
+- (void)applyBrand {
+    if(!_view->_brandColor||![_carrier current])return;
+    NSWindow *window=_view.window;
+    if(!window||!_paintWindows)return;
+    if(![_paintWindows objectForKey:window]){
+        [_paintWindows setObject:window.backgroundColor?:NSColor.clearColor forKey:window];
+        window.backgroundColor=_view->_brandColor;
+    }
+}
 - (void)layoutChanged {
     if(_closed||_nativeClosed||_layingOut||!NSThread.isMainThread||!_view)return;
-    _layingOut=YES;
+    _layingOut=YES;[self applyBrand];
     // A pending AppKit allocation is observable, never repaired with an offset.
     _layoutValid=isfinite(_height)&&_height>0&&_height<=256;
     _layingOut=NO;[self signal];
@@ -465,9 +490,13 @@ static BOOL VFChildNear(NSRect a,NSRect b){return fabs(a.origin.x-b.origin.x)<.0
     _closing=YES;_nativeClosed=YES;[self signal];
 }
 - (void)close {
-    if(_closed)return;_closed=YES;
+    if(_closed)return;_changeCallback=NULL;_changeContext=NULL;_closed=YES;
     if(_childBinding){[_childBinding releaseOnly];[_childBinding release];_childBinding=nil;}
     if(_view)_view->_owner=nil;[self stopButtons];
+    for(NSWindow *window in _paintWindows.keyEnumerator){
+        if([window.backgroundColor isEqual:_view->_brandColor])window.backgroundColor=[_paintWindows objectForKey:window];
+    }
+    [_paintWindows removeAllObjects];
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     // Restore only this exact current toolbar generation. A closing native
     // window need not be restyled. Never touch a foreign toolbar/delegate.
@@ -481,9 +510,9 @@ static BOOL VFChildNear(NSRect a,NSRect b){return fabs(a.origin.x-b.origin.x)<.0
     if(_eventRead>=0){close(_eventRead);_eventRead=-1;}
     if(_eventWrite>=0){close(_eventWrite);_eventWrite=-1;}
 }
-- (void)dealloc{[self close];[super dealloc];}
+- (void)dealloc{[self close];[_paintWindows release];[super dealloc];}
 @end
-unsigned vf_header_host_abi_version(void){return 4;}
+unsigned vf_header_host_abi_version(void){return 5;}
 void *vf_header_host_create(void *window,double height,double gutter,double minWidth) {
     if(![NSThread isMainThread]||!window||!isfinite(height)||height!=44
         ||!isfinite(gutter)||gutter<0||gutter>256||!isfinite(minWidth)||minWidth<=0||minWidth>16384)return NULL;
@@ -637,7 +666,7 @@ int vf_header_host_unbind_child(void *handle,void *child) {
     } @catch(NSException *exception){(void)exception;return 0;}
 }
 
-// One ABI4 packet; no Python sequence of separately-changing native getters.
+// One ABI5 packet; no Python sequence of separately-changing native getters.
 typedef struct {
     uint32_t abi,flags,transition,reserved;
     uint64_t hostIdentity,accessoryIdentity,delegateIdentity,buttonIdentities[3];
@@ -680,7 +709,7 @@ static unsigned VFVisibleRect(NSView *view,NSRect *out) {
 size_t vf_header_host_row_snapshot_size(void){return sizeof(VFHeaderRowSnapshot);}
 int vf_header_host_row_snapshot(void *handle,VFHeaderRowSnapshot *out) {
     if(!out||vf_header_host_state(handle)!=1)return 0;
-    VFHeaderHost *h=handle;VFHeaderRowSnapshot s={0};s.abi=4;
+    VFHeaderHost *h=handle;VFHeaderRowSnapshot s={0};s.abi=5;
     @try {
         s.flags=vf_header_host_flags(handle);s.transition=h->_transition;
         s.hostIdentity=(uint64_t)(uintptr_t)h->_view;
@@ -697,4 +726,23 @@ int vf_header_host_row_snapshot(void *handle,VFHeaderRowSnapshot *out) {
         }
         if(![h current])return 0;*out=s;return 1;
     }@catch(NSException *exception){(void)exception;return 0;}
+}
+
+// Register/retire only the exact live generation, on its main thread.
+int vf_header_host_set_change_callback(void *handle,void (*callback)(void *),void *context) {
+    if(!NSThread.isMainThread||!handle)return 0;VFHeaderHost *h=handle;
+    if(h->_closed)return 0;
+    h->_changeCallback=callback;h->_changeContext=callback?context:NULL;return 1;
+}
+
+int vf_header_host_set_background(void *handle,double red,double green,double blue,double alpha){
+    if(vf_header_host_state(handle)!=1||!isfinite(red)||!isfinite(green)||!isfinite(blue)||!isfinite(alpha)
+       ||red<0||red>1||green<0||green>1||blue<0||blue>1||alpha!=1)return 0;
+    VFHeaderHost *h=handle;NSColor *color=[NSColor colorWithSRGBRed:red green:green blue:blue alpha:alpha];
+    if([h->_view->_brandColor isEqual:color])return 1;
+    if(!h->_paintWindows)h->_paintWindows=[[NSMapTable weakToStrongObjectsMapTable]retain];
+    for(NSWindow *window in h->_paintWindows.keyEnumerator)
+        if([window.backgroundColor isEqual:h->_view->_brandColor])window.backgroundColor=color;
+    [h->_view->_brandColor release];h->_view->_brandColor=[color retain];
+    [h applyBrand];[h->_view setNeedsDisplay:YES];return 1;
 }

@@ -172,7 +172,9 @@ def native_owner_rig(tmp_path, monkeypatch):
             hx, hy, hw, hh = g[27:31]
             if state.get("short_allocation"):
                 hh = 32
-            button_x = hx + 9 if state.get("controls_inside") else 109
+            button_x = state.get(
+                "button_x", hx + 9 if state.get("controls_inside") else 109
+            )
             if state.get("controls_hidden"):
                 return {
                     "owner": "unified-toolbar",
@@ -184,7 +186,7 @@ def native_owner_rig(tmp_path, monkeypatch):
                     "transparent": True,
                     "title_hidden": True,
                     "transition": 0,
-                    "fullscreen": False,
+                    "fullscreen": bool(state.get("fullscreen")),
                     "host": [hx, hy, hw, hh],
                     "content": list(g[62:66]),
                     "buttons": [
@@ -207,7 +209,7 @@ def native_owner_rig(tmp_path, monkeypatch):
                     "transparent": True,
                     "title_hidden": True,
                     "transition": 0,
-                    "fullscreen": False,
+                    "fullscreen": bool(state.get("fullscreen")),
                     "host": None,
                     "content": list(g[62:66]),
                     "buttons": [
@@ -228,19 +230,27 @@ def native_owner_rig(tmp_path, monkeypatch):
                 "full_size": True,
                 "transparent": True,
                 "title_hidden": True,
-                "transition": int(state["pending"]),
-                "fullscreen": False,
+                "transition": state.get("transition", int(state["pending"])),
+                "fullscreen": bool(state.get("fullscreen")),
                 "host": [hx, hy, hw, hh],
                 "content": list(g[62:66]),
                 "buttons": [
                     {
                         "identity": i + 1,
-                        "visibility": "visible",
+                        "visibility": "hidden"
+                        if state.get("mixed_controls") and i == 1
+                        else "visible",
                         "visible_screen": [button_x + 23 * i, hy + 14, 14, 14],
                     }
                     for i in range(3)
                 ],
             }
+
+        def set_background(self, color):
+            rig.brand_color = color
+
+        def set_change_callback(self, callback):
+            rig.native_callback = callback
 
         def set_height(self, height):
             assert height > 0
@@ -264,6 +274,8 @@ def native_owner_rig(tmp_path, monkeypatch):
             state["rect"] = tuple(rect)
             if state["notify_update"]:
                 os.write(write_fd, b"u")
+            if state.pop("callback_during_update", False):
+                rig.native_callback()
 
         def unbind_child(self, _pointer):
             assert rig.boundary.retired
@@ -689,3 +701,105 @@ def test_factory_preserves_default_visibility_and_explicit_native_startup_defer(
             assert window.isVisible()
     finally:
         _close(bridge, engine, window)
+
+
+@pytest.mark.parametrize("transition", [1, 2])
+def test_inflight_native_allocation_does_not_wait_for_fullscreen_did_notification(
+    native_owner_rig, transition
+):
+    rig = native_owner_rig
+    owner = rig.make()
+    rig.state["transition"] = transition
+    rig.state["rect"] = (110, 6, 930, 44)
+    rig.notify()
+    rig.settle()
+    current = rig.window.property("nativeRowPacket")
+    assert current["relative_x"] == 110
+    assert current["width"] == rig.surface.width() == 930
+    owner.close()
+
+
+def test_native_callback_commits_before_native_allocation_callback_returns(
+    native_owner_rig,
+):
+    rig = native_owner_rig
+    owner = rig.make()
+    assert callable(getattr(rig, "native_callback", None))
+    rig.state["rect"] = (110, 6, 930, 44)
+    rig.native_callback()
+    # No event-loop pumping: deferred FD-only reconciliation is too late.
+    assert rig.window.property("nativeRowPacket")["relative_x"] == 110
+    assert rig.surface.width() == 930
+    owner.close()
+    assert rig.native_callback is None
+
+
+def test_native_material_uses_same_canonical_brand_color_as_body(native_owner_rig):
+    rig = native_owner_rig
+    owner = rig.make()
+    assert rig.brand_color == rig.window.property("glassSurfaceColor").getRgbF()
+    assert rig.brand_color[3] == 1
+    owner.close()
+
+
+def test_reveal_reallocation_keeps_right_edge_and_left_clearance_in_same_turn(
+    native_owner_rig,
+):
+    rig = native_owner_rig
+    owner = rig.make()
+    rig.state.update(fullscreen=True, button_x=119)
+    brand = rig.window.findChild(QObject, "brandRow")
+    utility = rig.window.findChild(QObject, "utilitiesRow")
+    lefts, rights = [], []
+    for x in (10, 17, 27, 46, 66, 84, 94, 96, 84, 46, 10):
+        rig.state["rect"] = (x, 6, 1032 - x, 44)
+        rig.native_callback()
+        polish_scene(rig.surface.contentItem())
+        lefts.append(x + brand.x())
+        rights.append(x + utility.x() + utility.width())
+    assert lefts == pytest.approx([99] * len(lefts))
+    assert rights == pytest.approx([1032] * len(rights))
+    owner.close()
+
+
+def test_nested_native_change_finishes_in_same_transaction(native_owner_rig):
+    rig = native_owner_rig
+    owner = rig.make()
+    rig.state.update(rect=(110, 6, 930, 44), callback_during_update=True)
+    rig.native_callback()
+    assert not owner.closed and not owner._synchronizing
+    assert rig.window.property("nativeRowPacket")["width"] == 930
+    owner.close()
+
+
+def test_native_callback_refusal_does_not_unwind_across_native_boundary(
+    native_owner_rig,
+):
+    rig = native_owner_rig
+    owner = rig.make()
+    callback = rig.native_callback
+    rig.state["mismatch"] = True
+    callback()
+    assert owner.closed and rig.native_callback is None
+    assert rig.window._native_header_diagnostic["stage"] == "native_header_refused"
+    callback()  # A retired callback cannot regain ownership or schedule work.
+
+
+def test_direct_native_mixed_button_setters_publish_only_coherent_next_allocation(
+    native_owner_rig,
+):
+    rig = native_owner_rig
+    owner = rig.make()
+    before = rig.window.property("nativeRowPacket")
+    rig.state["mixed_controls"] = True
+    rig.native_callback()
+    assert not owner.closed and rig.window.property("nativeRowPacket") == before
+    assert (
+        rig.window._native_header_diagnostic["stage"]
+        == "native_header_pending_coherent_allocation"
+    )
+    rig.state.update(mixed_controls=False, rect=(110, 6, 930, 44))
+    rig.native_callback()
+    assert rig.window.property("nativeRowPacket")["width"] == 930
+    assert rig.window._native_header_diagnostic["stage"] == "success"
+    owner.close()

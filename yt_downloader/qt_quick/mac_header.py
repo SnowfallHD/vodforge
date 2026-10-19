@@ -6,7 +6,7 @@ import math
 from typing import Any, ClassVar
 
 from yt_downloader.platforms.macos.header_host import HeaderHost
-from yt_downloader.qt_quick.mac_header_packet import packet
+from yt_downloader.qt_quick.mac_header_packet import NativeRowRefused, packet
 
 
 def create_header_input_boundary(main: Any, surface: Any):
@@ -173,6 +173,7 @@ class IntegratedHeader:
         self._closed = False
         self._retired = False
         self._synchronizing = False
+        self._resynchronize = False
         self._attached = False
         self._body_slot = None
         self._sequence = 0
@@ -208,6 +209,7 @@ class IntegratedHeader:
             self._notifier.activated.connect(self.synchronize)
             # Initial intrinsic height is fixed for this native row.
             self.synchronize()
+            self._host.set_change_callback(self._native_changed)
         except Exception:
             try:
                 self.close()
@@ -271,10 +273,42 @@ class IntegratedHeader:
         self._last_rect = rect
         return flags
 
+    def _native_changed(self):
+        # Called on AppKit's main thread, before its allocation callback returns.
+        # Never unwind a Python exception through the C callback boundary.
+        try:
+            self.synchronize()
+        except Exception:  # noqa: BLE001 - no Python exception may cross the C boundary
+            return  # synchronize already preserved refusal diagnostics and retired.
+
     def synchronize(self, *_notification):
-        if self._retired or self._synchronizing:
+        if self._retired:
+            return
+        if self._synchronizing:
+            self._resynchronize = True
             return
         self._synchronizing = True
+        try:
+            # Child binding can itself emit geometry notifications. Reconcile
+            # those in this same transaction, never on a delayed render frame.
+            for _ in range(16):
+                self._resynchronize = False
+                self._synchronize_once()
+                if not self._resynchronize or self._retired:
+                    break
+            else:
+                raise RuntimeError("Native header allocation did not converge")
+        except Exception as exc:
+            self._window._native_header_diagnostic = {
+                "stage": "native_header_refused",
+                "exception_class": type(exc).__name__,
+            }
+            self.close()
+            raise
+        finally:
+            self._synchronizing = False
+
+    def _synchronize_once(self):
         try:
             if self._host.drain() < 0:
                 raise RuntimeError("Native header event channel closed")
@@ -282,8 +316,8 @@ class IntegratedHeader:
             if state != 1 or len(geometry) != 98:
                 raise RuntimeError("Native header generation changed")
             sample = self._host.row_sample()
-            if sample["transition"]:
-                return  # AppKit owns transition; no halfway packet/second animator.
+            color = self._window.property("glassSurfaceColor")
+            self._host.set_background(color.getRgbF())
             if self._body_slot is None:
                 self._body_slot = self._header.height()
             host_rect = sample.get("host")
@@ -326,12 +360,41 @@ class IntegratedHeader:
                 }
                 return
             self._sequence += 1
-            layout = packet(
-                sample,
-                self._body_slot,
-                self._sequence,
-                float(self._window.property("gutter")),
-            )
+            try:
+                layout = packet(
+                    sample,
+                    self._body_slot,
+                    self._sequence,
+                    float(self._window.property("gutter")),
+                )
+            except NativeRowRefused:
+                # Direct main-thread KVO can observe the three native buttons
+                # between their individual setters, or an in-flight reparent
+                # between the content and toolbar allocations. Keep the exact
+                # owner, publish nothing, and await its next allocation event.
+                # Unknown controls/foreign ownership still retire immediately.
+                states = {b.get("visibility") for b in sample.get("buttons", [])}
+                owned = all(
+                    sample.get(k) is True
+                    for k in (
+                        "current",
+                        "toolbar_owned",
+                        "delegate_unchanged",
+                        "full_size",
+                        "transparent",
+                        "title_hidden",
+                    )
+                )
+                if owned and (
+                    sample.get("transition") in (1, 2)
+                    or states == {"visible", "hidden"}
+                ):
+                    self._window._native_header_diagnostic = {
+                        "stage": "native_header_pending_coherent_allocation",
+                        "transition": sample.get("transition"),
+                    }
+                    return
+                raise
             layout["screen_ready"] = True
             # Moving native ancestors may temporarily lack a screen allocation.
             # Keep the existing owner; do not manufacture success or reparent it.
@@ -363,8 +426,6 @@ class IntegratedHeader:
             }
             self.close()
             raise
-        finally:
-            self._synchronizing = False
 
     def update_height(self):
         if not self._retired:
@@ -389,6 +450,8 @@ class IntegratedHeader:
 
         if not self._retired:
             self._retired = True
+            if self._host is not None:
+                self._host.set_change_callback(None)
             if self._input_boundary is not None:
                 self._input_boundary.close()
                 self._input_boundary = None

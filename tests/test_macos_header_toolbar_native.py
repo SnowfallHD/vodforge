@@ -50,6 +50,8 @@ def header_driver(tmp_path_factory: pytest.TempPathFactory) -> Path:
     "case",
     [
         "basic",
+        "callback",
+        "brand",
         "guards",
         "duplicate_host",
         "events",

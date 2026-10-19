@@ -1,4 +1,4 @@
-"""Explicit packaged native header ABI; no startup compilation or callbacks."""
+"""Explicit packaged native header ABI; no startup compilation."""
 
 from __future__ import annotations
 
@@ -7,12 +7,13 @@ import math
 from functools import lru_cache
 from pathlib import Path
 
+_CHANGE_CALLBACK = ctypes.CFUNCTYPE(None, ctypes.c_void_p)
 _POINTER = ctypes.c_void_p
 _LIBRARY = Path(__file__).with_name("libvodforge_fullscreen.dylib")
 
 
 class Snapshot(ctypes.Structure):
-    """One public-native generation and geometry transaction, ABI4."""
+    """One public-native generation and geometry transaction, ABI5."""
 
     _fields_ = [
         ("abi", ctypes.c_uint32),
@@ -41,6 +42,8 @@ def _library():
         "row_snapshot_size": (ctypes.c_size_t, []),
         "event_fd": (ctypes.c_int, [_POINTER]),
         "drain": (ctypes.c_int, [_POINTER]),
+        "set_change_callback": (ctypes.c_int, [_POINTER, _POINTER, _POINTER]),
+        "set_background": (ctypes.c_int, [_POINTER] + [ctypes.c_double] * 4),
         "set_height": (ctypes.c_int, [_POINTER, ctypes.c_double]),
         "destroy": (ctypes.c_int, [ctypes.POINTER(_POINTER)]),
         "bind_child": (ctypes.c_int, [_POINTER, _POINTER] + [ctypes.c_double] * 4),
@@ -51,7 +54,7 @@ def _library():
         function = getattr(library, "vf_header_host_" + suffix)
         function.restype, function.argtypes = result, arguments
     if (
-        library.vf_header_host_abi_version() != 4
+        library.vf_header_host_abi_version() != 5
         or library.vf_header_host_row_snapshot_size() != ctypes.sizeof(Snapshot)
     ):
         raise RuntimeError("Incompatible native header host")
@@ -63,6 +66,8 @@ class HeaderHost:
 
     def __init__(self, pointer: int, height: float, gutter: float, minimum: float):
         self._row = None
+        self._callback = None
+        self._retired_callback = None
         self._handle = _POINTER()
         self._library = _library()
         self._handle.value = self._library.vf_header_host_create(
@@ -128,6 +133,27 @@ class HeaderHost:
             ],
         }
 
+    def set_change_callback(self, callback):
+        current = _CHANGE_CALLBACK(lambda _context: callback()) if callback else None
+        pointer = ctypes.cast(current, _POINTER) if current else _POINTER()
+        if (
+            self._library.vf_header_host_set_change_callback(
+                self._handle, pointer, None
+            )
+            != 1
+        ):
+            raise RuntimeError("Native header callback ownership changed")
+        # Refusal may retire this owner from inside its own callback. Keep the
+        # old trampoline alive until the closed host itself becomes unreachable;
+        # never free libffi executable storage while C is returning through it.
+        if self._callback is not None:
+            self._retired_callback = self._callback
+        self._callback = current
+
+    def set_background(self, color):
+        if self._library.vf_header_host_set_background(self._handle, *color) != 1:
+            raise RuntimeError("Native header brand surface refused")
+
     def set_height(self, height):
         if self._library.vf_header_host_set_height(self._handle, height) != 1:
             raise RuntimeError("Native header height ownership changed")
@@ -145,6 +171,8 @@ class HeaderHost:
             raise RuntimeError("Native header child detach refused; retain exact owner")
 
     def close(self):
+        if not self.closed:
+            self.set_change_callback(None)
         if (
             not self.closed
             and self._library.vf_header_host_destroy(ctypes.byref(self._handle)) != 1
