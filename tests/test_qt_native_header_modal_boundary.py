@@ -480,3 +480,79 @@ def test_fullscreen_content_inset_glides_with_live_pointer_geometry(child_header
     publish(0)
     app.processEvents()
     assert header.property("nativeHeaderInset") == 0
+
+
+@pytest.mark.parametrize("scene_dx", [108, -108])
+def test_passive_enter_uses_current_surface_not_ancestor_coordinates(
+    child_header, scene_dx
+):
+    from PySide6.QtGui import QEnterEvent
+
+    app, _bridge, _main, header, child, _boundary = child_header
+    label = "Forge" if scene_dx > 0 else "Library"
+    item = visual_item(header, "navigationButton_" + label)
+    local = QPointF(center(header, "navigationButton_" + label))
+    global_pos = QPointF(child.mapToGlobal(local.toPoint()))
+    inherited = local + QPointF(scene_dx, 4)
+    event = QEnterEvent(inherited, inherited, global_pos)
+    QCoreApplication.sendEvent(child, event)
+    settle(app, header)
+    assert item.property("hovered") is True
+    other = visual_item(
+        header, "navigationButton_" + ("Library" if label == "Forge" else "Forge")
+    )
+    assert other.property("hovered") is False
+
+
+@pytest.mark.parametrize("origin", [(96, 4), (-230, -40), (0, 0)])
+def test_enter_current_mapping_survives_allocation_and_fractional_pointer(
+    child_header, origin
+):
+    from PySide6.QtGui import QEnterEvent
+
+    app, _bridge, _main, header, child, _boundary = child_header
+    child.setPosition(QPoint(*origin))
+    local = QPointF(center(header, "navigationButton_Forge")) + QPointF(0.25, -0.25)
+    base = local.toPoint()
+    global_pos = QPointF(child.mapToGlobal(base)) + local - QPointF(base)
+    event = QEnterEvent(local + QPointF(108, 4), local + QPointF(108, 4), global_pos)
+    delivered = []
+    item = visual_item(header, "navigationButton_Forge")
+    item.activated.connect(lambda: delivered.append(True))
+    QCoreApplication.sendEvent(child, event)
+    settle(app, header)
+    assert item.property("hovered") is True
+    assert delivered == []
+    QCoreApplication.sendEvent(child, QEvent(QEvent.Leave))
+    settle(app, header)
+    assert item.property("hovered") is False
+
+
+def test_enter_keeps_ready_modal_and_retired_guards(child_header):
+    from PySide6.QtGui import QEnterEvent
+
+    app, _bridge, main, header, child, boundary = child_header
+    point = QPointF(center(header, "navigationButton_Forge"))
+    global_pos = QPointF(child.mapToGlobal(point.toPoint()))
+
+    def event():
+        return QEnterEvent(point + QPointF(108, 4), point + QPointF(108, 4), global_pos)
+
+    item = visual_item(header, "navigationButton_Forge")
+    main.setProperty("nativeHeaderInputReady", False)
+    QCoreApplication.sendEvent(child, event())
+    settle(app, header)
+    assert item.property("hovered") is False
+    main.setProperty("nativeHeaderInputReady", True)
+    popup = main.findChild(QObject, "downloadSettingsPopup")
+    popup.setProperty("visible", True)
+    assert not main.property("menuNavigationAllowed")
+    QCoreApplication.sendEvent(child, event())
+    settle(app, header)
+    assert item.property("hovered") is False
+    popup.setProperty("visible", False)
+    QCoreApplication.sendEvent(child, event())
+    settle(app, header)
+    assert item.property("hovered") is True
+    boundary.close()
+    assert boundary.eventFilter(child, event()) is True

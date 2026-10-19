@@ -16,7 +16,7 @@ def create_header_input_boundary(main: Any, surface: Any):
     existing gate decides admission; no popup list or input diagnostics persist.
     """
     from PySide6.QtCore import QCoreApplication, QEvent, QObject, QPointF, Qt
-    from PySide6.QtGui import QMouseEvent, QWheelEvent
+    from PySide6.QtGui import QEnterEvent, QMouseEvent, QWheelEvent
     from shiboken6 import isValid
 
     class HeaderInputBoundary(QObject):
@@ -35,6 +35,7 @@ def create_header_input_boundary(main: Any, surface: Any):
             self.owned = False
             self.retired = False
             self.cancelled_gesture = False
+            self._mapping_enter = False
             surface.installEventFilter(self)
             self.main.menuNavigationAllowedChanged.connect(self._gate_changed)
             self.main.nativeHeaderInputReadyChanged.connect(self._gate_changed)
@@ -43,6 +44,11 @@ def create_header_input_boundary(main: Any, surface: Any):
         def eventFilter(self, watched, event):
             if watched is not self.surface:
                 return False
+            if event.type() == QEvent.Type.Enter:
+                try:
+                    return self._enter(event)
+                except RuntimeError:
+                    return True
             if event.type() in {
                 QEvent.Type.WindowDeactivate,
                 QEvent.Type.Hide,
@@ -128,6 +134,37 @@ def create_header_input_boundary(main: Any, surface: Any):
             except RuntimeError:
                 self.owned = False
                 return True
+
+        def _enter(self, event):
+            # Cocoa can report Enter in the ancestor NSWindow's coordinates
+            # after the exact Qt view is embedded in the toolbar. Move and
+            # press already use the child. Keep one current scene mapping.
+            if self.retired or not isValid(self.main) or not isValid(self.surface):
+                return True
+            if not self.main.property(
+                "nativeHeaderInputReady"
+            ) or not self.main.property("menuNavigationAllowed"):
+                return True
+            if not self.main.isVisible() or not self.surface.isVisible():
+                return True
+            if self._mapping_enter:
+                return False
+            global_pos = event.globalPosition()
+            base = global_pos.toPoint()
+            local = (
+                QPointF(self.surface.mapFromGlobal(base)) + global_pos - QPointF(base)
+            )
+            if event.position() != local or event.scenePosition() != local:
+                mapped = QEnterEvent(local, local, global_pos, event.pointingDevice())
+                mapped.setTimestamp(event.timestamp())
+                self._mapping_enter = True
+                try:
+                    QCoreApplication.sendEvent(self.surface, mapped)
+                finally:
+                    self._mapping_enter = False
+                event.accept()
+                return True
+            return False
 
         def _gate_changed(self):
             if self.retired or not isValid(self.main) or (not isValid(self.surface)):
