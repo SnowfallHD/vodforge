@@ -12,7 +12,7 @@ Window {
             !supportDiagnostics.visible && !libraryItemPopup.visible &&
             !fileActionPopup.visible && !libraryRemovalPopup.visible &&
             !collectionPopup.visible && !collectionTargetPopup.visible &&
-            !annotationPopup.visible && !mp3OptionsPopup.visible && !settingsPopup.visible &&
+            !annotationPopup.visible && !settingsPopup.visible &&
             !updatePopup.visible && !accessPopup.visible &&
             !localConversionPopup.visible && !localProfilePopup.visible &&
             !formatMenu.visible && !optionsMenu.visible &&
@@ -364,7 +364,7 @@ Window {
             !supportDiagnostics.visible && !libraryItemPopup.visible &&
             !fileActionPopup.visible && !libraryRemovalPopup.visible &&
             !collectionPopup.visible && !collectionTargetPopup.visible &&
-            !annotationPopup.visible && !mp3OptionsPopup.visible && !settingsPopup.visible &&
+            !annotationPopup.visible && !settingsPopup.visible &&
             !updatePopup.visible && !accessPopup.visible &&
             !localConversionPopup.visible && !localProfilePopup.visible &&
             !formatMenu.visible && !optionsMenu.visible &&
@@ -1407,8 +1407,9 @@ Window {
                             color: theme.border
                         }
                         StoneButton {
+                            objectName: "forgeFormatButton"
                             label: window.outputFormat + "  ▾"
-                            Layout.preferredWidth: 92
+                            Layout.preferredWidth: Math.max(92, implicitWidth)
                             Layout.preferredHeight: 38
                             onActivated: { formatMenu.anchorItem = this; formatMenu.toggleFrom(this) }
                         }
@@ -2680,65 +2681,6 @@ Window {
         }
     }
     StonePopup {
-        id: mp3OptionsPopup
-        objectName: "mp3OptionsPopup"
-        x: Math.max(0, (window.width - width) / 2)
-        y: Math.max(0, (window.height - height) / 2)
-        width: Math.min(560, window.width - 40)
-        height: 420
-        padding: 18
-        modal: true
-        ColumnLayout {
-            anchors.fill: parent
-            spacing: 9
-            Text { text: "MP3 output settings"; color: theme.text; font.pixelSize: 21; font.bold: true }
-            Repeater {
-                model: [
-                    { key: "mp3_quality", title: "Quality", choices: bridge.mp3QualityOptions },
-                    { key: "mp3_sample_rate", title: "Sample rate", choices: bridge.mp3SampleRateOptions },
-                    { key: "mp3_channels", title: "Channels", choices: bridge.mp3ChannelOptions },
-                    { key: "mp3_cover_art_mode", title: "Cover art", choices: bridge.mp3CoverOptions }
-                ]
-                RowLayout {
-                    required property var modelData
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 47
-                    Text { text: modelData.title; color: theme.muted; font.pixelSize: 14; Layout.preferredWidth: 95 }
-                    StoneButton {
-                        label: bridge.mp3Values[modelData.key] + "  ▾"
-                        Layout.fillWidth: true; Layout.preferredHeight: 39
-                        onActivated: {
-                            var choices = modelData.choices
-                            var next = choices[(choices.indexOf(bridge.mp3Values[modelData.key]) + 1) % choices.length]
-                            if (modelData.key === "mp3_cover_art_mode" && next === "Custom art" && !bridge.mp3CoverAvailable)
-                                mp3CoverDialog.open()
-                            else
-                                bridge.setMp3Value(modelData.key, next)
-                        }
-                    }
-                }
-            }
-            RowLayout {
-                Layout.fillWidth: true; Layout.preferredHeight: 45
-                Text { text: "Embed metadata"; color: theme.muted; font.pixelSize: 14; Layout.fillWidth: true }
-                StoneButton { label: bridge.mp3Values.mp3_embed_metadata ? "On" : "Off"; selected: bridge.mp3Values.mp3_embed_metadata; Layout.preferredWidth: 74; Layout.preferredHeight: 38; onActivated: bridge.setMp3Metadata(!bridge.mp3Values.mp3_embed_metadata) }
-            }
-            RowLayout {
-                visible: bridge.mp3Values.mp3_cover_art_mode === "Custom art"
-                Layout.fillWidth: true
-                Text { text: bridge.mp3CoverName; color: theme.muted; font.pixelSize: 14; elide: Text.ElideMiddle; Layout.fillWidth: true }
-                StoneButton { label: "Replace image"; Layout.preferredWidth: 130; Layout.preferredHeight: 38; onActivated: mp3CoverDialog.open() }
-                StoneButton { label: "Clear"; Layout.preferredWidth: 64; Layout.preferredHeight: 38; onActivated: bridge.clearMp3Cover() }
-            }
-            Item { Layout.fillHeight: true }
-            RowLayout {
-                Layout.fillWidth: true
-                Item { Layout.fillWidth: true }
-                StoneButton { label: "Done"; Layout.preferredWidth: 84; Layout.preferredHeight: 40; onActivated: mp3OptionsPopup.close() }
-            }
-        }
-    }
-    StonePopup {
         id: settingsPopup
         objectName: "downloadSettingsPopup"
         onClosed: { translatedSubtitleMenu.close(); settingsQualityMenu.close(); settingsOutputModeMenu.close(); appearanceThemeMenu.close(); helpMenu.close() }
@@ -3467,7 +3409,7 @@ Window {
                     onActivated: {
                         bridge.setOutputFormat(modelData)
                         formatMenu.close()
-                        if (modelData === "MP3") mp3OptionsPopup.open()
+                        if (modelData === "MP3") optionsMenu.open()
                     }
                 }
             }
@@ -3622,7 +3564,8 @@ Window {
                 Item {
                     width: parent.width; height: 27
                     Text {
-                        text: window.outputFormat === "MP3" ? "AUDIO ENCODING" : "ACCESS"
+                        objectName: "composerAudioFormatHeading"
+                        text: window.outputFormat === "MP3" ? "MP3 ENCODING" : "ORIGINAL AUDIO"
                         color: theme.accent; font.pixelSize: 12; font.bold: true; font.letterSpacing: 1
                         width: parent.width; height: 32; leftPadding: 8
                         verticalAlignment: Text.AlignVCenter
@@ -3662,6 +3605,15 @@ Window {
                     label: "Embed title, artist, and tags: " + (bridge.mp3Values.mp3_embed_metadata ? "On" : "Off")
                     selected: bridge.mp3Values.mp3_embed_metadata
                     onActivated: bridge.setMp3Metadata(!bridge.mp3Values.mp3_embed_metadata)
+                }
+                Text {
+                    objectName: "composerMp3CoverName"
+                    visible: window.outputFormat === "MP3" && bridge.mp3Values.mp3_cover_art_mode === "Custom art"
+                    width: parent.width
+                    text: bridge.mp3CoverName
+                    color: theme.muted
+                    font.pixelSize: 12
+                    elide: Text.ElideMiddle
                 }
                 Row {
                     visible: window.outputFormat === "MP3" && bridge.mp3Values.mp3_cover_art_mode === "Custom art"

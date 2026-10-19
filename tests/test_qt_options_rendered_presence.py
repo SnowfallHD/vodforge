@@ -1,6 +1,7 @@
 """Actual format-specific Options geometry survives live format transitions."""
 
 import json
+import os
 from copy import deepcopy
 from pathlib import Path
 
@@ -22,6 +23,8 @@ def test_options_supported_controls_survive_live_format_round_trip(
         Path(__file__).resolve().parents[1]
         / "build/options-rendered-regression-20261018/transitions"
     )
+    if root := os.environ.get("VODFORGE_OPTIONS_ARTIFACT_ROOT"):
+        output = Path(root) / "transitions"
     output.mkdir(parents=True, exist_ok=True)
     stem = f"{audio_format.replace(' ', '-')}-{size[0]}"
     app, bridge, engine, window = _launch(tmp_path, monkeypatch, [])
@@ -339,4 +342,112 @@ def test_audio_options_has_two_meaningful_columns(
             )
     finally:
         (output / (stem + ".json")).write_text(json.dumps(record, indent=2) + "\n")
+        _close(bridge, engine, window)
+
+
+@pytest.mark.parametrize("width", [1100, 820])
+def test_mp3_format_entry_reuses_the_canonical_options_owner(
+    tmp_path, monkeypatch, width
+):
+    _app, bridge, engine, window = _launch(tmp_path, monkeypatch, [])
+    try:
+        from tests.test_run_identity import make_job
+
+        job = make_job(tmp_path)
+        bridge._runtime.active_job = job
+        before = deepcopy(job)
+        window.resize(width, 740)
+        QTest.qWait(80)
+        field = visual_item(window.contentItem(), "forgeUrlField")
+
+        def descendants(item):
+            for child in item.childItems():
+                yield child
+                yield from descendants(child)
+
+        trigger = next(
+            item for item in descendants(field) if item.property("label") == "MP4  ▾"
+        )
+        QTest.mouseClick(
+            window,
+            Qt.LeftButton,
+            pos=trigger.mapToScene(
+                QPointF(trigger.width() / 2, trigger.height() / 2)
+            ).toPoint(),
+        )
+        QTest.qWait(80)
+        menu = window.findChild(QObject, "forgeFormatPopup")
+        choice = next(
+            item
+            for item in descendants(menu.property("contentItem"))
+            if item.property("label") == "MP3"
+        )
+        QTest.mouseClick(
+            window,
+            Qt.LeftButton,
+            pos=choice.mapToScene(
+                QPointF(choice.width() / 2, choice.height() / 2)
+            ).toPoint(),
+        )
+        QTest.qWait(120)
+        assert bridge.outputFormat == "MP3"
+        assert window.findChild(QObject, "optionsMenu").property("visible")
+        assert not window.property("menuNavigationAllowed")
+        assert window.findChild(QObject, "mp3OptionsPopup") is None
+        assert visual_item(
+            window.contentItem(), "composerMp3Option_mp3_quality"
+        ).isVisible()
+        assert bridge._runtime.active_job is job and job == before
+        output = Path(os.environ.get("VODFORGE_OPTIONS_ARTIFACT_ROOT", str(tmp_path)))
+        output.mkdir(parents=True, exist_ok=True)
+        assert window.grabWindow().save(str(output / f"canonical-mp3-{width}.png"))
+    finally:
+        _close(bridge, engine, window)
+
+
+@pytest.mark.parametrize("width", [1100, 820])
+def test_original_audio_format_is_identifiable_before_and_inside_options(
+    tmp_path, monkeypatch, width
+):
+    _app, bridge, engine, window = _launch(tmp_path, monkeypatch, [])
+    try:
+        window.resize(width, 740)
+        bridge.setOutputFormat("Original audio")
+        QTest.qWait(100)
+        polish_scene(window.contentItem())
+        field = visual_item(window.contentItem(), "forgeUrlField")
+
+        def descendants(item):
+            for child in item.childItems():
+                yield child
+                yield from descendants(child)
+
+        trigger = next(
+            item
+            for item in descendants(field)
+            if item.property("label") == "Original audio  ▾"
+        )
+        caption = trigger.findChild(QObject, "stoneButtonCaption")
+        assert caption is not None and not caption.property("truncated")
+        button = window.findChild(QObject, "forgeOptionsButton")
+        QTest.mouseClick(
+            window,
+            Qt.LeftButton,
+            pos=button.mapToScene(
+                QPointF(button.width() / 2, button.height() / 2)
+            ).toPoint(),
+        )
+        QTest.qWait(120)
+        heading = visual_item(window.contentItem(), "composerAudioFormatHeading")
+        assert heading is not None and heading.property("text") == "ORIGINAL AUDIO"
+        assert heading.isVisible()
+        assert not visual_item(window.contentItem(), "composerOutputModes").isVisible()
+        assert not visual_item(window.contentItem(), "composerQualities").isVisible()
+        assert bridge.outputFormat == "Original audio"
+        output = Path(os.environ.get("VODFORGE_OPTIONS_ARTIFACT_ROOT", str(tmp_path)))
+        output.mkdir(parents=True, exist_ok=True)
+        assert window.grabWindow().save(
+            str(output / f"original-format-context-{width}.png")
+        )
+    finally:
         _close(bridge, engine, window)

@@ -5964,10 +5964,14 @@ def test_qt_mp3_cover_clear_uses_shared_controls_in_both_settings_surfaces(
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
     try:
-        for popup_name in ("mp3OptionsPopup", "downloadSettingsPopup"):
+        for popup_name in ("optionsMenu", "downloadSettingsPopup"):
             assert bridge.setMp3CoverUrl(QUrl.fromLocalFile(str(cover)))
             popup = window.findChild(QObject, popup_name)
             assert popup is not None
+            app.processEvents()
+            if popup_name == "optionsMenu":
+                name = window.findChild(QObject, "composerMp3CoverName")
+                assert name is not None and name.property("text") == bridge.mp3CoverName
             controls = [
                 item
                 for item in popup.findChildren(QObject)
@@ -7595,9 +7599,9 @@ def test_installation_association_remains_internal_without_settings_controls(
 ):
     from yt_downloader.cloud_funnel import (
         load_or_create_installation_state,
+        mark_attribution_claim_confirmed,
         mark_attribution_claim_issued,
         mark_attribution_claim_opened,
-        mark_attribution_claim_confirmed,
     )
 
     app = qt_app()
