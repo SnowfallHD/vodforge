@@ -44,6 +44,19 @@ static void failFrame(id receiver,SEL selector,NSRect r){
  ((void(*)(id,SEL,NSRect))originalFrame)(receiver,selector,r);
  if(throwContainer&&((VFHeaderOffsetContainer *)receiver)->_binding){throwContainer=NO;[NSException raise:@"fixture_after_frame" format:@"static"];}
 }
+typedef struct {void **handle;TestChild *child;unsigned delivered;BOOL retire;VFHeaderPointerSnapshot last;} PointerObserver;
+static void pointerChanged(void *context){
+ PointerObserver *o=context;VFHeaderPointerSnapshot sample;
+ if(vf_header_host_pointer_snapshot(*o->handle,&sample)!=1)return;
+ if(sample.sequence==o->last.sequence)return;
+ o->last=sample;o->delivered++;
+ if(o->retire){CHECK(vf_header_host_unbind_child(*o->handle,o->child));CHECK(vf_header_host_destroy(o->handle));}
+}
+static NSEvent *pointerEvent(NSWindow *w,NSView *child,NSPoint local,NSEventType type){
+ NSPoint location=[child convertPoint:local toView:nil];
+ if(type!=NSEventTypeMouseEntered&&type!=NSEventTypeMouseExited)return [NSEvent mouseEventWithType:type location:location modifierFlags:0 timestamp:1.25 windowNumber:w.windowNumber context:nil eventNumber:1 clickCount:0 pressure:0];
+ return [NSEvent enterExitEventWithType:type location:location modifierFlags:0 timestamp:1.25 windowNumber:w.windowNumber context:nil eventNumber:1 trackingNumber:0 userData:NULL];
+}
 static BOOL ready(void *h){return (vf_header_host_flags(h)&(1|256|512|1024))==(1|256|512|1024);}
 int main(int argc,const char **argv){NSAutoreleasePool *pool=[NSAutoreleasePool new];
  CHECK(argc==2);[NSApplication sharedApplication];[NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];CHECK(!NSApp.active);
@@ -61,7 +74,47 @@ int main(int argc,const char **argv){NSAutoreleasePool *pool=[NSAutoreleasePool 
   CHECK(vf_header_host_bind_child(h,c,r.origin.x,r.origin.y,r.size.width,r.size.height));CHECK(ready(h));
   CHECK(c->frameWrites==writes&&NSEqualRects(c.frame,r));
   VFHeaderHost *o=h;NSView *container=c.superview;
-  if(!strcmp(argv[1],"hit_mapping")){
+  if(!strcmp(argv[1],"passive_tracking_registration")){
+   // The native toolbar must own one passive tracking route even when Qt's
+   // logical main parent differs from the AppKit fullscreen toolbar window.
+   CHECK(c.trackingAreas.count==1);
+   NSTrackingArea *area=c.trackingAreas[0];
+   CHECK((area.options&(NSTrackingMouseMoved|NSTrackingMouseEnteredAndExited|NSTrackingInVisibleRect|NSTrackingActiveInActiveApp))
+     ==(NSTrackingMouseMoved|NSTrackingMouseEnteredAndExited|NSTrackingInVisibleRect|NSTrackingActiveInActiveApp));
+   CHECK(area.owner==o->_childBinding);
+   CHECK(vf_header_host_unbind_child(h,c));CHECK(c.trackingAreas.count==0);
+  }else if(!strcmp(argv[1],"passive_pointer_mapping")||!strcmp(argv[1],"passive_pointer_retire_callback")){
+   PointerObserver observer={.handle=&h,.child=c,.retire=!strcmp(argv[1],"passive_pointer_retire_callback")};
+   CHECK(vf_header_host_pointer_snapshot_size()==sizeof(VFHeaderPointerSnapshot));
+   CHECK(vf_header_host_set_change_callback(h,pointerChanged,&observer));
+   NSWindow *overlay=window();
+   NSRect rects[]={r,NSMakeRect(-24,-8,900,44),NSMakeRect(99,4,900,44),r};
+   for(unsigned phase=0;phase<4;phase++){
+    if(phase==1)[overlay.contentView addSubview:o->_view];
+    if(phase==3)[w.contentView addSubview:o->_view];
+    c.frame=rects[phase];CHECK(vf_header_host_update_child(h,c,c.frame.origin.x,c.frame.origin.y,c.frame.size.width,c.frame.size.height));
+    CHECK(vf_header_host_drain(h)>=0);
+    VFHeaderChildBinding *binding=o->_childBinding;NSPoint point=NSMakePoint(123.25,22.5);
+    [binding mouseEntered:pointerEvent(c.window,c,point,NSEventTypeMouseEntered)];
+    CHECK(observer.last.child==(uintptr_t)c&&observer.last.kind==1&&observer.last.timestamp==1.25);
+    if(h)CHECK(vf_header_host_drain(h)==0);
+    CHECK(fabs(observer.last.x-point.x)<.001&&fabs(observer.last.y-point.y)<.001);
+    if(observer.retire){CHECK(!h&&c.trackingAreas.count==0);break;}
+    unsigned before=observer.delivered;
+    [binding mouseMoved:pointerEvent(c.window,c,NSMakePoint(300,20),NSEventTypeMouseMoved)];
+    CHECK(observer.delivered==before+1&&observer.last.kind==2&&observer.last.x==300);
+    // Wrong native window, outside entry/move, and action types cannot admit.
+    before=observer.delivered;
+    [binding mouseMoved:pointerEvent(c.window==w?overlay:w,c,point,NSEventTypeMouseMoved)];
+    [binding mouseMoved:pointerEvent(c.window,c,NSMakePoint(-10,20),NSEventTypeMouseMoved)];
+    [binding mouseMoved:pointerEvent(c.window,c,point,NSEventTypeLeftMouseDown)];
+    CHECK(observer.delivered==before);
+    [binding mouseExited:pointerEvent(c.window,c,NSMakePoint(-10,20),NSEventTypeMouseExited)];
+    CHECK(observer.delivered==before+1&&observer.last.kind==3&&observer.last.x==-10);
+   }
+   if(h)CHECK(vf_header_host_set_change_callback(h,NULL,NULL));
+   [overlay close];[overlay release];
+  }else if(!strcmp(argv[1],"hit_mapping")){
    NSRect rects[]={r,NSMakeRect(-24,-8,900,44),NSMakeRect(0,-52,1050,44),NSMakeRect(99,4,900,44),r};
    for(unsigned phase=0;phase<5;phase++){
     NSRect next=rects[phase];o->_view.frame=NSMakeRect(0,680,next.size.width,44);c.frame=next;

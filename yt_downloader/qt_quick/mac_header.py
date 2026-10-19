@@ -36,6 +36,8 @@ def create_header_input_boundary(main: Any, surface: Any):
             self.retired = False
             self.cancelled_gesture = False
             self._mapping_enter = False
+            self.native_passive = False
+            self._forwarding_native = False
             surface.installEventFilter(self)
             self.main.menuNavigationAllowedChanged.connect(self._gate_changed)
             self.main.nativeHeaderInputReadyChanged.connect(self._gate_changed)
@@ -44,6 +46,20 @@ def create_header_input_boundary(main: Any, surface: Any):
         def eventFilter(self, watched, event):
             if watched is not self.surface:
                 return False
+            if self._forwarding_native:
+                return False
+            if self.native_passive and event.type() in {
+                QEvent.Type.Enter,
+                QEvent.Type.Leave,
+            }:
+                return True
+            if (
+                self.native_passive
+                and event.type() == QEvent.Type.MouseMove
+                and event.buttons() == Qt.NoButton
+                and bool(self.main.property("menuNavigationAllowed"))
+            ):
+                return True
             if event.type() == QEvent.Type.Enter:
                 try:
                     return self._enter(event)
@@ -135,6 +151,56 @@ def create_header_input_boundary(main: Any, surface: Any):
                 self.owned = False
                 return True
 
+        def _send_passive(self, event):
+            self._forwarding_native = True
+            try:
+                QCoreApplication.sendEvent(self.surface, event)
+            finally:
+                self._forwarding_native = False
+
+        def native_pointer(self, kind, x, y, timestamp):
+            """Consume one exact-child AppKit tracking event, never an action."""
+            from PySide6.QtGui import QGuiApplication
+
+            if self.retired or not isValid(self.main) or not isValid(self.surface):
+                return
+            if (
+                kind not in (1, 2, 3)
+                or not all(math.isfinite(v) for v in (x, y, timestamp))
+                or timestamp < 0
+            ):
+                raise ValueError("Invalid native passive event")
+            if kind == 3 or not (
+                self.main.property("nativeHeaderInputReady")
+                and self.main.property("menuNavigationAllowed")
+                and self.main.isVisible()
+                and self.surface.isVisible()
+                and 0 <= x < self.surface.width()
+                and 0 <= y < self.surface.height()
+            ):
+                self._send_passive(QEvent(QEvent.Type.Leave))
+                return
+            if self.owned or QGuiApplication.mouseButtons() != Qt.NoButton:
+                return
+            local = QPointF(x, y)
+            base = local.toPoint()
+            global_pos = QPointF(self.surface.mapToGlobal(base)) + local - QPointF(base)
+            if kind == 1:
+                entered = QEnterEvent(local, local, global_pos)
+                entered.setTimestamp(round(timestamp * 1000))
+                self._send_passive(entered)
+            moved = QMouseEvent(
+                QEvent.Type.MouseMove,
+                local,
+                local,
+                global_pos,
+                Qt.NoButton,
+                Qt.NoButton,
+                QGuiApplication.keyboardModifiers(),
+            )
+            moved.setTimestamp(round(timestamp * 1000))
+            self._send_passive(moved)
+
         def _enter(self, event):
             # Cocoa can report Enter in the ancestor NSWindow's coordinates
             # after the exact Qt view is embedded in the toolbar. Move and
@@ -173,7 +239,7 @@ def create_header_input_boundary(main: Any, surface: Any):
                 if not bool(self.main.property("menuNavigationAllowed")) or not bool(
                     self.main.property("nativeHeaderInputReady")
                 ):
-                    QCoreApplication.sendEvent(self.surface, QEvent(QEvent.Type.Leave))
+                    self._send_passive(QEvent(QEvent.Type.Leave))
             except RuntimeError:
                 pass
 
@@ -213,6 +279,7 @@ class IntegratedHeader:
 
         self._window = window
         self._host = self._surface = self._notifier = None
+        self._pointer_sequence = 0
         self._input_boundary = None
         self._child_pointer = 0
         self._child_bound = False
@@ -250,6 +317,7 @@ class IntegratedHeader:
             )
             self._surface.setColor(QColor("transparent"))
             self._input_boundary = create_header_input_boundary(window, self._surface)
+            self._input_boundary.native_passive = True
             self._notifier = QSocketNotifier(
                 self._host.descriptor, QSocketNotifier.Type.Read, window
             )
@@ -327,9 +395,28 @@ class IntegratedHeader:
         # Called on AppKit's main thread, before its allocation callback returns.
         # Never unwind a Python exception through the C callback boundary.
         try:
+            sample = self._host.pointer_sample()
+            if sample is not None and sample.sequence != self._pointer_sequence:
+                if (
+                    sample.sequence < self._pointer_sequence
+                    or sample.child != self._child_pointer
+                ):
+                    raise RuntimeError("Native passive event lost its exact child")
+                self._pointer_sequence = sample.sequence
+                self._input_boundary.native_pointer(
+                    sample.kind, sample.x, sample.y, sample.timestamp
+                )
+                return
             self.synchronize()
         except Exception:  # noqa: BLE001 - no Python exception may cross the C boundary
-            return  # synchronize already preserved refusal diagnostics and retired.
+            # Event ownership refusal is handled like a refused geometry generation.
+            try:
+                self.close()
+            except Exception as exc:  # noqa: BLE001 - callback must never unwind
+                self._window._native_header_diagnostic = {
+                    "stage": "native_header_teardown_pending",
+                    "exception_class": type(exc).__name__,
+                }
 
     def synchronize(self, *_notification):
         if self._retired:

@@ -53,6 +53,20 @@ def _python_api():
     )
 
 
+class PointerSnapshot(ctypes.Structure):
+    """Additive passive-input ABI1; exact child identity and current local point."""
+
+    _fields_ = [
+        ("sequence", ctypes.c_uint64),
+        ("child", ctypes.c_uint64),
+        ("kind", ctypes.c_uint32),
+        ("reserved", ctypes.c_uint32),
+        ("x", ctypes.c_double),
+        ("y", ctypes.c_double),
+        ("timestamp", ctypes.c_double),
+    ]
+
+
 class Snapshot(ctypes.Structure):
     """One public-native generation and geometry transaction, ABI6."""
 
@@ -81,6 +95,8 @@ def _library():
         "view": (_POINTER, [_POINTER]),
         "row_snapshot": (ctypes.c_int, [_POINTER, ctypes.POINTER(Snapshot)]),
         "row_snapshot_size": (ctypes.c_size_t, []),
+        "pointer_snapshot_size": (ctypes.c_size_t, []),
+        "pointer_snapshot": (ctypes.c_int, [_POINTER, ctypes.POINTER(PointerSnapshot)]),
         "event_fd": (ctypes.c_int, [_POINTER]),
         "drain": (ctypes.c_int, [_POINTER]),
         "set_change_callback": (ctypes.c_int, [_POINTER, _POINTER, _POINTER]),
@@ -106,6 +122,8 @@ def _library():
     if (
         library.vf_header_host_abi_version() != 6
         or library.vf_header_host_row_snapshot_size() != ctypes.sizeof(Snapshot)
+        or library.vf_header_host_pointer_snapshot_size()
+        != ctypes.sizeof(PointerSnapshot)
         or library.vf_header_host_python_api_size() != ctypes.sizeof(PythonAPI)
     ):
         raise RuntimeError("Incompatible native header host")
@@ -182,6 +200,17 @@ class HeaderHost:
                 for i in range(3)
             ],
         }
+
+    def pointer_sample(self):
+        row = PointerSnapshot()
+        result = self._library.vf_header_host_pointer_snapshot(
+            self._handle, ctypes.byref(row)
+        )
+        if result != 1:
+            return None
+        if row.reserved or row.kind not in (1, 2, 3) or not row.sequence:
+            raise RuntimeError("Native header passive event is incompatible")
+        return row
 
     def set_change_callback(self, callback):
         api = _python_api()

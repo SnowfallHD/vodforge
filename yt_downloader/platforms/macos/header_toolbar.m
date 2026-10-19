@@ -64,6 +64,12 @@ static void VFHeaderInvokePython(void *context) {
 }
 
 
+typedef struct {
+    uint64_t sequence,child;
+    uint32_t kind,reserved;
+    double x,y,timestamp;
+} VFHeaderPointerSnapshot;
+
 @class VFHeaderHost;
 @class VFHeaderChildBinding;
 static void VFHeaderHostWillRemoveSubview(VFHeaderHost *,NSView *);
@@ -211,6 +217,8 @@ static NSString *const VFItemID=@"org.vodforge.qa.unified44.item";
     VFHeaderOffsetContainer *_container;
     BOOL _closed,_mutating,_lost,_observing,_frameFlag,_boundsFlag,_frameWritten,_boundsWritten;
     NSRect _expected;
+    NSTrackingArea *_pointerArea;
+    VFHeaderPointerSnapshot _pointer;
 }
 - (instancetype)initWithOwner:(VFHeaderHost *)owner child:(NSView *)child rect:(NSRect)rect;
 - (BOOL)current;
@@ -223,6 +231,8 @@ static NSString *const VFItemID=@"org.vodforge.qa.unified44.item";
 - (void)willRemove:(NSView *)view;
 - (BOOL)stopObserving:(BOOL)restore;
 - (double)geometry:(unsigned)index;
+- (void)recordPointer:(NSEvent *)event kind:(unsigned)kind;
+- (void)stopPointerTracking;
 @end
 
 @interface VFHeaderHost : NSObject {
@@ -295,6 +305,16 @@ static BOOL VFChildNear(NSRect a,NSRect b){return fabs(a.origin.x-b.origin.x)<.0
             [center addObserver:self selector:@selector(changed:) name:NSViewBoundsDidChangeNotification object:child];
             [center addObserver:self selector:@selector(changed:) name:NSViewFrameDidChangeNotification object:_container];
             [center addObserver:self selector:@selector(changed:) name:NSViewBoundsDidChangeNotification object:_container];
+            // Qt keeps the main QWindow as logical parent for correct global
+            // and AX coordinates. In AppKit's fullscreen toolbar window Qt's
+            // platform child-under-mouse filter can suppress its passive route.
+            // Own only this exact child's standard AppKit tracking area; Qt
+            // retains all button, drag, wheel, focus and gesture delivery.
+            _pointerArea=[[NSTrackingArea alloc]initWithRect:NSZeroRect
+                options:NSTrackingMouseMoved|NSTrackingMouseEnteredAndExited|NSTrackingInVisibleRect|NSTrackingActiveInActiveApp
+                owner:self userInfo:nil];
+            if(!_pointerArea)[NSException raise:@"pointer_tracking_unavailable" format:@"static"];
+            [child addTrackingArea:_pointerArea];
         } @catch(NSException *exception){(void)exception;_lost=YES;}
     }
     return self; // host retains even a refused partial generation for cleanup
@@ -335,7 +355,33 @@ static BOOL VFChildNear(NSRect a,NSRect b){return fabs(a.origin.x-b.origin.x)<.0
 - (void)changed:(NSNotification *)notification {
     if(notification.object==_child||notification.object==_container)[self layoutChanged];
 }
+- (void)stopPointerTracking {
+    if(_pointerArea){[_child removeTrackingArea:_pointerArea];[_pointerArea release];_pointerArea=nil;}
+    _pointer.kind=0;
+}
+- (void)recordPointer:(NSEvent *)event kind:(unsigned)kind {
+    if(!NSThread.isMainThread||kind<1||kind>3||![self current]||![self fit]
+        ||!_pointerArea||event.window!=_child.window||(kind!=3&&NSEvent.pressedMouseButtons))return;
+    if((kind==1&&event.type!=NSEventTypeMouseEntered)||(kind==2&&event.type!=NSEventTypeMouseMoved)
+        ||(kind==3&&event.type!=NSEventTypeMouseExited))return;
+    NSPoint local=[_child convertPoint:event.locationInWindow fromView:nil];
+    if(!isfinite(local.x)||!isfinite(local.y)||!isfinite(event.timestamp)||event.timestamp<0)return;
+    if(kind!=3&&!NSPointInRect(local,_child.bounds))return;
+    // Signal synchronously, keeping this binding/host alive if Python retires
+    // the generation from inside the existing compiled callback.
+    [[self retain]autorelease];VFHeaderHost *owner=[_owner retain];
+    _pointer.sequence++;_pointer.child=(uintptr_t)_child;_pointer.kind=kind;
+    _pointer.x=local.x;_pointer.y=local.y;_pointer.timestamp=event.timestamp;
+    // Passive events use the already installed compiled main-thread callback,
+    // not the geometry FD/dedup loop or another event queue.
+    if(owner->_changeCallback)owner->_changeCallback(owner->_changeContext);
+    [owner release];
+}
+- (void)mouseEntered:(NSEvent *)event {[self recordPointer:event kind:1];}
+- (void)mouseMoved:(NSEvent *)event {[self recordPointer:event kind:2];}
+- (void)mouseExited:(NSEvent *)event {[self recordPointer:event kind:3];}
 - (BOOL)stopObserving:(BOOL)restore {
+    [self stopPointerTracking];
     if(_observing){[NSNotificationCenter.defaultCenter removeObserver:self];_observing=NO;}
     // Retain failed flag-restoration intent for a same-generation cleanup retry.
     if(!restore){_frameWritten=NO;_boundsWritten=NO;return YES;}
@@ -719,6 +765,16 @@ int vf_header_host_bind_child(void *handle,void *child,double x,double y,double 
         if([owner->_childBinding unbind]){[owner->_childBinding release];owner->_childBinding=nil;}
         [owner signal];return 0;
     } @catch(NSException *exception){(void)exception;[owner signal];return 0;}
+}
+// Additive passive-input ABI. A snapshot is never a stored event queue: the
+// synchronous callback consumes it once and stale/retired generations refuse.
+size_t vf_header_host_pointer_snapshot_size(void){return sizeof(VFHeaderPointerSnapshot);}
+int vf_header_host_pointer_snapshot(void *handle,VFHeaderPointerSnapshot *out) {
+    if(!NSThread.isMainThread||!handle||!out)return -1;
+    VFHeaderHost *owner=handle;VFHeaderChildBinding *b=owner->_childBinding;
+    if(!b||![b current]||![b fit])return -1;
+    if(!b->_pointer.kind)return 0;
+    *out=b->_pointer;return 1;
 }
 int vf_header_host_update_child(void *handle,void *child,double x,double y,double w,double h) {
     if(vf_header_host_state(handle)!=1||!child)return 0;VFHeaderHost *owner=handle;

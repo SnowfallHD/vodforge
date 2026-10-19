@@ -601,3 +601,87 @@ def test_menu_dismissal_returns_left_sooner_without_speeding_reveal(child_header
     assert 1 < reveal < 85, "Keep the liked slower reveal pacing"
     QTest.qWait(120)
     assert header.property("nativeContentScreenX") == 89
+
+
+@pytest.mark.parametrize("origin", [(20, 4), (10, -44), (99, 4)])
+def test_native_passive_route_updates_hover_without_qpa_enter(child_header, origin):
+    """Fullscreen AppKit tracking may arrive without a Qt platform Enter."""
+    app, bridge, _main, header, child, boundary = child_header
+    child.setGeometry(*origin, 1050, 60)
+    boundary.native_passive = True
+    for index, name in enumerate(("Forge", "Library", "Watch", "Activity")):
+        item = visual_item(header, "navigationButton_" + name)
+        point = item.mapToScene(QPointF(item.width() / 2, item.height() / 2))
+        boundary.native_pointer(2, point.x(), point.y(), 1.25 + index)
+        settle(app, header)
+        assert item.property("hovered")
+        assert bridge.selection == "Forge", "Passive tracking cannot navigate"
+        # A platform Leave from the old logical window cannot clear the current
+        # native tracking area's hover. Its exact own exit does clear it.
+        QCoreApplication.sendEvent(child, QEvent(QEvent.Leave))
+        assert item.property("hovered")
+        boundary.native_pointer(3, -10, 20, 1.5 + index)
+        settle(app, header)
+        assert not item.property("hovered")
+    click(child, header, "navigationButton_Library")
+    assert bridge.selection == "Library", "Ordinary Qt presses retain ownership"
+
+
+def test_native_passive_route_respects_modal_readiness_and_retirement(child_header):
+    app, bridge, main, header, _child, boundary = child_header
+    boundary.native_passive = True
+    item = visual_item(header, "navigationButton_Library")
+    point = item.mapToScene(QPointF(item.width() / 2, item.height() / 2))
+    boundary.native_pointer(1, point.x(), point.y(), 1)
+    settle(app, header)
+    assert item.property("hovered")
+    main.setProperty("nativeHeaderInputReady", False)
+    assert not item.property("hovered")
+    boundary.native_pointer(2, point.x(), point.y(), 2)
+    assert not item.property("hovered")
+    main.setProperty("nativeHeaderInputReady", True)
+    popup = main.findChild(QObject, "downloadSettingsPopup")
+    popup.setProperty("visible", True)
+    assert not main.property("menuNavigationAllowed")
+    boundary.native_pointer(2, point.x(), point.y(), 3)
+    assert not item.property("hovered")
+    popup.setProperty("visible", False)
+    boundary.native_pointer(2, point.x(), point.y(), 4)
+    settle(app, header)
+    assert item.property("hovered")
+    boundary.native_pointer(3, -10, 20, 5)
+    boundary.close()
+    boundary.native_pointer(2, point.x(), point.y(), 6)
+    assert not item.property("hovered")
+    assert bridge.selection == "Forge"
+
+
+@pytest.mark.parametrize(
+    "kind,x,y,timestamp", [(0, 1, 1, 1), (2, float("nan"), 1, 1), (2, 1, 1, -1)]
+)
+def test_native_passive_route_refuses_malformed_non_action(
+    child_header, kind, x, y, timestamp
+):
+    _app, bridge, _main, _header, _child, boundary = child_header
+    with pytest.raises(ValueError, match="Invalid native passive"):
+        boundary.native_pointer(kind, x, y, timestamp)
+    assert bridge.selection == "Forge"
+
+
+def test_native_passive_route_keeps_modal_gesture_with_original_main(child_header):
+    app, bridge, main, header, child, boundary = child_header
+    boundary.native_passive = True
+    click(child, header, "headerSettingsButton")
+    settle(app, header)
+    popup = main.findChild(QObject, "downloadSettingsPopup")
+    assert popup.property("visible") and not main.property("menuNavigationAllowed")
+    point = center(header, "navigationButton_Library")
+    boundary.native_pointer(2, point.x(), point.y(), 1)
+    QTest.mousePress(child, Qt.LeftButton, pos=point)
+    settle(app, header)
+    assert not popup.property("visible")
+    QTest.mouseRelease(child, Qt.LeftButton, pos=point)
+    settle(app, header)
+    assert bridge.selection == "Forge"
+    click(child, header, "navigationButton_Library")
+    assert bridge.selection == "Library"

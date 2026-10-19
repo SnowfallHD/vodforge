@@ -140,6 +140,9 @@ def native_owner_rig(tmp_path, monkeypatch):
             rig.host = self
             rig.events.append("host-created")
 
+        def pointer_sample(self):
+            return None
+
         def drain(self):
             rig.drains += 1
             try:
@@ -991,3 +994,76 @@ def test_retiring_during_header_motion_cannot_replay_old_geometry(
     ) == restored
     assert rig.window.property("nativeRowPacket") == {}
     assert rig.window.property("nativeHeaderInputReady") is False
+
+
+def test_passive_callback_is_once_per_exact_child_without_geometry_rewrite(
+    native_owner_rig, monkeypatch
+):
+    from types import SimpleNamespace
+
+    from PySide6.QtCore import QPointF
+
+    from tests.test_qt_scene_port import visual_item
+
+    rig = native_owner_rig
+    owner = rig.make()
+    item = visual_item(rig.header, "navigationButton_Library")
+    point = item.mapToScene(QPointF(item.width() / 2, item.height() / 2))
+    sample = SimpleNamespace(
+        sequence=1,
+        child=owner._child_pointer,
+        kind=2,
+        x=point.x(),
+        y=point.y(),
+        timestamp=1.25,
+    )
+    monkeypatch.setattr(rig.host, "pointer_sample", lambda: sample)
+    before = list(rig.events)
+    delivered = []
+    original = rig.boundary.native_pointer
+
+    def consume(*args):
+        delivered.append(args)
+        original(*args)
+
+    monkeypatch.setattr(rig.boundary, "native_pointer", consume)
+    rig.native_callback()
+    assert item.property("hovered")
+    assert len(delivered) == 1
+    assert rig.events == before, "Passive input must not write geometry"
+    rig.native_callback()
+    assert len(delivered) == 1
+    assert rig.events == before
+    # Readiness withdrawal clears hover; an already consumed event must never
+    # replay when readiness returns.
+    rig.window.setProperty("nativeHeaderInputReady", False)
+    assert not item.property("hovered")
+    rig.window.setProperty("nativeHeaderInputReady", True)
+    rig.native_callback()
+    assert not item.property("hovered")
+    sample.sequence = 2
+    rig.native_callback()
+    assert item.property("hovered")
+    assert len(delivered) == 2
+
+
+@pytest.mark.parametrize("invalid", ["foreign-child", "sequence-regression"])
+def test_passive_callback_retires_changed_event_owner(
+    native_owner_rig, monkeypatch, invalid
+):
+    from types import SimpleNamespace
+
+    rig = native_owner_rig
+    owner = rig.make()
+    owner._pointer_sequence = 2
+    sample = SimpleNamespace(
+        sequence=3, child=owner._child_pointer, kind=2, x=200, y=22, timestamp=1.25
+    )
+    if invalid == "foreign-child":
+        sample.child += 1
+    else:
+        sample.sequence = 1
+    monkeypatch.setattr(rig.host, "pointer_sample", lambda: sample)
+    rig.native_callback()
+    assert owner.retired and rig.boundary.retired
+    assert not rig.window.property("nativeHeaderInputReady")
