@@ -75,6 +75,7 @@ def child_header(tmp_path, monkeypatch):
     main.setProperty("nativeHeaderSurface", child)
     main.setProperty("nativeHeaderWidth", 1050)
     main.setProperty("nativeHeaderAttached", True)
+    main.setProperty("nativeHeaderInputReady", True)
     boundary = create_header_input_boundary(main, child)
     settle(app, header)
     try:
@@ -346,3 +347,18 @@ def test_closed_or_deleted_original_owner_refuses_late_input(
             _close(bridge, engine, main)
         else:
             bridge.close()
+
+
+def test_unallocated_native_row_blocks_pointer_until_current_allocation(child_header):
+    app, bridge, main, header, child, _boundary = child_header
+    main.setProperty("nativeHeaderInputReady", False)
+    settle(app, header)
+    click(child, header, "navigationButton_Library")
+    settle(app, header)
+    assert bridge.selection == "Forge"
+    assert not header.isEnabled()
+    main.setProperty("nativeHeaderInputReady", True)
+    settle(app, header)
+    click(child, header, "navigationButton_Library")
+    settle(app, header)
+    assert bridge.selection == "Library"

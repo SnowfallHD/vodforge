@@ -64,6 +64,7 @@ Window {
     // No original-content header overlay or concurrent toolbar.
     property var nativeHeaderSurface: null
     property bool nativeHeaderAttached: false
+    property bool nativeHeaderInputReady: false
     // Every header field reads one immutable current native packet.
     property var nativeRowPacket: ({})
     readonly property var diagnosticHeaderPacket: nativeRowPacket
@@ -1127,8 +1128,9 @@ Window {
         Item {
             id: focusHeader
             objectName: "focusHeader"
-            x: window.diagnosticHeaderPacketReady ? 0 : window.gutter
-            y: window.diagnosticHeaderPacketReady ? 0 : 5 + mainFrame.headerHeight
+            enabled: !window.nativeHeaderAttached || window.nativeHeaderInputReady
+            x: window.nativeHeaderAttached && window.diagnosticHeaderPacketReady ? 0 : window.gutter
+            y: window.nativeHeaderAttached && window.diagnosticHeaderPacketReady ? 0 : 5 + mainFrame.headerHeight
             width: window.nativeHeaderAttached ? window.nativeHeaderWidth : window.width - 2 * window.gutter
             height: window.nativeHeaderAttached ? window.diagnosticHeaderPacket.height : (stacked ? 100 : 44)
             z: 50

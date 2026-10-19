@@ -54,7 +54,7 @@ int main(int argc,char **argv){@autoreleasepool{
    w.throwBefore=[test isEqual:@"setter_before_failure"];w.throwAfter=!w.throwBefore;
    void *failed=vf_header_host_create(w,44,20,64);REQUIRE(!failed&&!w.toolbar&&w.toolbarStyle==NSWindowToolbarStyleAutomatic);[w release];
  }else{
- void *h=vf_header_host_create(w,44,20,64);REQUIRE(h&&vf_header_host_state(h)==1&&vf_header_host_abi_version()==5);VFHeaderHost *o=h;
+ void *h=vf_header_host_create(w,44,20,64);REQUIRE(h&&vf_header_host_state(h)==1&&vf_header_host_abi_version()==6);VFHeaderHost *o=h;
  REQUIRE(o->_view.isFlipped&&o->_carrier->_view==o->_view&&o->_view.fittingSize.height==44);
  REQUIRE(vf_header_host_set_height(h,44)&&!vf_header_host_set_height(h,32));
  if([test isEqual:@"callback"]){

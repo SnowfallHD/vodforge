@@ -854,3 +854,37 @@ def test_explicit_smoke_receipts_precede_fallible_qt_startup(
         assert "VODFORGE_QT_SMOKE_PHASE application_begin" in phases
         assert ("VODFORGE_QT_SMOKE_PHASE engine_begin" in phases) == (stage == "engine")
         assert "VODFORGE_QT_SMOKE_PHASE engine_returned" not in phases
+
+
+@pytest.mark.parametrize("fullscreen", [True, False])
+def test_attached_header_keeps_native_parent_during_owned_unallocated_row(
+    native_owner_rig, fullscreen
+):
+    rig = native_owner_rig
+    owner = rig.make()
+    previous = rig.window.property("nativeRowPacket")
+    assert rig.window.property("nativeHeaderAttached") is True
+    rig.state.update(unallocated=True, fullscreen=fullscreen, transition=0)
+    owner._native_changed()
+    assert not owner.retired
+    assert rig.window.property("nativeHeaderAttached") is True
+    assert rig.header.parentItem() is rig.surface.contentItem()
+    assert rig.window.property("nativeRowPacket") == previous
+    assert rig.window.property("nativeHeaderInputReady") is False
+    rig.state.update(unallocated=False, fullscreen=fullscreen, transition=0)
+    owner._native_changed()
+    assert not owner.retired
+    assert rig.window.property("nativeHeaderInputReady") is True
+    assert rig.window._native_header_diagnostic["stage"] == "success"
+
+
+def test_retired_header_restores_content_origin_not_stale_native_packet(
+    native_owner_rig,
+):
+    rig = native_owner_rig
+    before = (rig.header.x(), rig.header.y())
+    owner = rig.make()
+    assert rig.window.property("diagnosticHeaderPacketReady") is True
+    owner.close()
+    assert rig.header.parentItem() is rig.original_parent
+    assert (rig.header.x(), rig.header.y()) == before

@@ -7,13 +7,54 @@ import math
 from functools import lru_cache
 from pathlib import Path
 
-_CHANGE_CALLBACK = ctypes.CFUNCTYPE(None, ctypes.c_void_p)
 _POINTER = ctypes.c_void_p
 _LIBRARY = Path(__file__).with_name("libvodforge_fullscreen.dylib")
 
 
+class PythonAPI(ctypes.Structure):
+    """Addresses of existing CPython C functions, never generated callbacks."""
+
+    _fields_ = [
+        ("version", ctypes.c_uint32),
+        ("reserved", ctypes.c_uint32),
+        *[
+            (name, _POINTER)
+            for name in (
+                "ensure",
+                "release",
+                "incref",
+                "decref",
+                "call",
+                "clear",
+                "initialized",
+            )
+        ],
+    ]
+
+
+@lru_cache(maxsize=1)
+def _python_api():
+    functions = (
+        "PyGILState_Ensure",
+        "PyGILState_Release",
+        "Py_IncRef",
+        "Py_DecRef",
+        "PyObject_CallNoArgs",
+        "PyErr_Clear",
+        "Py_IsInitialized",
+    )
+    return PythonAPI(
+        1,
+        0,
+        *[
+            ctypes.cast(getattr(ctypes.pythonapi, name), _POINTER).value
+            for name in functions
+        ],
+    )
+
+
 class Snapshot(ctypes.Structure):
-    """One public-native generation and geometry transaction, ABI5."""
+    """One public-native generation and geometry transaction, ABI6."""
 
     _fields_ = [
         ("abi", ctypes.c_uint32),
@@ -43,6 +84,15 @@ def _library():
         "event_fd": (ctypes.c_int, [_POINTER]),
         "drain": (ctypes.c_int, [_POINTER]),
         "set_change_callback": (ctypes.c_int, [_POINTER, _POINTER, _POINTER]),
+        "set_python_callback": (
+            ctypes.c_int,
+            [_POINTER, _POINTER, ctypes.POINTER(PythonAPI), ctypes.c_size_t],
+        ),
+        "python_callback_smoke": (
+            ctypes.c_int,
+            [_POINTER, ctypes.POINTER(PythonAPI), ctypes.c_size_t],
+        ),
+        "python_api_size": (ctypes.c_size_t, []),
         "set_background": (ctypes.c_int, [_POINTER] + [ctypes.c_double] * 4),
         "set_height": (ctypes.c_int, [_POINTER, ctypes.c_double]),
         "destroy": (ctypes.c_int, [ctypes.POINTER(_POINTER)]),
@@ -54,8 +104,9 @@ def _library():
         function = getattr(library, "vf_header_host_" + suffix)
         function.restype, function.argtypes = result, arguments
     if (
-        library.vf_header_host_abi_version() != 5
+        library.vf_header_host_abi_version() != 6
         or library.vf_header_host_row_snapshot_size() != ctypes.sizeof(Snapshot)
+        or library.vf_header_host_python_api_size() != ctypes.sizeof(PythonAPI)
     ):
         raise RuntimeError("Incompatible native header host")
     return library
@@ -134,21 +185,21 @@ class HeaderHost:
         }
 
     def set_change_callback(self, callback):
-        current = _CHANGE_CALLBACK(lambda _context: callback()) if callback else None
-        pointer = ctypes.cast(current, _POINTER) if current else _POINTER()
+        api = _python_api()
         if (
-            self._library.vf_header_host_set_change_callback(
-                self._handle, pointer, None
+            self._library.vf_header_host_set_python_callback(
+                self._handle,
+                id(callback) if callback is not None else None,
+                ctypes.byref(api),
+                ctypes.sizeof(api),
             )
             != 1
         ):
             raise RuntimeError("Native header callback ownership changed")
-        # Refusal may retire this owner from inside its own callback. Keep the
-        # old trampoline alive until the closed host itself becomes unreachable;
-        # never free libffi executable storage while C is returning through it.
-        if self._callback is not None:
-            self._retired_callback = self._callback
-        self._callback = current
+        # The precompiled native context owns a strong Python reference and
+        # retains itself during invocation, including self-retirement. No
+        # executable-memory allocation is needed under hardened x86 runtime.
+        self._callback = callback
 
     def set_background(self, color):
         if self._library.vf_header_host_set_background(self._handle, *color) != 1:
@@ -183,14 +234,15 @@ class HeaderHost:
 
 
 def runtime_callback_smoke():
-    """Exercise the real callback trampoline under this executable's signature.
+    """Exercise the precompiled callback under this executable's signature.
 
     This runs only in the explicit runtime-smoke path. No NSApplication, window,
     native event, callback registration or permission request is created here.
     """
     observed = []
-    callback = _CHANGE_CALLBACK(lambda context: observed.append(context))
-    native_call = _CHANGE_CALLBACK(ctypes.cast(callback, _POINTER).value)
-    native_call(None)
-    if observed != [None]:
-        raise RuntimeError("Native header callback trampoline did not execute")
+    callback = lambda: observed.append(None)
+    api = _python_api()
+    if _library().vf_header_host_python_callback_smoke(
+        id(callback), ctypes.byref(api), ctypes.sizeof(api)
+    ) != 1 or observed != [None]:
+        raise RuntimeError("Native header precompiled callback did not execute")

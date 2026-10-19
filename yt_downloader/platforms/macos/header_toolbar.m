@@ -6,6 +6,62 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
+#include <stdint.h>
+
+// Existing CPython entry points supplied by the interpreter. The callback
+// entry below is compiled native code: no libffi executable closure or new
+// hardened-runtime entitlement is required on x86_64.
+typedef struct {
+    uint32_t version,reserved;
+    int (*ensure)(void);
+    void (*release)(int);
+    void (*incref)(void *);
+    void (*decref)(void *);
+    void *(*call)(void *);
+    void (*clear)(void);
+    int (*initialized)(void);
+} VFHeaderPythonAPI;
+static BOOL VFHeaderPythonAPIValid(const VFHeaderPythonAPI *api,size_t size) {
+    return api&&size==sizeof(*api)&&api->version==1&&api->reserved==0
+        &&api->ensure&&api->release&&api->incref&&api->decref
+        &&api->call&&api->clear&&api->initialized;
+}
+@interface VFHeaderPythonContext : NSObject {
+    VFHeaderPythonAPI _api;
+    void *_callback;
+}
+- (instancetype)initWithCallback:(void *)callback api:(const VFHeaderPythonAPI *)api;
+- (BOOL)invoke;
+@end
+@implementation VFHeaderPythonContext
+- (instancetype)initWithCallback:(void *)callback api:(const VFHeaderPythonAPI *)api {
+    self=[super init];if(!self)return nil;
+    _api=*api;
+    if(!callback||!_api.initialized()){[self release];return nil;}
+    int state=_api.ensure();_api.incref(callback);_callback=callback;_api.release(state);
+    return self;
+}
+- (BOOL)invoke {
+    if(!_callback||!_api.initialized())return NO;
+    int state=_api.ensure();void *result=_api.call(_callback);
+    BOOL ok=result!=NULL;
+    if(result)_api.decref(result);else _api.clear();
+    _api.release(state);return ok;
+}
+- (void)dealloc {
+    void *callback=_callback;_callback=NULL;
+    if(callback&&_api.initialized&&_api.initialized()){
+        int state=_api.ensure();_api.decref(callback);_api.release(state);
+    }
+    [super dealloc];
+}
+@end
+static void VFHeaderInvokePython(void *context) {
+    // The callback can clear/destroy its own host. Its active context stays
+    // alive until the compiled invocation has returned through the C API.
+    VFHeaderPythonContext *callback=[(VFHeaderPythonContext *)context retain];
+    [callback invoke];[callback release];
+}
 
 
 @class VFHeaderHost;
@@ -184,6 +240,7 @@ static NSString *const VFItemID=@"org.vodforge.qa.unified44.item";
     NSMapTable *_paintWindows;
     unsigned _transition;
     void (*_changeCallback)(void *);void *_changeContext;
+    VFHeaderPythonContext *_pythonCallbackContext;
 }
 - (instancetype)initWithWindow:(NSWindow *)window height:(CGFloat)height gutter:(double)gutter minWidth:(double)minWidth;
 - (void)layoutChanged;
@@ -498,6 +555,7 @@ static BOOL VFChildNear(NSRect a,NSRect b){return fabs(a.origin.x-b.origin.x)<.0
 }
 - (void)close {
     if(_closed)return;_changeCallback=NULL;_changeContext=NULL;_closed=YES;
+    [_pythonCallbackContext release];_pythonCallbackContext=nil;
     if(_childBinding){[_childBinding releaseOnly];[_childBinding release];_childBinding=nil;}
     if(_view)_view->_owner=nil;[self stopButtons];
     for(NSWindow *window in _paintWindows.keyEnumerator){
@@ -519,7 +577,7 @@ static BOOL VFChildNear(NSRect a,NSRect b){return fabs(a.origin.x-b.origin.x)<.0
 }
 - (void)dealloc{[self close];[_paintWindows release];[super dealloc];}
 @end
-unsigned vf_header_host_abi_version(void){return 5;}
+unsigned vf_header_host_abi_version(void){return 6;}
 void *vf_header_host_create(void *window,double height,double gutter,double minWidth) {
     if(![NSThread isMainThread]||!window||!isfinite(height)||height!=44
         ||!isfinite(gutter)||gutter<0||gutter>256||!isfinite(minWidth)||minWidth<=0||minWidth>16384)return NULL;
@@ -673,7 +731,7 @@ int vf_header_host_unbind_child(void *handle,void *child) {
     } @catch(NSException *exception){(void)exception;return 0;}
 }
 
-// One ABI5 packet; no Python sequence of separately-changing native getters.
+// One ABI6 packet; no Python sequence of separately-changing native getters.
 typedef struct {
     uint32_t abi,flags,transition,reserved;
     uint64_t hostIdentity,accessoryIdentity,delegateIdentity,buttonIdentities[3];
@@ -716,7 +774,7 @@ static unsigned VFVisibleRect(NSView *view,NSRect *out) {
 size_t vf_header_host_row_snapshot_size(void){return sizeof(VFHeaderRowSnapshot);}
 int vf_header_host_row_snapshot(void *handle,VFHeaderRowSnapshot *out) {
     if(!out||vf_header_host_state(handle)!=1)return 0;
-    VFHeaderHost *h=handle;VFHeaderRowSnapshot s={0};s.abi=5;
+    VFHeaderHost *h=handle;VFHeaderRowSnapshot s={0};s.abi=6;
     @try {
         s.flags=vf_header_host_flags(handle);s.transition=h->_transition;
         s.hostIdentity=(uint64_t)(uintptr_t)h->_view;
@@ -739,7 +797,27 @@ int vf_header_host_row_snapshot(void *handle,VFHeaderRowSnapshot *out) {
 int vf_header_host_set_change_callback(void *handle,void (*callback)(void *),void *context) {
     if(!NSThread.isMainThread||!handle)return 0;VFHeaderHost *h=handle;
     if(h->_closed)return 0;
-    h->_changeCallback=callback;h->_changeContext=callback?context:NULL;return 1;
+    VFHeaderPythonContext *old=h->_pythonCallbackContext;h->_pythonCallbackContext=nil;
+    h->_changeCallback=callback;h->_changeContext=callback?context:NULL;
+    [old release];return 1;
+}
+
+size_t vf_header_host_python_api_size(void){return sizeof(VFHeaderPythonAPI);}
+int vf_header_host_set_python_callback(void *handle,void *callback,
+                                      const VFHeaderPythonAPI *api,size_t size) {
+    if(!NSThread.isMainThread||!handle||!VFHeaderPythonAPIValid(api,size))return 0;
+    VFHeaderHost *h=handle;if(h->_closed)return 0;
+    VFHeaderPythonContext *context=callback?[[VFHeaderPythonContext alloc]initWithCallback:callback api:api]:nil;
+    if(callback&&!context)return 0;
+    VFHeaderPythonContext *old=h->_pythonCallbackContext;
+    h->_pythonCallbackContext=context;
+    h->_changeCallback=context?VFHeaderInvokePython:NULL;h->_changeContext=context;
+    [old release];return 1;
+}
+int vf_header_host_python_callback_smoke(void *callback,const VFHeaderPythonAPI *api,size_t size) {
+    if(!callback||!VFHeaderPythonAPIValid(api,size))return 0;
+    VFHeaderPythonContext *context=[[VFHeaderPythonContext alloc]initWithCallback:callback api:api];
+    if(!context)return 0;BOOL ok=[context invoke];[context release];return ok?1:0;
 }
 
 int vf_header_host_set_background(void *handle,double red,double green,double blue,double alpha){

@@ -37,6 +37,7 @@ def create_header_input_boundary(main: Any, surface: Any):
             self.cancelled_gesture = False
             surface.installEventFilter(self)
             self.main.menuNavigationAllowedChanged.connect(self._gate_changed)
+            self.main.nativeHeaderInputReadyChanged.connect(self._gate_changed)
             self._gate_changed()
 
         def eventFilter(self, watched, event):
@@ -56,6 +57,10 @@ def create_header_input_boundary(main: Any, surface: Any):
             if self.retired or not isValid(self.main) or (not isValid(self.surface)):
                 return True
             try:
+                if not bool(self.main.property("nativeHeaderInputReady")):
+                    self.owned = False
+                    self.cancelled_gesture = True
+                    return True
                 if not self.main.isVisible() or not self.surface.isVisible():
                     self.owned = False
                     return True
@@ -128,7 +133,9 @@ def create_header_input_boundary(main: Any, surface: Any):
             if self.retired or not isValid(self.main) or (not isValid(self.surface)):
                 return
             try:
-                if not bool(self.main.property("menuNavigationAllowed")):
+                if not bool(self.main.property("menuNavigationAllowed")) or not bool(
+                    self.main.property("nativeHeaderInputReady")
+                ):
                     QCoreApplication.sendEvent(self.surface, QEvent(QEvent.Type.Leave))
             except RuntimeError:
                 pass
@@ -142,6 +149,9 @@ def create_header_input_boundary(main: Any, surface: Any):
             if isValid(self.main):
                 try:
                     self.main.menuNavigationAllowedChanged.disconnect(
+                        self._gate_changed
+                    )
+                    self.main.nativeHeaderInputReadyChanged.disconnect(
                         self._gate_changed
                     )
                 except (RuntimeError, TypeError):
@@ -328,26 +338,25 @@ class IntegratedHeader:
                 and min(host_rect[2:]) > 0
             )
             native_height = host_rect[3] if allocated else None
-            if (
-                not self._attached
-                and all(
-                    sample.get(k) is True
-                    for k in (
-                        "current",
-                        "toolbar_owned",
-                        "delegate_unchanged",
-                        "full_size",
-                        "transparent",
-                        "title_hidden",
-                    )
+            if all(
+                sample.get(k) is True
+                for k in (
+                    "current",
+                    "toolbar_owned",
+                    "delegate_unchanged",
+                    "full_size",
+                    "transparent",
+                    "title_hidden",
                 )
-                and (
-                    not allocated
-                    or not sample.get("host_visible")
-                    or native_height < self._body_slot
-                )
+            ) and (
+                not allocated
+                or not sample.get("host_visible")
+                or native_height < self._body_slot
             ):
-                # Initial AppKit attachment is not a completed layout phase.
+                # AppKit can briefly unallocate its exact toolbar even after
+                # DidEnter/DidExit has reset the transition flag. Keep the
+                # native parent instead of retiring into the moving content
+                # header. Pending geometry must never admit stale input.
                 # Retain the exact owner but do not bind/show the Qt child,
                 # publish a packet, shrink policy, or report readiness. An actual
                 # native allocation event may complete it; the harness deadline
@@ -358,6 +367,7 @@ class IntegratedHeader:
                     "required_height": self._body_slot,
                     "sample": sample,
                 }
+                self._window.setProperty("nativeHeaderInputReady", False)
                 return
             self._sequence += 1
             try:
@@ -393,6 +403,7 @@ class IntegratedHeader:
                         "stage": "native_header_pending_coherent_allocation",
                         "transition": sample.get("transition"),
                     }
+                    self._window.setProperty("nativeHeaderInputReady", False)
                     return
                 raise
             layout["screen_ready"] = True
@@ -414,6 +425,7 @@ class IntegratedHeader:
                 self._window.setProperty("nativeHeaderAttached", True)
                 self._attached = True
                 # Native height comes from layout policy, not allocated geometry.
+            self._window.setProperty("nativeHeaderInputReady", True)
             self._window._native_header_diagnostic = {
                 "stage": "success",
                 "flags": child_flags,
@@ -450,6 +462,8 @@ class IntegratedHeader:
 
         if not self._retired:
             self._retired = True
+            if isValid(self._window):
+                self._window.setProperty("nativeHeaderInputReady", False)
             if self._host is not None:
                 self._host.set_change_callback(None)
             if self._input_boundary is not None:
