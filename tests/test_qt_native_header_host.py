@@ -803,3 +803,54 @@ def test_direct_native_mixed_button_setters_publish_only_coherent_next_allocatio
     assert rig.window.property("nativeRowPacket")["width"] == 930
     assert rig.window._native_header_diagnostic["stage"] == "success"
     owner.close()
+
+
+@pytest.mark.parametrize(
+    "stage,smoke", [("application", True), ("engine", True), ("application", False)]
+)
+def test_explicit_smoke_receipts_precede_fallible_qt_startup(
+    tmp_path, monkeypatch, capsys, stage, smoke
+):
+    """A stalled constructor must leave its phase before any cleanup can fail."""
+    from types import SimpleNamespace
+
+    from yt_downloader.qt_quick import main as qt_main
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setattr(
+        qt_main.sys, "argv", ["VODForge"] + (["--runtime-smoke"] if smoke else [])
+    )
+    monkeypatch.setattr(qt_main, "runtime_smoke", lambda **_kwargs: 0)
+    monkeypatch.setattr(
+        qt_main, "QQuickStyle", SimpleNamespace(setStyle=lambda _style: None)
+    )
+    monkeypatch.setattr(qt_main, "QFont", lambda value: value)
+
+    def application(_argv):
+        if stage == "application":
+            raise RuntimeError("fictional application stop")
+        return SimpleNamespace(
+            setApplicationName=lambda _name: None,
+            setFont=lambda _font: None,
+            aboutToQuit=SimpleNamespace(connect=lambda _slot: None),
+        )
+
+    def engine(*_args, **_kwargs):
+        raise RuntimeError("fictional engine stop")
+
+    monkeypatch.setattr(qt_main, "QGuiApplication", application)
+    monkeypatch.setattr(
+        qt_main, "Bridge", lambda _path: SimpleNamespace(close=lambda **_kwargs: None)
+    )
+    monkeypatch.setattr(qt_main, "create_engine", engine)
+    with pytest.raises(RuntimeError, match="fictional .* stop"):
+        qt_main.main()
+    lines = capsys.readouterr().out.splitlines()
+    phases = [line for line in lines if line.startswith("VODFORGE_QT_SMOKE_PHASE ")]
+    if not smoke:
+        assert phases == []
+    else:
+        assert "VODFORGE_QT_SMOKE_PHASE application_begin" in phases
+        assert ("VODFORGE_QT_SMOKE_PHASE engine_begin" in phases) == (stage == "engine")
+        assert "VODFORGE_QT_SMOKE_PHASE engine_returned" not in phases

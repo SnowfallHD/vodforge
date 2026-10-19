@@ -7906,6 +7906,13 @@ def _argument_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = _argument_parser().parse_args()
+
+    def smoke_phase(stage: str) -> None:
+        # Explicit dependency-smoke diagnostics only: fixed stage names, no
+        # user data. Receipt precedes each fallible Qt constructor/owner call.
+        if args.runtime_smoke:
+            print(f"VODFORGE_QT_SMOKE_PHASE {stage}", flush=True)
+
     if args.analytics_qa_receipt is not None:
         from yt_downloader.analytics_qa import validate_qa_receipt
 
@@ -7920,9 +7927,11 @@ def main() -> int:
         os.environ["HOME"] = smoke_home.name
         os.environ["LOCALAPPDATA"] = smoke_home.name
         os.environ["VODFORGE_DISABLE_TELEMETRY"] = "1"
+        smoke_phase("dependency_probe_begin")
         if runtime_smoke(require_libvlc=False) != 0:
             smoke_home.cleanup()
             return 1
+        smoke_phase("dependency_probe_complete")
     QQuickStyle.setStyle("Basic")
     update_lease = None
     if getattr(sys, "frozen", False) and not args.runtime_smoke:
@@ -7931,17 +7940,23 @@ def main() -> int:
         except RuntimeError as exc:
             print(str(exc), file=sys.stderr)
             return 1
+    smoke_phase("application_begin")
     application = QGuiApplication(sys.argv[:1])
     # Keep the lease until process teardown, including every early-return path.
     application._update_lease = update_lease  # type: ignore[attr-defined]
     application.setApplicationName("VODForge Qt Quick")
     application.setFont(QFont(FONT_UI_FAMILY))
+    smoke_phase("application_returned")
+    smoke_phase("bridge_begin")
     bridge = Bridge(args.event_log)
     if getattr(sys, "frozen", False) and update_lease is None:
         bridge._automatic_updates = False
         bridge._automatic_updates_supported = False
     application.aboutToQuit.connect(lambda: bridge.close(normal_quit=True))
+    smoke_phase("bridge_returned")
+    smoke_phase("engine_begin")
     engine = create_engine(bridge, defer_visibility=True)
+    smoke_phase("engine_returned")
     if not engine.rootObjects():
         engine.deleteLater()
         QCoreApplication.sendPostedEvents(None, cast(Any, QEvent).DeferredDelete)
@@ -7950,7 +7965,9 @@ def main() -> int:
             smoke_home.cleanup()
         return 2
     bridge._window = engine.rootObjects()[0]
+    smoke_phase("native_owner_begin")
     native_header_integrated = integrate_qt_main_window(bridge._window)
+    smoke_phase("native_owner_returned")
     # Construct the sole native owner before first visibility, as qualified.
     bridge._window.show()
     try:
@@ -7962,7 +7979,9 @@ def main() -> int:
         if smoke_home is not None:
             smoke_home.cleanup()
         raise SystemExit(f"VODForge Qt quality-E2E startup rejected: {exc}") from exc
+    smoke_phase("session_begin")
     bridge.startSession()
+    smoke_phase("session_returned")
     lifecycle = bridge._analytics.lifecycle
     if lifecycle is not None and not args.runtime_smoke:
         lifecycle.install_exception_hooks()
@@ -7991,8 +8010,10 @@ def main() -> int:
         if sys.platform == "darwin":
             from yt_downloader.platforms.macos.header_host import runtime_callback_smoke
 
+            smoke_phase("native_callback_begin")
             runtime_callback_smoke()
             print("VODFORGE_NATIVE_HEADER_CALLBACK_OK", flush=True)
+        smoke_phase("teardown_begin")
         application.processEvents()
         engine.deleteLater()
         QCoreApplication.sendPostedEvents(None, cast(Any, QEvent).DeferredDelete)
@@ -8001,6 +8022,7 @@ def main() -> int:
         if smoke_home is None:
             raise RuntimeError("Runtime smoke home was not initialized")
         smoke_home.cleanup()
+        smoke_phase("teardown_complete")
         return 0
     if args.ready_file:
         window = engine.rootObjects()[0]
