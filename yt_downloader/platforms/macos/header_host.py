@@ -180,3 +180,17 @@ class HeaderHost:
             raise RuntimeError(
                 "Native header teardown refused; retain its exact handle"
             )
+
+
+def runtime_callback_smoke():
+    """Exercise the real callback trampoline under this executable's signature.
+
+    This runs only in the explicit runtime-smoke path. No NSApplication, window,
+    native event, callback registration or permission request is created here.
+    """
+    observed = []
+    callback = _CHANGE_CALLBACK(lambda context: observed.append(context))
+    native_call = _CHANGE_CALLBACK(ctypes.cast(callback, _POINTER).value)
+    native_call(None)
+    if observed != [None]:
+        raise RuntimeError("Native header callback trampoline did not execute")

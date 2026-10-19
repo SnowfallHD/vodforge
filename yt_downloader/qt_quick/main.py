@@ -7988,6 +7988,11 @@ def main() -> int:
     if bool(getattr(sys, "frozen", False)) and not args.runtime_smoke:
         QTimer.singleShot(0, bridge._auto_check_updates)
     if args.runtime_smoke:
+        if sys.platform == "darwin":
+            from yt_downloader.platforms.macos.header_host import runtime_callback_smoke
+
+            runtime_callback_smoke()
+            print("VODFORGE_NATIVE_HEADER_CALLBACK_OK", flush=True)
         application.processEvents()
         engine.deleteLater()
         QCoreApplication.sendPostedEvents(None, cast(Any, QEvent).DeferredDelete)
