@@ -1,6 +1,7 @@
 #import <AppKit/AppKit.h>
 #include <stdio.h>
 #include <stdlib.h>
+#import <objc/runtime.h>
 #define REQUIRE(c) do{if(!(c)){fprintf(stderr,"refused:%s:%d\n",#c,__LINE__);exit(3);}}while(0)
 @interface VFToolbar:NSObject
 @property(assign) id delegate;
@@ -14,6 +15,7 @@
 @interface VFWindow:NSObject
 @property(retain) id delegate;
 @property(retain) NSView *contentView;
+@property(retain) NSColor *backgroundColor;
 @property(nonatomic,retain) NSToolbar *toolbar;
 @property NSWindowToolbarStyle toolbarStyle;
 @property NSRect frame;
@@ -30,7 +32,13 @@
 - (NSButton *)standardWindowButton:(NSWindowButton)i{(void)i;return nil;}
 - (instancetype)init{self=[super init];self.contentView=[[[NSView alloc]initWithFrame:NSMakeRect(0,0,1100,740)]autorelease];self.delegate=[[[NSObject alloc]init]autorelease];self.styleMask=NSWindowStyleMaskFullSizeContentView;self.titlebarAppearsTransparent=YES;self.titleVisibility=NSWindowTitleHidden;self.titlebarAccessoryViewControllers=@[];self.toolbarStyle=NSWindowToolbarStyleAutomatic;return self;}
 - (void)setToolbar:(NSToolbar *)value{if(value&&self.throwBefore)[NSException raise:@"before" format:@"fixture"];[value retain];[_toolbar release];_toolbar=value;if(value&&self.throwAfter)[NSException raise:@"after" format:@"fixture"];}
-- (void)dealloc{[_contentView release];[_delegate release];[_toolbar release];[_titlebarAccessoryViewControllers release];[super dealloc];}
+- (void)dealloc{[_backgroundColor release];[_contentView release];[_delegate release];[_toolbar release];[_titlebarAccessoryViewControllers release];[super dealloc];}
+@end
+static NSWindow *brandWindow;
+@interface VFBrandView:VFHeaderContainer
+@end
+@implementation VFBrandView
+- (NSWindow *)window{return brandWindow;}
 @end
 static void changedNow(void *context){(*(unsigned *)context)++;}
 int main(int argc,char **argv){@autoreleasepool{
@@ -53,6 +61,14 @@ int main(int argc,char **argv){@autoreleasepool{
  [o->_view setFrameSize:NSMakeSize(1010,44)];REQUIRE(calls==5);
  REQUIRE(vf_header_host_set_change_callback(h,NULL,NULL));
  [o changed:[NSNotification notificationWithName:NSWindowWillExitFullScreenNotification object:w]];REQUIRE(calls==5);
+ }
+ if([test isEqual:@"brand_restore"]||[test isEqual:@"brand_external"]){
+   w.backgroundColor=NSColor.blackColor;brandWindow=(NSWindow *)w;
+   object_setClass(o->_view,VFBrandView.class);
+   REQUIRE(vf_header_host_set_background(h,.188,.169,.227,1));
+   REQUIRE([w.backgroundColor isEqual:o->_view->_brandColor]&&o->_paintWindows.count==1);
+   if([test isEqual:@"brand_external"])w.backgroundColor=NSColor.redColor;
+   object_setClass(o->_view,VFHeaderContainer.class);brandWindow=nil;
  }
  if([test isEqual:@"brand"]){
  REQUIRE(vf_header_host_set_background(h,0.188,0.169,0.227,1));
@@ -77,6 +93,8 @@ int main(int argc,char **argv){@autoreleasepool{
  if([test isEqual:@"bound_subview"]){NSView *child=[[[NSView alloc]initWithFrame:NSMakeRect(0,0,1,1)]autorelease];[o->_view addSubview:child];REQUIRE(!vf_header_host_destroy(&h)&&h);[child removeFromSuperview];}
  int fd=vf_header_host_event_fd(h);REQUIRE(fd>=0);
  REQUIRE(vf_header_host_destroy(&h)&&!h&&!w.toolbar&&w.toolbarStyle==NSWindowToolbarStyleAutomatic&&w.delegate==delegate);
+ if([test isEqual:@"brand_restore"])REQUIRE([w.backgroundColor isEqual:NSColor.blackColor]);
+ if([test isEqual:@"brand_external"])REQUIRE([w.backgroundColor isEqual:NSColor.redColor]);
  REQUIRE(fcntl(fd,F_GETFD)==-1&&errno==EBADF);REQUIRE(vf_header_host_destroy(&h));
  [w release];}
  REQUIRE(NSApp==nil);printf("{\"case\":\"%s\",\"passed\":true,\"nsapp_created\":false}\n",argv[1]);

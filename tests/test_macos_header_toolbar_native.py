@@ -52,6 +52,8 @@ def header_driver(tmp_path_factory: pytest.TempPathFactory) -> Path:
         "basic",
         "callback",
         "brand",
+        "brand_restore",
+        "brand_external",
         "guards",
         "duplicate_host",
         "events",
