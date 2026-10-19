@@ -1,13 +1,12 @@
-// Public event-driven custom-view toolbar hosting the real Qt header. No window-delegate,
-// controls/support-frame, presentation-options, or body-layout mutation.
+#import <QuartzCore/QuartzCore.h>
+// One Unified custom toolbar aperture carries the single Qt header.
+// No original-content overlay, window delegate/control/body/presentation writes.
 #import <AppKit/AppKit.h>
 #include <math.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
-#ifndef VF_HEADER_TOOLBAR_CLASS
-#define VF_HEADER_TOOLBAR_CLASS NSToolbar
-#endif
+
 
 @class VFHeaderHost;
 @class VFHeaderChildBinding;
@@ -17,33 +16,23 @@ int vf_header_host_state(void *handle);
 unsigned vf_header_host_flags(void *handle);
 double vf_header_host_geometry(void *handle,unsigned index);
 static char VFHeaderKVOContext;
-static NSString * const VFHeaderItemID=@"org.vodforge.qa.integrated-header";
+static unsigned VFVisibleRect(NSView *view,NSRect *out);
+
 @interface VFHeaderContainer : NSView {
 @public
     CGFloat _itemHeight;
     VFHeaderHost *_owner;
     NSLayoutConstraint *_preferredWidth,*_heightConstraint;
 }
-- (instancetype)initWithHeight:(CGFloat)height;
 @end
 @implementation VFHeaderContainer
-- (instancetype)initWithHeight:(CGFloat)height {
-    self=[super initWithFrame:NSMakeRect(0,0,1,height)];if(!self)return nil;
-    _itemHeight=height;self.autoresizesSubviews=YES;
-    self.translatesAutoresizingMaskIntoConstraints=NO;
-    _heightConstraint=[[self.heightAnchor constraintEqualToConstant:height] retain];_heightConstraint.active=YES;
-    _preferredWidth=[[self.widthAnchor constraintEqualToConstant:1] retain];
-    _preferredWidth.priority=NSLayoutPriorityDefaultHigh;_preferredWidth.active=YES;
-    [self setContentHuggingPriority:1 forOrientation:NSLayoutConstraintOrientationHorizontal];
-    return self;
-}
 - (BOOL)isFlipped{return YES;}
 - (void)setFrameSize:(NSSize)size {[super setFrameSize:size];VFHeaderLayoutChanged(_owner);}
 - (void)setBoundsSize:(NSSize)size {[super setBoundsSize:size];VFHeaderLayoutChanged(_owner);}
 - (void)viewDidMoveToWindow {[super viewDidMoveToWindow];VFHeaderLayoutChanged(_owner);}
 - (void)viewDidMoveToSuperview {[super viewDidMoveToSuperview];VFHeaderLayoutChanged(_owner);}
 - (void)dealloc{_owner=nil;[_preferredWidth release];[_heightConstraint release];[super dealloc];}
-- (NSSize)intrinsicContentSize{return NSMakeSize(NSViewNoIntrinsicMetric,_itemHeight);}
+- (NSSize)intrinsicContentSize{return NSMakeSize(NSViewNoIntrinsicMetric,NSViewNoIntrinsicMetric);}
 - (void)resizeSubviewsWithOldSize:(NSSize)oldSize {
     (void)oldSize; // Qt child frame and inverse-container geometry have exact owners.
     VFHeaderLayoutChanged(_owner);
@@ -51,6 +40,95 @@ static NSString * const VFHeaderItemID=@"org.vodforge.qa.integrated-header";
 - (void)didAddSubview:(NSView *)view{[super didAddSubview:view];VFHeaderLayoutChanged(_owner);}
 - (void)willRemoveSubview:(NSView *)view{VFHeaderHostWillRemoveSubview(_owner,view);[super willRemoveSubview:view];}
 @end
+
+#define VF_ITEM_VIEW_CLASS VFHeaderContainer
+// Native Unified toolbar carrier; AppKit owns allocation, controls and material.
+// AppKit owns the native controls, toolbar row, margins and material. This view
+// owns only one item aperture. No window-content underlay claims that aperture
+// owns native traffic-light pixels. No fullscreen policy/delegate changes.
+#import <AppKit/AppKit.h>
+#include <math.h>
+#ifndef VF_TOOLBAR_CLASS
+#define VF_TOOLBAR_CLASS NSToolbar
+#endif
+#ifndef VF_ITEM_VIEW_CLASS
+#define VF_ITEM_VIEW_CLASS NSView
+#endif
+static NSString *const VFItemID=@"org.vodforge.qa.unified44.item";
+@interface VF44Carrier : NSObject<NSToolbarDelegate> {
+@public NSWindow *_window; id _windowDelegate; NSToolbar *_toolbar;
+ NSToolbarItem *_item; NSView *_view; NSWindowToolbarStyle _oldStyle;
+ NSLayoutConstraint *_heightConstraint,*_minimumWidthConstraint;
+ BOOL _closed,_assigned,_styleWritten;
+}
+- (instancetype)initWithWindow:(NSWindow *)window minimumWidth:(CGFloat)minimum;
+- (BOOL)current;
+- (BOOL)close;
+@end
+@implementation VF44Carrier
+- (instancetype)initWithWindow:(NSWindow *)window minimumWidth:(CGFloat)minimum {
+ self=[super init];if(!self)return nil;
+ if(!NSThread.isMainThread||!window||!isfinite(minimum)||minimum<=0||minimum>16384
+    ||window.toolbar||window.titlebarAccessoryViewControllers.count
+    ||!(window.styleMask&NSWindowStyleMaskFullSizeContentView)
+    ||!window.titlebarAppearsTransparent||window.titleVisibility!=NSWindowTitleHidden){[self release];return nil;}
+ _window=[window retain];_windowDelegate=[window.delegate retain];_oldStyle=window.toolbarStyle;
+ @try {
+  // Independent required height; width is measured/allocated by AppKit, never
+  // fed back from the last window/host frame. No deprecated minSize/maxSize.
+  _view=[[VF_ITEM_VIEW_CLASS alloc]initWithFrame:NSZeroRect];_view.translatesAutoresizingMaskIntoConstraints=NO;
+  _heightConstraint=[[_view.heightAnchor constraintEqualToConstant:44]retain];_heightConstraint.active=YES;
+  _minimumWidthConstraint=[[_view.widthAnchor constraintGreaterThanOrEqualToConstant:minimum]retain];_minimumWidthConstraint.active=YES;
+  [_view setContentHuggingPriority:1 forOrientation:NSLayoutConstraintOrientationHorizontal];
+  _item=[[NSToolbarItem alloc]initWithItemIdentifier:VFItemID];_item.view=_view;_item.label=@"VODForge";_item.bordered=NO;
+  _item.visibilityPriority=NSToolbarItemVisibilityPriorityHigh;
+  // Empty identifier avoids sharing customization state with another window.
+  _toolbar=(NSToolbar *)[[VF_TOOLBAR_CLASS alloc]init];_toolbar.delegate=self;
+  _toolbar.allowsUserCustomization=NO;_toolbar.autosavesConfiguration=NO;
+  _toolbar.allowsExtensionItems=NO;_toolbar.displayMode=NSToolbarDisplayModeIconOnly;
+  if([_toolbar respondsToSelector:@selector(setAllowsDisplayModeCustomization:)])_toolbar.allowsDisplayModeCustomization=NO;
+  @try{window.toolbarStyle=NSWindowToolbarStyleUnified;}
+  @finally{_styleWritten=window.toolbarStyle==NSWindowToolbarStyleUnified;}
+  @try{window.toolbar=_toolbar;}
+  @finally{_assigned=window.toolbar==_toolbar;}
+  _toolbar.visible=YES;
+  if(![self current]){[self close];[self release];return nil;}
+ }@catch(NSException *error){(void)error;[self close];[self release];return nil;}
+ return self;
+}
+- (NSArray *)toolbarAllowedItemIdentifiers:(NSToolbar *)toolbar{return toolbar==_toolbar?@[VFItemID]:@[];}
+- (NSArray *)toolbarDefaultItemIdentifiers:(NSToolbar *)toolbar{return toolbar==_toolbar?@[VFItemID]:@[];}
+- (NSToolbarItem *)toolbar:(NSToolbar *)toolbar itemForItemIdentifier:(NSToolbarItemIdentifier)identifier willBeInsertedIntoToolbar:(BOOL)inserted {
+ (void)inserted;return !_closed&&toolbar==_toolbar&&[identifier isEqual:VFItemID]?_item:nil;
+}
+- (BOOL)current {
+ return !_closed&&_assigned&&_styleWritten&&_window.toolbar==_toolbar&&_toolbar.delegate==self
+ &&_item.view==_view&&_window.delegate==_windowDelegate&&_window.toolbarStyle==NSWindowToolbarStyleUnified
+ &&_window.titlebarAccessoryViewControllers.count==0&&(_window.styleMask&NSWindowStyleMaskFullSizeContentView)
+ &&_window.titlebarAppearsTransparent&&_window.titleVisibility==NSWindowTitleHidden;
+}
+- (BOOL)close {
+ if(_closed)return YES;
+ // Never remove a foreign toolbar or restore style after someone else changed
+ // this exact generation. A refused close retains the carrier for inspection.
+ if(_assigned&&![self current])return NO;
+ @try {
+  if(_assigned){_window.toolbar=nil;if(_window.toolbar)return NO;_assigned=NO;}
+  if(_styleWritten){
+   if(_window.toolbar||_window.delegate!=_windowDelegate||_window.toolbarStyle!=NSWindowToolbarStyleUnified)return NO;
+   _window.toolbarStyle=_oldStyle;if(_window.toolbarStyle!=_oldStyle)return NO;_styleWritten=NO;
+  }
+ }@catch(NSException *error){(void)error;return NO;}
+ if(_toolbar.delegate==self)_toolbar.delegate=nil;
+ _closed=YES;return YES;
+}
+- (void)dealloc {
+ // Caller must retain/refuse destruction if exact-generation close failed.
+ [_heightConstraint release];[_minimumWidthConstraint release];[_view release];[_item release];
+ [_toolbar release];[_windowDelegate release];[_window release];[super dealloc];
+}
+@end
+
 
 // One exact public Qt child. Qt alone authors its frame; this binding owns only
 // the inverse container and its event/lifetime bookkeeping.
@@ -78,25 +156,24 @@ static NSString * const VFHeaderItemID=@"org.vodforge.qa.integrated-header";
 - (double)geometry:(unsigned)index;
 @end
 
-@interface VFHeaderHost : NSObject<NSToolbarDelegate> {
+@interface VFHeaderHost : NSObject {
 @public
     NSWindow *_window;
-    NSToolbar *_toolbar,*_originalToolbar;
-    NSToolbarItem *_item;
+    VF44Carrier *_carrier;
     VFHeaderContainer *_view;
     VFHeaderChildBinding *_childBinding;
     id _windowDelegate;
-    NSAppearance *_originalAppearance,*_ownedAppearance;
-    NSWindowToolbarStyle _originalStyle;
-    BOOL _closed,_closing,_styleWritten,_toolbarAssigned,_appearanceWritten,_nativeClosed;
+    BOOL _closed,_closing,_nativeClosed;
     BOOL _layingOut,_layoutValid,_eventPending,_pipeFailed,_haveEventSnapshot;
-    double _eventSnapshot[98];unsigned _eventFlags;int _eventStatus;
+    double _eventSnapshot[98],_eventRow[17];
+    uintptr_t _eventButtonIDs[3];unsigned _eventFlags;int _eventStatus;
     int _eventRead,_eventWrite;
     double _gutter,_minWidth;
     NSButton *_observedButtons[3];
-    BOOL _buttonFrameFlags[3],_buttonBoundsFlags[3],_buttonKVOHidden[3],_buttonKVOWindow[3];
+    BOOL _buttonFrameFlags[3],_buttonBoundsFlags[3],_buttonKVOHidden[3],_buttonKVOWindow[3],_buttonKVOAlpha[3];
     NSWindow *_buttonWindows[3];
     CGFloat _height;
+    unsigned _transition;
 }
 - (instancetype)initWithWindow:(NSWindow *)window height:(CGFloat)height gutter:(double)gutter minWidth:(double)minWidth;
 - (void)layoutChanged;
@@ -248,28 +325,11 @@ static BOOL VFChildNear(NSRect a,NSRect b){return fabs(a.origin.x-b.origin.x)<.0
     }
     if(fcntl(_eventWrite,F_SETNOSIGPIPE,1)==-1){[self release];return nil;}
     @try {
-        _originalToolbar=[window.toolbar retain];_originalStyle=window.toolbarStyle;
         _windowDelegate=[window.delegate retain];
-        _originalAppearance=[window.appearance retain];
-        _ownedAppearance=[[NSAppearance appearanceNamed:NSAppearanceNameDarkAqua] retain];
-        if(!_ownedAppearance){[self release];return nil;}
-        @try{window.appearance=_ownedAppearance;}
-        @finally{_appearanceWritten=window.appearance==_ownedAppearance;}
-        _view=[[VFHeaderContainer alloc] initWithHeight:height];_view->_owner=self;
-        [self layoutChanged];
-        if(!_layoutValid){[self release];return nil;}
-        _item=[[NSToolbarItem alloc] initWithItemIdentifier:VFHeaderItemID];
-        _item.view=_view;_item.label=@"VODForge";_item.bordered=NO;
-        _item.visibilityPriority=NSToolbarItemVisibilityPriorityHigh;
-        _toolbar=(NSToolbar *)[[VF_HEADER_TOOLBAR_CLASS alloc] initWithIdentifier:@"org.vodforge.qa.real-header-toolbar"];
-        _toolbar.allowsUserCustomization=NO;_toolbar.autosavesConfiguration=NO;
-        _toolbar.allowsExtensionItems=NO;_toolbar.displayMode=NSToolbarDisplayModeIconOnly;
-        _toolbar.delegate=self;
-        @try { window.toolbarStyle=NSWindowToolbarStyleUnified; }
-        @finally { _styleWritten=window.toolbarStyle==NSWindowToolbarStyleUnified; }
-        @try { window.toolbar=_toolbar; }
-        @finally { _toolbarAssigned=window.toolbar==_toolbar; }
-        _toolbar.visible=YES;
+        _carrier=[[VF44Carrier alloc]initWithWindow:window minimumWidth:minWidth];
+        if(!_carrier){[self release];return nil;}
+        _view=(VFHeaderContainer *)[_carrier->_view retain];_view->_owner=self;
+        _layoutValid=YES;
         if(![self current]){[self release];return nil;}
         NSNotificationCenter *center=[NSNotificationCenter defaultCenter];
         for(NSNotificationName name in @[NSWindowDidResizeNotification,NSWindowDidMoveNotification,
@@ -283,21 +343,9 @@ static BOOL VFChildNear(NSRect a,NSRect b){return fabs(a.origin.x-b.origin.x)<.0
     } @catch(NSException *exception) {(void)exception;[self release];return nil;}
     return self;
 }
-- (NSArray *)toolbarAllowedItemIdentifiers:(NSToolbar *)toolbar {
-    return toolbar==_toolbar?@[VFHeaderItemID]:@[];
-}
-- (NSArray *)toolbarDefaultItemIdentifiers:(NSToolbar *)toolbar {
-    return toolbar==_toolbar?@[VFHeaderItemID]:@[];
-}
-- (NSToolbarItem *)toolbar:(NSToolbar *)toolbar itemForItemIdentifier:(NSToolbarItemIdentifier)identifier willBeInsertedIntoToolbar:(BOOL)inserted {
-    (void)inserted;
-    return !_closed&&toolbar==_toolbar&&[identifier isEqualToString:VFHeaderItemID]?_item:nil;
-}
 - (BOOL)ownedGeneration {
-    return _toolbarAssigned&&_styleWritten&&_window&&_toolbar&&_item&&_view
-        &&_window.toolbar==_toolbar&&_toolbar.delegate==self&&_item.view==_view
-        &&_window.delegate==_windowDelegate&&_window.toolbarStyle==NSWindowToolbarStyleUnified
-        &&_appearanceWritten&&_window.appearance==_ownedAppearance;
+    return _window&&_carrier&&_view&&[_carrier current]&&_carrier->_view==_view
+        &&_window.delegate==_windowDelegate;
 }
 - (BOOL)current { return !_closed&&!_nativeClosed&&!_pipeFailed&&_layoutValid&&[self ownedGeneration]; }
 - (void)signal {
@@ -311,7 +359,24 @@ static BOOL VFChildNear(NSRect a,NSRect b){return fabs(a.origin.x-b.origin.x)<.0
         snapshot[i]=vf_header_host_geometry(self,i);
         if(!((isnan(snapshot[i])&&isnan(_eventSnapshot[i]))||snapshot[i]==_eventSnapshot[i]))changed=YES;
     }
+    // Per-button visibility and lifecycle are part of the transaction too.
+    // A minimize/zoom-only visibility change must wake Qt even when the close
+    // button, all full bounds and toolbar-era flags remain unchanged.
+    double row[17]={0};row[0]=_transition;NSRect clip;
+    row[1]=VFVisibleRect(_view,&clip);
+    uintptr_t identities[3];
+    for(unsigned i=0;i<3;i++) {
+        NSButton *button=[_window standardWindowButton:(NSWindowButton)i];
+        identities[i]=(uintptr_t)button;
+        row[2+i*5]=VFVisibleRect(button,&clip);
+        row[3+i*5]=clip.origin.x;row[4+i*5]=clip.origin.y;
+        row[5+i*5]=clip.size.width;row[6+i*5]=clip.size.height;
+        if(identities[i]!=_eventButtonIDs[i])changed=YES;
+    }
+    for(unsigned i=0;i<17;i++)if(row[i]!=_eventRow[i])changed=YES;
     if(!changed)return;
+    for(unsigned i=0;i<17;i++)_eventRow[i]=row[i];
+    for(unsigned i=0;i<3;i++)_eventButtonIDs[i]=identities[i];
     for(unsigned i=0;i<98;i++)_eventSnapshot[i]=snapshot[i];
     _eventFlags=flags;_eventStatus=status;_haveEventSnapshot=YES;
     unsigned char byte=1;ssize_t result;
@@ -324,6 +389,7 @@ static BOOL VFChildNear(NSRect a,NSRect b){return fabs(a.origin.x-b.origin.x)<.0
     for(unsigned i=0;i<3;i++)if(_observedButtons[i]) {
         NSButton *button=_observedButtons[i];
         if(_buttonKVOHidden[i]){@try{[button removeObserver:self forKeyPath:@"hidden" context:&VFHeaderKVOContext];}@catch(NSException *e){(void)e;}_buttonKVOHidden[i]=NO;}
+        if(_buttonKVOAlpha[i]){@try{[button removeObserver:self forKeyPath:@"alphaValue" context:&VFHeaderKVOContext];}@catch(NSException *e){(void)e;}_buttonKVOAlpha[i]=NO;}
         if(_buttonKVOWindow[i]){@try{[button removeObserver:self forKeyPath:@"window" context:&VFHeaderKVOContext];}@catch(NSException *e){(void)e;}_buttonKVOWindow[i]=NO;}
         [center removeObserver:self name:NSViewFrameDidChangeNotification object:button];
         [center removeObserver:self name:NSViewBoundsDidChangeNotification object:button];
@@ -363,6 +429,7 @@ static BOOL VFChildNear(NSRect a,NSRect b){return fabs(a.origin.x-b.origin.x)<.0
             [center addObserver:self selector:@selector(changed:) name:NSViewBoundsDidChangeNotification object:button];
         }
         @try{[button addObserver:self forKeyPath:@"hidden" options:0 context:&VFHeaderKVOContext];_buttonKVOHidden[i]=YES;}@catch(NSException *e){(void)e;}
+        @try{[button addObserver:self forKeyPath:@"alphaValue" options:0 context:&VFHeaderKVOContext];_buttonKVOAlpha[i]=YES;}@catch(NSException *e){(void)e;}
         @try{[button addObserver:self forKeyPath:@"window" options:0 context:&VFHeaderKVOContext];_buttonKVOWindow[i]=YES;}@catch(NSException *e){(void)e;}
         if(button.window&&button.window!=_window) {
             [center addObserver:self selector:@selector(changed:) name:NSWindowDidUpdateNotification object:button.window];
@@ -381,36 +448,16 @@ static BOOL VFChildNear(NSRect a,NSRect b){return fabs(a.origin.x-b.origin.x)<.0
     BOOL owned=notification.object==_window;
     for(unsigned i=0;i<3;i++)if(notification.object==_observedButtons[i]||notification.object==_buttonWindows[i])owned=YES;
     if(!owned)return;
+    if([notification.name isEqual:NSWindowWillEnterFullScreenNotification])_transition=1;
+    if([notification.name isEqual:NSWindowWillExitFullScreenNotification])_transition=2;
+    if([notification.name isEqual:NSWindowDidEnterFullScreenNotification]||[notification.name isEqual:NSWindowDidExitFullScreenNotification])_transition=0;
     [self refreshButtons];[self layoutChanged];[self signal];
 }
 - (void)layoutChanged {
-    if(_closed||_nativeClosed||_layingOut||![NSThread isMainThread]||!_view)return;
-    _layingOut=YES;_layoutValid=NO;
-    @try {
-        NSView *content=_window.contentView;NSRect contentRect=[content convertRect:content.bounds toView:nil];
-        double origin=NSMinX(contentRect)+_gutter;
-        NSRect contentScreen=[_window convertRectToScreen:contentRect];
-        if(_view.window) {
-            NSRect hostScreen=[_view.window convertRectToScreen:[_view convertRect:_view.bounds toView:nil]];
-            origin=NSMinX(contentRect)+NSMinX(hostScreen)-NSMinX(contentScreen);
-        } else for(unsigned i=0;i<3;i++) {
-            NSButton *b=[_window standardWindowButton:(NSWindowButton)i];
-            if(b&&b.window) {
-                NSRect screen=[b.window convertRectToScreen:[b convertRect:b.bounds toView:nil]];
-                origin=fmax(origin,NSMinX(contentRect)+NSMaxX(screen)-NSMinX(contentScreen)+_gutter);
-            }
-        }
-        double width=NSMaxX(contentRect)-origin-_gutter;
-        if(isfinite(width)&&isfinite(origin)&&width>=_minWidth&&width>0) {
-            if(fabs(_view->_preferredWidth.constant-width)>.01)_view->_preferredWidth.constant=width;
-            // Initial allocation is meaningful before AppKit embeds the view.
-            // Once attached AppKit owns its actual frame; constrain preferred
-            // item width only, and report actual frame/screen geometry separately.
-            if(!_view.window&&!NSEqualSizes(_view.frame.size,NSMakeSize(width,_height)))
-                [_view setFrameSize:NSMakeSize(width,_height)];
-            _layoutValid=YES;
-        }
-    } @catch(NSException *exception){(void)exception;}
+    if(_closed||_nativeClosed||_layingOut||!NSThread.isMainThread||!_view)return;
+    _layingOut=YES;
+    // A pending AppKit allocation is observable, never repaired with an offset.
+    _layoutValid=isfinite(_height)&&_height>0&&_height<=256;
     _layingOut=NO;[self signal];
 }
 - (void)willClose:(NSNotification *)notification {
@@ -422,59 +469,32 @@ static BOOL VFChildNear(NSRect a,NSRect b){return fabs(a.origin.x-b.origin.x)<.0
     if(_childBinding){[_childBinding releaseOnly];[_childBinding release];_childBinding=nil;}
     if(_view)_view->_owner=nil;[self stopButtons];
     [[NSNotificationCenter defaultCenter] removeObserver:self];
-    // Setter history distinguishes failed construction from a user later
-    // returning the original toolbar. Identity alone does not prove ownership.
+    // Restore only this exact current toolbar generation. A closing native
+    // window need not be restyled. Never touch a foreign toolbar/delegate.
     @try {
-        if(!_closing&&[self ownedGeneration]) {
-            _window.toolbar=_originalToolbar;
-            // The setter may invoke native callbacks. Recheck the whole still-
-            // owned state before the second write; never overwrite a new style.
-            if(_window.toolbar==_originalToolbar&&_toolbar.delegate==self
-                &&_item.view==_view&&_window.delegate==_windowDelegate
-                &&_window.toolbarStyle==NSWindowToolbarStyleUnified&&_window.appearance==_ownedAppearance) {
-                _window.toolbarStyle=_originalStyle;
-                if(_window.toolbar==_originalToolbar&&_window.toolbarStyle==_originalStyle
-                    &&_window.delegate==_windowDelegate&&_window.appearance==_ownedAppearance)
-                    _window.appearance=_originalAppearance;
-            }
-        } else if(!_closing&&!_toolbarAssigned&&_styleWritten&&_toolbar&&_item&&_view
-            &&_window.toolbar==_originalToolbar&&_toolbar.delegate==self&&_item.view==_view
-            &&_window.delegate==_windowDelegate&&_window.toolbarStyle==NSWindowToolbarStyleUnified
-            &&_window.appearance==_ownedAppearance) {
-            // This constructor never assigned its toolbar. Only its identifiable
-            // attempted style on the unchanged original generation is restored.
-            _window.toolbarStyle=_originalStyle;
-        }
-        // Appearance can precede view/style/toolbar construction. A partial
-        // constructor restores it only on the unchanged original generation.
-        if(!_closing&&!_toolbarAssigned&&_appearanceWritten
-            &&_window.toolbar==_originalToolbar&&_window.toolbarStyle==_originalStyle
-            &&_window.delegate==_windowDelegate&&_window.appearance==_ownedAppearance)
-            _window.appearance=_originalAppearance;
-    } @catch(NSException *exception) {(void)exception;}
-    // Remove only our delegate reference before releasing its receiver. Do not
-    // replace a foreign delegate even when the toolbar itself is still attached.
-    if(_toolbar.delegate==self)_toolbar.delegate=nil;
-    [_item release];_item=nil;[_view release];_view=nil;
-    [_toolbar release];_toolbar=nil;[_originalToolbar release];_originalToolbar=nil;
+        if(!_nativeClosed&&[_carrier current])[_carrier close];
+        if(_carrier&&_carrier->_toolbar.delegate==_carrier)_carrier->_toolbar.delegate=nil;
+    } @catch(NSException *exception){(void)exception;}
+    [_view release];_view=nil;[_carrier release];_carrier=nil;
     [_windowDelegate release];_windowDelegate=nil;
-    [_originalAppearance release];_originalAppearance=nil;[_ownedAppearance release];_ownedAppearance=nil;
     [_window release];_window=nil;
     if(_eventRead>=0){close(_eventRead);_eventRead=-1;}
     if(_eventWrite>=0){close(_eventWrite);_eventWrite=-1;}
 }
 - (void)dealloc{[self close];[super dealloc];}
 @end
-unsigned vf_header_host_abi_version(void){return 2;}
+unsigned vf_header_host_abi_version(void){return 4;}
 void *vf_header_host_create(void *window,double height,double gutter,double minWidth) {
-    if(![NSThread isMainThread]||!window||!isfinite(height)||height<=0||height>256
+    if(![NSThread isMainThread]||!window||!isfinite(height)||height!=44
         ||!isfinite(gutter)||gutter<0||gutter>256||!isfinite(minWidth)||minWidth<=0||minWidth>16384)return NULL;
     @try {
         if(![(id)window isKindOfClass:[NSWindow class]])return NULL;
         // An existing exact native owner may still be retiring a Qt child.
         // Never nest hosts or steal its toolbar before that owner releases it.
-        if([[[(NSWindow *)window toolbar] delegate] isKindOfClass:[VFHeaderHost class]])return NULL;
-        // Body remains full-size. Prototype does not enable flags after creation.
+        NSWindow *w=window;
+        if(w.toolbar||w.titlebarAccessoryViewControllers.count||!w.titlebarAppearsTransparent
+            ||w.titleVisibility!=NSWindowTitleHidden)return NULL;
+        // Body remains full-size; ownership never enables flags after creation.
         if(!([(NSWindow *)window styleMask]&NSWindowStyleMaskFullSizeContentView))return NULL;
         return [[VFHeaderHost alloc] initWithWindow:window height:height gutter:gutter minWidth:minWidth];
     } @catch(NSException *exception){(void)exception;return NULL;}
@@ -497,7 +517,7 @@ double vf_header_host_geometry(void *handle,unsigned index) {
         if(index<20){NSRect r=rects[index/4];double v[4]={r.origin.x,r.origin.y,r.size.width,r.size.height};return v[index%4];}
         if(index==20)return h->_height;
         if(index==21)return h->_window.styleMask;
-        if(index==22)return h->_toolbar.visible;
+        if(index==22)return h->_carrier->_toolbar.visible;
         if(index==23)return h->_window.delegate==h->_windowDelegate;
         if(index>=62) {
             NSView *content=h->_window.contentView;
@@ -534,6 +554,7 @@ int vf_header_host_destroy(void **handle) {
     // complete; releasing underneath a live QNSView risks stale Qt callbacks.
     if(host->_childBinding&&!host->_nativeClosed)return 0;
     if(!host->_nativeClosed&&host->_view&&host->_view.subviews.count)return 0;
+    if(!host->_nativeClosed&&![host ownedGeneration])return 0;
     *handle=NULL;[host close];[host release];return 1;
 }
 
@@ -560,14 +581,14 @@ unsigned vf_header_host_flags(void *handle) {
     VFHeaderHost *h=handle;if(h->_closed||h->_nativeClosed)return 0;
     unsigned flags=0;
     @try {
-        if([h current])flags|=1;if(h->_view.window)flags|=2;if(h->_toolbar.visible)flags|=4;
+        if([h current])flags|=1;if(h->_view.window)flags|=2;if(h->_carrier->_toolbar.visible)flags|=4;
         if(h->_window.delegate==h->_windowDelegate)flags|=8;
         if(h->_window.styleMask&NSWindowStyleMaskFullScreen)flags|=16;
         NSButton *b=[h->_window standardWindowButton:NSWindowCloseButton];
         if(b&&b.window) {
-            BOOL hidden=b.hiddenOrHasHiddenAncestor||NSIsEmptyRect(b.visibleRect);
-            if(hidden)flags|=128;
-            else if(b.window.visible)flags|=32;
+            NSRect clip;unsigned visibility=VFVisibleRect(b,&clip);
+            if(visibility==2)flags|=128;
+            else if(visibility==1)flags|=32;
         }
         if(h->_layoutValid)flags|=64;
         if(h->_childBinding){flags|=256;if([h->_childBinding current])flags|=512;if([h->_childBinding fit])flags|=1024;}
@@ -576,20 +597,8 @@ unsigned vf_header_host_flags(void *handle) {
 }
 
 int vf_header_host_set_height(void *handle,double height) {
-    if(vf_header_host_state(handle)!=1||!isfinite(height)||height<=0||height>256)return 0;
-    VFHeaderHost *h=handle;double before=h->_height;
-    if(fabs(height-before)<.01)return 1;
-    @try {
-        h->_view->_heightConstraint.constant=height;
-        h->_view->_itemHeight=height;h->_height=height;
-        [h->_view invalidateIntrinsicContentSize];[h layoutChanged];
-        return h->_layoutValid?1:0;
-    } @catch(NSException *exception) {
-        (void)exception;
-        @try {h->_view->_heightConstraint.constant=before;h->_view->_itemHeight=before;h->_height=before;[h layoutChanged];}
-        @catch(NSException *rollbackException){(void)rollbackException;}
-        return 0;
-    }
+    // This bounded source check has one independent44-point design policy.
+    return vf_header_host_state(handle)==1&&isfinite(height)&&height==44;
 }
 
 static void VFHeaderHostWillRemoveSubview(VFHeaderHost *owner,NSView *view) {
@@ -626,4 +635,66 @@ int vf_header_host_unbind_child(void *handle,void *child) {
         else if(![owner->_childBinding unbind])return 0;
         [owner->_childBinding release];owner->_childBinding=nil;[owner signal];return 1;
     } @catch(NSException *exception){(void)exception;return 0;}
+}
+
+// One ABI4 packet; no Python sequence of separately-changing native getters.
+typedef struct {
+    uint32_t abi,flags,transition,reserved;
+    uint64_t hostIdentity,accessoryIdentity,delegateIdentity,buttonIdentities[3];
+    double geometry[98],visibleControls[12];
+    uint32_t visibility[3],hostVisible;
+} VFHeaderRowSnapshot;
+static unsigned VFVisibleRect(NSView *view,NSRect *out) {
+    *out=NSZeroRect;
+    if(!view||!view.window)return 0;
+    if(view.hiddenOrHasHiddenAncestor||!view.window.visible||view.window.alphaValue==0)return 2;
+    // Fullscreen AppKit retains the genuine buttons and their positive frames
+    // in an overlay window, but fades each button to alpha zero. Existence,
+    // hidden flags and visibleRect alone therefore do not mean painted controls.
+    // Read the public presentation value when present so a fade-out keeps its
+    // clearance until its last positive-opacity frame. No threshold, pointer
+    // inference, previous-state latch, frame setter or second animation.
+    unsigned depth=0;
+    for(NSView *ancestor=view;ancestor;ancestor=ancestor.superview){
+        if(++depth>64)return 0;
+        CALayer *layer=ancestor.layer,*presentation=layer.presentationLayer;
+        double alpha=presentation?presentation.opacity:ancestor.alphaValue;
+        if(!isfinite(alpha)||alpha<0||alpha>1)return 0;
+        if(alpha==0)return 2;
+        if(layer&&!presentation){
+            if(!isfinite(layer.opacity)||layer.opacity<0||layer.opacity>1)return 0;
+            if(layer.hidden||layer.opacity==0)return 2;
+        }else if(presentation&&presentation.hidden)return 2;
+    }
+    NSRect local=NSIntersectionRect(view.bounds,view.visibleRect);
+    if(NSIsEmptyRect(local))return 2;
+    NSRect full=[view.window convertRectToScreen:[view convertRect:local toView:nil]],clip=NSZeroRect;
+    for(NSScreen *screen in NSScreen.screens){
+        NSRect part=NSIntersectionRect(full,screen.frame);
+        if(NSIsEmptyRect(part))continue;
+        if(!NSIsEmptyRect(clip)&&!NSEqualRects(clip,part))return 0;
+        clip=part;
+    }
+    if(NSIsEmptyRect(clip))return 2;*out=clip;return 1;
+}
+size_t vf_header_host_row_snapshot_size(void){return sizeof(VFHeaderRowSnapshot);}
+int vf_header_host_row_snapshot(void *handle,VFHeaderRowSnapshot *out) {
+    if(!out||vf_header_host_state(handle)!=1)return 0;
+    VFHeaderHost *h=handle;VFHeaderRowSnapshot s={0};s.abi=4;
+    @try {
+        s.flags=vf_header_host_flags(handle);s.transition=h->_transition;
+        s.hostIdentity=(uint64_t)(uintptr_t)h->_view;
+        s.accessoryIdentity=(uint64_t)(uintptr_t)h->_carrier->_toolbar;
+        s.delegateIdentity=(uint64_t)(uintptr_t)h->_windowDelegate;
+        for(unsigned i=0;i<98;i++)s.geometry[i]=vf_header_host_geometry(handle,i);
+        NSRect visible;s.hostVisible=VFVisibleRect(h->_view,&visible)==1;
+        for(unsigned i=0;i<3;i++){
+            NSButton *button=[h->_window standardWindowButton:(NSWindowButton)i];
+            s.buttonIdentities[i]=(uint64_t)(uintptr_t)button;
+            s.visibility[i]=VFVisibleRect(button,&visible);
+            double v[]={visible.origin.x,visible.origin.y,visible.size.width,visible.size.height};
+            for(unsigned j=0;j<4;j++)s.visibleControls[i*4+j]=v[j];
+        }
+        if(![h current])return 0;*out=s;return 1;
+    }@catch(NSException *exception){(void)exception;return 0;}
 }

@@ -89,6 +89,7 @@ def test_explicit_helper_targets_and_source_output_provenance(tmp_path, arches):
         )
         assert str(source) in command and str(tmp_path / "header_toolbar.m") in command
         assert "-fno-objc-arc" in command and "-Werror" in command
+        assert "QuartzCore" in command
         assert command[command.index("-install_name") + 1] == "@rpath/" + LIBRARY
     assert any("-create" in c for c in commands) == (len(arches) == 2)
     assert json.loads((output / "build-receipt.json").read_text()) == receipt

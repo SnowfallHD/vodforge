@@ -100,6 +100,7 @@ def integrate_qt_main_window(window: Any) -> bool:
         if window._native_header_diagnostic.get("stage") not in {
             "success",
             "native_header_pending",
+            "native_header_pending_allocation",
         }:
             window._native_header_diagnostic = {"stage": "success"}
         return True

@@ -36,7 +36,7 @@ Window {
         }
     }
 
-    visible: true
+    visible: false
     width: 1100
     height: 740
     x: 30
@@ -60,17 +60,20 @@ Window {
     }
     WindowsFrame { id: mainFrame; appWindow: window }
     color: Qt.platform.os === "osx" ? "transparent" : theme.bg
-    // One live header is reparented into the public Cocoa toolbar host. The
-    // body's fixed slot never follows native reveal/contentLayoutRect changes.
+    // One real header transferred into the native Unified toolbar row.
+    // No original-content header overlay or concurrent toolbar.
     property var nativeHeaderSurface: null
     property bool nativeHeaderAttached: false
-    property real nativeHeaderWidth: width - 2 * gutter
-    property real nativeHeaderLeadingInset: 0
-    property real nativeHeaderReserve: 0
-    property bool nativeHeaderFullscreen: false
+    // Every header field reads one immutable current native packet.
+    property var nativeRowPacket: ({})
+    readonly property var diagnosticHeaderPacket: nativeRowPacket
+    readonly property bool diagnosticHeaderPacketReady: diagnosticHeaderPacket.schema_version === 1
+    property real nativeHeaderWidth: diagnosticHeaderPacketReady ? diagnosticHeaderPacket.width : width - 2 * gutter
+    property real nativeHeaderLeadingInset: diagnosticHeaderPacketReady ? diagnosticHeaderPacket.leading : 0
+    property real nativeHeaderReserve: diagnosticHeaderPacketReady ? diagnosticHeaderPacket.reserve : 0
+    property bool nativeHeaderFullscreen: diagnosticHeaderPacketReady ? diagnosticHeaderPacket.fullscreen : false
     property bool nativeHeaderReducedMotion: false
-    property bool nativeHeaderRevealed: false
-    property string nativeHeaderStyle: "shadow"
+    property bool nativeHeaderRevealed: diagnosticHeaderPacketReady ? diagnosticHeaderPacket.state === "controls-visible" : false
     property real backgroundOpacity: 1.0
     readonly property color glassSurfaceColor: theme.bg
     readonly property real glassControlOpacity: backgroundOpacity < 1.0 ? 0.64 : 1.0
@@ -1124,33 +1127,23 @@ Window {
         Item {
             id: focusHeader
             objectName: "focusHeader"
-            x: window.nativeHeaderAttached ? 0 : window.gutter
-            y: window.nativeHeaderAttached ? 0 : 5 + mainFrame.headerHeight
+            x: window.diagnosticHeaderPacketReady ? 0 : window.gutter
+            y: window.diagnosticHeaderPacketReady ? 0 : 5 + mainFrame.headerHeight
             width: window.nativeHeaderAttached ? window.nativeHeaderWidth : window.width - 2 * window.gutter
-            height: stacked ? 100 : 44
+            height: window.nativeHeaderAttached ? window.diagnosticHeaderPacket.height : (stacked ? 100 : 44)
             z: 50
-            Shortcut {
-                objectName: "nativeHeaderFullscreenEscape"
-                sequence: "Escape"
-                context: Qt.WindowShortcut
-                enabled: window.nativeHeaderAttached && window.visibility === Window.FullScreen && window.menuNavigationAllowed
-                onActivated: window.showNormal()
-            }
+            // One original window: mainFullscreenEscape is the sole owner.
             // Keep the compact lockup until the expanded brand and minimum
             // search field fit. A fixed 960px switch briefly wrapped this row,
             // then unwrapped it a few pixels later, shrinking Watch in between.
-            readonly property bool compact: window.width < 960 || layoutWidth <
+            readonly property bool compact: layoutWidth < 960 || layoutWidth <
                 layoutInset + 150 + navWidth +
                 ((bridge.selection === "Library" || bridge.selection === "Watch") ? 193 : 0) + 72
             property real nativeHeaderInset: window.nativeHeaderAttached
                 ? window.nativeHeaderLeadingInset : (Qt.platform.os === "osx" ? 82 : 0)
-            Behavior on nativeHeaderInset {
-                enabled: window.nativeHeaderAttached && window.nativeHeaderFullscreen && !bridge.reducedMotion && !window.nativeHeaderReducedMotion
-                NumberAnimation { duration: 140; easing.type: Easing.InOutCubic }
-            }
             readonly property real layoutInset: window.nativeHeaderAttached
-                ? window.nativeHeaderReserve : (Qt.platform.os === "osx" ? 82 : 0)
-            readonly property real layoutWidth: window.width - 2 * window.gutter
+                ? window.nativeHeaderLeadingInset : (Qt.platform.os === "osx" ? 82 : 0)
+            readonly property real layoutWidth: window.nativeHeaderAttached ? window.nativeHeaderWidth : window.width - 2 * window.gutter
             readonly property real brandWidth: nativeHeaderInset + (compact ? 46 : 150)
             readonly property int searchWidth: Math.max(compact ? 124 : 185,
                 Math.min(compact ? 186 : 285,
@@ -1161,23 +1154,9 @@ Window {
                     ? searchWidth + 8 : 0) + 64
             readonly property bool stacked: layoutInset + (compact ? 46 : 150) + navWidth + utilityWidth + 8 > layoutWidth
 
-            Image {
-                objectName: "nativeHeaderShadow"
-                visible: window.nativeHeaderAttached && window.nativeHeaderRevealed && window.nativeHeaderStyle === "shadow"
-                x: -18; y: -8; width: parent.width + 36; height: parent.height + 28; z: -3
-                source: "image://vodforge/popup-shadow/" + Math.round(parent.width) + "/" + Math.round(parent.height)
-                smooth: true
-            }
-            Rectangle {
-                objectName: "nativeHeaderFlatSurface"
-                visible: window.nativeHeaderAttached && window.nativeHeaderRevealed && window.nativeHeaderStyle === "shadow"
-                anchors.fill: parent; radius: 5; color: theme.bg; border.color: theme.border; z: -2
-            }
-            StoneField {
-                objectName: "nativeHeaderConcaveSurface"
-                visible: window.nativeHeaderAttached && window.nativeHeaderRevealed && window.nativeHeaderStyle === "concave"
-                anchors.fill: parent; surfaceOpacity: 1.0; z: -2
-            }
+            // One background owner: AppKit's unified native row spans its
+            // traffic-light lane and this transparent Qt content aperture.
+            // Do not paint a second rounded surface around just this item.
             MouseArea {
                 id: headerDragArea
                 objectName: "headerDragArea"
@@ -1343,7 +1322,8 @@ Window {
         Item {
             objectName: "headerGeometrySlot"
             Layout.fillWidth: true
-            Layout.preferredHeight: focusHeader.height
+            Layout.preferredHeight: window.diagnosticHeaderPacketReady
+                ? window.diagnosticHeaderPacket.body_slot_height : focusHeader.height
         }
 
         Rectangle {

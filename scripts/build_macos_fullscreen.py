@@ -126,6 +126,8 @@ def build(source: Path, output: Path, arches, run=None):
                 "AppKit",
                 "-framework",
                 "Foundation",
+                "-framework",
+                "QuartzCore",
                 "-install_name",
                 "@rpath/" + LIBRARY,
                 *map(str, sources),

@@ -1,16 +1,14 @@
-"""Actual shared QML header geometry and exact public-native measurement guards."""
+"""Real offscreen Qt lifecycle; only native ABI is mocked. No GUI qualification."""
 
 import math
 
 import pytest
-from PySide6.QtCore import QObject, QPointF, Qt
-from PySide6.QtQuick import QQuickWindow
+from PySide6.QtCore import QObject
 from PySide6.QtTest import QTest
-from shiboken6 import getCppPointer
 
-from tests.test_qt_interaction_invariants import _close, _launch
-from tests.test_qt_scene_port import polish_scene, visual_item
-from yt_downloader.qt_quick.mac_header import measured_layout
+from tests.test_qt_interaction_invariants import _close
+from tests.test_qt_interaction_invariants import _launch as original_launch
+from tests.test_qt_scene_port import polish_scene
 
 
 def geometry():
@@ -25,122 +23,7 @@ def geometry():
     return tuple(values)
 
 
-def test_public_header_measurement_uses_own_content_and_real_button_extent():
-    values = geometry()
-    shown = measured_layout(1 | 2 | 16 | 32, values)
-    assert shown["relative_x"] == shown["reserve"] == 90
-    assert shown["relative_y"] == 6
-    assert shown["leading"] == 0  # Host is already to the right of real controls.
-    assert shown["revealed"]
-    overlap = list(values)
-    overlap[27] = -1490
-    assert measured_layout(1 | 2 | 32, tuple(overlap))["leading"] == 42
-    assert measured_layout(1 | 2 | 16 | 128, tuple(overlap))["leading"] == 0
-    assert measured_layout(1 | 2 | 16, values)["revealed"] is None
-    assert measured_layout(1 | 16, values)["relative_y"] is None
-    for bad in ((), values[:62]):
-        with pytest.raises(RuntimeError):
-            measured_layout(1, bad)
-    with pytest.raises(RuntimeError):
-        measured_layout(0, values)
-    invalid = list(values)
-    invalid[10] = math.nan
-    with pytest.raises(RuntimeError):
-        measured_layout(1, tuple(invalid))
-
-
-@pytest.mark.parametrize("size", [(820, 560), (1100, 740), (1440, 900)])
-@pytest.mark.parametrize("style", ["shadow", "concave"])
-def test_actual_header_overlay_preserves_body_and_scroll_in_every_route(
-    tmp_path, monkeypatch, size, style
-):
-    app, bridge, engine, window = _launch(tmp_path, monkeypatch, [])
-    try:
-        window.resize(*size)
-        window.setProperty("nativeHeaderStyle", style)
-        window.setProperty("nativeHeaderAttached", True)
-        window.setProperty("nativeHeaderWidth", size[0] - 2 * window.property("gutter"))
-        window.setProperty("nativeHeaderReserve", 82)
-        header = window.findChild(QObject, "focusHeader")
-        body = window.findChild(QObject, "headerGeometrySlot").parentItem()
-
-        def settle():
-            for _ in range(4):
-                app.processEvents()
-                polish_scene(window.contentItem())
-
-        def snapshot():
-            result = {}
-            for item in [body, *body.findChildren(QObject)]:
-                if hasattr(item, "mapToScene"):
-                    pt = item.mapToScene(QPointF(0, 0))
-                    result[getCppPointer(item)[0]] = (
-                        pt.x(),
-                        pt.y(),
-                        item.width(),
-                        item.height(),
-                    )
-                if item.metaObject().indexOfProperty("contentY") >= 0:
-                    result[("scroll", getCppPointer(item)[0])] = item.property(
-                        "contentY"
-                    )
-            return result
-
-        for route in ("Forge", "Library", "Watch", "Activity"):
-            bridge.selectHome(route)
-            settle()
-            before = snapshot()
-            for revealed, inset in ((True, 91), (False, 0)):
-                window.setProperty("nativeHeaderRevealed", revealed)
-                window.setProperty("nativeHeaderLeadingInset", inset)
-                QTest.qWait(160)
-                settle()
-                assert snapshot() == before
-            assert header.parentItem() is window.contentItem()
-            # These are real production QML properties, not a generated mock.
-            assert header.property("nativeHeaderInset") == pytest.approx(0, abs=0.1)
-    finally:
-        _close(bridge, engine, window)
-
-
-def test_same_actual_header_moves_to_second_qt_surface_and_routes_real_clicks(
-    tmp_path, monkeypatch
-):
-    app, bridge, engine, window = _launch(tmp_path, monkeypatch, [])
-    header = window.findChild(QObject, "focusHeader")
-    parent = header.parentItem()
-    other = QQuickWindow()
-    other.resize(1000, 100)
-    other.show()
-    try:
-        header.setParentItem(other.contentItem())
-        window.setProperty("nativeHeaderSurface", other)
-        window.setProperty("nativeHeaderWidth", 1000)
-        window.setProperty("nativeHeaderAttached", True)
-        for _ in range(5):
-            app.processEvents()
-            polish_scene(header)
-        assert header.window() is other
-        assert window.findChildren(QObject, "focusHeader") == [header]
-        button = visual_item(header, "navigationButton_Library")
-        point = button.mapToScene(QPointF(button.width() / 2, button.height() / 2))
-        QTest.mouseClick(other, Qt.LeftButton, Qt.NoModifier, point.toPoint())
-        app.processEvents()
-        assert bridge.selection == "Library"
-        button = visual_item(header, "headerSettingsButton")
-        point = button.mapToScene(QPointF(button.width() / 2, button.height() / 2))
-        QTest.mouseClick(other, Qt.LeftButton, Qt.NoModifier, point.toPoint())
-        app.processEvents()
-        popup = window.findChild(QObject, "downloadSettingsPopup")
-        assert popup.property("visible")
-        assert window.property("nativeHeaderSurface") is other
-    finally:
-        header.setParentItem(parent)
-        window.setProperty("nativeHeaderAttached", False)
-        window.setProperty("nativeHeaderSurface", None)
-        other.close()
-        other.deleteLater()
-        _close(bridge, engine, window)
+_launch = original_launch
 
 
 @pytest.fixture
@@ -284,6 +167,81 @@ def native_owner_rig(tmp_path, monkeypatch):
                     flags |= 512
             return 1, flags, tuple(values)
 
+        def row_sample(self):
+            _, _, g = self.snapshot()
+            hx, hy, hw, hh = g[27:31]
+            if state.get("short_allocation"):
+                hh = 32
+            button_x = hx + 9 if state.get("controls_inside") else 109
+            if state.get("controls_hidden"):
+                return {
+                    "owner": "unified-toolbar",
+                    "current": True,
+                    "host_visible": True,
+                    "toolbar_owned": True,
+                    "delegate_unchanged": True,
+                    "full_size": True,
+                    "transparent": True,
+                    "title_hidden": True,
+                    "transition": 0,
+                    "fullscreen": False,
+                    "host": [hx, hy, hw, hh],
+                    "content": list(g[62:66]),
+                    "buttons": [
+                        {
+                            "identity": i + 1,
+                            "visibility": "hidden",
+                            "visible_screen": [0, 0, 0, 0],
+                        }
+                        for i in range(3)
+                    ],
+                }
+            if state.get("unallocated"):
+                return {
+                    "owner": "unified-toolbar",
+                    "current": True,
+                    "host_visible": False,
+                    "toolbar_owned": True,
+                    "delegate_unchanged": True,
+                    "full_size": True,
+                    "transparent": True,
+                    "title_hidden": True,
+                    "transition": 0,
+                    "fullscreen": False,
+                    "host": None,
+                    "content": list(g[62:66]),
+                    "buttons": [
+                        {
+                            "identity": i + 1,
+                            "visibility": "hidden",
+                            "visible_screen": [0, 0, 0, 0],
+                        }
+                        for i in range(3)
+                    ],
+                }
+            return {
+                "owner": "unified-toolbar",
+                "current": True,
+                "host_visible": True,
+                "toolbar_owned": True,
+                "delegate_unchanged": True,
+                "full_size": True,
+                "transparent": True,
+                "title_hidden": True,
+                "transition": int(state["pending"]),
+                "fullscreen": False,
+                "host": [hx, hy, hw, hh],
+                "content": list(g[62:66]),
+                "buttons": [
+                    {
+                        "identity": i + 1,
+                        "visibility": "visible",
+                        "visible_screen": [button_x + 23 * i, hy + 14, 14, 14],
+                    }
+                    for i in range(3)
+                ],
+            }
+
         def set_height(self, height):
             assert height > 0
             if state["refuse_height"]:
@@ -391,41 +349,6 @@ def native_owner_rig(tmp_path, monkeypatch):
                 os.close(descriptor)
             except OSError:
                 pass
-
-
-@pytest.mark.parametrize("pending", [False, True])
-def test_event_driven_owner_uses_main_parent_and_exact_order(native_owner_rig, pending):
-    rig = native_owner_rig
-    rig.state["pending"] = pending
-    owner = rig.make()
-    if pending:
-        assert rig.header.parentItem() is rig.original_parent
-        assert not owner._child_pointer and not rig.surface.isVisible()
-        assert rig.window._native_header_diagnostic["stage"] == "native_header_pending"
-        rig.state["pending"] = False
-        rig.notify()
-        rig.settle()
-    assert rig.surface.parent() is rig.window
-    assert rig.header.parentItem() is rig.surface.contentItem()
-    assert rig.window.property("nativeHeaderAttached")
-    before = list(rig.events)
-    rig.settle()
-    assert rig.events == before  # No self-sustaining event-loop reconciliation.
-    owner.close()
-    owner.close()
-    owner.synchronize()
-    assert owner.closed
-    assert rig.header.parentItem() is rig.original_parent
-    assert not rig.window.property("nativeHeaderAttached")
-    assert rig.window.property("nativeHeaderSurface") is None
-    assert rig.events.index("input-retired") < rig.events.index("notifier-retired")
-    assert rig.events.index("notifier-retired") < rig.events.index("header-restored")
-    assert rig.events.index("header-restored") < rig.events.index("unbind")
-    assert (
-        rig.events.index("unbind")
-        < rig.events.index("qt-destroy")
-        < rig.events.index("host-close")
-    )
 
 
 def test_refused_height_retires_actual_owner(native_owner_rig):
@@ -538,58 +461,231 @@ def test_owner_boundary_oracles_detect_negative_controls(native_owner_rig, mutat
             rig.make(mutation)
 
 
-@pytest.mark.parametrize("reduced", [False, True])
-def test_single_measured_inset_moves_brand_and_navigation_together_not_utilities_or_body(
-    tmp_path, monkeypatch, reduced
-):
-    from yt_downloader.qt_quick import main
+def test_actual_qml_one_packet_body_and_header_ownership(native_owner_rig):
+    rig = native_owner_rig
+    owner = rig.make()
+    assert rig.header.parentItem() is rig.surface.contentItem()
+    before = rig.window.property("nativeRowPacket")
+    if hasattr(before, "toVariant"):
+        before = before.toVariant()
+    assert before["host_visible"] is True
+    assert before["body_slot_height"] == 44 and before["leading"] == 0
+    body = rig.window.findChild(QObject, "headerGeometrySlot").parentItem()
+    for route in ["Forge", "Library", "Watch", "Activity"]:
+        rig.bridge.selectHome(route)
+        rig.settle()
+        polish_scene(rig.window.contentItem())
+        geometry_before = (body.x(), body.y(), body.width(), body.height())
+        next_packet = dict(
+            before,
+            sequence=before["sequence"] + 1,
+            state="controls-hidden",
+            fullscreen=True,
+            relative_x=0,
+        )
+        rig.window.setProperty("nativeRowPacket", next_packet)
+        rig.settle()
+        polish_scene(rig.window.contentItem())
+        assert (body.x(), body.y(), body.width(), body.height()) == geometry_before
+        assert rig.header.property("nativeHeaderInset") == 0
+        rig.window.setProperty("nativeRowPacket", before)
+    owner.close()
+    assert owner.closed
 
-    monkeypatch.setattr(main, "_system_reduced_motion", lambda: reduced)
-    app, bridge, engine, window = _launch(tmp_path, monkeypatch, [])
+
+def test_initial_native_allocation_pending_until_actual_frame_event(native_owner_rig):
+    rig = native_owner_rig
+    rig.state["short_allocation"] = True
+    owner = rig.make()
+    assert not owner.closed and not owner._attached
+    assert rig.header.parentItem() is rig.original_parent
+    assert not rig.surface.isVisible() and not rig.state["bound"]
+    assert (
+        rig.window._native_header_diagnostic["stage"]
+        == "native_header_pending_allocation"
+    )
+    rig.state["short_allocation"] = False
+    rig.notify()
+    rig.settle()
+    assert owner._attached and rig.header.parentItem() is rig.surface.contentItem()
+    assert rig.window.property("nativeRowPacket")["body_slot_height"] == 44
+    assert rig.events.count("show") == rig.events.count("bind") == 1
+    owner.close()
+    assert owner.closed
+
+
+def test_native_descriptor_to_attached_signal_to_queued_ready_gate(native_owner_rig):
+    from PySide6.QtCore import QThread, QTimer
+
+    rig = native_owner_rig
+    rig.state["short_allocation"] = True
+    delivered = []
+
+    def callback():
+        if (
+            rig.owner is not None
+            and not rig.owner.closed
+            and not rig.owner.retired
+            and rig.owner._attached
+        ):
+            delivered.append(
+                (
+                    QThread.currentThread() is rig.app.thread(),
+                    rig.window.property("nativeRowPacket")["height"],
+                )
+            )
+
+    def queue():
+        QTimer.singleShot(0, callback)
+
+    rig.window.nativeHeaderAttachedChanged.connect(queue)
+    owner = rig.make()
+    rig.settle()
+    assert not owner._attached and not delivered
+    rig.notify()
+    rig.settle()
+    assert not owner._attached and not delivered
+    rig.state["short_allocation"] = False
+    rig.notify()
+    rig.settle()
+    assert delivered == [(True, 44)]
+    owner.close()
+    rig.settle()
+    assert delivered == [(True, 44)]
+
+
+def test_stale_queued_ready_delivery_does_not_admit_short_allocation(native_owner_rig):
+    from PySide6.QtCore import QTimer
+
+    rig = native_owner_rig
+    rig.state["short_allocation"] = True
+    delivered = []
+
+    def callback():
+        if (
+            rig.owner is not None
+            and not rig.owner.closed
+            and not rig.owner.retired
+            and rig.owner._attached
+        ):
+            delivered.append(True)
+
+    def queue():
+        QTimer.singleShot(0, callback)
+
+    rig.window.nativeHeaderAttachedChanged.connect(queue)
+    owner = rig.make()
+    queue()
+    rig.settle()
+    assert not delivered and not owner._attached and not rig.state["bound"]
+    owner.close()
+
+
+def test_initial_missing_aperture_waits_without_binding_then_native_event_attaches(
+    native_owner_rig,
+):
+    rig = native_owner_rig
+    # Native ABI double models initial toolbar item not yet inserted by AppKit.
+    rig.state["unallocated"] = True
+    owner = rig.make()
+    assert (
+        not owner._attached and not rig.state["bound"] and not rig.surface.isVisible()
+    )
+    assert (
+        rig.window._native_header_diagnostic["stage"]
+        == "native_header_pending_allocation"
+    )
+    assert rig.header.parentItem() is rig.original_parent
+    rig.state["unallocated"] = False
+    rig.notify()
+    rig.settle()
+    assert owner._attached and rig.state["bound"]
+    owner.close()
+
+
+def test_current_inside_control_clearance_is_one_packet_and_body_never_reflows(
+    native_owner_rig,
+):
+    from PySide6.QtTest import QSignalSpy
+
+    rig = native_owner_rig
+    owner = rig.make()
+    body = rig.window.findChild(QObject, "headerGeometrySlot").parentItem()
+    spy = QSignalSpy(rig.window.nativeRowPacketChanged)
+    for route in ("Forge", "Library", "Watch", "Activity"):
+        rig.bridge.selectHome(route)
+        rig.settle()
+        before = (body.x(), body.y(), body.width(), body.height())
+        count = spy.count()
+        rig.state["controls_inside"] = True
+        rig.state["controls_hidden"] = False
+        rig.notify()
+        rig.settle()
+        packet = rig.window.property("nativeRowPacket")
+        assert packet["leading"] == packet["reserve"] == 89
+        assert (
+            rig.header.property("nativeHeaderInset") == 89 and spy.count() == count + 1
+        )
+        assert (body.x(), body.y(), body.width(), body.height()) == before
+        count = spy.count()
+        rig.state["controls_hidden"] = True
+        rig.notify()
+        rig.settle()
+        packet = rig.window.property("nativeRowPacket")
+        assert packet["leading"] == packet["reserve"] == 0
+        assert (
+            rig.header.property("nativeHeaderInset") == 0 and spy.count() == count + 1
+        )
+        assert (body.x(), body.y(), body.width(), body.height()) == before
+    owner.close()
+
+
+def test_native_item_is_transparent_content_and_has_no_competing_backings(
+    native_owner_rig, tmp_path
+):
+    rig = native_owner_rig
+    owner = rig.make()
+    rig.surface.requestUpdate()
+    QTest.qWait(60)
+    rig.settle()
+    frame = rig.surface.grabWindow()
+    assert not frame.isNull()
+    out = tmp_path / "background"
+    out.mkdir()
+    frame.save(str(out / "native-item.png"))
+    # Blank content lane between nav and right utilities: no app surface/border.
+    x = round(frame.width() * 0.78)
+    y = round(frame.height() / 2)
+    color = frame.pixelColor(x, y)
+    assert color.alpha() == 0, ("custom item is still painted", x, y, color.getRgb())
+    for name in (
+        "nativeHeaderShadow",
+        "nativeHeaderFlatSurface",
+        "nativeHeaderConcaveSurface",
+    ):
+        assert rig.header.findChild(QObject, name) is None
+    assert rig.window.property("nativeRowPacket")["body_slot_height"] == 44
+    assert rig.header.parentItem() is rig.surface.contentItem()
+    owner.close()
+
+
+@pytest.mark.parametrize("deferred", [False, True])
+def test_factory_preserves_default_visibility_and_explicit_native_startup_defer(
+    tmp_path, monkeypatch, deferred
+):
+    from tests.test_qt_scene_port import qt_app
+    from yt_downloader.qt_quick import main as qt_main
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    qt_app()
+    bridge = qt_main.Bridge(None)
+    engine = qt_main.create_engine(bridge, defer_visibility=deferred)
+    window = engine.rootObjects()[0]
     try:
-        window.setProperty("nativeHeaderWidth", 1000)
-        window.setProperty("nativeHeaderReserve", 90)
-        window.setProperty("nativeHeaderAttached", True)
-        window.setProperty("nativeHeaderFullscreen", True)
-        header = window.findChild(QObject, "focusHeader")
-        brand = window.findChild(QObject, "brandRow")
-        navigation = window.findChild(QObject, "navigationRow")
-        utilities = window.findChild(QObject, "utilitiesRow")
-        slot = window.findChild(QObject, "headerGeometrySlot")
-        for _ in range(4):
-            app.processEvents()
-            polish_scene(window.contentItem())
-        gap = navigation.x() - brand.x()
-        right = utilities.x() + utilities.width()
-        body_top = slot.y() + slot.height()
-        samples = []
-        for target in (90, 0):
-            window.setProperty("nativeHeaderLeadingInset", target)
-            for _ in range(12):
-                QTest.qWait(16)
-                app.processEvents()
-                samples.append(header.property("nativeHeaderInset"))
-                assert navigation.x() - brand.x() == pytest.approx(gap)
-                assert utilities.x() + utilities.width() == pytest.approx(right)
-                assert slot.y() + slot.height() == pytest.approx(body_top)
-            assert header.property("nativeHeaderInset") == pytest.approx(target)
-        if reduced:
-            assert all(value in (0, 90) for value in samples)
-        else:
-            assert any(0 < value < 90 for value in samples)
+        assert window.isVisible() is (not deferred)
+        if deferred:
+            window.show()
+            assert window.isVisible()
     finally:
         _close(bridge, engine, window)
-
-
-@pytest.mark.parametrize("style", ["shadow", "concave"])
-def test_native_style_comparison_argument_is_closed_and_process_local(style):
-    from yt_downloader.qt_quick.main import _argument_parser
-
-    parser = _argument_parser()
-    assert parser.parse_args([]).native_header_style == "shadow"
-    assert (
-        parser.parse_args(["--native-header-style", style]).native_header_style == style
-    )
-    with pytest.raises(SystemExit) as invalid:
-        parser.parse_args(["--native-header-style", "arbitrary"])
-    assert invalid.value.code == 2

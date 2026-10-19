@@ -7811,7 +7811,9 @@ class Bridge(QObject):
         return [item.strip() for item in self._extra_tags.split(",") if item.strip()]
 
 
-def create_engine(bridge: Bridge) -> QQmlApplicationEngine:
+def create_engine(
+    bridge: Bridge, *, defer_visibility: bool = False
+) -> QQmlApplicationEngine:
     # VODForge's custom actions participate in Tab navigation on every platform,
     # even when the platform defaults to text fields only. This is process-local.
     QGuiApplication.styleHints().setTabFocusBehavior(
@@ -7853,6 +7855,8 @@ def create_engine(bridge: Bridge) -> QQmlApplicationEngine:
     engine.load(QUrl.fromLocalFile(str(Path(__file__).with_name("Main.qml"))))
     if engine.rootObjects():
         engine._windows_frames = integrate_windows_frames(engine)  # type: ignore[attr-defined]
+        if not defer_visibility:
+            engine.rootObjects()[0].show()
     return engine
 
 
@@ -7897,13 +7901,6 @@ def _argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ready-file", type=Path)
     parser.add_argument("--runtime-smoke", action="store_true")
     parser.add_argument("--analytics-qa-receipt", type=Path)
-    # Process-local visual comparison only; never changes saved preferences.
-    parser.add_argument(
-        "--native-header-style",
-        choices=("shadow", "concave"),
-        default="shadow",
-        help=argparse.SUPPRESS,
-    )
     return parser
 
 
@@ -7944,7 +7941,7 @@ def main() -> int:
         bridge._automatic_updates = False
         bridge._automatic_updates_supported = False
     application.aboutToQuit.connect(lambda: bridge.close(normal_quit=True))
-    engine = create_engine(bridge)
+    engine = create_engine(bridge, defer_visibility=True)
     if not engine.rootObjects():
         engine.deleteLater()
         QCoreApplication.sendPostedEvents(None, cast(Any, QEvent).DeferredDelete)
@@ -7953,8 +7950,9 @@ def main() -> int:
             smoke_home.cleanup()
         return 2
     bridge._window = engine.rootObjects()[0]
-    bridge._window.setProperty("nativeHeaderStyle", args.native_header_style)
     native_header_integrated = integrate_qt_main_window(bridge._window)
+    # Construct the sole native owner before first visibility, as qualified.
+    bridge._window.show()
     try:
         attest_qt_launch(bridge, bridge._window)
     except QualityE2EAttestationError as exc:

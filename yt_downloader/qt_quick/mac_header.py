@@ -6,56 +6,7 @@ import math
 from typing import Any, ClassVar
 
 from yt_downloader.platforms.macos.header_host import HeaderHost
-
-
-def measured_layout(flags: int, geometry: tuple[float, ...]):
-    """Convert public screen rectangles, never contentLayoutRect, into header state.
-
-    Coordinates are in points and relative to the exact window's content view;
-    neither a global screen height nor a guessed traffic-light width is used.
-    """
-    if len(geometry) != 66 or not flags & 1:
-        raise RuntimeError("Native header ownership is no longer current")
-    width, height = geometry[10:12]
-    if not all(math.isfinite(v) and 0 < v <= 16384 for v in (width, height)):
-        raise RuntimeError("Native header allocation is unavailable")
-    host_x, host_y, _, host_h = geometry[27:31]
-    content_x, content_y, _, content_h = geometry[62:66]
-    rect = (host_x, host_y, host_h, content_x, content_y, content_h)
-    screen_ready = bool(flags & 2) and all(
-        math.isfinite(v) and abs(v) <= 1e7 for v in rect
-    )
-    leading = 0.0 if screen_ready and flags & 128 else None
-    if screen_ready and flags & 32:
-        extents = []
-        for start in (31, 41, 51):
-            present = geometry[start]
-            x, y, w, h = geometry[start + 6 : start + 10]
-            if (
-                present != 1
-                or not all(math.isfinite(v) for v in (x, y, w, h))
-                or w <= 0
-                or h <= 0
-            ):
-                break
-            # Fullscreen buttons may legitimately belong to AppKit's auxiliary
-            # window. Each screen rectangle was converted by its exact window.
-            extents.append(x + w - host_x)
-        if len(extents) == 3:
-            leading = max(0.0, *extents)
-    return {
-        "width": width,
-        "height": height,
-        "leading": leading,
-        "reserve": max(0.0, host_x - content_x) + leading
-        if leading is not None
-        else None,
-        "revealed": bool(flags & 16 and flags & 32) if leading is not None else None,
-        "screen_ready": screen_ready,
-        "reduced_motion": geometry[61] == 1,
-        "relative_x": host_x - content_x if screen_ready else None,
-        "relative_y": content_y + content_h - host_y - host_h if screen_ready else None,
-    }
+from yt_downloader.qt_quick.mac_header_packet import packet
 
 
 def create_header_input_boundary(main: Any, surface: Any):
@@ -223,6 +174,8 @@ class IntegratedHeader:
         self._retired = False
         self._synchronizing = False
         self._attached = False
+        self._body_slot = None
+        self._sequence = 0
         self._height_connected = False
         self._destroy_connected = False
         self._header = window.findChild(QObject, "focusHeader")
@@ -253,9 +206,7 @@ class IntegratedHeader:
                 self._host.descriptor, QSocketNotifier.Type.Read, window
             )
             self._notifier.activated.connect(self.synchronize)
-            self._header.heightChanged.connect(self.update_height)
-            self._height_connected = True
-            self.update_height()
+            # Initial intrinsic height is fixed for this native row.
             self.synchronize()
         except Exception:
             try:
@@ -330,7 +281,58 @@ class IntegratedHeader:
             state, flags, geometry = self._host.snapshot()
             if state != 1 or len(geometry) != 98:
                 raise RuntimeError("Native header generation changed")
-            layout = measured_layout(flags, geometry[:66])
+            sample = self._host.row_sample()
+            if sample["transition"]:
+                return  # AppKit owns transition; no halfway packet/second animator.
+            if self._body_slot is None:
+                self._body_slot = self._header.height()
+            host_rect = sample.get("host")
+            allocated = (
+                isinstance(host_rect, (list, tuple))
+                and len(host_rect) == 4
+                and all(type(v) in (int, float) and math.isfinite(v) for v in host_rect)
+                and min(host_rect[2:]) > 0
+            )
+            native_height = host_rect[3] if allocated else None
+            if (
+                not self._attached
+                and all(
+                    sample.get(k) is True
+                    for k in (
+                        "current",
+                        "toolbar_owned",
+                        "delegate_unchanged",
+                        "full_size",
+                        "transparent",
+                        "title_hidden",
+                    )
+                )
+                and (
+                    not allocated
+                    or not sample.get("host_visible")
+                    or native_height < self._body_slot
+                )
+            ):
+                # Initial AppKit attachment is not a completed layout phase.
+                # Retain the exact owner but do not bind/show the Qt child,
+                # publish a packet, shrink policy, or report readiness. An actual
+                # native allocation event may complete it; the harness deadline
+                # remains the bounded failure boundary. No timer/repair offset.
+                self._window._native_header_diagnostic = {
+                    "stage": "native_header_pending_allocation",
+                    "actual_height": native_height,
+                    "required_height": self._body_slot,
+                    "sample": sample,
+                }
+                return
+            self._sequence += 1
+            layout = packet(
+                sample,
+                self._body_slot,
+                self._sequence,
+                float(self._window.property("gutter")),
+            )
+            layout["screen_ready"] = True
             # Moving native ancestors may temporarily lack a screen allocation.
             # Keep the existing owner; do not manufacture success or reparent it.
             if not layout["screen_ready"]:
@@ -341,23 +343,14 @@ class IntegratedHeader:
                 }
                 return
             child_flags = self._place_surface(layout)
-            self._window.setProperty("nativeHeaderWidth", layout["width"])
-            self._window.setProperty("nativeHeaderFullscreen", bool(flags & 16))
-            self._window.setProperty(
-                "nativeHeaderReducedMotion", layout["reduced_motion"]
-            )
-            if layout["leading"] is not None:
-                self._window.setProperty("nativeHeaderLeadingInset", layout["leading"])
-            if not flags & 16 and layout["reserve"] is not None:
-                self._window.setProperty("nativeHeaderReserve", layout["reserve"])
-            if layout["revealed"] is not None:
-                self._window.setProperty("nativeHeaderRevealed", layout["revealed"])
+            # Single QML transaction after native+Qt global binding validation.
+            self._window.setProperty("nativeRowPacket", layout)
             if not self._attached:
                 self._window.setProperty("nativeHeaderSurface", self._surface)
                 self._header.setParentItem(self._surface.contentItem())
                 self._window.setProperty("nativeHeaderAttached", True)
                 self._attached = True
-                self.update_height()
+                # Native height comes from layout policy, not allocated geometry.
             self._window._native_header_diagnostic = {
                 "stage": "success",
                 "flags": child_flags,
