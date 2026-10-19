@@ -50,6 +50,7 @@ def child_binding_driver(tmp_path_factory: pytest.TempPathFactory) -> Path:
     "case",
     [
         "basic",
+        "hit_mapping",
         "negative_offset",
         "same_resize",
         "update_and_mismatch",

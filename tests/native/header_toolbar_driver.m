@@ -40,6 +40,13 @@ static NSWindow *brandWindow;
 @implementation VFBrandView
 - (NSWindow *)window{return brandWindow;}
 @end
+static BOOL callbackInFlight;
+@interface VFCallbackHost:VFHeaderHost
+@end
+@implementation VFCallbackHost
+- (void)dealloc{REQUIRE(!callbackInFlight);[super dealloc];}
+@end
+static void retireNow(void *context){callbackInFlight=YES;REQUIRE(vf_header_host_destroy((void **)context));callbackInFlight=NO;}
 static void changedNow(void *context){(*(unsigned *)context)++;}
 int main(int argc,char **argv){@autoreleasepool{
  REQUIRE(argc==2&&NSApp==nil);VFWindow *w=[VFWindow new];NSString *test=@(argv[1]);id delegate=w.delegate;
@@ -91,11 +98,16 @@ int main(int argc,char **argv){@autoreleasepool{
  if([test isEqual:@"changed_style"]){w.toolbarStyle=NSWindowToolbarStyleExpanded;REQUIRE(!vf_header_host_destroy(&h)&&h);w.toolbarStyle=NSWindowToolbarStyleUnified;}
  if([test isEqual:@"foreign_accessory"]){w.titlebarAccessoryViewControllers=@[[[[NSObject alloc]init]autorelease]];REQUIRE(!vf_header_host_destroy(&h)&&h);w.titlebarAccessoryViewControllers=@[];}
  if([test isEqual:@"bound_subview"]){NSView *child=[[[NSView alloc]initWithFrame:NSMakeRect(0,0,1,1)]autorelease];[o->_view addSubview:child];REQUIRE(!vf_header_host_destroy(&h)&&h);[child removeFromSuperview];}
+ if([test isEqual:@"callback_retire"]){
+   object_setClass(o,VFCallbackHost.class);REQUIRE(vf_header_host_set_change_callback(h,retireNow,&h));
+   [o changed:[NSNotification notificationWithName:NSWindowWillEnterFullScreenNotification object:w]];
+   REQUIRE(!h&&!w.toolbar);goto doneWithOwner;
+ }
  int fd=vf_header_host_event_fd(h);REQUIRE(fd>=0);
  REQUIRE(vf_header_host_destroy(&h)&&!h&&!w.toolbar&&w.toolbarStyle==NSWindowToolbarStyleAutomatic&&w.delegate==delegate);
  if([test isEqual:@"brand_restore"])REQUIRE([w.backgroundColor isEqual:NSColor.blackColor]);
  if([test isEqual:@"brand_external"])REQUIRE([w.backgroundColor isEqual:NSColor.redColor]);
  REQUIRE(fcntl(fd,F_GETFD)==-1&&errno==EBADF);REQUIRE(vf_header_host_destroy(&h));
- [w release];}
+ doneWithOwner:[w release];}
  REQUIRE(NSApp==nil);printf("{\"case\":\"%s\",\"passed\":true,\"nsapp_created\":false}\n",argv[1]);
 }return 0;}

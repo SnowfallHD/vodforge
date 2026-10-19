@@ -3,9 +3,13 @@ import QtQuick.Controls
 
 ToolTip {
     id: tooltip
+    // A native header has no body-sized overlay for an item tooltip. Qt's
+    // tooltip window keeps this informative surface outside its input aperture.
+    property bool independentWindow: false
+    popupType: independentWindow ? Popup.Window : Popup.Item
     property real reveal: 0
     property bool singleLine: false
-    readonly property var overlayItem: Overlay.overlay
+    readonly property var overlayItem: independentWindow ? null : Overlay.overlay
     readonly property point anchorPosition: parent && overlayItem ? parent.mapToItem(overlayItem, 0, 0) : Qt.point(0, 0)
     padding: 10
     margins: 12

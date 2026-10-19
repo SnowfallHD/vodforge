@@ -23,14 +23,14 @@ static unsigned childDeallocations;
 @end
 static NSWindow *window(void){
  NSWindow *w=[[NSWindow alloc]initWithContentRect:NSMakeRect(0,0,1100,740) styleMask:NSWindowStyleMaskTitled|NSWindowStyleMaskClosable|NSWindowStyleMaskResizable|NSWindowStyleMaskFullSizeContentView backing:NSBackingStoreBuffered defer:NO];
- w.releasedWhenClosed=NO;w.titlebarAppearsTransparent=YES;return w;
+ w.releasedWhenClosed=NO;w.titlebarAppearsTransparent=YES;w.titleVisibility=NSWindowTitleHidden;return w;
 }
 static void *owner(NSWindow *w){
- void *h=vf_header_host_create(w,50,12,300);CHECK(h);
+ void *h=vf_header_host_create(w,44,12,300);CHECK(h);
  VFHeaderHost *o=h;
  // Hidden component fixture: give the exact item view its real native window
  // without ordering/activating or pretending toolbar allocation was tested.
- [w.contentView addSubview:o->_view];o->_view.frame=NSMakeRect(0,680,1000,50);
+ [w.contentView addSubview:o->_view];o->_view.frame=NSMakeRect(0,680,1000,44);
  CHECK(!w.visible&&vf_header_host_state(h)==1);return h;
 }
 static TestChild *child(NSWindow *w,NSRect r){TestChild *v=[[TestChild alloc]initWithFrame:r];[w.contentView addSubview:v];return v;}
@@ -47,8 +47,8 @@ static void failFrame(id receiver,SEL selector,NSRect r){
 static BOOL ready(void *h){return (vf_header_host_flags(h)&(1|256|512|1024))==(1|256|512|1024);}
 int main(int argc,const char **argv){NSAutoreleasePool *pool=[NSAutoreleasePool new];
  CHECK(argc==2);[NSApplication sharedApplication];[NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];CHECK(!NSApp.active);
- NSWindow *w=window();void *h=owner(w);NSRect r=NSMakeRect(96,4,900,50);
- if(!strcmp(argv[1],"negative_offset"))r=NSMakeRect(-24,-8,900,50);
+ NSWindow *w=window();void *h=owner(w);NSRect r=NSMakeRect(96,4,900,44);
+ if(!strcmp(argv[1],"negative_offset"))r=NSMakeRect(-24,-8,900,44);
  TestChild *c=child(w,r);unsigned writes=c->frameWrites;
  if(!strcmp(argv[1],"partial_container_setter")){
   Method m=class_getInstanceMethod(VFHeaderOffsetContainer.class,@selector(setFrame:));originalFrame=method_getImplementation(m);method_setImplementation(m,(IMP)failFrame);throwContainer=YES;
@@ -61,20 +61,40 @@ int main(int argc,const char **argv){NSAutoreleasePool *pool=[NSAutoreleasePool 
   CHECK(vf_header_host_bind_child(h,c,r.origin.x,r.origin.y,r.size.width,r.size.height));CHECK(ready(h));
   CHECK(c->frameWrites==writes&&NSEqualRects(c.frame,r));
   VFHeaderHost *o=h;NSView *container=c.superview;
-  if(!strcmp(argv[1],"same_resize")){
-   NSRect old=container.frame;o->_view.frame=NSMakeRect(0,670,1050,50);[o->_view resizeSubviewsWithOldSize:NSMakeSize(1000,50)];
+  if(!strcmp(argv[1],"hit_mapping")){
+   NSRect rects[]={r,NSMakeRect(-24,-8,900,44),NSMakeRect(0,-52,1050,44),NSMakeRect(99,4,900,44),r};
+   for(unsigned phase=0;phase<5;phase++){
+    NSRect next=rects[phase];o->_view.frame=NSMakeRect(0,680,next.size.width,44);c.frame=next;
+    CHECK(vf_header_host_update_child(h,c,next.origin.x,next.origin.y,next.size.width,next.size.height)&&ready(h));
+    CGFloat xs[]={2,100,250,450,next.size.width-45,next.size.width-5};
+    for(unsigned i=0;i<6;i++){
+     NSPoint local=NSMakePoint(xs[i],25);
+     NSPoint inHost=[o->_view convertPoint:local fromView:c];
+     CHECK(fabs(inHost.x-local.x)<.02&&fabs(inHost.y-local.y)<.02);
+     NSPoint parent=[o->_view.superview convertPoint:local fromView:c];
+     NSView *hit=[o->_view hitTest:parent];
+     if(hit!=c)fprintf(stderr,"hit phase=%u x=%g parent=%s host=%s container=%s bounds=%s child=%s hidden=%d/%d/%d hit=%s\n",phase,(double)xs[i],NSStringFromPoint(parent).UTF8String,NSStringFromRect(o->_view.frame).UTF8String,NSStringFromRect(container.frame).UTF8String,NSStringFromRect(container.bounds).UTF8String,NSStringFromRect(c.frame).UTF8String,o->_view.hidden,container.hidden,c.hidden,hit.description.UTF8String);
+     CHECK(hit==c);
+     NSPoint screen=[c.window convertPointToScreen:[c convertPoint:local toView:nil]];
+     NSPoint windowPoint=[c.window convertPointFromScreen:screen];
+     NSPoint eventLocal=[c convertPoint:windowPoint fromView:nil];
+     CHECK(fabs(eventLocal.x-local.x)<.02&&fabs(eventLocal.y-local.y)<.02);
+    }
+   }
+  }else if(!strcmp(argv[1],"same_resize")){
+   NSRect old=container.frame;o->_view.frame=NSMakeRect(0,670,1050,44);[o->_view resizeSubviewsWithOldSize:NSMakeSize(1000,44)];
    CHECK(NSEqualRects(container.frame,old)&&c->frameWrites==writes&&ready(h));
   }else if(!strcmp(argv[1],"update_and_mismatch")){
-   NSRect next=NSMakeRect(30,-6,820,50);c.frame=next;unsigned after=c->frameWrites;
-   CHECK(vf_header_host_update_child(h,c,30,-6,820,50)&&ready(h)&&c->frameWrites==after);
-   NSRect before=container.frame;CHECK(!vf_header_host_update_child(h,c,31,-6,820,50));CHECK(NSEqualRects(before,container.frame)&&c->frameWrites==after);
-   TestChild *other=child(w,r);CHECK(!vf_header_host_update_child(h,other,30,-6,820,50)&&other.superview==w.contentView);[other removeFromSuperview];[other release];
+   NSRect next=NSMakeRect(30,-6,820,44);c.frame=next;unsigned after=c->frameWrites;
+   CHECK(vf_header_host_update_child(h,c,30,-6,820,44)&&ready(h)&&c->frameWrites==after);
+   NSRect before=container.frame;CHECK(!vf_header_host_update_child(h,c,31,-6,820,44));CHECK(NSEqualRects(before,container.frame)&&c->frameWrites==after);
+   TestChild *other=child(w,r);CHECK(!vf_header_host_update_child(h,other,30,-6,820,44)&&other.superview==w.contentView);[other removeFromSuperview];[other release];
   }else if(!strcmp(argv[1],"update_exception_rollback")){
-   NSRect before=container.frame,bounds=container.bounds;NSRect next=NSMakeRect(32,-7,800,50);c.frame=next;unsigned after=c->frameWrites;
+   NSRect before=container.frame,bounds=container.bounds;NSRect next=NSMakeRect(32,-7,800,44);c.frame=next;unsigned after=c->frameWrites;
    Method m=class_getInstanceMethod(VFHeaderOffsetContainer.class,@selector(setFrame:));originalFrame=method_getImplementation(m);method_setImplementation(m,(IMP)failFrame);throwContainer=YES;
-   CHECK(!vf_header_host_update_child(h,c,32,-7,800,50));method_setImplementation(m,originalFrame);
+   CHECK(!vf_header_host_update_child(h,c,32,-7,800,44));method_setImplementation(m,originalFrame);
    CHECK(NSEqualRects(container.frame,before)&&NSEqualRects(container.bounds,bounds)&&NSEqualRects(c.frame,next)&&c->frameWrites==after);
-   CHECK(vf_header_host_update_child(h,c,32,-7,800,50)&&ready(h));
+   CHECK(vf_header_host_update_child(h,c,32,-7,800,44)&&ready(h));
   }else if(!strcmp(argv[1],"child_external_release_first")){
    @autoreleasepool{[c removeFromSuperview];TestChild *raw=c;[c release];c=nil;CHECK(childDeallocations==0);
    CHECK(vf_header_host_unbind_child(h,raw));}

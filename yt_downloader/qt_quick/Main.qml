@@ -1299,7 +1299,7 @@ Window {
                     accessibilityLabel: "VODForge on X"
                     width: 28; height: 40
                     onActivated: bridge.openSocialAccount()
-                    LiquidToolTip { visible: parent.hovered; text: "VODForge on X" }
+                    LiquidToolTip { independentWindow: window.nativeHeaderAttached; visible: parent.hovered; text: "VODForge on X" }
                 }
                 StoneButton {
                     objectName: "headerSettingsButton"

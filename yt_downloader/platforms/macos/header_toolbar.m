@@ -398,7 +398,14 @@ static BOOL VFChildNear(NSRect a,NSRect b){return fabs(a.origin.x-b.origin.x)<.0
     }
     // Same-main-thread layout delivery precedes drawing; FD remains a wake-up
     // fallback, not the sole owner of a later corrective inset/width update.
-    if(_changeCallback)_changeCallback(_changeContext);
+    if(_changeCallback){
+        void (*callback)(void *)=_changeCallback;void *context=_changeContext;
+        // A synchronous Qt refusal may retire this exact host from inside the
+        // callback. Keep its native stack owner alive until callback return.
+        // Native notifications can call signal more than once on their stack.
+        // Standard autorelease lifetime also protects those outer callers.
+        [[self retain]autorelease];callback(context);
+    }
 }
 - (void)stopButtons {
     NSNotificationCenter *center=[NSNotificationCenter defaultCenter];

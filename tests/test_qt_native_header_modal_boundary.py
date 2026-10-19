@@ -68,6 +68,7 @@ def child_header(tmp_path, monkeypatch):
     header = main.findChild(QObject, "focusHeader")
     original = header.parentItem()
     child = QQuickWindow(main)
+    child.setFlags(Qt.SubWindow | Qt.FramelessWindowHint)
     child.resize(1050, 60)
     child.show()
     header.setParentItem(child.contentItem())
@@ -86,6 +87,67 @@ def child_header(tmp_path, monkeypatch):
         child.close()
         child.deleteLater()
         _close(bridge, engine, main)
+
+
+def test_current_packet_centers_route_all_six_header_targets(child_header, monkeypatch):
+    """Qt dispatch only: complements native hit mapping, not OS click proof."""
+    from PySide6.QtCore import QMetaObject
+
+    from yt_downloader.qt_quick import main as qt_main
+
+    app, bridge, main, header, child, _boundary = child_header
+    opened = []
+    monkeypatch.setattr(
+        qt_main.QDesktopServices,
+        "openUrl",
+        lambda url: opened.append(url.toString()) or True,
+    )
+    for index, (leading, width, y, fullscreen) in enumerate(
+        [
+            (44, 1080, 5, False),
+            (10, 1400, -44, True),
+            (99, 1400, 5, True),
+            (44, 1080, 5, False),
+        ]
+    ):
+        main.resize(width + 40, 740)
+        child.setGeometry(20, y, width, 44)
+        main.setProperty("nativeHeaderWidth", width)
+        main.setProperty(
+            "nativeRowPacket",
+            {
+                "schema_version": 1,
+                "width": width,
+                "height": 44,
+                "leading": leading,
+                "reserve": 0,
+                "fullscreen": fullscreen,
+                "state": "controls-visible",
+                "body_slot_height": 44,
+            },
+        )
+        settle(app, header)
+        for route in ("Library", "Watch", "Activity", "Forge"):
+            click(child, header, "navigationButton_" + route)
+            settle(app, header)
+            assert bridge.selection == route
+            assert not main.findChild(QObject, "downloadSettingsPopup").property(
+                "visible"
+            )
+        QTest.mouseMove(child, center(header, "headerXButton"))
+        settle(app, header)
+        QTest.mousePress(child, Qt.LeftButton, pos=center(header, "headerXButton"))
+        settle(app, header)
+        QTest.mouseRelease(child, Qt.LeftButton, pos=center(header, "headerXButton"))
+        settle(app, header)
+        assert opened == ["https://x.com/VODForge"] * (index + 1)
+        assert bridge.selection == "Forge"
+        click(child, header, "headerSettingsButton")
+        settle(app, header)
+        assert main.findChild(QObject, "downloadSettingsPopup").property("visible")
+        assert bridge.selection == "Forge" and len(opened) == index + 1
+        assert QMetaObject.invokeMethod(main, "closeDownloadSettings")
+        settle(app, header)
 
 
 @pytest.mark.parametrize("release_outside", [False, True])
