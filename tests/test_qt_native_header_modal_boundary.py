@@ -685,3 +685,85 @@ def test_native_passive_route_keeps_modal_gesture_with_original_main(child_heade
     assert bridge.selection == "Forge"
     click(child, header, "navigationButton_Library")
     assert bridge.selection == "Library"
+
+
+@pytest.mark.parametrize("initial_wait", [80, 130])
+def test_reveal_target_refinement_preserves_motion_instead_of_restarting(
+    child_header, initial_wait
+):
+    """AppKit's later coherent allocation must not restart a near-moving reveal."""
+    app, bridge, main, header, child, _boundary = child_header
+    main.resize(1440, 900)
+    child.setGeometry(20, 0, 1400, 44)
+
+    def publish(target, origin=0):
+        main.setProperty(
+            "nativeRowPacket",
+            {
+                "schema_version": 1,
+                "width": 1400,
+                "height": 44,
+                "host_screen": [origin, 0, 1400, 44],
+                "leading": target - origin,
+                "reserve": target - origin,
+                "fullscreen": True,
+                "state": "controls-visible" if target else "controls-hidden",
+                "body_slot_height": 44,
+            },
+        )
+
+    publish(0)
+    settle(app, header)
+    publish(89)
+    QTest.qWait(initial_wait)
+    before = header.property("nativeContentScreenX")
+    QTest.qWait(32)
+    moving = header.property("nativeContentScreenX")
+    assert moving - before > 4, "Fixture must refine an actually moving reveal"
+    publish(96, 17)
+    assert header.property("nativeContentScreenX") == moving
+    QTest.qWait(32)
+    refined = header.property("nativeContentScreenX")
+    assert refined - moving >= (moving - before) * 0.35, (
+        "A later native target restarted easing and visibly stalled the reveal",
+        before,
+        moving,
+        refined,
+    )
+    QTest.qWait(260)
+    assert header.property("nativeContentScreenX") == 96
+    assert header.property("nativeHeaderInset") == 79
+    assert bridge.selection == "Forge", "Geometry refinement cannot navigate"
+
+
+def test_menu_hide_finishes_before_previous_110ms_pacing(child_header):
+    app, _bridge, main, header, child, _boundary = child_header
+    main.resize(1440, 900)
+    child.setGeometry(20, 0, 1400, 44)
+
+    def publish(target):
+        main.setProperty(
+            "nativeRowPacket",
+            {
+                "schema_version": 1,
+                "width": 1400,
+                "height": 44,
+                "host_screen": [0, 0, 1400, 44],
+                "leading": target,
+                "reserve": target,
+                "fullscreen": True,
+                "state": "controls-visible" if target else "controls-hidden",
+                "body_slot_height": 44,
+            },
+        )
+
+    main.setProperty("nativeHeaderReducedMotion", True)
+    publish(96)
+    settle(app, header)
+    main.setProperty("nativeHeaderReducedMotion", False)
+    publish(0)
+    QTest.qWait(95)
+    assert header.property("nativeContentScreenX") <= 0.5, (
+        "The requested earlier return must finish before the former110ms pacing",
+        header.property("nativeContentScreenX"),
+    )

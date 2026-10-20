@@ -4,6 +4,29 @@ Consult [the change and test log](change-and-test-log.md) before assigning or
 repeating qualification work. Retain valid prior passes; record a concrete
 affected change or evidence defect before repeating a check.
 
+## Native allocation refinement preserves motion — 2026-10-20
+
+A coherent native geometry update may refine an animation destination while it
+is already moving. Restarting ease-in for every update can produce a stall and
+second movement even when endpoints and final pointer mapping are correct.
+The header now derives its screen destination from one immutable packet and
+uses the existing Behavior with velocity-preserving SmoothedAnimation. Reveal
+retains220ms duration with40ms maximum easing; dismissal uses70ms and immediate
+reversal. There is no additional geometry authority, allocation cache, timer or
+native frame mutation.
+
+The earlier fixed-destination/aperture-compensation and settled-return tests
+missed a destination refinement during an active reveal. Actual offscreen Qt
+regressions compare displacement around early and late target updates, verify
+live translated pointer geometry, faster dismissal, reduced-motion snapping,
+and retirement/modal guards. Prior NumberAnimation source fails the moving
+refinement and earlier-return regressions. The first unrestricted smoothing
+candidate also failed the continuity bound; bounded easing passes. These are
+representative animation/native-allocation/Qt-input handoffs, not physical
+paint-latency measurements or native Mac acceptance. Cooper's later Silicon
+visual feedback is separate from the earlier automated OS-reveal prerequisite
+failure; neither substitutes for observing this exact private successor.
+
 ## Native completion follows current presentation intent — 2026-10-17
 
 Main-window native decorations must also survive toolkit-owned transitions.
