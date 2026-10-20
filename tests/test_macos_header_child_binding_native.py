@@ -51,6 +51,7 @@ def child_binding_driver(tmp_path_factory: pytest.TempPathFactory) -> Path:
     [
         "basic",
         "passive_tracking_registration",
+        "passive_without_callback",
         "passive_pointer_mapping",
         "passive_pointer_retire_callback",
         "hit_mapping",

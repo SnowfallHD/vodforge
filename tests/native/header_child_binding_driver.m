@@ -83,6 +83,11 @@ int main(int argc,const char **argv){NSAutoreleasePool *pool=[NSAutoreleasePool 
      ==(NSTrackingMouseMoved|NSTrackingMouseEnteredAndExited|NSTrackingInVisibleRect|NSTrackingActiveInActiveApp));
    CHECK(area.owner==o->_childBinding);
    CHECK(vf_header_host_unbind_child(h,c));CHECK(c.trackingAreas.count==0);
+  }else if(!strcmp(argv[1],"passive_without_callback")){
+   VFHeaderPointerSnapshot sample;
+   CHECK(vf_header_host_pointer_snapshot(h,&sample)==0);
+   [o->_childBinding mouseMoved:pointerEvent(c.window,c,NSMakePoint(100,20),NSEventTypeMouseMoved)];
+   CHECK(vf_header_host_pointer_snapshot(h,&sample)==0);
   }else if(!strcmp(argv[1],"passive_pointer_mapping")||!strcmp(argv[1],"passive_pointer_retire_callback")){
    PointerObserver observer={.handle=&h,.child=c,.retire=!strcmp(argv[1],"passive_pointer_retire_callback")};
    CHECK(vf_header_host_pointer_snapshot_size()==sizeof(VFHeaderPointerSnapshot));

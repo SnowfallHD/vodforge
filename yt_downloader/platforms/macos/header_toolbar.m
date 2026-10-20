@@ -361,7 +361,7 @@ static BOOL VFChildNear(NSRect a,NSRect b){return fabs(a.origin.x-b.origin.x)<.0
 }
 - (void)recordPointer:(NSEvent *)event kind:(unsigned)kind {
     if(!NSThread.isMainThread||kind<1||kind>3||![self current]||![self fit]
-        ||!_pointerArea||event.window!=_child.window||(kind!=3&&NSEvent.pressedMouseButtons))return;
+        ||!_pointerArea||!_owner->_changeCallback||event.window!=_child.window||(kind!=3&&NSEvent.pressedMouseButtons))return;
     if((kind==1&&event.type!=NSEventTypeMouseEntered)||(kind==2&&event.type!=NSEventTypeMouseMoved)
         ||(kind==3&&event.type!=NSEventTypeMouseExited))return;
     NSPoint local=[_child convertPoint:event.locationInWindow fromView:nil];
