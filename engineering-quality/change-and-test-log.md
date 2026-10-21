@@ -4542,3 +4542,26 @@ resolved by native config loader and approved local runtime with private log
 path; no denied credentials or external write bypass. One transport disconnect
 occurred returning final receipt; fresh pwd/date and receipt existence/hash
 verified outcome instead of duplicate execution.
+
+## Oct 21 18:37 UTC — Move/preview final audit handoff
+
+Independent pass4 identifies two additional P2 roots with narrow concurrent
+preconditions, no GUI. Desired tests fail4 before (2late destination mutations,
+2unreapable late preview children);10counterexamples pass. Move now rechecks
+current destination ancestry/content after source-retired receipt/fault boundary,
+immediately before deleting its protected retired source, and observes cancel.
+Changed/missing copies produce cleanup_pending with original bytes retained.
+This narrows the demonstrated window, not an exclusive lock against external
+writers or a guarantee against deletion after the final verification.
+
+Preview now registers its Popen child under the existing generation lock BEFORE
+rejecting stale generation/path/cancel. Finally still reaps; failed termination
+keeps exact process ownership for later shutdown, while late output stays unused.
+No relaxed child-death inference, registry removal or broader termination target.
+14new actual boundary cases plus affected Move/hierarchy/shared-root/leftover/
+preview/process tests189PASS, including real owned Python-child successful reap
+and real QtLibraryFiles close-at-publication (no GUI) counterexamples. Ruff/diff
+pass. Windows cross-volume/native denial and physical playback remain separate.
+Intermediate d747 Mac package finished but is superseded for these2roots; its
+Windows root was only prepared, no package/launch. No misleading final promotion.
+New exact combined source/build follows, prior receipts/binaries preserved.

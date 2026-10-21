@@ -3943,3 +3943,17 @@ Same-size/mtime media is not necessarily the same file. Probe-to-publication
 checks now include device/inode and change time, with an internal transient token
 checked before save. Atomic replacement fixtures fail before and pass after;
 this is a bounded identity guard, not an exclusive lease on external media.
+
+## Retirement is an effect boundary — 2026-10-21
+
+Evidence taken before source retirement/journal writes is stale for a later
+irreversible unlink. A Move must revalidate the destination after that boundary
+and retain protected source bytes on uncertainty. Prior earlier-mutation tests
+missed replacement/removal at source_retired; new before/after cases include
+closed UI-owner publication. External-writer TOCTOU remains a documented limit.
+
+Popen can return after shutdown snapshots the registry. Registration must precede
+stale-result rejection so unsuccessful reaping cannot abandon a live owned child.
+Previous tests covered successful late termination only. New denied-termination
+cases retain registration and demonstrate later cleanup retries; real local
+Python-child counterexamples confirm successful reaping, without native media.

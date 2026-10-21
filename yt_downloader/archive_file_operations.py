@@ -1634,6 +1634,18 @@ def _finish_move_cleanup(
             cleanup_steps=steps,
         )
         boundary("source_retired")
+        # Retirement and its durable receipt can take time. Verify the copy
+        # again after those boundaries, immediately before removing the last
+        # protected source name; no journal write intervenes here.
+        _cancel(cancelled)
+        if (
+            directory_evidence(target_proof[-1][0]) != target_proof
+            or _hash_file(Path(copy["destination"]), tuple(copy["stamp"]), cancelled)
+            != copy["sha256"]
+        ):
+            raise ValueError(
+                "Destination changed; retired source retained for recovery"
+            )
         _unlink_retired(retired, expected, cleanup_proof)
         _sync_directory(cleanup)
         step["state"] = "removed"

@@ -137,17 +137,18 @@ class MediaPreviewOwner:
                 **hidden_window_subprocess_kwargs(),
             )
             # Popen may return after shutdown or replacement has invalidated
-            # this request. Reject/reap that child before any communicate work.
+            # this request. Own the child before rejecting stale results so a
+            # refused termination remains registered for the next cleanup.
             # Registration shares the generation lock with shutdown admission;
             # the potentially slow Popen itself never holds the UI-facing lock.
             with self._lock:
+                self._registry.register(process, timeout_seconds=1.0)
                 if (
                     generation != self._generation
                     or path != self._path
                     or (cancel is not None and cancel.is_set())
                 ):
                     raise MediaPlayerError("Preview generation was cancelled.")
-                self._registry.register(process, timeout_seconds=1.0)
             if cancel is None:
                 output, _stderr = process.communicate(timeout=12)
             else:
