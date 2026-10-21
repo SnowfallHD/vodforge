@@ -43,7 +43,7 @@ Window {
     y: 30
     minimumWidth: 820
     // Reserve the activity dial and deck heading at the smallest dashboard size.
-    minimumHeight: 584
+    minimumHeight: 584 + mainFrame.headerHeight
     title: "VODForge"
     flags: Qt.platform.os === "windows" ? Qt.Window | Qt.WindowSystemMenuHint |
            Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint |

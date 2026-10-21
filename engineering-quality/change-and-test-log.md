@@ -4764,3 +4764,21 @@ nativehelpersunchanged; will verify compiledmodule/QMLbinding andnewsignature.
 CurrentWindowsPID11532/app11532review remainsuntouched/open; noGUIaction, public
 release, permission/authchange ororiginalprofile/dataoperation. Signingverification
 pendingactualnewartifact, never inferredfromuserloginreportalone.
+
+Windows packaged qualificationfb858b9:31PASS/4active-minimumFAIL, because existing
+WindowsFrame allocates32pxheader absentonMac; deckbottom602>584. Exactsourcefix
+adds canonicalmainFrame.headerHeight to584dashboardminimum (616Windowsnormal,
+584Mac/fullscreen), notanewduplicatedtitlemetric orrelaxedbottomoracle. Windows
+125/150/200%empty-offscreenscale15PASS independently; activecasesmustpass successor.
+Macfb34compiledPASS/1WinSKIP, bothruntimearchitecturesPASS/sealunchanged retained,
+but packagepredecessorforWindowsframe-minimumfollowup.
+
+SameexistingAzure signingretry19:36:56UTC failedAzureCliCredential Pleaseazlogin;
+copyremainedNotSigned/timestampabsent/unsignedexebytesunchanged. NO blindrepeat.
+NonsecretCLIaccountshow underCOOPS-PC/Coop session0 reportsEnabled/defaulttrue;
+noAZURE_CONFIG_DIR override. Silent same-signing-scope authstatus withALLtoken
+outputnone revealed actualerror: specifiedlogonsessiondoesnotexist/mayterminated,
+-2147023584, Status_Unexpected. No tokencache/files/read/login/logout/configchange.
+This is newrelevantcontext evidence forusingtheSAMEexistingworkflow inalready
+logged-in session1 (Limited, sameSID), without newcredentials orpermissionchange;
+notproofanycertificate/serviceexpiry orpermissiondenial. Currentapp11532untouched.

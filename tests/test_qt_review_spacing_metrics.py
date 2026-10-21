@@ -1,6 +1,7 @@
 """Review boundary: painted activity content and state-stable navigation metrics."""
 
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -19,7 +20,7 @@ from yt_downloader.product_theme import THEME
 def test_activity_dial_has_real_allocation_above_run_deck(tmp_path, monkeypatch, size):
     app, bridge, engine, window = _launch(tmp_path, monkeypatch, [])
     try:
-        assert window.minimumHeight() == 584
+        assert window.minimumHeight() == 584 + (32 if sys.platform == "win32" else 0)
         window.resize(size[0], max(size[1], window.minimumHeight()))
         polish_scene(window.contentItem())
         QTest.qWait(80)
