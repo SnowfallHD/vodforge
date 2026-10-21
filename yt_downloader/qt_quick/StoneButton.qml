@@ -7,13 +7,15 @@ Item {
     property string accessibilityLabel: label
     property string icon: ""
     property string sceneIcon: ""
+    property color sceneIconTone: control.primary ? theme.accent : control.emphasized ? theme.action : theme.icon
     property bool selected: false
+    property bool pressedWhenSelected: false
     property bool emphasized: false
     // Main actions retain the shared contour with an opaque accent outline.
     property bool primary: false
     property bool transientMaterial: true
     property bool hoverMaterial: true
-    // Navigation selection uses its label/underline, not a persistent hover.
+    // Keyboard focus can remain distinct from a latched selected material.
     property bool persistentMaterial: true
     property bool deepHover: false
     property bool interactive: true
@@ -24,7 +26,7 @@ Item {
             ["⋯", "⋮", "…"].indexOf(label) >= 0
     readonly property bool hovered: mouse.containsMouse
     readonly property bool activeFace: (hoverMaterial && hovered) ||
-            (persistentMaterial && (activeFocus || selected))
+            (persistentMaterial && (activeFocus || selected)) || (pressedWhenSelected && selected)
     // Artwork cards keep their content inside the same inset face in every state.
     readonly property int artworkFaceInset: 7 + (activeFace && transientMaterial ? 2 : 0)
     signal activated()
@@ -49,10 +51,10 @@ Item {
                  ? Window.window.glassControlOpacity : 1.0
         property string presentationRole: "control"
         anchors.fill: parent
-        visible: !control.quiet || mouse.pressed || mouse.containsMouse || control.activeFocus
+        visible: !control.quiet || mouse.pressed || mouse.containsMouse || control.activeFocus || (control.pressedWhenSelected && control.selected)
         source: "image://vodforge/button/" + Math.max(1, Math.round(control.width))
                 + "/" + Math.max(1, Math.round(control.height)) + "/"
-                + (!control.transientMaterial || !control.enabled ? "normal" : mouse.pressed ? "pressed" : (control.activeFace ? (control.deepHover ? "pressed" : "hover") : "normal"))
+                + (!control.transientMaterial || !control.enabled ? "normal" : mouse.pressed || (control.pressedWhenSelected && control.selected) ? "pressed" : (control.activeFace ? (control.deepHover ? "pressed" : "hover") : "normal"))
                 + "/" + (!control.primary && control.emphasized ? "1" : "0")
                 + (control.primary ? "/outlined" : "")
                 + "/r" + bridge.themeRevision
@@ -92,7 +94,7 @@ Item {
             width: visible ? buttonMetrics[control.size].iconPixels : 0
             height: width
             name: control.sceneIcon
-            tone: control.primary ? theme.accent : control.emphasized ? theme.action : theme.icon
+            tone: control.sceneIconTone
         }
         Text {
             id: caption

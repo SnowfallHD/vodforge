@@ -51,12 +51,34 @@ Window {
                Qt.NoTitleBarBackgroundHint : Qt.Window
     // Cocoa reapplies the Qt flags on fullscreen entry AND exit. Keep header
     // integration here rather than only in the startup AppKit style mutation.
+    // Qt retains normal geometry; retain maximized state separately so exiting
+    // fullscreen does not turn a previously maximized window into a normal one.
+    property int applicationRestoreVisibility: Window.Windowed
+    onVisibilityChanged: function(visibility) {
+        if (visibility === Window.Windowed || visibility === Window.Maximized)
+            applicationRestoreVisibility = visibility
+    }
+    function restoreApplicationWindow() {
+        if (applicationRestoreVisibility === Window.Maximized) showMaximized()
+        else showNormal()
+    }
+    function toggleApplicationFullscreen() {
+        if (visibility === Window.FullScreen) restoreApplicationWindow()
+        else showFullScreen()
+    }
+    Shortcut {
+        objectName: "mainFullscreenToggle"
+        sequence: "F11"
+        context: Qt.WindowShortcut
+        enabled: Qt.platform.os === "windows"
+        onActivated: window.toggleApplicationFullscreen()
+    }
     Shortcut {
         objectName: "mainFullscreenEscape"
         sequence: "Escape"
         context: Qt.WindowShortcut
         enabled: window.visibility === Window.FullScreen && window.menuNavigationAllowed
-        onActivated: window.showNormal()
+        onActivated: window.restoreApplicationWindow()
     }
     WindowsFrame { id: mainFrame; appWindow: window }
     color: Qt.platform.os === "osx" ? "transparent" : theme.bg
@@ -1264,25 +1286,16 @@ Window {
                         required property string modelData
                         objectName: "navigationButton_" + modelData
                         persistentMaterial: false
+                        pressedWhenSelected: true
                         label: modelData
                         selected: bridge.selection === modelData
-                        icon: "image://vodforge/icon/" + (
-                            modelData === "Forge" ? "download.png" :
-                            modelData === "Library" ? "folder.png" :
-                            modelData === "Watch" ? "play.png" : "activity.png") + "/r" + bridge.themeRevision
+                        sceneIcon: modelData === "Forge" ? "download" :
+                            modelData === "Library" ? "folder" :
+                            modelData === "Watch" ? "play" : "activity"
+                        // Same Canvas and invariant token as Library's Archive emblems.
+                        sceneIconTone: selected ? theme.selection : theme.icon
                         width: Math.max(86, implicitWidth)
                         height: implicitHeight
-                        Rectangle {
-                            objectName: "navigationSelectedBar_" + modelData
-                            visible: parent.selected
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            anchors.bottom: parent.bottom
-                            anchors.bottomMargin: 5
-                            width: parent.width - 28
-                            height: 2
-                            radius: 1
-                            color: theme.accent
-                        }
                         onActivated: {
                             const keepPlaying = window.miniPlayerActive ||
                                 (window.mediaPlayer && window.mediaPlayer.playbackState === MediaPlayer.PlayingState)

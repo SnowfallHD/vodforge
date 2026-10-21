@@ -3889,3 +3889,19 @@ checks do not reproduce the original Windows host denial, certify every race, or
 substitute for exact Windows package/native acceptance. Journal schema 2 protects
 against older writers silently dropping retained ownership; backend admission of
 its closed diagnostic value must be coordinated separately before telemetry QA.
+
+## Selection, input and window ownership — 2026-10-21
+
+Latched selection and transient pointer press may intentionally share a material,
+while keyboard focus remains an independent visible/accessibility state. Shared
+controls therefore opt in to selected pressed faces; Archive and top navigation
+share the existing selection token/Canvas rather than separate theme accents.
+Earlier header tests explicitly required flat selected faces; Cooper superseded
+that design. Replacement checks retain unselected rest/hover/press, selected
+release, focus ring/Return/accessible selection and actual six-theme icon pixels.
+
+Window shortcuts require both platform and window ownership. Existing native
+menu/escape tests never dispatched Windows F11, which was absent. New actual Qt
+cycles cover normal/maximized restore geometry, text focus, modal Escape priority
+and a second focused presentation window. Windows offscreen key dispatch passes;
+physical taskbar/frame/painting and native media presentation remain separate.

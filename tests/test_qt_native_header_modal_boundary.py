@@ -400,9 +400,11 @@ def test_header_material_distinguishes_rest_hover_and_held_press(
     QTest.mouseMove(child, QPoint(2, 55))
     settle(app, header)
     child.grabWindow().save(str(tmp_path / (route + "-rest.png")))
-    assert state() == "normal", (
-        "Selected route must not impersonate a held or hover face"
-    )
+    assert state() == "pressed", "Selected route retains the requested concave face"
+    # An unselected route keeps the independent rest/hover/held feedback.
+    bridge.selectHome("Library" if route != "Library" else "Forge")
+    settle(app, header)
+    assert state() == "normal"
     point = center(header, "navigationButton_" + route)
     QTest.mouseMove(child, point)
     settle(app, header)
@@ -416,10 +418,10 @@ def test_header_material_distinguishes_rest_hover_and_held_press(
     finally:
         QTest.mouseRelease(child, Qt.LeftButton, pos=point)
     settle(app, header)
-    assert bridge.selection == route and state() == "hover"
+    assert bridge.selection == route and state() == "pressed"
     QTest.mouseMove(child, QPoint(2, 55))
     settle(app, header)
-    assert state() == "normal"
+    assert state() == "pressed"
 
 
 def test_fullscreen_content_inset_glides_with_live_pointer_geometry(child_header):

@@ -4403,3 +4403,65 @@ log/test-only qualification is committed later. Windows signed/native acceptance
 original host-specific denied inspection and preview admission of schema2 remain
 UNQUALIFIED. This source correction is not a claim of reproducing the original
 host cause or passing all races/native recovery; no public release.
+
+## Oct 21 17:51 UTC — user-requested latest private Windows launch
+
+Fresh established strict DesktopGenesisSSH succeeds COOPS-PC/Coop/Windows10
+19045, correct existing peer100.125.157.77, no host/access change or Mac host
+switch. Immutable fe7 snapshot907files transferred/verified; existing Python3.13.1,
+PyInstaller6.22.3/Qt6.11.2/tools reused, no dependency install. New owned E:QAroot
+build passes76affected source checks, actual compiled-module/QML binding and
+unsigned offscreen runtime smoke. Signing attempted once via existing Trusted
+Signing/AzureCLI: fails CredentialUnavailable/Please az login despite cached
+account metadata; no login/new credentials/permission changes/retry.
+
+Standing recognized-private-build run authority + explicit live user Windows-open
+request used a separately identified UNSIGNED diagnostic launch, original failed
+signing receipts retained. Exact unchanged tested exeSHA
+167fbc174bf88e9bd58e5d11d119c2010951f9ddc3d6be1aa6c96f06aaddba7f.
+Limited Interactive currentCoopSID/session1 task starts ONCE; actual17:51:10UTC
+PID20812/sourcefe7/version026/pathE:\VODForgeQA\private-recovery-fe7b127-20261021\dist\VODForge\VODForge.exe;
+onevisibleVODForgeHWND6948918/1100x740/foregroundtrue. No clicks/keys, only normal
+requested launch + one exact-owned foreground request. Existing installed app
+not replaced; five allowlisted noncredential profile files backed up locally under
+ordinary profile's inherited-permission rollback subdirectory, no deletion or
+credential copy. Build policy disabled + sessionDISABLE_TELEMETRY1, saved user
+preferences not changed by launcher. App intentionally left for Cooper; input
+released/pending0, no further GUI actions queued. Not signed/native full recovery
+acceptance, not original-host-denial reproduction, not public release.
+
+Receipt build/startup-recovery-isolation-20261021/windows-followup/WINDOWS-OPEN-RECEIPT.json
+plus original SSH/build/sign/launch receipts and exact helper source. Backend schema2
+compatibility follow-up remains separate/unpublished; canonical site olderUIbranch
+was identified, recorded deployed0cc9f6 source used for subsequent inspection.
+
+## Oct 21 18:12 UTC — private selected navigation and Windows F11
+
+User clarified selected top navigation must latch the pressed/concave material,
+remove underline implementation, reuse exact Library Archive violet emblem.
+Main deletes navigationSelectedBar; shared StoneButton opt-in pressedWhenSelected
+and sceneIconTone reuse existing face renderer and SceneIcon. LibraryScene's
+existing theme.selection (#bda0ff across all five presets/custom) is shared;
+no new accent. Eight new actual QML/pixel/accessibility checks fail before,
+pass after; six theme screenshots inspected (Ember visually reviewed).
+
+F11 had no main-window shortcut. One Windows-only WindowShortcut uses existing
+Qt showFullScreen and restores remembered Windowed/Maximized via Qt normal
+geometry; Escape retains modal priority. No application-global/player shortcut.
+Three local controller tests fail before/pass after, Windows dispatch test is
+platform skipped locally. Existing strict Genesis SSH runs fresh source overlay
+OFFSCREEN:12/12 pass including focused editor preservation, repeated F11,
+normal/maximized geometry, other-window shortcut isolation and six themes.
+No input/close/replacement of Cooper's existing PID20812, no native acceptance.
+
+Affected suite91pass/1skip/4fail: all four old selected-header tests demanded a
+flat selected face, superseded by explicit concave request. Updated those tests
+retain unselected rest/hover/held assertions and selected pressed on release;
+final focused7pass/1WindowsSkip. Existing other91 passes retained. Visibility
+handler's deprecated implicit signal argument changed to explicit parameter,
+behavior unchanged; final focused run covers it. Ruff/format pass. Private build
+and native Windows taskbar/frame/presentation acceptance remain pending; source
+and offscreen results are not a new package or public release.
+Receipts build/navigation-fullscreen-20261021/{navigation-before,navigation-after,
+fullscreen-before,fullscreen-after,affected-suite,final-focused}.log and
+windows-tests-receipt.json with SHA-bound overlay; old failure receipts retained.
