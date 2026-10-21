@@ -4666,3 +4666,32 @@ read and retained the report, did not repeat the valid checks or rebuild unchang
 runtime. Evidence final-3d20c58/INDEPENDENT-ACCEPTANCE.md (original audit-evidence/
 acceptance-3d20c58/REPORT.md); independent totals are not summed with owner totals.
 No product, GUI, app/profile, access, production or public-release change.
+
+## Oct 21 19:14 UTC — Windows nonforeground qualification and visual-review handoff
+
+Parent accepts scoped independent evidence, requests remaining safe Windows checks
+and prompt ready-to-review milestone. Fresh strictSSH14:10:35Chicago/19:10:35UTC
+confirms COOPS-PC/Coop, SSHsession0/console1/noVODprocess. QUSER Active/idle none:
+not free-foreground proof. No visible launch/input/scheduled interactive task.
+Mac foreground reserved for mail. Read-only metadata receipt retained.
+
+New test is justified by previously untested Windows actual-package owner boundary,
+not a repeat of valid source/offscreen tests: exact unsigned3d20c58PYZ/QML with
+hostdependencies, no product-sourcefallback, session0/offscreen/fictionalHOME and
+telemetrydisabled42PASS16.07s. Includes recovery queue/cancel/sameoutput/latecallback/
+settlement and real Windows Qt F11 dispatch/focusedinput/restore. Actual visible
+frame/taskbar/recoveryjourney/originaldenial remain unverified. Evidence final/
+windows/nonforeground-acceptance/{compiled-test-receipt.json,compiled-tests.xml,
+test.stdout.log,test-transport-receipt.json,ACTIVITY-SUMMARY.json}. UTF16stdout
+retained as emitted byPowerShell; use XML/decoded text for counts. No build/sign
+or nativeGUI action. One local read transportdisconnected; pwd/date recovered,
+existing completed transfer/session receipts inspected instead of repeatingtest.
+
+Private Windows visual-review launcher prepared/transferred only, not executed:
+E:\VODForgeQA\private-final-3d20c58-20261021\review-isolated.ps1. ExactSHA/policy
+checks, refuses existingVOD/session!=1, freshfictionalHOME+AppData, process-only
+environment, no installation/ordinaryprofile/write/OSsecuritychange. No bypass
+if launch policy/security denies. VISUAL-REVIEW.md provides exactpath/command,
+concave/no-underline/sharedviolet/F11 checklist and separate pendingcontrolled
+recoveryfixture journey. Readyforvisualreview does not mean userreview/native
+acceptancepassed; no need to wait for userreview before notifyingreadiness.
