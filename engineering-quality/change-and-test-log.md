@@ -4653,3 +4653,16 @@ lane, and no inference about other personal app processes is made. Windows seal,
 QUALIFICATION-RECEIPT.json/sourceXML/binding/runtime evidence retrieved into local
 final/windows root. No newnativeinput, launch or production request. All owned
 build/sign/runtime operations completed; GUI lease never taken/pending0.
+
+## Oct 21 — independent targeted acceptance of exact 3d20c58
+
+Independent auditor's fresh detached clone reports78scoped passes (35desired
+repro/offscreen shutdown,39atomic/import/restart guards,4lineage guards), with5
+adapted desired assertions failing as expected on predecessor70f3668. No candidate
+failure or observed safety regression. Source invariants A01–A11 pass within the
+reported bounds; A09 is race mitigation, A11 ordinary-close offscreen only. Native
+Windows denial/fullscreen and original-host cause remain unverified. This lane
+read and retained the report, did not repeat the valid checks or rebuild unchanged
+runtime. Evidence final-3d20c58/INDEPENDENT-ACCEPTANCE.md (original audit-evidence/
+acceptance-3d20c58/REPORT.md); independent totals are not summed with owner totals.
+No product, GUI, app/profile, access, production or public-release change.
