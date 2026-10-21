@@ -3975,8 +3975,8 @@ new polling subsystem or universal claim about OS force-quit/power loss.
 A fixed painted control can extend below its parent layout when the dashboard
 compresses; testing the control's own116px height alone misses cross-owner overlap.
 The activity dial now reserves its implicit height through its layout chain,
-RunDeck allocates12px above its heading, and minimum dashboard height is584logical
-pixels. Tests compare actual scene bounds/dial-to-heading gap and deck bottom,
+RunDeck allocates12px above its heading, and minimum dashboard content is584logical
+pixels plus its owned Windows frame (616Windowsnormal,584Mac/fullscreen). Tests compare actual scene bounds/dial-to-heading gap and deck bottom,
 including active controls and minimum native-allowed dimensions. Offscreen direct
 resize can bypass native minimums, so fixture requests are clamped to the declared
 minimum while the no-overflow assertion stays unchanged. Native Windows DPI still

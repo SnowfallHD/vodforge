@@ -4782,3 +4782,46 @@ outputnone revealed actualerror: specifiedlogonsessiondoesnotexist/mayterminated
 This is newrelevantcontext evidence forusingtheSAMEexistingworkflow inalready
 logged-in session1 (Limited, sameSID), without newcredentials orpermissionchange;
 notproofanycertificate/serviceexpiry orpermissiondenial. Currentapp11532untouched.
+
+## Oct21 19:55 UTC — final reviewed UI successor and signing verified
+
+Exactruntime30a9671f7bca6fdef6700884c193e3ad34c948ba (fb858b9+ownedWindowsframe
+minimum): sourcePython/nativehelpers unchanged against sealed3d20c58; derived
+resource-only packages replace3QML+source metadata, thenre-signseparatecopies.
+Do not callthese freshPyInstallercompiler runs or relabeloldbinaryreceipts.
+Actualpost-sign126PYZmodules/47QMLbindexactfinalsource onbothplatforms.
+
+MacDeveloperIDstrictsigned exe3cc0482cee8c0d201aa6daa2186f8a67cbba1cb356829db3bae30d996ef4c988,
+34packagedownerPASS/1WindowsSKIP,ARM+RosettaoffscreenruntimesPASS,6342sealunchanged,
+sourceclean/buildsigncandidateprocess0; notnotarized,novisiblelaunch. Windows
+signedcopy35actualpackagedchecksPASS/0skip, frozenoffscreenexeexit0;27finalsigned
+Windows offscreenDPI-scalechecksPASS(9each125/150/200%,actualscreenDPRasserted),
+includingempty+4activecontextminimumcases. Physicalmonitor/nativefullscreen/
+userhostrecoveryjourney stillnotproved. Allolderfailedchecks/retainedvalidcore
+recoveryevidencepreserved, nonebackfilled/nouniquegrandtotalfromoverlappingsuites.
+
+AzureaccountmetadataEnabledwasnotresource-authproof. ActualSSHsession0scopeerror
+specifiedlogonsessiondoesnotexist(-2147023584), withALLtokenoutputsuppressed,
+providedmateriallynewcontext evidence. SAMEexistingprofile/account/SDK usedin
+alreadylogged-inCoopsession1/Limited,onINDEPENDENTcopy. Actualsignsuccess
+19:49:07UTC/14:49:07Chicago,publisherKrydenVenturesLLC,Microsofttimestamp,
+AuthenticodeValid. NativeSDKSignToolverify/pa/all/v/twEXIT0 verified19:54:43UTC.
+No login/logout/credentialfile/tokenreads,newcredentials,permissions/authconfig
+orservice/profilechange. This provesactualexistingprofilesigningusable, not
+allbilling/servicehealth. Failedsession0receiptspreserved;noblindretry.
+SuccessfulsigningtaskReady/result0removedaftercompletiononly.
+
+FinalWindowsexe dd9a109bb47492e7bc12a8691b1d6fe6cfdb41a5105d9fa58132ab8c2ed6a0a2,
+E:\VODForgeQA\private-review-30a9671-20261021\signed\dist\VODForge\VODForge.exe.
+4235signedmembersunchangedafterchecks. Newisolatedsignedreviewlauncherprepared,
+NOTexecuted;validatesexe/signature/timestamp/source/changedQML, refusesexistingVOD,
+newfictionalHOME/AppData/temp,telemetrydisabled. ExactoldreviewPID11532/source3d20
+path+19:20:53birthconfirmedunchanged19:54:43UTC,leftOPENforCooper; noinput/quit/
+replacement/profileoperation. Macmailforegrounduntouched,queuedGUI0.
+
+Evidence build/visual-refinements-20261021/REPORT.md andfinal-30a9671 receipts.
+Onefrozenruntimewrapperattemptstopped BEFOREspawnbecausecompiledtestheldshared
+stdoutlog;originalfailurepreserved,uniqueruntime-driverlogfixthenfirstactualrun
+passes. No appforcetermination,repeatedsigningorhiddenfailedproducttestadoption.
+ReadyforNEXTvisualreview,notnativecompletion/publicrelease. Needcoordinatednormal
+oldappclose/newlaunch;originaluserinterruptedfilesremainexcludedfromQAfixture.
