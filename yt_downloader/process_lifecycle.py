@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 import signal
 import subprocess  # nosec B404 - owned child process lifecycle only
@@ -24,6 +25,7 @@ class ActiveChildProcessRegistry:
         self._lock = threading.RLock()
         self._termination_lock = threading.RLock()
         self._observer: Callable[[str, Any], None] | None = None
+        self._process_observers: dict[Any, Callable[[str, Any], None] | None] = {}
         self._diagnostic = diagnostic or (lambda _message: None)
 
     def set_diagnostic(self, diagnostic: Callable[[str], None]) -> None:
@@ -78,6 +80,7 @@ class ActiveChildProcessRegistry:
         with self._lock:
             self.processes.add(process)
             observer = self._observer
+            self._process_observers[process] = observer
         if observer is not None:
             try:
                 observer("started", process)
@@ -88,7 +91,7 @@ class ActiveChildProcessRegistry:
     def unregister(self, process: Any) -> None:
         with self._lock:
             self.processes.discard(process)
-            observer = self._observer
+            observer = self._process_observers.pop(process, None)
         if observer is not None:
             try:
                 observer("exited", process)
@@ -198,7 +201,38 @@ def _wait_for_pid_exit(pid: int, *, timeout_seconds: float) -> bool:
         time.sleep(0.05)
 
 
-def terminate_pid(pid: int, *, timeout_seconds: float = 5.0) -> bool:
+def process_birth_time(pid: int) -> float | None:
+    """Only a conclusive missing PID is absent; denied birth inspection stays unknown."""
+    try:
+        return psutil.Process(pid).create_time()
+    except (psutil.NoSuchProcess, psutil.ZombieProcess):
+        return None
+    except (psutil.Error, OSError) as exc:
+        raise ProcessOwnershipError(
+            "The process creation identity is unreadable."
+        ) from exc
+
+
+def terminate_pid(
+    pid: int, *, timeout_seconds: float = 5.0, expected_create_time: float | None = None
+) -> bool:
+    if expected_create_time is not None:
+        try:
+            process = psutil.Process(pid)
+            if process.create_time() != expected_create_time:
+                return False
+            # psutil's process-bound terminate/kill guard against PID reuse.
+            process.terminate()
+            try:
+                process.wait(timeout_seconds)
+            except psutil.TimeoutExpired:
+                process.kill()
+                process.wait(timeout_seconds)
+            return True
+        except (psutil.NoSuchProcess, psutil.ZombieProcess):
+            return True
+        except (psutil.Error, OSError):
+            return False
     try:
         os.kill(pid, signal.SIGTERM)
     except ProcessLookupError:
@@ -222,17 +256,26 @@ def terminate_recorded_children(
     *,
     command_reader: Callable[[int], str | None] = process_command,
     pid_terminator: Callable[[int], bool] = terminate_pid,
+    birth_reader: Callable[[int], float | None] = process_birth_time,
 ) -> None:
     """Terminate only children identity- and transaction-bound by recorded argv."""
 
     stage_markers = [str(path) for path in staging_dirs]
     for child in children:
         pid = child.get("pid")
-        if not isinstance(pid, int):
+        if type(pid) is not int or pid <= 1:
             raise ProcessOwnershipError("The active-run child record is invalid.")
         command = command_reader(pid)
         if command is None:
             continue
+        birth = child.get("birth_time")
+        if type(birth) not in {int, float} or not math.isfinite(birth) or birth <= 0:
+            raise ProcessOwnershipError(
+                "The live legacy child has no verified creation identity; preserved without signalling."
+            )
+        current_birth = birth_reader(pid)
+        if current_birth is None or current_birth != birth:
+            continue  # conclusively absent/reused; never signal the successor PID
         argv = child.get("argv")
         expected_executable = str(argv[0]) if isinstance(argv, list) and argv else ""
         executable_identities = {expected_executable}
@@ -245,14 +288,22 @@ def terminate_recorded_children(
                 pass
         if (
             not expected_executable
-            or not any(identity in command for identity in executable_identities)
+            or not any(
+                command == identity or command.startswith(identity + " ")
+                for identity in executable_identities
+            )
             or not any(marker in command for marker in stage_markers)
         ):
             raise ProcessOwnershipError(
                 f"Refusing to stop PID {pid}; its identity is not bound to the "
                 "recorded VODForge staging transaction."
             )
-        if not pid_terminator(pid):
+        stopped = (
+            terminate_pid(pid, expected_create_time=float(birth))
+            if pid_terminator is terminate_pid
+            else pid_terminator(pid)
+        )
+        if not stopped:
             raise ProcessOwnershipError(
                 f"VODForge could not stop abandoned child PID {pid}."
             )

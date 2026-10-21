@@ -21,7 +21,7 @@ Item {
     // canonical model ordinal explicitly: terminal finish order and saved
     // history recency must survive this presentation-only bucket sort.
     readonly property var allRunsRecords: workRecords.map((record, ordinal) => ({record, ordinal})).sort((left, right) => {
-        const priority = record => record.status === "Paused" ? 0.5 : ({active: 0, queued: 1, terminal: 2, completed: 3}[record.kind] ?? 4)
+        const priority = record => record.recoveryPending ? 0.25 : record.status === "Paused" ? 0.5 : ({active: 0, queued: 1, terminal: 2, completed: 3}[record.kind] ?? 4)
         return priority(left.record) - priority(right.record) || left.ordinal - right.ordinal
     }).map(entry => entry.record)
     readonly property var visibleRecords: allRunsRecords.slice(0, 4)
@@ -320,6 +320,14 @@ Item {
                 }
             }
             StoneButton {
+                objectName: "cancelResourceRecovery"
+                visible: deck.selectedRecord.recoveryPending === true
+                label: "Cancel recovery"
+                Accessible.description: "Stop recovery; keep partial files and uncertain ownership in Issues & Recovery."
+                Layout.fillWidth: true
+                onActivated: { deck.appBridge.cancelResourceRecovery(deck.selectedRecord.runId); actionsPopup.close() }
+            }
+            StoneButton {
                 visible: deck.selectedRecord.kind === "queued"
                 label: "Remove from queue"
                 Layout.fillWidth: true
@@ -342,7 +350,7 @@ Item {
             }
             StoneButton {
                 objectName: "dismissTerminalRun"
-                visible: deck.selectedRecord.kind === "terminal"
+                visible: deck.selectedRecord.kind === "terminal" && !deck.selectedRecord.protectedRecovery
                 label: "Remove"
                 Layout.fillWidth: true
                 onActivated: { deck.appBridge.requestRunRemoval(deck.selectedRecord.runId); actionsPopup.close() }

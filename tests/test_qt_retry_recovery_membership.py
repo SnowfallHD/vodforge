@@ -56,7 +56,7 @@ def test_forge_retry_lifecycle(tmp_path, monkeypatch, queued, ending):
     if queued:
         restored = runtime.recovery.store.load_queued_jobs()
         assert restored[0].preview_info["vodforge_issue_retry"] is True
-        runtime.active_job = None
+        runtime._finish("done", "The other admitted execution finished.")
         runtime._launch_next_queued()
     runtime.events.put(("job_metadata", {"job": retry, "info": {"title": "Fresh"}}))
     runtime.poll()

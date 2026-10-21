@@ -125,7 +125,7 @@ store.add_staging_dir(job.run_id,stage)
 # Use the actual native executable so the recorded identity stays stable.
 child=subprocess.Popen([psutil.Process().exe(),'-c','import time; time.sleep(30)',str(stage)],
     stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-store.child_started(child.pid,child.args)
+store.child_started(child.pid,child.args,birth_time=psutil.Process(child.pid).create_time())
 os._exit(0)
 """
         subprocess.run(

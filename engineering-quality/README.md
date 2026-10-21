@@ -3859,3 +3859,33 @@ live layout restoration. Preserve explicitly changed product expectations
 separately from failures of the prior supported contract. These headless checks do
 not qualify native header compositing or motion; those require actual current
 geometry and timestamped frames after a coordinated GUI release.
+
+### Interrupted resources are not the active download slot — 2026-10-21
+
+An unfinished journal must never be replaced to admit a new download. Detach its
+resource ownership durably before inspecting children, and distinguish the one
+admitted execution from preserved jobs needing recovery. Persist attempt admission
+before the first OS inspection: a crash or permission denial must leave an explicit
+Retry item, not restart an automatic attempt on every app launch. A waiting user's
+submission is durable queue intent, including across an interrupted recovery.
+
+Process callbacks belong to the execution that registered them, not the current
+global observer or a reused logical run ID. Bind callbacks to an execution token;
+retain the registration-time exit observer. A matching PID/command alone cannot
+authorize orphan termination: require the recorded creation time, preserve denied
+or legacy unknown identities, and use the process-bound PID-reuse guard. Terminal
+and dismiss paths must preserve unresolved child/staging records too. Allow new
+jobs in the original output/channel, while rejecting destinations inside protected
+staging pools. Cancel stops recovery without silently deleting partial files.
+
+Previous coverage exercised immediate cleanup, normal sequential admission and
+late worker events, but did not combine a blocked OS inspection, durable queued
+submission, cold restart and retained resource identity. The new real-thread
+runtime tests, cold-store tests, prior-source callback/PID-reuse controls, actual
+owned orphan process test and offscreen Run Deck controls cover representative
+boundaries. Saved current-item metadata must not inherit a previous video's image;
+retain available collection context and explicitly label missing metadata. These
+checks do not reproduce the original Windows host denial, certify every race, or
+substitute for exact Windows package/native acceptance. Journal schema 2 protects
+against older writers silently dropping retained ownership; backend admission of
+its closed diagnostic value must be coordinated separately before telemetry QA.

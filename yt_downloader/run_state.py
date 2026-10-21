@@ -31,6 +31,7 @@ from .models import (
 from .private_files import write_private_bytes
 from .process_lifecycle import (
     ProcessOwnershipError,
+    process_birth_time,
     process_command,
     terminate_recorded_children,
 )
@@ -39,7 +40,7 @@ from .safe_output import (
     cleanup_abandoned_staging_transactions,
 )
 
-RUN_STATE_SCHEMA_VERSION = 1
+RUN_STATE_SCHEMA_VERSION = 2
 MAX_RUN_STATE_BYTES = 512 * 1024
 INTERRUPTED_PAUSE_MESSAGE = (
     "Paused because VODForge closed. Resume continues remaining URLs; "
@@ -99,7 +100,16 @@ def _safe_preview(info: Mapping[str, Any] | None) -> dict[str, Any]:
     if not isinstance(info, Mapping):
         return {}
     result: dict[str, Any] = {}
-    for key in ("id", "title", "uploader", "channel", "description"):
+    for key in (
+        "id",
+        "title",
+        "uploader",
+        "channel",
+        "description",
+        "playlist_title",
+        "playlist_id",
+        "playlist_uploader",
+    ):
         value = sanitize_durable_text(info.get(key))[:20_000]
         if value:
             result[key] = value
@@ -400,6 +410,7 @@ class ActiveRunStore:
     def __init__(self, path: Path) -> None:
         self.path = path
         self._lock = threading.RLock()
+        self._preparation_done = False
 
     def _read_unlocked(self) -> dict[str, Any] | None:
         try:
@@ -422,10 +433,10 @@ class ActiveRunStore:
                 else "read_failed",
                 stage="journal_read",
             ) from exc
-        if (
-            not isinstance(payload, dict)
-            or payload.get("schema_version") != RUN_STATE_SCHEMA_VERSION
-        ):
+        if not isinstance(payload, dict) or payload.get("schema_version") not in {
+            1,
+            RUN_STATE_SCHEMA_VERSION,
+        }:
             raise RunStateError(
                 "The active-run record has an unsupported schema.",
                 cause="unsupported_schema",
@@ -437,9 +448,14 @@ class ActiveRunStore:
             return self._read_unlocked()
 
     def _write_unlocked(self, payload: Mapping[str, Any]) -> None:
-        encoded = (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode(
-            "utf-8"
-        )
+        encoded = (
+            json.dumps(
+                {**payload, "schema_version": RUN_STATE_SCHEMA_VERSION},
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n"
+        ).encode("utf-8")
         if len(encoded) > MAX_RUN_STATE_BYTES:
             raise RunStateError(
                 "The active-run record exceeds the safe size limit.",
@@ -485,6 +501,212 @@ class ActiveRunStore:
             result.append(dict(record))
         return result
 
+    def recovery_records(self) -> list[dict[str, Any]]:
+        """Retained resource owners survive independently of the admitted slot."""
+        with self._lock:
+            records = [
+                r
+                for r in self._failure_records(self._read_unlocked())
+                if isinstance(r.get("ownership"), dict)
+            ]
+            for record in records:
+                if record.get("recovery_state") not in {
+                    "pending",
+                    "attempting",
+                    "failed",
+                    "cancelled",
+                    "ready",
+                }:
+                    raise RunStateError("The resource recovery state is invalid.")
+            return records
+
+    def assert_output_available(self, destination: Path) -> None:
+        selected = Path(os.path.abspath(destination)).resolve(strict=False)
+        for record in self.recovery_records():
+            for value in record["ownership"].get("staging_dirs", []):
+                protected = Path(value)
+                if selected == protected.parent or selected.is_relative_to(
+                    protected.parent
+                ):
+                    raise RunStateError(
+                        "This destination is protected by an interrupted run."
+                    )
+
+    def prepare_recovery(self) -> list[DownloadJob]:
+        """Atomically detach once; a crash during an attempt requires explicit Retry."""
+        with self._lock:
+            if self._preparation_done:
+                return self.load_terminal_jobs()
+            payload = self._read_unlocked()
+            if payload is None:
+                self._preparation_done = True
+                return []
+            failures = self._failure_records(payload)
+            for row in failures:
+                if row.get("recovery_state") == "attempting" or row.get(
+                    "recovery_inflight"
+                ):
+                    if row.get("recovery_state") == "cancelled":
+                        row["recovery_inflight"] = False
+                        continue
+                    row.update(
+                        recovery_inflight=False,
+                        recovery_state="failed",
+                        terminal_status="Failed",
+                        terminal_message="Recovery was interrupted. Partial files are preserved. Retry recovery in Issues & Recovery.",
+                    )
+            if payload.get("state") == "active":
+                raw = payload.get("job")
+                if not isinstance(raw, dict):
+                    raise RunStateError("The active-run record has no job.")
+                job = deserialize_download_job(raw, allow_missing_retry_url=True)
+                root = (
+                    Path(os.path.abspath(job.output_dir)).resolve(strict=False)
+                    / ".vfstage"
+                )
+                paths = payload.get("staging_dirs", [])
+                if not isinstance(paths, list) or any(
+                    not isinstance(v, str)
+                    or not Path(v).is_absolute()
+                    or Path(v).parent != root
+                    for v in paths
+                ):
+                    raise RunStateError(
+                        "The recovery staging paths are invalid.",
+                        cause="invalid_staging",
+                    )
+                failures.append(
+                    {
+                        "job": dict(raw),
+                        "ownership": {
+                            "owner_pid": payload.get("owner_pid"),
+                            "owner_birth": payload.get("owner_birth"),
+                            "children": payload.get("children", []),
+                            "staging_dirs": paths,
+                        },
+                        "recovery_state": "pending",
+                        "terminal_status": "Paused",
+                        "terminal_message": "Waiting for startup recovery. Partial files are preserved.",
+                    }
+                )
+                payload = {
+                    "schema_version": RUN_STATE_SCHEMA_VERSION,
+                    "state": "idle",
+                    "queued_jobs": self._queued_records(payload),
+                    "queue_waiting_for_recovery": payload.get(
+                        "queue_waiting_for_recovery", False
+                    ),
+                }
+            payload["recovered_failures"] = failures
+            self._write_unlocked(payload)
+            if not payload.get("queue_waiting_for_recovery"):
+                self.pause_queue()
+            self._preparation_done = True
+            return self.load_terminal_jobs()
+
+    def pending_recovery_jobs(self) -> list[DownloadJob]:
+        ids = {
+            r["job"]["run_id"]
+            for r in self.recovery_records()
+            if r["recovery_state"] == "pending"
+        }
+        return [job for job in self.load_terminal_jobs() if job.run_id in ids]
+
+    def _change_recovery(
+        self,
+        run_id: str,
+        update: Mapping[str, Any],
+        *,
+        expected: str | None = None,
+        token: str | None = None,
+    ) -> bool:
+        with self._lock:
+            payload = self._read_unlocked()
+            if payload is None:
+                return False
+            rows = self._failure_records(payload)
+            matches = [
+                r
+                for r in rows
+                if r["job"].get("run_id") == run_id and r.get("ownership")
+            ]
+            if len(matches) != 1:
+                return False
+            row = matches[0]
+            if expected is not None and row.get("recovery_state") != expected:
+                return False
+            if token is not None and row.get("recovery_token") != token:
+                return False
+            row.update(update)
+            payload["recovered_failures"] = rows
+            self._write_unlocked(payload)
+            return True
+
+    def claim_recovery(self, run_id: str) -> str:
+        token = uuid.uuid4().hex
+        if not self._change_recovery(
+            run_id,
+            {
+                "recovery_state": "attempting",
+                "recovery_token": token,
+                "recovery_inflight": True,
+                "terminal_message": "Recovering interrupted download; partial files preserved.",
+            },
+            expected="pending",
+        ):
+            raise RunStateError("Recovery is no longer waiting.")
+        return token
+
+    def finish_recovery(
+        self, run_id: str, state: str, message: str, *, token: str | None = None
+    ) -> bool:
+        if state not in {"ready", "failed"}:
+            raise RunStateError("Invalid recovery result.")
+        return self._change_recovery(
+            run_id,
+            {
+                "recovery_state": state,
+                "recovery_inflight": False,
+                "terminal_status": "Paused" if state == "ready" else "Failed",
+                "terminal_message": message,
+            },
+            expected="attempting",
+            token=token,
+        )
+
+    def release_recovery_claim(self, run_id: str, token: str) -> bool:
+        return self._change_recovery(run_id, {"recovery_inflight": False}, token=token)
+
+    def cancel_recovery(self, run_id: str) -> bool:
+        return self._change_recovery(
+            run_id,
+            {
+                "recovery_state": "cancelled",
+                "terminal_status": "Stopped",
+                "terminal_message": "Recovery cancelled. Partial files and uncertain process ownership are preserved in Issues & Recovery.",
+            },
+        )
+
+    def retry_recovery(self, run_id: str) -> None:
+        row = next(
+            (r for r in self.recovery_records() if r["job"]["run_id"] == run_id), None
+        )
+        if (
+            row is None
+            or row.get("recovery_inflight")
+            or row["recovery_state"] in {"pending", "attempting"}
+        ):
+            raise RunStateError("Recovery is already pending or unavailable.")
+        if not self._change_recovery(
+            run_id,
+            {
+                "recovery_state": "pending",
+                "terminal_status": "Paused",
+                "terminal_message": "Waiting to retry resource recovery; partial files preserved.",
+            },
+        ):
+            raise RunStateError("Recovery is no longer available.")
+
     def begin(
         self,
         job: DownloadJob,
@@ -494,18 +716,36 @@ class ActiveRunStore:
     ) -> None:
         with self._lock:
             existing = self._read_unlocked()
+            if existing and existing.get("state") == "active":
+                raise RunStateError("An active execution still owns this slot.")
+            if any(
+                r.get("recovery_state") in {"pending", "attempting"}
+                or r.get("recovery_inflight")
+                for r in self.recovery_records()
+            ):
+                raise RunStateError(
+                    "Resource recovery must settle before admitting an active execution."
+                )
+            self.assert_output_available(job.output_dir)
+            if any(
+                row["job"]["run_id"] == job.run_id for row in self.recovery_records()
+            ):
+                raise RunStateError("A preserved recovery owns this run identity.")
             failures = self._failure_records(existing)
             if superseded_run_id:
                 failures = [
                     record
                     for record in failures
-                    if str(record["job"].get("run_id") or "") != superseded_run_id
+                    if record.get("ownership")
+                    or str(record["job"].get("run_id") or "") != superseded_run_id
                 ]
             self._write_unlocked(
                 {
                     "schema_version": RUN_STATE_SCHEMA_VERSION,
                     "state": "active",
                     "owner_pid": os.getpid(),
+                    "owner_birth": process_birth_time(os.getpid()),
+                    "execution_token": uuid.uuid4().hex,
                     "job": _serialize_executable_job(job),
                     "staging_dirs": [],
                     "children": [],
@@ -532,7 +772,8 @@ class ActiveRunStore:
                 failures = [
                     record
                     for record in failures
-                    if str(record["job"].get("run_id") or "") != superseded_run_id
+                    if record.get("ownership")
+                    or str(record["job"].get("run_id") or "") != superseded_run_id
                 ]
             if payload is None:
                 payload = {
@@ -540,6 +781,10 @@ class ActiveRunStore:
                     "state": "idle",
                 }
             payload["queued_jobs"] = [_serialize_executable_job(job) for job in jobs]
+            if any(
+                r.get("recovery_state") in {"pending", "attempting"} for r in failures
+            ):
+                payload["queue_waiting_for_recovery"] = bool(jobs)
             if failures:
                 payload["recovered_failures"] = failures
             else:
@@ -628,10 +873,16 @@ class ActiveRunStore:
             if not isinstance(job, dict) or job.get("run_id") != run_id:
                 return
             preview = _safe_preview(info)
-            if job.get("batch_mode") and not (
-                preview.get("thumbnail") or preview.get("best_thumbnail")
+            previous = job.get("preview_info") or {}
+            for key in ("playlist_title", "playlist_id", "playlist_uploader"):
+                if not preview.get(key) and previous.get(key):
+                    preview[key] = previous[key]
+            if (
+                job.get("batch_mode")
+                and previous.get("id")
+                and previous.get("id") == preview.get("id")
+                and not (preview.get("thumbnail") or preview.get("best_thumbnail"))
             ):
-                previous = job.get("preview_info") or {}
                 for key in ("thumbnail", "best_thumbnail"):
                     if previous.get(key):
                         preview[key] = previous[key]
@@ -712,10 +963,22 @@ class ActiveRunStore:
             paths.remove(str(path))
             self._write_unlocked(payload)
 
-    def child_started(self, pid: int, args: Any) -> None:
+    def child_started(
+        self,
+        pid: int,
+        args: Any,
+        *,
+        run_id: str | None = None,
+        token: str | None = None,
+        birth_time: float | None = None,
+    ) -> None:
         with self._lock:
             payload = self._read_unlocked()
             if payload is None or payload.get("state") != "active":
+                return
+            if (run_id is not None and payload["job"]["run_id"] != run_id) or (
+                token is not None and payload.get("execution_token") != token
+            ):
                 return
             argv = (
                 [str(value) for value in args]
@@ -725,13 +988,27 @@ class ActiveRunStore:
             children = payload.setdefault("children", [])
             if isinstance(children, list):
                 children[:] = [item for item in children if item.get("pid") != pid]
-                children.append({"pid": int(pid), "argv": argv})
+                children.append(
+                    {
+                        "pid": int(pid),
+                        "argv": argv,
+                        **(
+                            {"birth_time": birth_time} if birth_time is not None else {}
+                        ),
+                    }
+                )
             self._write_unlocked(payload)
 
-    def child_exited(self, pid: int) -> None:
+    def child_exited(
+        self, pid: int, *, run_id: str | None = None, token: str | None = None
+    ) -> None:
         with self._lock:
             payload = self._read_unlocked()
             if payload is None or payload.get("state") != "active":
+                return
+            if (run_id is not None and payload["job"]["run_id"] != run_id) or (
+                token is not None and payload.get("execution_token") != token
+            ):
                 return
             children = payload.get("children")
             if isinstance(children, list):
@@ -759,15 +1036,22 @@ class ActiveRunStore:
                 for record in failures
                 if str(record["job"].get("run_id") or "") != job.run_id
             ]
-            failures.append(
-                {
-                    "job": dict(payload["job"]),
-                    "terminal_status": status,
-                    "terminal_message": message,
-                    "failure_message": message,
-                    "activity_lines": _terminal_activity(job.activity_lines, message),
-                }
-            )
+            terminal = {
+                "job": dict(payload["job"]),
+                "terminal_status": status,
+                "terminal_message": message,
+                "failure_message": message,
+                "activity_lines": _terminal_activity(job.activity_lines, message),
+            }
+            ownership = self._remaining_ownership(payload)
+            if ownership is not None:
+                terminal.update(
+                    ownership=ownership,
+                    recovery_state="failed",
+                    terminal_message=message
+                    + " Partial files or unresolved process ownership remain protected. Retry recovery in Issues & Recovery.",
+                )
+            failures.append(terminal)
             self._write_unlocked(
                 {
                     "schema_version": RUN_STATE_SCHEMA_VERSION,
@@ -777,6 +1061,28 @@ class ActiveRunStore:
                 }
             )
             return job
+
+    @staticmethod
+    def _remaining_ownership(payload: Mapping[str, Any]) -> dict[str, Any] | None:
+        """Only conclusive absence permits dropping a completed execution's resources."""
+        paths = []
+        for value in payload.get("staging_dirs", []):
+            try:
+                Path(value).lstat()
+            except FileNotFoundError:
+                continue
+            except OSError:
+                pass  # unreadable is still protected
+            paths.append(value)
+        children = payload.get("children", [])
+        if not paths and not children:
+            return None
+        return {
+            "owner_pid": payload.get("owner_pid"),
+            "owner_birth": payload.get("owner_birth"),
+            "children": children,
+            "staging_dirs": paths,
+        }
 
     def mark_failed(self, message: str = INTERRUPTED_FAILURE_MESSAGE) -> DownloadJob:
         return self.mark_terminal("Failed", message)
@@ -796,9 +1102,21 @@ class ActiveRunStore:
                     "state": "idle",
                     "queued_jobs": [],
                 }
+            existing = self._failure_records(payload)
+            protected = next(
+                (
+                    record
+                    for record in existing
+                    if record["job"].get("run_id") == job.run_id
+                    and record.get("ownership")
+                ),
+                None,
+            )
+            if protected is not None:
+                return  # A late item result cannot retire a preserved resource owner.
             failures = [
                 record
-                for record in self._failure_records(payload)
+                for record in existing
                 if str(record["job"].get("run_id") or "") != job.run_id
             ]
             failures.append(
@@ -876,6 +1194,11 @@ class ActiveRunStore:
                 for record in existing_queue
                 if str(record.get("run_id") or "") != run_id
             ]
+            if any(
+                r["job"].get("run_id") == run_id and r.get("ownership")
+                for r in existing_failures
+            ):
+                return False  # Dismissing a card must not discard protected resources.
             if terminal_only and (
                 active_matches
                 or len(queued) != len(existing_queue)
@@ -901,6 +1224,11 @@ class ActiveRunStore:
                 payload["queued_jobs"] = queued
                 self._write_unlocked(payload)
                 return True
+            if self._remaining_ownership(payload) is not None:
+                self.mark_terminal(
+                    "Failed", "The finished execution still has protected resources."
+                )
+                return True
             if failures or queued:
                 self._write_unlocked(
                     {
@@ -925,10 +1253,12 @@ def recover_interrupted_run(
         [Sequence[Path]], None
     ] = cleanup_abandoned_staging_transactions,
     owner_command_reader: Callable[[int], str | None] = process_command,
+    resource_record: Mapping[str, Any] | None = None,
+    cancelled: Callable[[], bool] = lambda: False,
 ) -> list[DownloadJob]:
     """Fail closed unless every live child is bound to the recorded staging transaction."""
 
-    payload = store.load()
+    payload = dict(resource_record) if resource_record is not None else store.load()
     if payload is None:
         return []
     if payload.get("state") in {"failed", "idle"}:
@@ -940,7 +1270,9 @@ def recover_interrupted_run(
         raise RunStateError("The active-run owner record is invalid.")
     try:
         other_owner = (
-            owner_pid != os.getpid() and owner_command_reader(owner_pid) is not None
+            resource_record is None
+            and owner_pid != os.getpid()
+            and owner_command_reader(owner_pid) is not None
         )
     except ProcessOwnershipError as exc:
         raise RunStateError(
@@ -985,8 +1317,13 @@ def recover_interrupted_run(
         isinstance(child, dict) for child in children
     ):
         raise RunStateError("The active-run child record is invalid.")
+    if cancelled():
+        return []
     try:
-        terminate_children(children, staging_dirs)
+        for child in children:
+            if cancelled():
+                return []
+            terminate_children([child], staging_dirs)
     except (ProcessOwnershipError, OSError) as exc:
         raise RunStateError(
             str(exc),
@@ -994,6 +1331,9 @@ def recover_interrupted_run(
             stage="child_cleanup",
             attempt_key=job.run_id,
         ) from exc
+    if resource_record is not None:
+        # Recovery inspection never silently deletes unfinished user files.
+        return [job]
     try:
         cleanup_staging(staging_dirs)
     except (UnsafeOutputPathError, OSError) as exc:
@@ -1166,6 +1506,78 @@ class RunRecoveryOwner:
             self._startup_pending = True
         return terminal, queued
 
+    def prepare_startup(self) -> tuple[list[DownloadJob], list[DownloadJob]]:
+        """Prepare durable recovery without running slow OS inspection on the UI thread."""
+        try:
+            payload = self.store.load()
+            if payload and payload.get("state") == "active":
+                pid = payload.get("owner_pid")
+                if type(pid) is not int or pid <= 1:
+                    raise RunStateError("Invalid previous owner.")
+                if (
+                    pid != os.getpid()
+                    and process_command(pid) is not None
+                    and (
+                        payload.get("owner_birth") is None
+                        or process_birth_time(pid) == payload["owner_birth"]
+                    )
+                ):
+                    raise RunStateError(
+                        "Another live owner still owns this journal.",
+                        cause="live_owner",
+                        stage="owner_check",
+                    )
+            terminal = self.store.prepare_recovery()
+            return terminal, self.store.load_queued_jobs(retire_missing_sources=True)
+        except (RunStateError, ProcessOwnershipError, OSError) as exc:
+            failure = (
+                exc
+                if isinstance(exc, RunStateError)
+                else RunStateError(
+                    "The previous owner could not be verified.",
+                    cause="read_failed",
+                    stage="owner_check",
+                )
+            )
+            self._failed_startup(failure)
+            return [], []
+
+    def attempt_resources(
+        self, job: DownloadJob, token: str, cancelled: Callable[[], bool]
+    ) -> None:
+        record = next(
+            r for r in self.store.recovery_records() if r["job"]["run_id"] == job.run_id
+        )
+        try:
+            recover_interrupted_run(
+                self.store,
+                resource_record={
+                    "state": "active",
+                    "job": record["job"],
+                    **record["ownership"],
+                },
+                terminate_children=terminate_recorded_children,
+                cancelled=cancelled,
+            )
+        except RunStateError as exc:
+            if cancelled():
+                return
+            self.store.finish_recovery(
+                job.run_id,
+                "failed",
+                "Resource recovery could not verify ownership. Partial files and process records were preserved. Retry recovery in Issues & Recovery.",
+                token=token,
+            )
+            self._observe_write_failure(exc, job.run_id, entry="startup")
+        else:
+            if not cancelled():
+                self.store.finish_recovery(
+                    job.run_id,
+                    "ready",
+                    "Resource recovery settled. Partial files were preserved; Resume starts a separate attempt.",
+                    token=token,
+                )
+
     def recover_at_startup(self) -> list[DownloadJob]:
         try:
             return recover_interrupted_run(self.store)
@@ -1233,14 +1645,44 @@ class RunRecoveryOwner:
     def metadata_observed(self, job: DownloadJob, info: Mapping[str, Any]) -> None:
         self.store.update_preview(job.run_id, info)
 
-    def child_event(self, event: str, process: Any) -> None:
+    def child_observer(self, job: DownloadJob) -> Callable[[str, Any], None]:
+        payload = self.store.load()
+        if (
+            not payload
+            or payload.get("state") != "active"
+            or payload["job"]["run_id"] != job.run_id
+        ):
+            raise RunStateError("No admitted execution owns child callbacks.")
+        token = payload["execution_token"]
+        return lambda event, process: self.child_event(
+            event, process, run_id=job.run_id, token=token
+        )
+
+    def child_event(
+        self,
+        event: str,
+        process: Any,
+        *,
+        run_id: str | None = None,
+        token: str | None = None,
+    ) -> None:
         pid = int(getattr(process, "pid", 0) or 0)
         if pid <= 1:
             raise RunStateError("A child process started without a valid PID.")
         if event == "started":
-            self.store.child_started(pid, getattr(process, "args", []))
+            try:
+                birth = process_birth_time(pid)
+            except ProcessOwnershipError:
+                birth = None  # retain PID/argv but never infer death or later signal without birth
+            self.store.child_started(
+                pid,
+                getattr(process, "args", []),
+                run_id=run_id,
+                token=token,
+                birth_time=birth,
+            )
         elif event == "exited":
-            self.store.child_exited(pid)
+            self.store.child_exited(pid, run_id=run_id, token=token)
 
     def failed(self, message: str) -> None:
         self.store.mark_failed(message)

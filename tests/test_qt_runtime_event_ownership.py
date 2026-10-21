@@ -46,6 +46,7 @@ def test_late_worker_callbacks_cannot_mutate_successor_with_same_run_id(
     old_sink = launch(runtime, old)
     successor = replace(old, preview_info={"title": "Successor"}, activity_lines=[])
     assert successor is not old and successor.run_id == old.run_id
+    runtime.recovery.finished(old.run_id, application_closing=False)
     sink = launch(runtime, successor)
     sink.put(("status", "Successor downloading"))
     sink.put(("progress", 23))

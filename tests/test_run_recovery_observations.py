@@ -244,6 +244,10 @@ def test_runtime_journal_refusal_is_observed_without_poisoning_recovery(
     owner = state.RunRecoveryOwner(path)
     original_job = _job(tmp_path)
     owner.store.begin(original_job)
+    if operation == "begin":
+        owner.store.mark_terminal(
+            "Stopped", "Original execution retired before new admission"
+        )
     original = path.read_bytes()
     out = telemetry(tmp_path)
     owner.bind_observer(out.record_operation, report_startup=False)

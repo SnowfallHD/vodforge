@@ -152,7 +152,9 @@ def test_recovery_stops_only_bound_child_then_cleans_stage(tmp_path: Path) -> No
     store = ActiveRunStore(tmp_path / "active-run.json")
     store.begin(_job(tmp_path))
     store.add_staging_dir("run-1", stage)
-    store.child_started(4321, ["/bundle/ffmpeg", "-i", str(stage / "source.mp4")])
+    store.child_started(
+        4321, ["/bundle/ffmpeg", "-i", str(stage / "source.mp4")], birth_time=123
+    )
     terminated: list[int] = []
 
     recovered = recover_interrupted_run(
@@ -163,6 +165,7 @@ def test_recovery_stops_only_bound_child_then_cleans_stage(tmp_path: Path) -> No
             paths,
             command_reader=lambda _pid: f"/bundle/ffmpeg -i {stage}/source.mp4",
             pid_terminator=lambda pid: terminated.append(pid) is None or True,
+            birth_reader=lambda _pid: 123,
         ),
         owner_command_reader=lambda _pid: None,
     )
@@ -186,7 +189,9 @@ def test_recovery_fails_closed_for_unrelated_or_reused_pid(tmp_path: Path) -> No
     store = ActiveRunStore(tmp_path / "active-run.json")
     store.begin(_job(tmp_path))
     store.add_staging_dir("run-1", stage)
-    store.child_started(4321, ["/bundle/ffmpeg", "-i", str(stage / "source.mp4")])
+    store.child_started(
+        4321, ["/bundle/ffmpeg", "-i", str(stage / "source.mp4")], birth_time=123
+    )
     terminated: list[int] = []
 
     with pytest.raises(RunStateError, match="Refusing to stop PID"):
@@ -198,6 +203,7 @@ def test_recovery_fails_closed_for_unrelated_or_reused_pid(tmp_path: Path) -> No
                 paths,
                 command_reader=lambda _pid: "/usr/bin/python unrelated.py",
                 pid_terminator=lambda pid: terminated.append(pid) is None or True,
+                birth_reader=lambda _pid: 123,
             ),
             owner_command_reader=lambda _pid: None,
         )

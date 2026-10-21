@@ -100,7 +100,13 @@ class DownloadRuntime:
         self._history_store.load()
         self.history = self._history_store.download_history
         self.recovery = RunRecoveryOwner(run_state_file_path())
-        self.recovered, self.queued = self.recovery.startup_recovery()
+        self.recovered, self.queued = self.recovery.prepare_startup()
+        self.recovery_job: DownloadJob | None = None
+        self._recovery_thread: threading.Thread | None = None
+        self._recovery_cancel = threading.Event()
+        self.resource_recoveries = {}
+        if not self.recovery.recovery_notice:
+            self._refresh_resource_recoveries()
         self.recovery_notice = (
             self._history_store.notice or self.recovery.recovery_notice
         )
@@ -133,12 +139,104 @@ class DownloadRuntime:
                 job.terminal_status or "Queued",
                 job.terminal_message or "Waiting to resume",
             )
-        set_active_child_process_observer(self.recovery.child_event)
+        # Each admitted worker binds its own execution observer below.
 
     def resume_queued(self) -> None:
         """Resume only after the caller binds consent and operation observers."""
-        if self.queued and not self.recovery_notice:
+        if self._closing or self.recovery_notice:
+            return
+        if self.recovery_pending:
+            self._start_resource_recovery()
+        elif self.queued:
             self._launch_next_queued()
+
+    def _refresh_resource_recoveries(self) -> None:
+        self.resource_recoveries = {
+            r["job"]["run_id"]: r for r in self.recovery.store.recovery_records()
+        }
+
+    @property
+    def recovery_pending(self) -> bool:
+        return self.recovery_job is not None or any(
+            (
+                r["recovery_state"] in {"pending", "attempting"}
+                or r.get("recovery_inflight")
+            )
+            for r in self.resource_recoveries.values()
+        )
+
+    def _start_resource_recovery(self) -> None:
+        if (
+            self.recovery_job is not None
+            or self.active_job is not None
+            or self.busy
+            or self._closing
+        ):
+            return
+        jobs = self.recovery.store.pending_recovery_jobs()
+        if not jobs:
+            return
+        job = jobs[0]
+        token = self.recovery.store.claim_recovery(job.run_id)
+        self.recovery_job = job
+        self._recovery_cancel = threading.Event()
+        cancel = self._recovery_cancel
+        self._refresh_resource_recoveries()
+
+        def recover() -> None:
+            error = None
+            try:
+                self.recovery.attempt_resources(job, token, cancel.is_set)
+            except Exception as exc:  # noqa: BLE001 - thread boundary must preserve queued intent on any failure
+                error = exc
+            try:
+                self.recovery.store.release_recovery_claim(job.run_id, token)
+            except Exception as exc:  # noqa: BLE001 - failed durable release must block admission
+                error = exc
+            self.events.put(("resource_recovery", {"job": job, "error": error}))
+
+        self._recovery_thread = threading.Thread(
+            target=recover, name="vodforge-resource-recovery", daemon=False
+        )
+        try:
+            self._recovery_thread.start()
+        except RuntimeError as exc:
+            self.recovery.store.finish_recovery(
+                job.run_id,
+                "failed",
+                "Recovery could not start; resources preserved. Retry in Issues & Recovery.",
+                token=token,
+            )
+            self.recovery_job = None
+            self._recovery_thread = None
+            self._refresh_resource_recoveries()
+            self.recovered = self.recovery.store.load_terminal_jobs()
+            self.events.put(("recovery_changed", str(exc)))
+
+    def cancel_recovery(self, run_id: str) -> bool:
+        if run_id not in self.resource_recoveries:
+            return False
+        if self.recovery_job is not None and self.recovery_job.run_id == run_id:
+            self._recovery_cancel.set()
+        if not self.recovery.store.cancel_recovery(run_id):
+            return False
+        self._refresh_resource_recoveries()
+        self.recovered = self.recovery.store.load_terminal_jobs()
+        return True
+
+    def retry_resource_recovery(self, run_id: str) -> bool:
+        row = self.resource_recoveries.get(run_id)
+        if row is None or row["recovery_state"] == "ready":
+            return False
+        if row["recovery_state"] in {"pending", "attempting"} or row.get(
+            "recovery_inflight"
+        ):
+            raise RuntimeError("Resource recovery is already waiting or running.")
+        self.recovery.store.retry_recovery(run_id)
+        self._refresh_resource_recoveries()
+        self.recovered = self.recovery.store.load_terminal_jobs()
+        self.resume_queued()
+        return True
 
     @property
     def busy(self) -> bool:
@@ -232,11 +330,18 @@ class DownloadRuntime:
         ]
         if matching_attempt(job, active_and_queued):
             raise ValueError("This download is already active or queued.")
-        if self.active_job is not None:
+        self.recovery.store.assert_output_available(job.output_dir)
+        if self.active_job is not None or self.recovery_pending:
             pending = [*self.queued, job]
             self.recovery.queue_changed(pending)
             self.queued = pending
-            self._activity_upsert(job, "Queued", "Waiting for the active download")
+            self._activity_upsert(
+                job,
+                "Queued",
+                "Waiting for resource recovery"
+                if self.recovery_pending
+                else "Waiting for the active download",
+            )
             self._observe_run("run_queued", job)
             return job
         self._launch(job)
@@ -466,9 +571,10 @@ class DownloadRuntime:
             ],
         ):
             raise ValueError("This download is already active or queued.")
+        self.recovery.store.assert_output_available(retry.output_dir)
         if self.active_job is None and self.queued:
             self._launch_next_queued()
-        if self.active_job is not None or self.busy:
+        if self.active_job is not None or self.busy or self.recovery_pending:
             pending = [*self.queued, retry]
             self.recovery.queue_changed(pending, superseded_run_id=previous.run_id)
             self.queued = pending
@@ -479,15 +585,19 @@ class DownloadRuntime:
             self._activity_upsert(retry, "Running", "Preparing download")
             self._make_worker(retry)
             self._observe_run("run_started", retry)
-        self.recovered = [
-            job for job in self.recovered if job.run_id != previous.run_id
-        ]
+        self.recovered = self.recovery.store.load_terminal_jobs()
         # Recovery presentation follows the successor, while Activity retains
         # the original attempt and its failure detail for investigation.
         return retry
 
     def _launch_next_queued(self) -> None:
-        if self.active_job is not None or not self.queued or self.recovery_notice:
+        if (
+            self.active_job is not None
+            or self.busy
+            or self.recovery_pending
+            or not self.queued
+            or self.recovery_notice
+        ):
             return
         job = self.queued[0]
         remaining = self.queued[1:]
@@ -570,6 +680,7 @@ class DownloadRuntime:
         self._history_error = False
         self.active_job = job
         self._reset_active_feedback(job)
+        set_active_child_process_observer(self.recovery.child_observer(job))
         self.worker = threading.Thread(
             target=worker_app._download_worker,
             args=(job,),
@@ -639,6 +750,26 @@ class DownloadRuntime:
             except queue.Empty:
                 break
             kind, payload = event
+            if kind == "resource_recovery":
+                if (
+                    self.recovery_job is None
+                    or payload.get("job") is not self.recovery_job
+                ):
+                    continue
+                if (
+                    self._recovery_thread is not None
+                    and self._recovery_thread.is_alive()
+                ):
+                    self.events.put(event)
+                    break  # no active slot promotion until the resource thread has actually exited
+                if payload.get("error") is not None:
+                    self.recovery_notice = "Recovery state could not be saved. Queued work remains preserved; check app-data access."
+                self.recovery_job = None
+                self._recovery_thread = None
+                self._refresh_resource_recoveries()
+                self.recovered = self.recovery.store.load_terminal_jobs()
+                result.append(("recovery_changed", None))
+                continue
             if kind == "worker_event":
                 if payload["job"] is not self.active_job:
                     continue
@@ -768,13 +899,8 @@ class DownloadRuntime:
                     event = kind, payload
                 self._finish(kind, str(payload))
             result.append(event)
-        if (
-            self.active_job is None
-            and self.queued
-            and not self._closing
-            and not self.busy
-        ):
-            self._launch_next_queued()
+        if self.active_job is None and not self._closing and not self.busy:
+            self.resume_queued()
         return result
 
     def _record_item_terminal(self, payload: Any) -> bool:
@@ -901,6 +1027,8 @@ class DownloadRuntime:
             self.recovered = self.recovery.store.load_terminal_jobs()
         if status not in {"Failed", "Stopped", "Paused", "Partial"}:
             self.recovery.finished(job.run_id, application_closing=self._closing)
+            self.recovered = self.recovery.store.load_terminal_jobs()
+        self._refresh_resource_recoveries()
         if status == "Completed" and job.recovery_reason == "missing_media":
             telemetry = self.product_telemetry
             if telemetry is not None:
@@ -914,12 +1042,16 @@ class DownloadRuntime:
     def begin_shutdown(self) -> None:
         """Retire admission before asynchronously stopping the active worker."""
         self._closing = True
+        if self.recovery_job is not None:
+            self.cancel_recovery(self.recovery_job.run_id)
         self.cancel()
 
     def close(self) -> None:
         self.begin_shutdown()
         if self.worker is not None and self.worker.is_alive():
             self.worker.join(timeout=10)
+        if self._recovery_thread is not None and self._recovery_thread.is_alive():
+            self._recovery_thread.join(timeout=10)
         if not self.busy:
             self.poll()
             set_active_child_process_observer(None)

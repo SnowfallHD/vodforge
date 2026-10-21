@@ -3282,6 +3282,39 @@ class Bridge(QObject):
                         "_artwork_info": preview,
                     }
                 )
+        for record in records:
+            resource = self._runtime.resource_recoveries.get(record["runId"])
+            if resource is None:
+                continue
+            state = resource["recovery_state"]
+            pending = state in {"pending", "attempting"} or resource.get(
+                "recovery_inflight", False
+            )
+            preview = resource["job"].get("preview_info") or {}
+            record.update(
+                recoveryPending=pending,
+                protectedRecovery=True,
+                retryEnabled=not pending,
+                retryLabel="Resume" if state == "ready" else "Retry recovery",
+                status="Cancelling recovery"
+                if state == "cancelled" and pending
+                else "Recovering"
+                if state == "attempting"
+                else "Waiting for recovery"
+                if state == "pending"
+                else record["status"],
+                title=preview.get("title")
+                or "Interrupted download (metadata not saved)",
+                detail=" · ".join(
+                    str(value)
+                    for value in (
+                        preview.get("channel") or preview.get("uploader"),
+                        preview.get("playlist_title"),
+                    )
+                    if value
+                )
+                or resource.get("terminal_message", ""),
+            )
         # Coalesce only exact proven optional-file warnings, never titles or batches.
         sidecar_runs = set()
         for record in records:
@@ -3293,10 +3326,14 @@ class Bridge(QObject):
             )
             target = optional_target(job, self._runtime.history) if job else None
             record["retrySidecarsOnly"] = target is not None
-            record["retryEnabled"] = not self._sidecar_work.busy and (
-                not self._update_work_pending()
-                if target is not None
-                else not (job and optional_outcome(job))
+            record["retryEnabled"] = (
+                record.get("retryEnabled", True)
+                and not self._sidecar_work.busy
+                and (
+                    not self._update_work_pending()
+                    if target is not None
+                    else not (job and optional_outcome(job))
+                )
             )
             if target is not None:
                 sidecar_runs.add(job.run_id)
@@ -3349,7 +3386,9 @@ class Bridge(QObject):
         }
         records.sort(
             key=lambda record: (
-                1.5
+                1.25
+                if record.get("recoveryPending")
+                else 1.5
                 if record.get("status") == "Paused"
                 else {
                     "preview": 0,
@@ -6632,6 +6671,23 @@ class Bridge(QObject):
             self._status = "Stopping download…"
             self.statusChanged.emit()
 
+    @Slot(str, result=bool)
+    def cancelResourceRecovery(self, run_id: str) -> bool:
+        try:
+            if not self._runtime.cancel_recovery(run_id):
+                return False
+        except (RunStateError, OSError):
+            self._status = (
+                "Cancellation could not be saved; recovery files remain protected."
+            )
+            self.statusChanged.emit()
+            return False
+        self._status = "Recovery cancelled; partial files remain in Issues & Recovery."
+        self.statusChanged.emit()
+        self.historyChanged.emit()
+        self.runDeckChanged.emit()
+        return True
+
     @Slot(str, str, result=bool)
     def admitRunMenu(self, run_id: str, execution_token: str) -> bool:
         active = self._runtime.active_job
@@ -6854,6 +6910,14 @@ class Bridge(QObject):
         try:
             if self._closed:
                 raise RuntimeError("The application is closing.")
+            if self._runtime.retry_resource_recovery(run_id):
+                self._status = (
+                    "Retrying resource recovery; partial files are preserved."
+                )
+                self.statusChanged.emit()
+                self.historyChanged.emit()
+                self.runDeckChanged.emit()
+                return True
             if self._sidecar_work.busy:
                 raise RuntimeError("Finish the artwork recovery before retrying.")
             job = next((j for j in self._runtime.recovered if j.run_id == run_id), None)
@@ -7366,6 +7430,8 @@ class Bridge(QObject):
         for kind, payload in self._run_control_events.take_context_events():
             self._run_controls.observe(active_job_before, kind, payload)
         for kind, payload in events:
+            if kind == "recovery_changed":
+                self.historyChanged.emit()
             if (
                 kind == "error"
                 and getattr(payload, "action", "") == "choose_output_folder"

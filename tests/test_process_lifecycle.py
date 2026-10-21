@@ -55,12 +55,14 @@ def test_recorded_child_requires_exact_executable_and_staging_identity() -> None
         [
             {
                 "pid": 321,
+                "birth_time": 123,
                 "argv": ["/bundle/ffmpeg", "-i", f"{stage}/source.mp4"],
             }
         ],
         [stage],
         command_reader=lambda _pid: f"/bundle/ffmpeg -i {stage}/source.mp4",
         pid_terminator=lambda pid: terminated.append(pid) is None or True,
+        birth_reader=lambda _pid: 123,
     )
 
     assert terminated == [321]
@@ -128,10 +130,11 @@ def test_sigkill_exit_is_also_confirmed_after_transient_denial(monkeypatch):
 def test_recorded_child_rejects_reused_pid_without_staging_identity() -> None:
     with pytest.raises(ProcessOwnershipError, match="Refusing to stop PID 321"):
         terminate_recorded_children(
-            [{"pid": 321, "argv": ["/bundle/ffmpeg"]}],
+            [{"pid": 321, "birth_time": 123, "argv": ["/bundle/ffmpeg"]}],
             [],
             command_reader=lambda _pid: "/bundle/ffmpeg unrelated.mp4",
             pid_terminator=lambda _pid: pytest.fail("must not terminate"),
+            birth_reader=lambda _pid: 123,
         )
 
 
@@ -146,10 +149,17 @@ def test_recorded_child_accepts_resolved_executable_identity(
     terminated: list[int] = []
 
     terminate_recorded_children(
-        [{"pid": 654, "argv": [str(alias), str(stage / "input.mp4")]}],
+        [
+            {
+                "pid": 654,
+                "birth_time": 123,
+                "argv": [str(alias), str(stage / "input.mp4")],
+            }
+        ],
         [stage],
         command_reader=lambda _pid: f"{real.resolve()} {stage / 'input.mp4'}",
         pid_terminator=lambda pid: terminated.append(pid) is None or True,
+        birth_reader=lambda _pid: 123,
     )
 
     assert terminated == [654]

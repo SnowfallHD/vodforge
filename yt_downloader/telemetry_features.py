@@ -390,7 +390,7 @@ DIMENSION_CHOICES: dict[str, frozenset[str]] = {
             "queue_loading",
         }
     ),
-    "recovery_schema": frozenset({"1"}),
+    "recovery_schema": frozenset({"1", "2"}),
     "recovery_disposition": frozenset({"blocked_preserved", "restored_without_retry"}),
     "file_action": frozenset({"move", "delete", "recovery"}),
     "queue_kind": frozenset({"channel", "playlist"}),
