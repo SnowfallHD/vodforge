@@ -209,11 +209,11 @@ Window {
     }
     property bool closePending: false
     function finishPendingClose() {
-        if (closePending && !bridge.running && !bridge.localRunning)
+        if (closePending && !bridge.running && !bridge.localRunning && !bridge.libraryFileRunning)
             Qt.callLater(window.close)
     }
     onClosing: function(close) {
-        if (bridge.running || bridge.localRunning) {
+        if (bridge.running || bridge.localRunning || bridge.libraryFileRunning) {
             closePending = true
             bridge.beginShutdown()
             close.accepted = false
@@ -258,6 +258,7 @@ Window {
         target: bridge
         function onRunningChanged() { window.finishPendingClose() }
         function onLocalChanged() { window.finishPendingClose() }
+        function onFileActionChanged() { window.finishPendingClose() }
         function onSelectionChanged() {
             // Visibility bindings must settle before testing the outgoing owner.
             Qt.callLater(window.retireHiddenSceneFocus)

@@ -3957,3 +3957,15 @@ stale-result rejection so unsuccessful reaping cannot abandon a live owned child
 Previous tests covered successful late termination only. New denied-termination
 cases retain registration and demonstrate later cleanup retries; real local
 Python-child counterexamples confirm successful reaping, without native media.
+
+## Bounded join does not establish shutdown — 2026-10-21
+
+A cancellation flag cannot interrupt a blocked filesystem syscall. Returning from
+a bounded join while a non-daemon worker lives is pending shutdown, not completion.
+Normal window/menu/application Quit must retain the visible pending-close owner,
+request cancellation and explain the stalled drive/network boundary. Only actual
+worker exit releases close; even result-less exit must notify the existing pump.
+Prior close-at-publication tests released the fixture I/O and missed indefinite
+read. New real blocked-pipe + Qt tests cover both Quit routes/result-presence,
+and bounded-close False retains ownership. No daemonization, forced thread abort,
+new polling subsystem or universal claim about OS force-quit/power loss.

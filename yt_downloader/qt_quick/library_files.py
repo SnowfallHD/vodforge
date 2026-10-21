@@ -350,7 +350,11 @@ class QtLibraryFiles:
                 self.status = str(payload)
         return changed
 
-    def close(self) -> None:
+    def close(self) -> bool:
         self.cancelled.set()
         if self.worker is not None and self.worker.is_alive():
             self.worker.join(timeout=10)
+        if self.busy:
+            self.status = "Waiting for Library files to stop. Restore the drive or network connection; unfinished files remain protected."
+            return False
+        return True

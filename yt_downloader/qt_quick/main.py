@@ -546,6 +546,7 @@ class Bridge(QObject):
         self._analytics_snapshot_sent = False
         self._updates = QtUpdateSession(__version__)
         self._files = QtLibraryFiles(self._runtime.history_path)
+        self._last_library_file_running = self._files.busy
         self._import_work = ArchiveWorkOwner()
         self._relink = QtRelinkSession(self._runtime.history_path)
         self._presentation_probe: QtPresentationProbe | None = None
@@ -1010,6 +1011,10 @@ class Bridge(QObject):
     @Property(bool, notify=fileActionChanged)
     def fileActionBusy(self) -> bool:
         return self._files.phase in {"checking", "working"}
+
+    @Property(bool, notify=fileActionChanged)
+    def libraryFileRunning(self) -> bool:
+        return self._files.busy
 
     @Property(bool, notify=fileActionChanged)
     def fileActionEligible(self) -> bool:
@@ -4876,6 +4881,17 @@ class Bridge(QObject):
             return False
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if (
+            watched is self._input_application
+            and event.type() == QEvent.Type.Quit
+            and self._window is not None
+            and (self.running or self.localRunning or self._files.busy)
+        ):
+            # Application-level Quit must use the same pending-close boundary
+            # as the window/menu, rather than hiding a live non-daemon worker.
+            self._window.setProperty("closePending", True)
+            self.beginShutdown()
+            return True
         if isinstance(watched, QWindow):
             if event.type() in {
                 QEvent.Type.MouseButtonPress,
@@ -6676,6 +6692,10 @@ class Bridge(QObject):
             self.statusChanged.emit()
         if self.localRunning:
             self.cancelLocalConversion()
+        if self._files.busy:
+            self._files.cancelled.set()
+            self._status = "Waiting for Library files to stop. Restore the drive or network connection; unfinished files remain protected."
+            self.statusChanged.emit()
 
     @Slot()
     def cancel(self) -> None:
@@ -7323,7 +7343,12 @@ class Bridge(QObject):
                 self.playerSceneChanged.emit()
             elif self._selection == "Forge":
                 self.runDeckChanged.emit()
-        if self._files.poll():
+        files_changed = self._files.poll()
+        files_running = self._files.busy
+        if files_running != self._last_library_file_running:
+            self._last_library_file_running = files_running
+            files_changed = True
+        if files_changed:
             self._file_action_busy = self._files.uncertain
             actual = self._files.latest_history
             self._files.latest_history = None

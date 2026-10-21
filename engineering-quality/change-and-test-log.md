@@ -4565,3 +4565,31 @@ pass. Windows cross-volume/native denial and physical playback remain separate.
 Intermediate d747 Mac package finished but is superseded for these2roots; its
 Windows root was only prepared, no package/launch. No misleading final promotion.
 New exact combined source/build follows, prior receipts/binaries preserved.
+
+## Oct 21 18:50 UTC — pending Library shutdown, bounded audit now closed
+
+Independent A11 real blocked-I/O subprocess demonstrates non-daemon file worker
+can outlive bounded close. Do not daemonize, kill an arbitrary thread or abandon
+transaction ownership. Ordinary window/menu and application Quit now defer via
+the existing closePending flow while the exact Library worker is alive. It sets
+cancellation immediately, keeps the window/status visible with drive/network
+recovery guidance, and closes once the owner actually exits. Existing pump emits
+liveness edge even if a worker exits without a result; no new timer or worker.
+QtLibraryFiles.close now returnsFalse with pending status when bounded join
+expires, retaining the owner; true only after actual exit. Process still waits
+for genuinely blocked kernel I/O; this is honest pending shutdown, not an I/O
+abort or proof all OS termination/logout paths are covered.
+
+Two desired cases fail before against immutable6edf. New actual offscreen Qt
+window + real blocked pipe read tests cover window/application Quit and with/
+without result, then actual close after release; owner retains non-daemon safety.
+54affected checks pass/1Windows dispatch skip; refined actual QCoreApplication
+Quit event dispatch2pass (not just calling eventFilter). Earlier source53? no
+count promotion: initial52pass covers two-case version; final54 is current.
+Scoped library_files mypy/Ruff/diff pass. No user app/GUI or production action.
+
+Independent broad audit closed after passes6–7 with no further confirmed root;
+register A01–A11 retained locally. Successor packaging/compiled/runtime/native
+qualification remains separate; intermediate6edf lacks this final shutdown fix.
+Original Windows denial cause, native fullscreen/taskbar, cross-volume/power-loss
+and exhaustive external-writer/OS shutdown behavior remain unqualified.
