@@ -4713,3 +4713,22 @@ Smallestsupporteduserstep azlogin as existingCoop onWindows, normalMicrosoftMFA/
 browser, secretsneverinchat; no reinstall/newcredentials/permissions/cacheclear.
 Securehandoff+sanitizedreceipt final/windows/signing-auth-diagnosis. No loginflow
 started, no new signingattempt, no artifactmutation/publicrelease.
+
+## Oct 21 19:20 UTC — user-requested Windows private visual launch
+
+ExplicitCooperinstruction openWindowsnow; existingstrictMac→GenesisSSH only,
+noMacGUI. Preparedhelper initially failed BEFOREProcess.Start because PowerShell
+HOME is reserved/read-only (ownerlauncherbug, notOSsecuritydenial). Original
+failedreceipt preserved/noappopen orclose. Correctedreview-isolated-v2 uses
+reviewHome, newtask/receiptidentity and sameexactqualifiedexe/policyhashguards.
+No securitybypass/ExecutionPolicychange/newcredentials/install/ordinaryprofilecopy.
+
+Actual ONE appstarted19:20:53.1399401UTC/14:20:53Chicago, PID11532/session1/exact
+3d20c58 version0.2.6/unsignedSHA bafb9e358e705ccdd3b85e6b898774cabfebbb1025267a986570465ab365a148.
+Read-onlynativewindowverification19:20:57:onevisibleHWND331250/1100x740 at30,30,
+foregroundownedtrue. Freshfictionalprofile visual-review-6dd9bd06518244df986995f76ee19ebc/
+fictional-home; telemetrydisabled/process-onlyenvironment; no originaluserdata or
+installedappreplacement; keys/clicks0. LeftOPENforCooperreview, notnativeacceptance
+ofnavigation/F11/recovery. Macmailforegrounduntouched. Source/runtimeunchanged;
+onlylaunchererrorcorrected. Evidence final/windows/visible-review-open/
+{launch-transport-receipt.json,launch-v2-transport-receipt.json,VISIBLE-RESULT.json}.
