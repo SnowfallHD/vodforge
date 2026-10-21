@@ -3905,3 +3905,18 @@ menu/escape tests never dispatched Windows F11, which was absent. New actual Qt
 cycles cover normal/maximized restore geometry, text focus, modal Escape priority
 and a second focused presentation window. Windows offscreen key dispatch passes;
 physical taskbar/frame/painting and native media presentation remain separate.
+
+## Failure settlement must release only proven ownership — 2026-10-21
+
+The independent failure audit exposed recovery output resolution outside typed
+inspection catches and two Thread.start boundaries after durable/busy admission.
+Earlier child-denial and clean terminal tests missed those pre-worker/outer-path
+exceptions. Inspection failure is local to its durable recovery item; failure to
+save/release that result remains a global safety block. Unstarted workers can
+retire only after durable terminal settlement; unknown/live workers retain owners.
+A cleanup exception must still release its own provider reservation while keeping
+partial files and the original failure. Optional updater dispatch failure cannot
+invalidate a verified payload. Prior-failing regressions plus real journal-write
+failure counterexamples cover these four owners, explicit retry, queued intent,
+preview admission and terminal Done/Partial/Stopped distinctions. They are bounded
+fault injection, not exhaustive interleavings or original Windows-host proof.

@@ -6758,10 +6758,20 @@ class DownloadWorkerCore:
                 )
         finally:
             self._active_progress_context = None
-            if staging_dir is not None and not preserve_completed_media:
-                cleanup_private_staging_directory(staging_dir)
-            if primary_intent_active:
-                source.provider_network.end_primary()
+            try:
+                if staging_dir is not None and not preserve_completed_media:
+                    try:
+                        cleanup_private_staging_directory(staging_dir)
+                    except OSError:
+                        # Keep the original transfer outcome and inaccessible
+                        # partial files; cleanup cannot retain network ownership.
+                        self._emit_job_log(
+                            job,
+                            "Partial staging cleanup could not finish; unresolved files were preserved.",
+                        )
+            finally:
+                if primary_intent_active:
+                    source.provider_network.end_primary()
         if failure is not None:
             result = replace(result, output_dirs=tuple(all_output_dirs))
             return self._resolve_download_item_failure(job, item, result, failure)

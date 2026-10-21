@@ -84,6 +84,9 @@ def test_stale_same_id_worker_cannot_restore_or_retire_current_control_scope(
 ):
     old = replace(make_job(tmp_path), batch_mode=True, single_video_only=False)
     old_sink = launch(bridge, old)
+    # The prior execution must release its durable slot before a successor can
+    # be admitted. Retain its old sink to exercise genuinely late callbacks.
+    bridge._runtime._finish("done", "Prior execution completed")
     current = replace(old)
     sink = launch(bridge, current)
     assert current is not old and current.run_id == old.run_id

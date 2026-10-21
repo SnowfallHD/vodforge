@@ -4465,3 +4465,33 @@ and offscreen results are not a new package or public release.
 Receipts build/navigation-fullscreen-20261021/{navigation-before,navigation-after,
 fullscreen-before,fullscreen-after,affected-suite,final-focused}.log and
 windows-tests-receipt.json with SHA-bound overlay; old failure receipts retained.
+
+## Oct 21 18:18 UTC — integrate independent failure-path audit privately
+
+Independent pinned9b9264c audit reports four confirmed defects; original report/
+characterization source retained under build/failure-audit-integration-20261021.
+Converted desired postconditions fail before5cases/3terminal counterexamples pass.
+P1: resource inspection exceptions (including output resolve PermissionError)
+now durably fail only that recovery; ownership/token/cancellation retained.
+Settlement/release persistence exceptions still reach existing global admission
+notice. Failed items are explicitly retryable; unrelated queued work admits.
+P2: confirmed unstarted download thread durably terminalizes before clearing its
+owner/observer; persistence failure retains slot/queue and blocks admission.
+Original start outcome propagates as bounded UI error, no false run_started.
+P2: nested finally releases only the operation's primary reservation despite
+staging cleanup denial; unresolved files retained/logged and original transfer
+error remains causal. P2: updater unstarted thread clears busy with bounded
+failed outcome, retaining verified ready payload/digest; retry works.
+
+Final47 focused fault/durable/callback cases pass including true settlement and
+release write failures. Affected updater/guidance/run-state/process/safe-output/
+preview/metadata443pass. Source Qt recovery8pass/1failed fixture: old same-ID
+late-callback test admitted second active journal without completing first,
+invalidated by priorfe7 durable-slot invariant. Fixture now completes prior run
+and retains old sink; all4worker-context cases pass. No production admission
+weakening. Initial command also referenced nonexistent test_qt_recovery_scene.py;
+no tests collected there, corrected existing-file run retained separately.
+Ruff/format/compile/diff pass. These are representative injected exceptions,
+not physical Windows permission-denial/resource-exhaustion reproduction or
+native acceptance. Current Windows user app left unchanged; private successor
+packaging pending. No public release, deployment, credentials or GUI action.

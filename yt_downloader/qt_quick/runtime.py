@@ -687,7 +687,28 @@ class DownloadRuntime:
             name="vodforge-qt-download",
             daemon=False,
         )
-        self.worker.start()
+        try:
+            self.worker.start()
+        except RuntimeError:
+            # Only a confirmed unstarted worker can relinquish admission. A
+            # durable terminal write precedes clearing any in-memory owner.
+            if self.worker.ident is not None or self.worker.is_alive():
+                raise
+            message = "Download could not start. Retry this run in Issues & Recovery."
+            try:
+                self.recovery.terminal("Failed", message)
+                self.recovered = self.recovery.store.load_terminal_jobs()
+                self._refresh_resource_recoveries()
+            except RunStateError:
+                self.recovery_notice = "Download startup state could not be saved. Queued work remains preserved; check app-data access."
+                raise
+            self._activity_upsert(job, "Failed", message)
+            self._observe_run("run_failed", job, status="Failed")
+            self.active_job = None
+            self._worker_app = None
+            self.worker = None
+            set_active_child_process_observer(None)
+            raise RuntimeError(message) from None
 
     def cancel(self) -> None:
         if self._worker_app is not None:

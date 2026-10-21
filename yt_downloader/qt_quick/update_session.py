@@ -148,7 +148,21 @@ class QtUpdateSession:
         self.busy = True
         self.recovery = False
         self.worker = threading.Thread(target=target, name=name, daemon=True)
-        self.worker.start()
+        try:
+            self.worker.start()
+        except RuntimeError as exc:
+            if self.worker.ident is not None or self.worker.is_alive():
+                raise
+            self.worker = None
+            self.busy = False
+            self.check_failed = self.stage == "check"
+            self.recovery = not self.check_failed
+            self.status = "Update work could not start. Try again when system resources are available."
+            self.observe("failed", error=exc)
+            self.observations.append(("failed", {"update_stage": self.stage}))
+            # Do not feed this through poll's transfer-error branch: an
+            # unstarted worker cannot invalidate an existing verified payload.
+            return False
         return True
 
     def check(self, *, automatic: bool = False) -> bool:

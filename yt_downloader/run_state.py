@@ -1589,7 +1589,7 @@ class RunRecoveryOwner:
                 terminate_children=terminate_recorded_children,
                 cancelled=cancelled,
             )
-        except RunStateError as exc:
+        except Exception as exc:  # noqa: BLE001 - inspection failure settles only this recovery; durable settlement below may still fail closed
             if cancelled():
                 return
             self.store.finish_recovery(
@@ -1598,7 +1598,17 @@ class RunRecoveryOwner:
                 "Resource recovery could not verify ownership. Partial files and process records were preserved. Retry recovery in Issues & Recovery.",
                 token=token,
             )
-            self._observe_write_failure(exc, job.run_id, entry="startup")
+            failure = (
+                exc
+                if isinstance(exc, RunStateError)
+                else RunStateError(
+                    "Recovery resource inspection failed; ownership preserved.",
+                    cause="read_failed",
+                    stage="staging_validation",
+                    attempt_key=job.run_id,
+                )
+            )
+            self._observe_write_failure(failure, job.run_id, entry="startup")
         else:
             if not cancelled():
                 self.store.finish_recovery(
