@@ -4695,3 +4695,21 @@ if launch policy/security denies. VISUAL-REVIEW.md provides exactpath/command,
 concave/no-underline/sharedviolet/F11 checklist and separate pendingcontrolled
 recoveryfixture journey. Readyforvisualreview does not mean userreview/native
 acceptancepassed; no need to wait for userreview before notifyingreadiness.
+
+## Oct 21 — precise Windows signing-auth diagnosis (corrects expiry inference)
+
+Read original retained17:48:32UTC/12:48:32Chicago signing failure, no signingretry,
+auth/token/cache read or credentialchange. Verified exact error is Azure.Identity
+CredentialUnavailableException: AzureCliCredential authentication failed, Please
+run az login to set up account. Existing Invoke-TrustedSigning0.5.8/client1.0.95/
+SDKsigntool10.0.26100.0 dependenciespresent; finalSignerSign0x80004005/exit1.
+Configured existingKryden/kryden-public-signing at eus.codesigning.azure.net only
+proves intendedrouting, NOTcurrentpaidservice/profile/certificate state. Earlier
+'expired session' shorthand was unproven inference: missing/unavailableCLIlogin
+is established, specifictokenexpiry/certificateexpiry/billingexpiry is NOT.
+Do not treat prior notes as exactexpiry evidence. No retainedreviewedreceipt
+establishespaidprofilecurrenthealth; no authenticatedsigningcompletedthisattempt.
+Smallestsupporteduserstep azlogin as existingCoop onWindows, normalMicrosoftMFA/
+browser, secretsneverinchat; no reinstall/newcredentials/permissions/cacheclear.
+Securehandoff+sanitizedreceipt final/windows/signing-auth-diagnosis. No loginflow
+started, no new signingattempt, no artifactmutation/publicrelease.
