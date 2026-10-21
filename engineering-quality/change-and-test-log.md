@@ -4593,3 +4593,63 @@ register A01–A11 retained locally. Successor packaging/compiled/runtime/native
 qualification remains separate; intermediate6edf lacks this final shutdown fix.
 Original Windows denial cause, native fullscreen/taskbar, cross-volume/power-loss
 and exhaustive external-writer/OS shutdown behavior remain unqualified.
+
+## Oct 21 19:04 UTC — exact combined private successor qualification
+
+Runtime source `3d20c58f7333372ee7038c4c11ef763ee5355faf` includes navigation/F11
+70f3668, A01–04 settlement5a8a4a1, A05–08 persistence/lineage/importd74795b,
+A09–10 Move/preview6edfba7 and A11 honest pending shutdown3d20c58. Independent
+broad audit closed; final A01–A11 register retained, no further sweep requested.
+
+Mac exact private package built from clean detached source, Developer ID signed
+with existing identity, strict all-architecture verification passes. All126
+included project Python modules match actual PYZ code and47packagedQML match
+source. Actual compiled-owner/packageQML checks93PASS/1Windows-onlySKIP with host
+dependencies; legacy ui_layout is a single explicit source test-helper exception,
+not a changed owner. First collection failure on that excluded legacy helper is
+retained; no tests ran before the corrected harness, so no result was backfilled.
+Both ARM10.89s and Rosetta54.98s offscreen runtime checks exit0 with native callback
+and teardown markers, fictional diagnostic roots and telemetrydisabled. Rosetta
+is not physicalIntel. All6342sealedmembers remain unchanged, strictsignature
+reverified, exact candidate/sign/build processes0. Not notarized/installed/launched
+visibly or published. Evidence `build/failure-audit-integration-20261021/final-3d20c58/`
+MAC-QUALIFICATION-RECEIPT.json, SIGNATURE-AND-SOURCE.json, compiled-test-receipt.json,
+sealed-smokes/receipt.json and REPORT.md.
+
+Windows exactsource136PASS/2SKIP, privatepackage/build-sourcebinding/offscreen
+runtime completedexit0 at19:03:10UTC through existing strict Mac→Genesis SSH.
+No dependency install, GUI or ordinaryprofile operation. Signing deliberately
+NOTretried because retained previous AzureCLI sessionexpired; no credential refresh
+or access change. Package is unsigned diagnostic-only, not releaseeligible.
+Final seal/readback follows its exactreceipt. Original long readback command hit
+Windows commandlength limit before execution; transferred bounded script into
+ownedroot and invoked shortpath instead; original failure retained, no duplicate
+build or permission bypass.
+
+Final low-disk preflight stopped before creating output. Original guard retained;
+removed only this lane's completed work/private-cache directories after every
+retained app member hash matched before/after (6342 each). Own attributable
+reclamation4.293GB; independent host free-space increase is not attributed to
+cleanup. Allapps/source/receipts/ordinaryprofiles/unrelatedharnessdirt preserved.
+Final package started only after unchanged12GiBreserveguard passed.
+
+Retained recovery current-recovery-artwork-order.log39PASS still covers current
+video identity/missingart/Partial/order; subsequent audit edits do not alter its
+ordering comparator/artworkrenderer/thumbnailadmissionowner, so no needless full
+journey repeat. New annotation/identity changes have separate affected-owner tests.
+Original Windows permissiondenial cause and native recovery/queue/cancel/sameplaylist,
+new native fullscreen/taskbar/restore, crossvolume/native denial, powerloss and OS
+shutdown remain unqualified. A11 keeps actual blocked I/O visibly pending; it does
+not safely abort kernel reads. External-writer TOCTOU narrowed, not eliminated.
+No blanket user-host recovery-solved claim. Backend schema2 review95PASS remains
+private/undeployed; no production telemetry/migration/deploy/publicrelease.
+
+Windows final readback19:04:32UTC:126actualPYZmodules/47QML bound,4235packagefiles
+sealed, SHA256manifest362829f827afa18b32087e49f73d3c7f1f01426cf10757d4ddcf059aac9fd19c.
+Unsignedexe bafb9e358e705ccdd3b85e6b898774cabfebbb1025267a986570465ab365a148,
+remote E:\VODForgeQA\private-final-3d20c58-20261021\dist\VODForge\VODForge.exe.
+ExactprioruserPID20812 read returned no process; no app was closed/replaced bythis
+lane, and no inference about other personal app processes is made. Windows seal,
+QUALIFICATION-RECEIPT.json/sourceXML/binding/runtime evidence retrieved into local
+final/windows root. No newnativeinput, launch or production request. All owned
+build/sign/runtime operations completed; GUI lease never taken/pending0.
