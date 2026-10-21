@@ -4375,3 +4375,31 @@ startup/observation cases); Ruff/format pass. The first clean private package
 9b7e621 completed successfully but is retained as a predecessor only, since it
 lacks this correction. Successor packaging is justified by this affected runtime
 change; no valid unrelated check is being repeated.
+
+## Oct 21 17:27 UTC — exact private recovery candidate qualified headlessly
+
+Runtime commits9b7e621 thenfe7b12702521c67b9c6123225325461bc7f318ca are local,
+not pushed. fe7 is the exact final private universal2 package;9b7 is a retained
+predecessor. Developer ID strict signature passes,126actual PYZ project modules
+and47QML files match the clean fe7 snapshot; all6,342sealed entries unchanged after
+execution. Executable SHA256
+30b79b472317c0652da76befc3a90fa1c559458c99eb49a01648181b535534b4.
+
+38actual compiled-core/RunDeck contracts pass with host dependencies; an additional
+3actual compiled-runtime projection cases prove failed/cancelled/ready protected
+resource issues remain identifiable beside a new active attempt for the SAME video.
+No new runtime change was needed for these three qualification assertions. Signed
+ARM and Rosetta --runtime-smoke both pass/exit0 in new isolated fictional homes,
+telemetry disabled; offscreen native-callback marker is not a visible GUI proof.
+Exact candidate/signers absent, no GUI lease or queued input. No installation,
+notarization upload, release, OS permission change, production event or ordinary
+profile action. Existing menu/artwork sources retained; unrelated harness edits
+remain outside the snapshot.
+
+Receipt: build/startup-recovery-isolation-20261021/FINAL-RECEIPT.json, signature/
+compiled binding, logs, sealed-smokes/receipt.json, frozen-module/Issues receipts,
+REMAINING-ACCEPTANCE.md and evidence hashes. Runtime source remainsfe7 even if this
+log/test-only qualification is committed later. Windows signed/native acceptance,
+original host-specific denied inspection and preview admission of schema2 remain
+UNQUALIFIED. This source correction is not a claim of reproducing the original
+host cause or passing all races/native recovery; no public release.
