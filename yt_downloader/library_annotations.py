@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
-from .history import application_data_dir
+from .history import application_data_dir, history_annotation_owner
+from .models import DownloadJob
 from .private_files import write_private_bytes
 
 ANNOTATIONS_SCHEMA_VERSION = 1
@@ -53,6 +54,19 @@ def resolve_annotation_owner(
 
 def library_annotations_file_path(**kwargs: Any) -> Path:
     return application_data_dir(**kwargs) / "library-annotations.json"
+
+
+def referenced_annotation_owners(
+    records: Iterable[dict[str, Any]], jobs: Iterable[DownloadJob | None] = ()
+) -> set[str]:
+    """Retain shared saved lineage and any still-identifiable execution intent."""
+    owners = {history_annotation_owner(row) for row in records}
+    for job in jobs:
+        if job is not None:
+            owners.add(f"run:{job.run_id}")
+            if job.annotation_source_owner:
+                owners.add(job.annotation_source_owner)
+    return owners
 
 
 def _bounded_text(value: Any, limit: int) -> str:

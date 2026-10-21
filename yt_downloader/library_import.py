@@ -18,6 +18,16 @@ SUPPORTED_IMPORTS = frozenset(
 )
 
 
+def _file_fingerprint(value: os.stat_result) -> tuple[int, ...]:
+    return (
+        value.st_dev,
+        value.st_ino,
+        value.st_size,
+        value.st_mtime_ns,
+        value.st_ctime_ns,
+    )
+
+
 def inspect_local_media(path: Path, cancelled: threading.Event) -> dict[str, Any]:
     if cancelled.is_set():
         raise InterruptedError("Import cancelled.")
@@ -67,7 +77,7 @@ def inspect_local_media(path: Path, cancelled: threading.Event) -> dict[str, Any
     if not math.isfinite(duration) or duration <= 0:
         raise ValueError("The media duration is unavailable.")
     after = path.stat()
-    if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+    if _file_fingerprint(before) != _file_fingerprint(after):
         raise ValueError("The file changed while it was being inspected. Try again.")
     if cancelled.is_set():
         raise InterruptedError("Import cancelled.")
@@ -101,6 +111,7 @@ def inspect_local_media(path: Path, cancelled: threading.Event) -> dict[str, Any
             }
         )
     return {
+        "_import_fingerprint": _file_fingerprint(after),
         "id": "local-" + identity,
         "title": path.stem,
         "channel": "Local media",
@@ -121,12 +132,26 @@ def commit_imports(history, records, path, *, save=None):
     from .history import save_history, upsert_history
 
     prospective = list(history)
+    records = list(records)
     for record in records:
+        # A worker result may wait in the UI queue before publication. This
+        # internal token is checked again there and never becomes Library data.
+        metadata = {
+            key: value for key, value in record.items() if key != "_import_fingerprint"
+        }
         prospective = upsert_history(
             prospective,
-            record,
+            metadata,
             Path(record["vodforge_output_path"]).parent,
             replace_missing_media=True,
         )
+    for record in records:
+        expected = record.get("_import_fingerprint")
+        if expected is not None and tuple(expected) != _file_fingerprint(
+            Path(record["vodforge_output_path"]).stat()
+        ):
+            raise ValueError(
+                "The file changed after inspection. Try importing it again."
+            )
     (save or save_history)(path, prospective)
     return prospective

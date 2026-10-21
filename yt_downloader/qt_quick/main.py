@@ -137,6 +137,7 @@ from yt_downloader.library_annotations import (
     MAX_TAGS,
     LibraryAnnotationsError,
     LibraryAnnotationsOwner,
+    referenced_annotation_owners,
 )
 from yt_downloader.library_import import commit_imports, inspect_local_media
 from yt_downloader.library_media_recovery import (
@@ -585,6 +586,7 @@ class Bridge(QObject):
             diagnostic=lambda _message: setattr(self, "_annotations_writable", False),
         )
         self._annotations.load()
+        self._runtime.annotation_snapshot = lambda: self._annotations.snapshot
         self._library_projection = LibraryProjectionOwner()
         self._metadata = QtMetadataPreview(
             getattr(self._runtime, "provider_network", ProviderNetworkCoordinator())
@@ -6316,8 +6318,19 @@ class Bridge(QObject):
             self.statusChanged.emit()
             return False
         self._runtime.history = updated
+        referenced = referenced_annotation_owners(
+            updated,
+            [
+                self._runtime.active_job,
+                *self._runtime.queued,
+                *getattr(self._runtime, "recovered", []),
+                getattr(self._runtime, "recovery_job", None),
+            ],
+        )
         try:
-            self._annotations.remove(history_annotation_owner(item))
+            annotation_owner = history_annotation_owner(item)
+            if annotation_owner not in referenced:
+                self._annotations.remove(annotation_owner)
         except LibraryAnnotationsError:
             # The committed history is authoritative; an annotation cleanup
             # failure must not restore a card whose durable removal succeeded.
@@ -7334,7 +7347,15 @@ class Bridge(QObject):
                         owner = version["owner"]
                         if owner in relocated:
                             version["owner"] = relocated[owner]
-                current_annotations = {history_annotation_owner(row) for row in actual}
+                current_annotations = referenced_annotation_owners(
+                    actual,
+                    [
+                        self._runtime.active_job,
+                        *self._runtime.queued,
+                        *self._runtime.recovered,
+                        self._runtime.recovery_job,
+                    ],
+                )
                 for row in previous:
                     annotation_owner = history_annotation_owner(row)
                     if annotation_owner not in current_annotations:

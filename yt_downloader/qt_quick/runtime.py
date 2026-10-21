@@ -9,6 +9,7 @@ from __future__ import annotations
 import queue
 import threading
 import uuid
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -39,6 +40,7 @@ from yt_downloader.history import (
     save_history,
     upsert_history,
 )
+from yt_downloader.library_annotations import LibraryAnnotation
 from yt_downloader.library_history import LibraryHistory
 from yt_downloader.local_audio_video import LocalAudioVideoResult
 from yt_downloader.models import (
@@ -94,6 +96,9 @@ class DownloadRuntime:
         return self._history_store.blocked
 
     def __init__(self) -> None:
+        self.annotation_snapshot: (
+            Callable[[], Mapping[str, LibraryAnnotation]] | None
+        ) = None
         self.events: queue.Queue[tuple[str, Any]] = queue.Queue()
         self.history_path = history_file_path()
         self._history_store = LibraryHistory(self.history_path)
@@ -104,7 +109,7 @@ class DownloadRuntime:
         self.recovery_job: DownloadJob | None = None
         self._recovery_thread: threading.Thread | None = None
         self._recovery_cancel = threading.Event()
-        self.resource_recoveries = {}
+        self.resource_recoveries: dict[str, dict[str, Any]] = {}
         if not self.recovery.recovery_notice:
             self._refresh_resource_recoveries()
         self.recovery_notice = (
@@ -977,6 +982,12 @@ class DownloadRuntime:
         record_info.pop("vodforge_preview_complete", None)
         record_info.pop("vodforge_preview_run_id", None)
         record_info["vodforge_run_id"] = job.run_id
+        if job.annotation_source_owner:
+            canonical = f"run:{job.run_id}"
+            annotations = self.annotation_snapshot() if self.annotation_snapshot else {}
+            record_info["vodforge_archive_annotation_owner"] = (
+                canonical if canonical in annotations else job.annotation_source_owner
+            )
         record_info["vodforge_run_activity"] = sanitize_run_activity(job.activity_lines)
         record_info[RETRY_JOB_METADATA_KEY] = serialize_download_job(job)
         from yt_downloader.output_config_snapshot import (

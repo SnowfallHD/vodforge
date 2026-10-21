@@ -3920,3 +3920,26 @@ invalidate a verified payload. Prior-failing regressions plus real journal-write
 failure counterexamples cover these four owners, explicit retry, queued intent,
 preview admission and terminal Done/Partial/Stopped distinctions. They are bounded
 fault injection, not exhaustive interleavings or original Windows-host proof.
+
+## Durable document and annotation identity — 2026-10-21
+
+Failure before entering a writer cannot model failure after destination truncation.
+Independent ENOSPC fixtures proved notes and accepted queue bytes could be lost.
+Private document commits now preserve old data until a complete private stage is
+flushed and atomically replaced, with destination identity checks. Tests inject
+partial/short write, flush/fsync/replace and postcommit directory-sync failure;
+append semantics, private modes, foreign replacement and redirects are distinct.
+Power loss, concurrent-process transaction isolation and Windows directory
+persistence remain unqualified; complete postcommit data is not rolled back.
+
+A successful replacement run must carry durable annotation lineage past the live
+projection. Shared note ownership is a reference, not a card's exclusive data.
+Prior tests covered live fallback and individual removals but missed publication
+without provider-carried lineage and playlist siblings sharing a run owner.
+New durable/restart and explicit-new-edit cases, plus saved/live/queued/recovery
+reference checks, preserve identity without copying user text into media metadata.
+
+Same-size/mtime media is not necessarily the same file. Probe-to-publication
+checks now include device/inode and change time, with an internal transient token
+checked before save. Atomic replacement fixtures fail before and pass after;
+this is a bounded identity guard, not an exclusive lease on external media.

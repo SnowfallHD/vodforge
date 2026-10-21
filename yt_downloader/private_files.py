@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import stat
+import uuid
 from pathlib import Path
 from typing import BinaryIO, TextIO
 
@@ -82,5 +83,74 @@ def open_private_binary_file(path: Path, *, truncate: bool = False) -> BinaryIO:
 
 
 def write_private_bytes(path: Path, payload: bytes) -> None:
-    with open_private_binary_file(path, truncate=True) as destination:
-        destination.write(payload)
+    """Replace a complete private document; precommit failure keeps old bytes.
+
+    Append streams deliberately retain their separate non-replacement semantics.
+    POSIX directory fsync makes the rename durable; Windows exposes file fsync
+    and atomic replace here, without a power-loss guarantee for the directory.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    expected = None
+    try:
+        existing = path.lstat()
+    except FileNotFoundError:
+        pass
+    else:
+        if is_symlink_or_reparse(existing) or not stat.S_ISREG(existing.st_mode):
+            raise OSError(f"Refusing to replace non-regular private file: {path}")
+        descriptor = open_private_file_descriptor(path, append=False)
+        try:
+            expected = os.fstat(descriptor)
+            if not os.path.samestat(existing, expected):
+                raise OSError(f"Private file changed before replacement: {path}")
+        finally:
+            os.close(descriptor)
+    temporary = path.with_name(f".vf-private-{uuid.uuid4().hex}.tmp")
+    staged = None
+    try:
+        with open_private_binary_file(temporary, truncate=True) as destination:
+            staged = os.fstat(destination.fileno())
+            if destination.write(payload) != len(payload):
+                raise OSError("Incomplete private document write")
+            destination.flush()
+            os.fsync(destination.fileno())
+        current_stage = temporary.lstat()
+        if is_symlink_or_reparse(current_stage) or not os.path.samestat(
+            staged, current_stage
+        ):
+            raise OSError("Private staging document changed before replacement")
+        try:
+            current = path.lstat()
+        except FileNotFoundError:
+            if expected is not None:
+                raise OSError(
+                    "Private destination disappeared before replacement"
+                ) from None
+        else:
+            if (
+                expected is None
+                or is_symlink_or_reparse(current)
+                or not os.path.samestat(expected, current)
+            ):
+                raise OSError("Private destination changed before replacement")
+        os.replace(temporary, path)
+        if os.name != "nt":
+            directory = os.open(
+                path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+            )
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+    finally:
+        # Never unlink a substituted file, and never mask the write failure.
+        try:
+            current = temporary.lstat()
+            if (
+                staged is not None
+                and os.path.samestat(staged, current)
+                and not is_symlink_or_reparse(current)
+            ):
+                temporary.unlink()
+        except OSError:
+            pass

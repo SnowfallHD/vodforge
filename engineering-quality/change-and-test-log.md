@@ -4495,3 +4495,50 @@ Ruff/format/compile/diff pass. These are representative injected exceptions,
 not physical Windows permission-denial/resource-exhaustion reproduction or
 native acceptance. Current Windows user app left unchanged; private successor
 packaging pending. No public release, deployment, credentials or GUI action.
+
+## Oct 21 18:31 UTC — expanded audit persistence/annotation/import integration
+
+Independent pass2 four desired regressions fail against immutable5a8a4a1, then
+pass after. Shared private document writer now writes/fsyncs private same-directory
+staging before os.replace, rechecks destination/stage identity and symlink/reparse
+safety, retains original bytes on partial/short write, flush/file-fsync/replace
+failure. POSIX directory fsync follows commit; its failure reports uncertainty
+with a complete new document, never an unsafe rollback. Windows has file fsync
+and atomic replace here; no directory power-loss guarantee asserted. Append
+streams unchanged. Existing callers intentionally writing temporary documents
+remain valid; no journal deletion/admission shortcut.
+
+Recovery publication persists only annotation owner lineage, not user note
+content. Existing Bridge annotation snapshot gives explicit replacement edits
+precedence; otherwise captured old owner survives history/restart. Shared saved,
+live/queued/recovery references protect annotations during card and file cleanup;
+genuinely unreferenced removal still cleans the annotation. No migration/repair
+of already deleted or previously orphaned annotations is claimed.
+
+Independent A08 same-size/preserved-mtime atomic import replacement reproduced:
+2desired cases fail before, stable case passes. Compare device/inode/size/mtime/
+ctime around probe and revalidate inspected token before history publication;
+internal token omitted from saved metadata. Existing direct commit callers with
+no probe token keep their internal contract. This narrows observed TOCTOU; no
+filesystem lock/content hash or guarantee against later external mutation.
+
+73final fault/recovery/annotation/import/Issues cases pass;94notes/settings/
+progress/run-state/privacy affected cases pass;119shared writer callers including
+lifecycle,artwork,credential/telemetry/local-import/file-recovery pass. Earlier
+47/443first-audit passes remain scoped to5a8, not a relabeled new artifact.
+Ruff/format/diff pass. Private5a8 Mac DeveloperID/seal126modules+47QML and Windows
+unsigned build/source99checks were completed before these new findings; both are
+retained PREDECESSORS, not acceptance of this persistence/lineage/import change.
+New final snapshot/build qualification follows. Current Windows user app never
+closed/replaced/controlled; no production data/access/permissions/deploy/release.
+
+Backend schema2 review: isolated recorded website0cc9f6 snapshot only. Exact
+allowlist expands recovery_schema1 to1/2; schema1passes/schema2fails before,
+95authenticated route/local-D1 cases pass after with unknown schema/dedup/attempt
+identity assertions. REVIEW-RECEIPT.json and schema2-review.patch saved under
+build/failure-audit-integration-20261021/backend-schema2, no canonical site edit,
+no migration/deploy/live POST. Initial config-cache/loopback restrictions were
+resolved by native config loader and approved local runtime with private log
+path; no denied credentials or external write bypass. One transport disconnect
+occurred returning final receipt; fresh pwd/date and receipt existence/hash
+verified outcome instead of duplicate execution.
