@@ -93,7 +93,8 @@ def test_active_actions_share_deck_header_and_button_metrics(run_scene, context)
         (1400, 900),
         (820, 560),
     ]:
-        window.resize(*size)
+        # Native users cannot resize below the reviewed dashboard minimum.
+        window.resize(size[0], max(size[1], window.minimumHeight()))
         polish_scene(window.contentItem())
         QTest.qWait(30)
         heading = next(

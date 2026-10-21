@@ -4732,3 +4732,35 @@ installedappreplacement; keys/clicks0. LeftOPENforCooperreview, notnativeaccepta
 ofnavigation/F11/recovery. Macmailforegrounduntouched. Source/runtimeunchanged;
 onlylaunchererrorcorrected. Evidence final/windows/visible-review-open/
 {launch-transport-receipt.json,launch-v2-transport-receipt.json,VISIBLE-RESULT.json}.
+
+## Oct21 — reviewed Run Deck spacing and stable menu labels
+
+Retrieved BOTH exact user Library JPEGs through supportedLibrary materialization,
+metadata preserved, personally inspected pixels. Frown is lower ActivityModeSlider
+face ABOVE RunDeck, not a newdeckemptyimage. Caption overlap boundary follows
+compressed livepane; sourceexplicitminheight now propagates116pxdial allocation,
+RunDeckadds12pxheadinginset/minallocation; dashboardminimum560→584logicalpx.
+Topnavlabel Normal fontweight fixed across idle/hover/press/selected, explicit
+currentthemeaccent text; pressedselectedmaterial/no underline/exactsidebarviolet
+SceneIcon retained. SharedStoneButtonlabeltone/weightdefaults retain otherowners.
+
+New11initialchecksPASS; initialnegativecontrol6textmetricsFAIL/5gapcasesPASS on
+Mac predecessor (do not claim nativeoverlapreproduction). Finaltestsstrengthen
+minimum584policy andheldpress. Affectedrun27PASS/4activebottomFAIL; fixedwindow
+min raised but oldoffscreenfixture directlyresizedbelowdeclaredmin, so4stillFAIL.
+Fixture now uses max(requestedheight,window.minimumHeight), preserving unchanged
+strictdeckbottom/headercontrol oracle. Current23new+responsivePASS34.52s; prior8
+navigationface/icon/pixel/focus casespassed in affectedrun and unchangedbyheight.
+Final125/150/200%offscreen scale checks15PASS; NOTnativeWindowsDPIacceptance.
+Actual820x584/EmberrenderedPNGspersonallyviewed: frownclearaboveheading/footerfits,
+accentlabel/invariantvioleticon distinguishable. Ruff/format/diffPASS.
+Evidence build/visual-refinements-20261021/{attachments,before-tests.log,
+affected-final.log,height-final.log,minimum-final.log,qualified-scale-receipt.json,
+rendered-qualified}. Allfirstfailedattemptsretained; no relaxed productassertion.
+
+User renewedAzurelogin and explicitlyauthorizes sameexisting signingworkflow.
+Preparing separate resource-only successor from sealed3d20c58, compiledPython and
+nativehelpersunchanged; will verify compiledmodule/QMLbinding andnewsignature.
+CurrentWindowsPID11532/app11532review remainsuntouched/open; noGUIaction, public
+release, permission/authchange ororiginalprofile/dataoperation. Signingverification
+pendingactualnewartifact, never inferredfromuserloginreportalone.

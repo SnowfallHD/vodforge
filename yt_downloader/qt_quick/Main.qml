@@ -42,7 +42,8 @@ Window {
     x: 30
     y: 30
     minimumWidth: 820
-    minimumHeight: 560
+    // Reserve the activity dial and deck heading at the smallest dashboard size.
+    minimumHeight: 584
     title: "VODForge"
     flags: Qt.platform.os === "windows" ? Qt.Window | Qt.WindowSystemMenuHint |
            Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint |
@@ -1288,6 +1289,8 @@ Window {
                         objectName: "navigationButton_" + modelData
                         persistentMaterial: false
                         pressedWhenSelected: true
+                        labelFontWeight: Font.Normal
+                        labelTone: selected ? theme.accent : theme.text
                         label: modelData
                         selected: bridge.selection === modelData
                         sceneIcon: modelData === "Forge" ? "download" :
@@ -1734,6 +1737,7 @@ Window {
             RowLayout {
                 Layout.fillWidth: true
                 Layout.preferredHeight: window.compactHeight ? 116 : 185
+                Layout.minimumHeight: forgeLivePane.implicitHeight
                 // Use the live controls' actual minimum; the old hard 185px
                 // floor prevented the surrounding dashboard from fitting.
                 spacing: 16
@@ -1768,6 +1772,8 @@ Window {
                         ActivityModeSlider {
                             id: forgeActivityMode
                             objectName: "forgeActivityModeSlider"
+                            Layout.minimumHeight: implicitHeight
+                            Layout.preferredHeight: implicitHeight
                             technical: forgeLivePane.technical
                             Layout.alignment: Qt.AlignTop
                             onSelected: function(value) {

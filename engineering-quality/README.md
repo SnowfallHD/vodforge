@@ -3969,3 +3969,23 @@ Prior close-at-publication tests released the fixture I/O and missed indefinite
 read. New real blocked-pipe + Qt tests cover both Quit routes/result-presence,
 and bounded-close False retains ownership. No daemonization, forced thread abort,
 new polling subsystem or universal claim about OS force-quit/power loss.
+
+### Oct21 review: minimum allocations and state-stable text metrics
+
+A fixed painted control can extend below its parent layout when the dashboard
+compresses; testing the control's own116px height alone misses cross-owner overlap.
+The activity dial now reserves its implicit height through its layout chain,
+RunDeck allocates12px above its heading, and minimum dashboard height is584logical
+pixels. Tests compare actual scene bounds/dial-to-heading gap and deck bottom,
+including active controls and minimum native-allowed dimensions. Offscreen direct
+resize can bypass native minimums, so fixture requests are clamped to the declared
+minimum while the no-overflow assertion stays unchanged. Native Windows DPI still
+requires review; scale-factor tests are not that proof.
+
+Top navigation uses a fixed Normal label weight and explicit themeaccent text
+while retaining the existing invariant selectionviolet SceneIcon. Shared-button
+defaults remain for other owners. Tests compare font/implicitwidth/position/button
+width across idle, hover, held and selected across six themes. Existing selected
+material tests only compared the painted face and missed label metric changes.
+New controls inherit shared behavior; no new fontweight transition or duplicated
+color palette is introduced. User screenshots and negative controls retained.

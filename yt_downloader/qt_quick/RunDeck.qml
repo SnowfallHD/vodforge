@@ -12,7 +12,8 @@ Item {
     property bool headerActionsEnabled: true
     readonly property real headerActionsAvailableWidth: Math.max(0, width - deckHeading.implicitWidth -
         (allRunsButton.visible ? allRunsButton.width : 0) - 2 * deckHeader.spacing)
-    implicitHeight: deckLayout.implicitHeight
+    readonly property real headingTopInset: 12
+    implicitHeight: deckLayout.implicitHeight + headingTopInset
     readonly property var projection: appBridge.runDeck
     // Keep interrupted work visible even after newer runs complete.
     readonly property var workRecords: (projection.records || []).filter(
@@ -104,6 +105,7 @@ Item {
     ColumnLayout {
         id: deckLayout
         anchors.fill: parent
+        anchors.topMargin: deck.headingTopInset
         spacing: 8
         RowLayout {
             id: deckHeader

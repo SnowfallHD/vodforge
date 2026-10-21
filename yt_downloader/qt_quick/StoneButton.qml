@@ -10,6 +10,9 @@ Item {
     property color sceneIconTone: control.primary ? theme.accent : control.emphasized ? theme.action : theme.icon
     property bool selected: false
     property bool pressedWhenSelected: false
+    property int labelFontWeight: control.primary || control.selected ? Font.DemiBold : Font.Normal
+    property color labelTone: control.primary || control.selected ? theme.accent : control.emphasized ? theme.action :
+        control.quiet && !control.hovered && !control.activeFocus ? theme.muted : theme.text
     property bool emphasized: false
     // Main actions retain the shared contour with an opaque accent outline.
     property bool primary: false
@@ -108,11 +111,10 @@ Item {
                     Math.max(8, (availableWidth - implicitWidth) / 2))
             width: Math.min(implicitWidth, Math.max(0, availableWidth - 2 * sidePadding))
             elide: Text.ElideRight
-            color: control.primary ? theme.accent : control.selected ? theme.accent : control.emphasized ? theme.action :
-                   control.quiet && !control.selected && !control.hovered && !control.activeFocus ? theme.muted : theme.text
+            color: control.labelTone
             font.family: buttonFontFamily
             font.pixelSize: buttonMetrics[control.size].fontPixels
-            font.weight: control.primary || control.selected ? Font.DemiBold : Font.Normal
+            font.weight: control.labelFontWeight
             anchors.verticalCenter: parent.verticalCenter
         }
     }
