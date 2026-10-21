@@ -172,3 +172,43 @@ def test_thread_start_failure_is_one_failed_attempt_with_explicit_retry(
         assert not runtime.recovery_pending
     finally:
         runtime.close()
+
+
+@pytest.mark.parametrize("live", [True, False])
+def test_another_live_recovery_owner_is_not_misclassified_as_a_crashed_attempt(
+    tmp_path, monkeypatch, live
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    store = run_state.ActiveRunStore(run_state.run_state_file_path())
+    job = make_job(tmp_path / "out")
+    store.begin(job)
+    store.prepare_recovery()
+    store.claim_recovery(job.run_id)
+    payload = store.load()
+    record = payload["recovered_failures"][0]
+    record.update(recovery_owner_pid=999992, recovery_owner_birth=123)
+    store._write_unlocked(payload)
+    before = store.path.read_bytes()
+    monkeypatch.setattr(
+        run_state, "process_command", lambda _pid: "owned app" if live else None
+    )
+    monkeypatch.setattr(run_state, "process_birth_time", lambda _pid: 123)
+    runtime = DownloadRuntime()
+    try:
+        if live:
+            assert runtime.recovery_notice
+            assert store.path.read_bytes() == before
+        else:
+            assert not runtime.recovery_notice
+            assert runtime.resource_recoveries[job.run_id]["recovery_state"] == "failed"
+            assert not runtime.recovery_pending
+    finally:
+        runtime.close()
+
+
+@pytest.mark.parametrize("birth", [float("nan"), float("inf"), True, -1])
+def test_invalid_owner_birth_never_proves_pid_reuse(birth, monkeypatch):
+    monkeypatch.setattr(run_state, "process_command", lambda _pid: "live")
+    with pytest.raises(run_state.RunStateError):
+        run_state.RunRecoveryOwner._other_live_owner(999992, birth)

@@ -4365,3 +4365,13 @@ five-orphan creation-bound cleanup1PASS. Ruff/format/diff pass. Source negatives
 and failed old fixtures remain retained. Headless build resource read initially
 hit sandbox sysctl EPERM; approved host read then found no heavy/sign jobs and
 91.6GB free. No GUI lease was taken.
+
+Packaging-boundary follow-up: review found the detached idle journal must retain
+an in-flight recovery executor's PID/creation identity too, so another app cannot
+classify a live recovery as a crash. Claim now saves that identity; startup retains
+the existing live/unknown-owner guard, and invalid creation identities fail closed.
+`live-owner-final.log`32PASS (live/dead and invalid birth cases plus affected
+startup/observation cases); Ruff/format pass. The first clean private package
+9b7e621 completed successfully but is retained as a predecessor only, since it
+lacks this correction. Successor packaging is justified by this affected runtime
+change; no valid unrelated check is being repeated.

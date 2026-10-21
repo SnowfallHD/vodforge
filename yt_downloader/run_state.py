@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import threading
 import urllib.parse
@@ -650,6 +651,8 @@ class ActiveRunStore:
                 "recovery_state": "attempting",
                 "recovery_token": token,
                 "recovery_inflight": True,
+                "recovery_owner_pid": os.getpid(),
+                "recovery_owner_birth": process_birth_time(os.getpid()),
                 "terminal_message": "Recovering interrupted download; partial files preserved.",
             },
             expected="pending",
@@ -1506,27 +1509,54 @@ class RunRecoveryOwner:
             self._startup_pending = True
         return terminal, queued
 
+    @staticmethod
+    def _other_live_owner(pid: Any, birth: Any) -> bool:
+        if (
+            type(pid) is not int
+            or pid <= 1
+            or (
+                birth is not None
+                and (
+                    type(birth) not in {int, float}
+                    or not math.isfinite(birth)
+                    or birth <= 0
+                )
+            )
+        ):
+            raise RunStateError(
+                "The execution owner identity is invalid.", stage="owner_check"
+            )
+        if pid == os.getpid() or process_command(pid) is None:
+            return False
+        return birth is None or process_birth_time(pid) == birth
+
     def prepare_startup(self) -> tuple[list[DownloadJob], list[DownloadJob]]:
-        """Prepare durable recovery without running slow OS inspection on the UI thread."""
+        """Prepare durable recovery before child inspection runs on its worker."""
         try:
             payload = self.store.load()
-            if payload and payload.get("state") == "active":
-                pid = payload.get("owner_pid")
-                if type(pid) is not int or pid <= 1:
-                    raise RunStateError("Invalid previous owner.")
-                if (
-                    pid != os.getpid()
-                    and process_command(pid) is not None
-                    and (
-                        payload.get("owner_birth") is None
-                        or process_birth_time(pid) == payload["owner_birth"]
-                    )
+            for record in self.store.recovery_records():
+                if not record.get("recovery_inflight"):
+                    continue
+                if self._other_live_owner(
+                    record.get("recovery_owner_pid"), record.get("recovery_owner_birth")
                 ):
                     raise RunStateError(
-                        "Another live owner still owns this journal.",
+                        "Another live execution still owns resource recovery.",
                         cause="live_owner",
                         stage="owner_check",
                     )
+            if (
+                payload
+                and payload.get("state") == "active"
+                and self._other_live_owner(
+                    payload.get("owner_pid"), payload.get("owner_birth")
+                )
+            ):
+                raise RunStateError(
+                    "Another live owner still owns this journal.",
+                    cause="live_owner",
+                    stage="owner_check",
+                )
             terminal = self.store.prepare_recovery()
             return terminal, self.store.load_queued_jobs(retire_missing_sources=True)
         except (RunStateError, ProcessOwnershipError, OSError) as exc:
