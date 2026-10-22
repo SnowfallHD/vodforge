@@ -26,7 +26,7 @@ def test_current_full_control_bounds_remain_independently_validated(bad):
         packet(sample, 44, 1, 20)
 
 
-def test_interrupted_reveal_and_aperture_settle_have_no_second_animation(
+def test_reversal_direction_and_native_aperture_excursion_are_explicit(
     child_header,  # noqa: F811
     tmp_path,
 ):
@@ -68,21 +68,41 @@ def test_interrupted_reveal_and_aperture_settle_have_no_second_animation(
         QTest.qWait(60)
         assert 0 < header.property("nativeContentScreenX") < 99
         observe("moving-right")
+        before_reverse = records[-1]["rendered_x"]
         publish(False)
-        QTest.qWait(25)
-        observe("reversed-left")
+        left = []
+        for _ in range(9):
+            QTest.qWait(10)
+            observe("reversed-left")
+            left.append(records[-1]["rendered_x"])
+        assert all(b <= a + 0.1 for a, b in zip([before_reverse, *left], left)), left
+        assert min(left) >= 10 and left[-1] == 10, left
         publish(True)
-        QTest.qWait(280)
+        right = []
+        for _ in range(28):
+            QTest.qWait(10)
+            observe("reversed-right")
+            right.append(records[-1]["rendered_x"])
+        assert all(b >= a - 0.1 for a, b in zip([10, *right], right)), right
+        assert max(right) <= 99 and right[-1] == 99, right
         assert header.property("nativeContentScreenX") == 99
         publish(True, 102)
         observe("native-aperture-overrun")
         assert header.property("nativeContentScreenX") == 99
+        # Explicit counterexample: the drawable native aperture can still
+        # move the rendered row past its animation target. This is an
+        # unresolved native-geometry qualification boundary, not a flat path.
+        assert records[-1]["rendered_x"] == 102
         publish(True, 96)
         for _ in range(10):
             observe("aperture-settled")
             QTest.qWait(20)
             assert header.property("nativeContentScreenX") == 99
             assert header.property("nativeHeaderInset") == 3
+            assert records[-1]["rendered_x"] == 99
+    assert [
+        r["rendered_x"] for r in records if r["label"] == "native-aperture-overrun"
+    ] == [102, 102]
     (tmp_path / "trajectory.json").write_text(json.dumps(records, indent=2))
 
 
