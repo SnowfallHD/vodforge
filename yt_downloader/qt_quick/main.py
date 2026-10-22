@@ -214,7 +214,10 @@ from yt_downloader.qt_quick.artwork import QtArtwork, ThumbnailReductionProvider
 from yt_downloader.qt_quick.help_observations import QtHelpObservations
 from yt_downloader.qt_quick.library_files import QtLibraryFiles, relocated_owner_map
 from yt_downloader.qt_quick.library_window_model import register_window_model
-from yt_downloader.qt_quick.local_conversion import LocalConversionRuntime
+from yt_downloader.qt_quick.local_conversion import (
+    LocalConversionRuntime,
+    validate_local_selection,
+)
 from yt_downloader.qt_quick.mac_windowing import (
     integrate_qt_main_window,
     watch_presentation_retirement,
@@ -5839,9 +5842,12 @@ class Bridge(QObject):
                 raise SettingsError(
                     "Settings need attention before a conversion can start."
                 )
+            audio, image = validate_local_selection(
+                self._local_audio, self._local_image
+            )
             self._local.start(
-                Path(self._local_audio),
-                Path(self._local_image),
+                audio,
+                image,
                 Path(self._output_path),
                 self._local_profile,
             )

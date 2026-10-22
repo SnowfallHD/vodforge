@@ -417,16 +417,14 @@ def test_partial_bind_is_detached_before_qt_destroy(native_owner_rig):
     )
 
 
-@pytest.mark.parametrize(
-    "failure", ["stale-pointer", "native-generation", "global-mismatch"]
-)
+@pytest.mark.parametrize("failure", ["stale-pointer", "native-generation"])
 def test_bound_child_generation_and_global_geometry_refuse(native_owner_rig, failure):
     rig = native_owner_rig
     owner = rig.make()
     if failure == "native-generation":
         rig.state["current"] = False
     else:
-        rig.state["stale_pointer" if failure == "stale-pointer" else "mismatch"] = True
+        rig.state["stale_pointer"] = True
     with pytest.raises(
         RuntimeError, match="replaced|generation changed|coordinates disagree"
     ):
@@ -790,7 +788,7 @@ def test_native_callback_refusal_does_not_unwind_across_native_boundary(
     rig = native_owner_rig
     owner = rig.make()
     callback = rig.native_callback
-    rig.state["mismatch"] = True
+    rig.state["current"] = False
     callback()
     assert owner.closed and rig.native_callback is None
     assert rig.window._native_header_diagnostic["stage"] == "native_header_refused"
@@ -1067,3 +1065,23 @@ def test_passive_callback_retires_changed_event_owner(
     rig.native_callback()
     assert owner.retired and rig.boundary.retired
     assert not rig.window.property("nativeHeaderInputReady")
+
+
+@pytest.mark.parametrize("fullscreen", [True, False])
+def test_owned_alignment_pause_preserves_header_and_recovers_after_focus_change(
+    native_owner_rig, fullscreen
+):
+    rig = native_owner_rig
+    owner = rig.make()
+    rig.state.update(fullscreen=fullscreen, mismatch=True)
+    before = rig.window.property("nativeRowPacket")
+    rig.native_callback()
+    assert not owner.retired, "An owned allocation mismatch must not remove the toolbar"
+    assert not rig.window.property("nativeHeaderInputReady")
+    assert rig.window.property("nativeRowPacket") == before
+    assert rig.state["bound"]
+    rig.state.update(mismatch=False, rect=(110, 6, 930, 44))
+    rig.native_callback()
+    assert not owner.retired and rig.window.property("nativeHeaderInputReady")
+    assert rig.window.property("nativeRowPacket")["width"] == 930
+    owner.close()

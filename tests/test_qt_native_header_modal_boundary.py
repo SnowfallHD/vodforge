@@ -769,3 +769,42 @@ def test_menu_hide_finishes_before_previous_110ms_pacing(child_header):
         "The requested earlier return must finish before the former110ms pacing",
         header.property("nativeContentScreenX"),
     )
+
+
+def test_input_readiness_pause_does_not_snap_reveal_motion(child_header):
+    app, _bridge, main, header, child, _boundary = child_header
+    main.resize(1440, 900)
+    child.setGeometry(20, 0, 1400, 44)
+
+    def publish(target):
+        main.setProperty(
+            "nativeRowPacket",
+            {
+                "schema_version": 1,
+                "width": 1400,
+                "height": 44,
+                "host_screen": [0, 0, 1400, 44],
+                "leading": target,
+                "reserve": target,
+                "fullscreen": True,
+                "state": "controls-visible" if target else "controls-hidden",
+                "body_slot_height": 44,
+            },
+        )
+
+    publish(0)
+    settle(app, header)
+    publish(89)
+    QTest.qWait(80)
+    before = header.property("nativeContentScreenX")
+    assert 0 < before < 89
+    main.setProperty("nativeHeaderInputReady", False)
+    publish(96)
+    assert header.property("nativeContentScreenX") < 89, (
+        "Input gating snapped presentation to its target"
+    )
+    QTest.qWait(32)
+    assert header.property("nativeContentScreenX") > before
+    main.setProperty("nativeHeaderInputReady", True)
+    QTest.qWait(300)
+    assert header.property("nativeContentScreenX") == 96

@@ -1174,15 +1174,18 @@ Window {
             readonly property real nativeContentTargetScreenX: window.nativeHeaderAttached && window.diagnosticHeaderPacketReady
                 ? window.diagnosticHeaderPacket.host_screen[0] + window.diagnosticHeaderPacket.leading
                 : (window.nativeHeaderAttached ? window.nativeHeaderLeadingInset : (Qt.platform.os === "osx" ? 82 : 0))
-            property real nativeContentScreenX: nativeContentTargetScreenX
+            readonly property bool nativeHeaderMotionEnabled: window.nativeHeaderAttached &&
+                window.nativeHeaderFullscreen && !bridge.reducedMotion && !window.nativeHeaderReducedMotion
+            property real nativeAnimatedContentScreenX: nativeContentTargetScreenX
+            readonly property real nativeContentScreenX: nativeHeaderMotionEnabled
+                ? nativeAnimatedContentScreenX : nativeContentTargetScreenX
             readonly property real nativeHeaderInset: window.nativeHeaderAttached
                 ? Math.max(0, nativeContentScreenX - nativeHostScreenX) : nativeContentScreenX
-            Behavior on nativeContentScreenX {
+            Behavior on nativeAnimatedContentScreenX {
                 id: nativeHeaderMotion
                 property int movementDuration: 220
                 onTargetValueChanged: movementDuration = targetValue < focusHeader.nativeContentScreenX ? 70 : 220
-                enabled: window.nativeHeaderAttached && window.nativeHeaderInputReady &&
-                    window.nativeHeaderFullscreen && !bridge.reducedMotion && !window.nativeHeaderReducedMotion
+                enabled: focusHeader.nativeHeaderMotionEnabled
                 // Keep reveal pacing while splicing later native allocations at
                 // the current velocity instead of restarting easing near the end.
                 // A genuine dismissal reverses promptly, without a rightward tail.

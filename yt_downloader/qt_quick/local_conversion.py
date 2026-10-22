@@ -7,11 +7,11 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from yt_downloader.download_service import DownloadWorkerCore, write_diagnostic
 from yt_downloader.download_error_presentation import (
     download_error_message,
     technical_download_error,
 )
+from yt_downloader.download_service import DownloadWorkerCore, write_diagnostic
 from yt_downloader.failure_diagnostics import FailureDiagnostic, capture_failure
 from yt_downloader.local_audio_video import (
     LocalAudioVideoCancelled,
@@ -24,6 +24,40 @@ from yt_downloader.local_audio_video import (
     local_conversion_state_path,
     new_local_audio_video_request,
 )
+
+
+def validate_local_selection(audio: str, image: str) -> tuple[Path, Path]:
+    """Reject picker mistakes before creating a run or starting a worker.
+
+    The conversion owner still validates media contents and commit safety.
+    This preflight supplies actionable selection messages, not failed-job advice.
+    """
+    if not audio.strip() and not image.strip():
+        raise ValueError("Choose an MP3 audio file and a still image first.")
+    if not audio.strip():
+        raise ValueError("Choose an MP3 audio file first.")
+    if not image.strip():
+        raise ValueError("Choose a still image first.")
+    paths = (Path(audio).expanduser(), Path(image).expanduser())
+    for path, extensions, message in (
+        (paths[0], {".mp3"}, "Choose an existing, nonempty MP3 audio file."),
+        (
+            paths[1],
+            {".jpg", ".jpeg", ".png", ".webp"},
+            "Choose an existing, nonempty JPG, PNG, or WebP still image.",
+        ),
+    ):
+        try:
+            valid = (
+                path.suffix.casefold() in extensions
+                and path.is_file()
+                and path.stat().st_size > 0
+            )
+        except OSError as exc:
+            raise ValueError(message) from exc
+        if not valid:
+            raise ValueError(message)
+    return paths
 
 
 class LocalConversionRuntime:

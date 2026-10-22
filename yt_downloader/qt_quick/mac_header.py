@@ -9,6 +9,10 @@ from yt_downloader.platforms.macos.header_host import HeaderHost
 from yt_downloader.qt_quick.mac_header_packet import NativeRowRefused, packet
 
 
+class NativeHeaderAlignmentPending(RuntimeError):
+    """The exact fitted child is owned, but Qt/AppKit screen maps differ."""
+
+
 def create_header_input_boundary(main: Any, surface: Any):
     """Keep the main overlay authoritative across this owner's exact Qt surface.
 
@@ -387,7 +391,9 @@ class IntegratedHeader:
         actual = self._surface.mapToGlobal(QPoint(0, 0))
         expected = (main_global.x() + cx - mx, main_global.y() + my + mh - cy - ch)
         if max(abs(actual.x() - expected[0]), abs(actual.y() - expected[1])) > 1:
-            raise RuntimeError("Qt and native header global coordinates disagree")
+            raise NativeHeaderAlignmentPending(
+                "Qt and native header global coordinates disagree"
+            )
         self._last_rect = rect
         return flags
 
@@ -435,6 +441,17 @@ class IntegratedHeader:
                     break
             else:
                 raise RuntimeError("Native header allocation did not converge")
+        except NativeHeaderAlignmentPending:
+            # Focus and fullscreen allocation notifications can precede Qt's
+            # screen-map reconciliation. Ownership/current-child/fit checks
+            # above still hold: retain that exact generation, withhold input
+            # and the new packet until a native event supplies matching maps.
+            # Never destroy the toolbar or admit stale coordinates here.
+            self._window.setProperty("nativeHeaderInputReady", False)
+            self._window._native_header_diagnostic = {
+                "stage": "native_header_pending_alignment"
+            }
+            return
         except Exception as exc:
             self._window._native_header_diagnostic = {
                 "stage": "native_header_refused",
@@ -549,6 +566,8 @@ class IntegratedHeader:
                 "flags": child_flags,
                 "layout": layout,
             }
+        except NativeHeaderAlignmentPending:
+            raise
         except Exception as exc:
             self._window._native_header_diagnostic = {
                 "stage": "native_header_refused",
