@@ -50,6 +50,7 @@ def test_header_trace_uses_current_native_geometry_and_closed_field_set(current)
         "actual_screen_x",
         "device_pixel_ratio",
         "native_endpoint_geometry",
+        "native_presentation",
     }
     if current:
         endpoint = row["native_endpoint_geometry"]

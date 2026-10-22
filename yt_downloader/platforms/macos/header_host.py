@@ -169,6 +169,18 @@ class HeaderHost:
         self._row = row
         return 1, row.flags, tuple(row.geometry)
 
+    def qa_presentation(self):
+        """Optional fixed numeric QA read; never required by runtime ABI6."""
+        getter = getattr(self._library, "vf_header_host_qa_presentation", None)
+        if getter is None or self.closed:
+            return None
+        getter.argtypes = [_POINTER, ctypes.POINTER(ctypes.c_double), ctypes.c_size_t]
+        getter.restype = ctypes.c_int
+        values = (ctypes.c_double * 52)()
+        if getter(self._handle, values, 52) != 1:
+            return None
+        return [float(v) if math.isfinite(v) else None for v in values]
+
     def row_sample(self):
         r = self._row
         if r is None:

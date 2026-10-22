@@ -687,6 +687,7 @@ def header_timeline_sample(window, header):
         "actual_screen_x": None,
         "device_pixel_ratio": window.devicePixelRatio(),
         "native_endpoint_geometry": None,
+        "native_presentation": None,
     }
     owner = getattr(window, "_native_window_controls", None)
     if owner is not None and not owner.retired:
@@ -711,6 +712,14 @@ def header_timeline_sample(window, header):
                         for v in values
                     ]
 
+                presentation = getattr(owner._host, "qa_presentation", None)
+                if presentation is not None:
+                    values = presentation()
+                    if values is not None:
+                        result["native_presentation"] = {
+                            "schema": 1,
+                            "rows": [values[i : i + 13] for i in range(0, 52, 13)],
+                        }
                 native_row = getattr(owner._host, "_row", None)
                 result["native_endpoint_geometry"] = {
                     "view_bounds": finite_values(geometry[8:12]),

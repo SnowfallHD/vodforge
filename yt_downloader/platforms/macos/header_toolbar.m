@@ -892,3 +892,53 @@ int vf_header_host_set_background(void *handle,double red,double green,double bl
     [h->_view->_brandColor release];h->_view->_brandColor=[color retain];
     [h applyBrand];[h->_view setNeedsDisplay:YES];return 1;
 }
+
+// Optional QA-only numeric observation. ABI6 and runtime snapshots stay unchanged.
+// Rows: host, close, minimize, zoom. No identities or user content leave native code.
+// Each row: window/view/model/presentation opacity, then model/presentation
+// layer frames, then minimum effective opacity across the ancestor chain.
+// This minimum is diagnostic (not composited pixel alpha). Frames are in their respective superlayer coordinates. Missing layer => NaN.
+int vf_header_host_qa_presentation(void *handle,double *out,size_t count) {
+    if(!NSThread.isMainThread||!handle||!out||count!=52)return 0;
+    VFHeaderHost *h=handle;
+    if(![h current])return 0;
+    double values[52];for(unsigned i=0;i<52;i++)values[i]=NAN;
+    @try {
+        NSView *views[4]={h->_view,
+            [h->_window standardWindowButton:NSWindowCloseButton],
+            [h->_window standardWindowButton:NSWindowMiniaturizeButton],
+            [h->_window standardWindowButton:NSWindowZoomButton]};
+        for(unsigned i=0;i<4;i++) {
+            NSView *view=views[i];if(!view||!view.window)continue;
+            CALayer *model=view.layer,*presentation=model.presentationLayer;
+            unsigned k=i*13;
+            double minimum=view.window.alphaValue;unsigned depth=0;
+            for(NSView *ancestor=view;ancestor;ancestor=ancestor.superview){
+                if(++depth>64){minimum=NAN;break;}
+                CALayer *layer=ancestor.layer,*shown=layer.presentationLayer;
+                double alpha=shown?shown.opacity:ancestor.alphaValue;
+                if(!isfinite(alpha)||alpha<0||alpha>1){minimum=NAN;break;}
+                if(ancestor.hidden||(shown&&shown.hidden))alpha=0;
+                if(layer&&!shown){
+                    if(!isfinite(layer.opacity)||layer.opacity<0||layer.opacity>1){minimum=NAN;break;}
+                    alpha=fmin(alpha,layer.hidden?0:layer.opacity);
+                }
+                minimum=fmin(minimum,alpha);
+            }
+            values[k+12]=minimum;
+            values[k]=view.window.alphaValue;values[k+1]=view.alphaValue;
+            if(model){
+                values[k+2]=model.opacity;CGRect r=model.frame;
+                values[k+4]=r.origin.x;values[k+5]=r.origin.y;
+                values[k+6]=r.size.width;values[k+7]=r.size.height;
+            }
+            if(presentation){
+                values[k+3]=presentation.opacity;CGRect r=presentation.frame;
+                values[k+8]=r.origin.x;values[k+9]=r.origin.y;
+                values[k+10]=r.size.width;values[k+11]=r.size.height;
+            }
+        }
+        if(![h current])return 0;
+        for(unsigned i=0;i<52;i++)out[i]=values[i];return 1;
+    }@catch(NSException *exception){(void)exception;return 0;}
+}
