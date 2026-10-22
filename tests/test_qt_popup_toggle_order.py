@@ -26,6 +26,15 @@ def settle_liquid(window):
         if not moving:
             return
         QTest.qWait(10)
+    # A single offscreen event dispatch can cross the wall-clock deadline.
+    # Judge its resulting state, not the sample captured before that dispatch.
+    moving = [
+        item
+        for item in window.findChildren(QObject)
+        if item.property("liquidMotion")
+        and item.property("visible")
+        and item.property("reveal") < 1
+    ]
     assert not moving, "Liquid popup lifecycle did not finish within its bounded budget"
 
 
