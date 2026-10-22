@@ -1185,6 +1185,12 @@ Window {
             property bool nativeMotionWasEnabled: false
             property bool nativeMotionMayAnimate: false
             property real nativeMotionDestination: NaN
+            // Native allocation owns reveal/conceal timing. Learn its two
+            // geometric endpoints from this exact window, not elapsed time or
+            // a cached screen origin. The exposed lane is measured windowed;
+            // the concealed lane is measured after fullscreen allocation.
+            property real nativeExposedHostOffset: NaN
+            property real nativeConcealedHostOffset: NaN
             readonly property real nativeContentScreenX: nativeContentOriginScreenX + nativeAnimatedContentOffset
             readonly property real nativeHeaderInset: window.nativeHeaderAttached
                 ? Math.max(0, nativeContentScreenX - nativeHostScreenX) : nativeContentScreenX
@@ -1201,6 +1207,34 @@ Window {
                 const destination = screenTarget - origin
                 const canAnimate = valid && p.fullscreen && !p.transition &&
                     !bridge.reducedMotion && !window.nativeHeaderReducedMotion
+                const hostOffset = valid ? p.host_screen[0] - origin : NaN
+                if (!valid) {
+                    nativeExposedHostOffset = NaN
+                    nativeConcealedHostOffset = NaN
+                } else if (!p.fullscreen && !p.transition && p.screen_ready !== false) {
+                    nativeExposedHostOffset = hostOffset
+                    nativeConcealedHostOffset = NaN
+                } else if (p.fullscreen && !p.transition && p.state === "controls-hidden") {
+                    nativeConcealedHostOffset = isFinite(nativeConcealedHostOffset)
+                        ? Math.min(nativeConcealedHostOffset, hostOffset) : hostOffset
+                }
+                const span = nativeExposedHostOffset - nativeConcealedHostOffset
+                if (canAnimate && isFinite(span) && span > 0 &&
+                    (p.state === "controls-hidden" || destination >= nativeConcealedHostOffset)) {
+                    // AppKit already animates the aperture. A second Qt clock
+                    // produces max(nativeX, animatedX): a native plateau followed
+                    // by late Qt catch-up. Interpolate only the required design
+                    // clearance with the SAME measured native displacement.
+                    const progress = Math.max(0, Math.min(1,
+                        (hostOffset - nativeConcealedHostOffset) / span))
+                    nativeMotionMayAnimate = false
+                    nativeAnimatedContentOffset = p.state === "controls-hidden"
+                        ? destination : nativeConcealedHostOffset + progress *
+                            (destination - nativeConcealedHostOffset)
+                    nativeMotionDestination = destination
+                    nativeMotionWasEnabled = false
+                    return
+                }
                 nativeMotionMayAnimate = canAnimate && nativeMotionWasEnabled
                 nativeAnimatedContentOffset = destination
                 nativeMotionDestination = destination
