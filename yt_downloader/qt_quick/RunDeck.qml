@@ -69,7 +69,7 @@ Item {
     }
     function showActions(record, anchor) {
         const trigger = anchor || allRunsButton
-        if (actionsPopup.visible ||
+        if ((actionsPopup.visible && !actionsPopup.exitInProgress) ||
                 (actionsPopup.triggerItem === trigger && actionsPopup.dismissedByTriggerPress)) {
             actionsPopup.toggleFrom(trigger)
             return

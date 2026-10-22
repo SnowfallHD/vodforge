@@ -25,16 +25,16 @@ Popup {
     property Item triggerItem
     property bool dismissedByTriggerPress: false
     property bool closingFromTrigger: false
+    property bool exitInProgress: false
 
     function toggleFrom(trigger) {
         if (triggerItem !== trigger) dismissedByTriggerPress = false
         triggerItem = trigger
-        if (visible) {
+        if (visible && !exitInProgress) {
             closingFromTrigger = true
             dismissedByTriggerPress = false
             close()
-            // An exit already in flight makes close() a no-op: no new
-            // aboutToHide signal will clear this marker for the next gesture.
+            // Do not carry trigger ownership into a later, distinct gesture.
             closingFromTrigger = false
             return false
         }
@@ -47,7 +47,10 @@ Popup {
         open()
         return true
     }
+    onAboutToShow: exitInProgress = false
+    onClosed: exitInProgress = false
     onAboutToHide: {
+        exitInProgress = true
         dismissedByTriggerPress = !closingFromTrigger && !!triggerItem &&
                                   bridge.isPointerPressOnItem(triggerItem)
         closingFromTrigger = false
