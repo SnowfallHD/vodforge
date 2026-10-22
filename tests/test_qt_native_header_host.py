@@ -1078,7 +1078,10 @@ def test_owned_alignment_pause_preserves_header_and_recovers_after_focus_change(
     rig.native_callback()
     assert not owner.retired, "An owned allocation mismatch must not remove the toolbar"
     assert not rig.window.property("nativeHeaderInputReady")
-    assert rig.window.property("nativeRowPacket") == before
+    pending = rig.window.property("nativeRowPacket")
+    assert pending != before
+    assert pending["screen_ready"] is False
+    assert pending["fullscreen"] is fullscreen
     assert rig.state["bound"]
     rig.state.update(mismatch=False, rect=(110, 6, 930, 44))
     rig.native_callback()

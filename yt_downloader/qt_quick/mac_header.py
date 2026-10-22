@@ -444,9 +444,9 @@ class IntegratedHeader:
         except NativeHeaderAlignmentPending:
             # Focus and fullscreen allocation notifications can precede Qt's
             # screen-map reconciliation. Ownership/current-child/fit checks
-            # above still hold: retain that exact generation, withhold input
-            # and the new packet until a native event supplies matching maps.
-            # Never destroy the toolbar or admit stale coordinates here.
+            # above still hold: retain that exact generation and withhold input.
+            # An attached child publishes current native presentation geometry
+            # with screen_ready=False; no stale hit coordinates are admitted.
             self._window.setProperty("nativeHeaderInputReady", False)
             self._window._native_header_diagnostic = {
                 "stage": "native_header_pending_alignment"
@@ -551,7 +551,19 @@ class IntegratedHeader:
                     return
                 raise
             layout["screen_ready"] = True
-            child_flags = self._place_surface(layout)
+            try:
+                child_flags = self._place_surface(layout)
+            except NativeHeaderAlignmentPending:
+                # Exact native ownership and child fit were verified before the
+                # global Qt map mismatch. The child has already physically moved:
+                # publish its current native presentation geometry, never retain
+                # an old origin underneath it. Input remains closed until the
+                # independent global-map check succeeds on an actual event.
+                if self._attached:
+                    self._window.setProperty("nativeHeaderInputReady", False)
+                    layout["screen_ready"] = False
+                    self._window.setProperty("nativeRowPacket", layout)
+                raise
             # Single QML transaction after native+Qt global binding validation.
             self._window.setProperty("nativeRowPacket", layout)
             if not self._attached:
@@ -655,3 +667,112 @@ class IntegratedHeader:
                 pass
             self._destroy_connected = False
         self._closed = True
+
+
+def header_timeline_sample(window, header):
+    """Geometry-only QA sample; never inspect text, URLs, settings or identifiers."""
+    row = window.property("nativeRowPacket") or {}
+    result = {
+        "alignment": getattr(window, "_native_header_diagnostic", {}).get("stage"),
+        "input_ready": bool(window.property("nativeHeaderInputReady")),
+        "packet_host": row.get("host_screen"),
+        "packet_content": row.get("content_screen"),
+        "packet_transition": row.get("transition"),
+        "packet_state": row.get("state"),
+        "target_x": header.property("nativeContentTargetScreenX"),
+        "animated_x": header.property("nativeContentScreenX"),
+        "inset": header.property("nativeHeaderInset"),
+        "native_host": None,
+        "native_child": None,
+        "actual_screen_x": None,
+        "device_pixel_ratio": window.devicePixelRatio(),
+    }
+    owner = getattr(window, "_native_window_controls", None)
+    if owner is not None and not owner.retired:
+        try:
+            state, flags, geometry = owner._host.snapshot()
+            if state == 1 and flags & (1 | 256 | 512 | 1024) == (1 | 256 | 512 | 1024):
+                result["native_host"] = list(geometry[27:31])
+                result["native_child"] = list(geometry[82:86])
+                result["actual_screen_x"] = (
+                    geometry[82] + header.x() + header.property("nativeHeaderInset")
+                )
+        except Exception as exc:  # noqa: BLE001 - optional QA read must not change ownership
+            result["native_sample_error_class"] = type(exc).__name__
+    return result
+
+
+def validate_header_timeline(path):
+    """Reject nonisolated diagnostic requests before normal app initialization."""
+    import os
+    import sys
+    from pathlib import Path
+
+    if sys.platform != "darwin":
+        raise RuntimeError(
+            "Header timeline requires an isolated telemetry-disabled Mac QA home"
+        )
+    import pwd
+
+    home = Path(os.environ.get("HOME", "")).resolve()
+    path = Path(path).resolve()
+    if (
+        os.environ.get("VODFORGE_DISABLE_TELEMETRY") != "1"
+        or home == Path(pwd.getpwuid(os.getuid()).pw_dir).resolve()
+        or path.parent != home.parent
+    ):
+        raise RuntimeError(
+            "Header timeline requires an isolated telemetry-disabled Mac QA home"
+        )
+    if path.exists():
+        raise FileExistsError("Preserve the existing header timeline")
+    return path
+
+
+def start_header_timeline(window, path):
+    """Explicit private QA only, bounded to120s; no normal startup work."""
+    import json
+    import time
+    from datetime import datetime, timezone
+
+    from PySide6.QtCore import QObject, QTimer
+
+    path = validate_header_timeline(path)
+    header = window.findChild(QObject, "focusHeader")
+    if header is None:
+        raise RuntimeError("Header timeline requires the owned header")
+    output = path.open("x", encoding="utf-8")
+    timer = QTimer(window)
+    start = time.monotonic()
+    count = 0
+
+    def finish():
+        timer.stop()
+        if not output.closed:
+            output.close()
+
+    def sample():
+        nonlocal count
+        if count >= 7500 or time.monotonic() - start >= 120:
+            finish()
+            return
+        try:
+            row = header_timeline_sample(window, header)
+            row.update(
+                utc=datetime.now(timezone.utc).isoformat(),
+                elapsed=time.monotonic() - start,
+            )
+            output.write(json.dumps(row, allow_nan=False) + "\n")
+        except (OSError, ValueError, RuntimeError) as exc:
+            window._header_qa_trace_error = type(exc).__name__
+            finish()
+            return
+        count += 1
+        if count % 60 == 0:
+            output.flush()
+
+    timer.setInterval(16)
+    timer.timeout.connect(sample)
+    window.destroyed.connect(finish)
+    timer.start()
+    return timer, finish

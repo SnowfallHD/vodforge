@@ -92,13 +92,21 @@ def packet(sample, body_slot, sequence, control_gap=0):
                 raise NativeRowRefused(
                     "controls are not in the current shared native row band"
                 )
-        if any(a[0] + a[2] > b[0] for a, b in zip(bounds, bounds[1:])):  # noqa: RUF007 - preserve accepted pure transaction
+        lanes = [rect(b.get("screen_bounds", b["visible_screen"])) for b in buttons]
+        for full, visible_bounds in zip(lanes, bounds):
+            x, y, w, h = full
+            vx, vy, vw, vh = visible_bounds
+            if vx < x or vy < y or vx + vw > x + w or vy + vh > y + h:
+                raise NativeRowRefused(
+                    "visible controls disagree with current full bounds"
+                )
+        if any(a[0] + a[2] > b[0] for a, b in zip(lanes, lanes[1:])):  # noqa: RUF007 - preserve accepted pure transaction
             raise NativeRowRefused("control lanes overlap or reorder")
         # Windowed AppKit may allocate an adjacent item; fullscreen AppKit
         # may allocate an item spanning the genuine native controls. Both are
         # current same-row ownership, not a stale windowed offset. Only content
         # clearance changes, from current visible intersections + design gap.
-        overlaps = [r for r in bounds if r[0] + r[2] > hx and r[0] < hx + hw]
+        overlaps = [r for r in lanes if r[0] + r[2] > hx and r[0] < hx + hw]
         # While fullscreen's native item slides, retain the same declared
         # control-to-content gap even just after its left edge clears the last
         # button. Dropping that gap at the intersection boundary creates a
@@ -106,7 +114,7 @@ def packet(sample, body_slot, sequence, control_gap=0):
         # only current controls/item/fullscreen state; no cached origin or new
         # offset/animation. Windowed adjacent allocation remains unchanged.
         if sample["fullscreen"]:
-            leading = max(0.0, max(r[0] + r[2] for r in bounds) + control_gap - hx)
+            leading = max(0.0, max(r[0] + r[2] for r in lanes) + control_gap - hx)
         else:
             leading = (
                 max(r[0] + r[2] for r in overlaps) - hx + control_gap
@@ -117,9 +125,15 @@ def packet(sample, body_slot, sequence, control_gap=0):
             raise NativeRowRefused("native controls leave no item content lane")
         start = min(hx, min(r[0] for r in bounds))
         row = (start, hy, max(hx + hw, max(r[0] + r[2] for r in bounds)) - start, hh)
+        content_target = (
+            max(r[0] + r[2] for r in lanes) + control_gap
+            if sample["fullscreen"]
+            else hx + leading
+        )
         visible = True
     elif states == ["hidden"] * 3:
         row = host
+        content_target = cx
         visible = False
         leading = 0.0
     else:
@@ -133,6 +147,8 @@ def packet(sample, body_slot, sequence, control_gap=0):
         "host_visible": sample["host_visible"],
         "state": "controls-visible" if visible else "controls-hidden",
         "host_screen": list(host),
+        "content_screen": list(content),
+        "content_target_screen_x": float(content_target),
         "native_row_screen": list(row),
         "width": hw,
         "height": hh,

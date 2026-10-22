@@ -808,3 +808,121 @@ def test_input_readiness_pause_does_not_snap_reveal_motion(child_header):
     main.setProperty("nativeHeaderInputReady", True)
     QTest.qWait(300)
     assert header.property("nativeContentScreenX") == 96
+
+
+def test_fullscreen_geometry_translation_does_not_start_second_header_motion(
+    child_header,
+):
+    app, _bridge, main, header, _child, _boundary = child_header
+
+    def publish(origin, transition, fullscreen=True, visible=False):
+        main.setProperty(
+            "nativeRowPacket",
+            {
+                "schema_version": 1,
+                "width": 1400,
+                "height": 44,
+                "host_screen": [origin, 0, 1400, 44],
+                "content_screen": [origin, 0, 1440, 900],
+                "leading": 0,
+                "reserve": 0,
+                "control_right_screen": origin + 76,
+                "control_gap": 20,
+                "fullscreen": fullscreen,
+                "transition": transition,
+                "state": "controls-visible" if visible else "controls-hidden",
+                "body_slot_height": 44,
+            },
+        )
+
+    publish(30, 0, False)
+    settle(app, header)
+    publish(0, 1)
+    QTest.qWait(100)
+    publish(20, 1)
+    QTest.qWait(90)
+    publish(0, 0)
+    samples = []
+    for _ in range(12):
+        samples.append(header.property("nativeContentScreenX"))
+        QTest.qWait(20)
+    assert max(abs(x) for x in samples) <= 0.5, samples
+
+
+def test_native_control_clip_refinement_does_not_add_reveal_phase(child_header):
+    import copy
+
+    from tests.test_mac_header_packet import entered
+    from yt_downloader.qt_quick.mac_header_packet import packet
+
+    _app, _bridge, main, header, _child, _boundary = child_header
+    sample = entered()
+    sample["content"][0] = 0
+    for b in sample["buttons"]:
+        b["screen_bounds"] = list(b["visible_screen"])
+        b["visibility"] = "hidden"
+        b["visible_screen"] = [0, 0, 0, 0]
+    main.setProperty("nativeRowPacket", packet(sample, 44, 1, 20))
+    QTest.qWait(120)
+    visible = copy.deepcopy(sample)
+    for b in visible["buttons"]:
+        b["visibility"] = "visible"
+        b["visible_screen"] = list(b["screen_bounds"])
+        b["visible_screen"][2] -= 6
+    main.setProperty("nativeRowPacket", packet(visible, 44, 2, 20))
+    QTest.qWait(280)
+    settled = header.property("nativeContentScreenX")
+    for b in visible["buttons"]:
+        b["visible_screen"] = list(b["screen_bounds"])
+    main.setProperty("nativeRowPacket", packet(visible, 44, 3, 20))
+    samples = [header.property("nativeContentScreenX")]
+    for _ in range(12):
+        QTest.qWait(20)
+        samples.append(header.property("nativeContentScreenX"))
+    assert settled == 99, settled
+    assert all(abs(x - settled) < 0.5 for x in samples), samples
+
+
+def test_first_coherent_fullscreen_packet_cannot_replay_windowed_position(child_header):
+    app, _bridge, main, header, child, _boundary = child_header
+    main.setProperty(
+        "nativeRowPacket",
+        {
+            "schema_version": 1,
+            "width": 996,
+            "height": 44,
+            "host_screen": [126, 0, 996, 44],
+            "content_screen": [30, 0, 1100, 740],
+            "leading": 0,
+            "reserve": 0,
+            "fullscreen": False,
+            "transition": 0,
+            "state": "controls-visible",
+            "body_slot_height": 44,
+        },
+    )
+    settle(app, header)
+    main.setProperty("nativeHeaderInputReady", False)
+    child.setGeometry(0, 0, 1440, 44)
+    main.setProperty(
+        "nativeRowPacket",
+        {
+            "schema_version": 1,
+            "width": 1440,
+            "height": 44,
+            "host_screen": [0, 0, 1440, 44],
+            "content_screen": [0, 0, 1440, 900],
+            "leading": 0,
+            "reserve": 0,
+            "fullscreen": True,
+            "transition": 0,
+            "state": "controls-hidden",
+            "body_slot_height": 44,
+        },
+    )
+    main.setProperty("nativeHeaderInputReady", True)
+    samples = [header.property("nativeHeaderInset")]
+    for _ in range(12):
+        QTest.qWait(10)
+        samples.append(header.property("nativeHeaderInset"))
+    assert max(samples) <= 0.5, samples

@@ -8045,6 +8045,7 @@ def _argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("--event-log", type=Path)
     parser.add_argument("--ready-file", type=Path)
+    parser.add_argument("--header-qa-trace", type=Path)
     parser.add_argument("--runtime-smoke", action="store_true")
     parser.add_argument("--analytics-qa-receipt", type=Path)
     return parser
@@ -8052,6 +8053,10 @@ def _argument_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = _argument_parser().parse_args()
+    if args.header_qa_trace is not None:
+        from yt_downloader.qt_quick.mac_header import validate_header_timeline
+
+        validate_header_timeline(args.header_qa_trace)
 
     def smoke_phase(stage: str) -> None:
         # Explicit dependency-smoke diagnostics only: fixed stage names, no
@@ -8125,6 +8130,13 @@ def main() -> int:
         if smoke_home is not None:
             smoke_home.cleanup()
         raise SystemExit(f"VODForge Qt quality-E2E startup rejected: {exc}") from exc
+    if args.header_qa_trace is not None:
+        from yt_downloader.qt_quick.mac_header import start_header_timeline
+
+        application._header_qa_timeline = start_header_timeline(  # type: ignore[attr-defined]
+            bridge._window, args.header_qa_trace
+        )
+        application.aboutToQuit.connect(application._header_qa_timeline[1])  # type: ignore[attr-defined]
     smoke_phase("session_begin")
     bridge.startSession()
     smoke_phase("session_returned")

@@ -196,6 +196,9 @@ class HeaderHost:
                         r.visibility[i]
                     ],
                     "visible_screen": list(r.visible[i * 4 : i * 4 + 4]),
+                    # Full current screen bounds are already part of this same
+                    # atomic native snapshot. Clipping is visibility, not lane size.
+                    "screen_bounds": list(r.geometry[37 + i * 10 : 41 + i * 10]),
                 }
                 for i in range(3)
             ],
