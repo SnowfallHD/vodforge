@@ -55,6 +55,26 @@ def _check_failure_status(detail: FailureDiagnostic | None) -> str:
     return "Could not check for updates. The cause is unknown. Try again or open the download page."
 
 
+def _update_failure_status(detail: FailureDiagnostic | None, stage: str) -> str:
+    location = (
+        "update cache in app data"
+        if stage in {"download", "downloading_repair"}
+        else "update files"
+    )
+    if isinstance(detail, FailureDiagnostic):
+        if detail.reason == "disk_full":
+            return (
+                f"The {location} could not be saved because there is not enough disk space. "
+                "Free space on that drive, then retry the update."
+            )
+        if detail.reason == "permission_denied":
+            return (
+                f"Access to the {location} was denied. Check folder access, "
+                "then retry the update or use the download page."
+            )
+    return "Update needs attention. Try Repair or open the download page."
+
+
 class QtUpdateSession:
     """Only thread handoff and current UI intent; updates.py retains authority."""
 
@@ -405,7 +425,7 @@ class QtUpdateSession:
                 self.status = (
                     _check_failure_status(detail)
                     if self.check_failed
-                    else "Update needs attention. Try Repair or open the download page."
+                    else _update_failure_status(detail, self.stage)
                 )
                 operation(
                     self.telemetry,

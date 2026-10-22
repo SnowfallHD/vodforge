@@ -139,7 +139,13 @@ from yt_downloader.library_annotations import (
     LibraryAnnotationsOwner,
     referenced_annotation_owners,
 )
-from yt_downloader.library_import import commit_imports, inspect_local_media
+from yt_downloader.library_import import (
+    ImportFailure,
+    commit_imports,
+    import_failure,
+    import_failure_summary,
+    inspect_local_media,
+)
 from yt_downloader.library_media_recovery import (
     LibraryMediaRecoveryOwner,
     LibraryMediaRecoveryPlan,
@@ -1347,6 +1353,8 @@ class Bridge(QObject):
         plan = self._missing_plan
         item = self._current_missing_record()
         if plan is None or item is None:
+            return False
+        if plan.kind != "legacy" and not plan.can_redownload:
             return False
         destination = plan.destination
         if plan.requires_destination_choice:
@@ -2753,9 +2761,11 @@ class Bridge(QObject):
                 self._status = "Choose media files from this computer."
             else:
 
-                def inspect(cancelled: Any) -> tuple[list[dict[str, Any]], int]:
+                def inspect(
+                    cancelled: Any,
+                ) -> tuple[list[dict[str, Any]], list[ImportFailure]]:
                     completed: list[dict[str, Any]] = []
-                    failed = 0
+                    failed: list[ImportFailure] = []
                     for path in paths:
                         if cancelled.is_set():
                             break
@@ -2766,8 +2776,8 @@ class Bridge(QObject):
                             ValueError,
                             RuntimeError,
                             SubprocessError,
-                        ):
-                            failed += 1
+                        ) as exc:
+                            failed.append(import_failure(path, exc))
                     return completed, failed
 
                 if self._import_work.submit("library_import", inspect) is not None:
@@ -7291,11 +7301,20 @@ class Bridge(QObject):
         if import_result is not None:
             self._import_pending = False
             self.importBusyChanged.emit()
-            completed, _failed = (
+            completed, import_failures = (
                 import_result.value
                 if not import_result.error and import_result.value is not None
-                else ([], self._import_request_count)
+                else (
+                    [],
+                    [
+                        ImportFailure(
+                            "Import",
+                            "Media inspection did not complete. Try importing the selected files again.",
+                        )
+                    ],
+                )
             )
+            import_failures = list(import_failures)
             saved = 0
             if (
                 completed
@@ -7308,8 +7327,8 @@ class Bridge(QObject):
                         completed,
                         self._runtime.history_path,
                     )
-                except (HistoryError, OSError, ValueError):
-                    pass
+                except (HistoryError, OSError, ValueError) as exc:
+                    import_failures.append(import_failure(None, exc, publication=True))
                 else:
                     self._runtime.history = prospective
                     saved = len(completed)
@@ -7319,8 +7338,17 @@ class Bridge(QObject):
             self._status = (
                 f"Added {saved} media {'file' if saved == 1 else 'files'} to Library."
                 if saved == self._import_request_count
-                else f"Added {saved} files. {self._import_request_count - saved} could not be added."
+                else f"Added {saved} {'file' if saved == 1 else 'files'}. {self._import_request_count - saved} could not be added."
             )
+            if completed and not saved and not import_failures:
+                import_failures.append(
+                    ImportFailure(
+                        "Library",
+                        "Finish Library recovery before importing these files again. The media files were left unchanged.",
+                    )
+                )
+            if import_failures:
+                self._status += " " + import_failure_summary(import_failures)
             operation(
                 self._analytics.telemetry,
                 "library_import_operation",

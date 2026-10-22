@@ -12,10 +12,28 @@ from tests.test_qt_scene_port import saved
 from yt_downloader.qt_quick.input_trace import InputTrace
 
 
+def settle_liquid(window):
+    """Wait for the new app-owned popup lifecycle, not a fixed instant-close assumption."""
+    deadline = time.monotonic() + 0.8
+    while time.monotonic() < deadline:
+        moving = [
+            item
+            for item in window.findChildren(QObject)
+            if item.property("liquidMotion")
+            and item.property("visible")
+            and item.property("reveal") < 1
+        ]
+        if not moving:
+            return
+        QTest.qWait(10)
+    assert not moving, "Liquid popup lifecycle did not finish within its bounded budget"
+
+
 def click(window, item):
     QTest.mouseMove(window, center(item))
     QTest.mouseClick(window, Qt.LeftButton, pos=center(item))
     QTest.qWait(40)
+    settle_liquid(window)
 
 
 @pytest.mark.parametrize("dismissal", ["trigger", "escape", "choice"])
@@ -56,6 +74,7 @@ def test_category_trigger_closes_after_text_field_focus_open(
         elif dismissal == "escape":
             QTest.keyClick(window, Qt.Key_Escape)
             QTest.qWait(40)
+            settle_liquid(window)
         else:
             from tests.test_qt_interaction_invariants import _visual_descendants
 
@@ -340,6 +359,7 @@ def test_dropdown_matrix_repeated_pointer_and_keyboard(tmp_path, monkeypatch, me
             # A complete rapid pair includes both press/release sequences.
             QTest.mouseDClick(window, Qt.LeftButton, pos=center(trigger), delay=10)
             QTest.qWait(30)
+            settle_liquid(window)
             assert not popup.property("visible"), (menu, "rapid pair")
             click(window, trigger)
             assert popup.property("visible"), (menu, "separated open")
@@ -349,9 +369,11 @@ def test_dropdown_matrix_repeated_pointer_and_keyboard(tmp_path, monkeypatch, me
             trigger.forceActiveFocus(Qt.TabFocusReason)
             QTest.keyClick(window, key)
             QTest.qWait(40)
+            settle_liquid(window)
             assert popup.property("visible"), (menu, "keyboard open")
             QTest.keyClick(window, Qt.Key_Escape)
             QTest.qWait(40)
+            settle_liquid(window)
             assert not popup.property("visible"), (menu, "escape close")
         # A parent close/navigation must not poison the next use of the trigger.
         if settings:

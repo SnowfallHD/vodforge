@@ -86,6 +86,12 @@ def run_admission_failure_message(
             "VODForge could not save this source link. Paste a valid web link "
             "and try again. No download was started."
         )
+    if error.cause == "protected_output":
+        return (
+            "That output location is protected by an interrupted run. "
+            "Choose a different output folder, or review the run in Issues & Recovery. "
+            "Protected partial files were left untouched. No download was started."
+        )
     return (
         "VODForge could not save the recovery data needed to start this download. "
         "Check available disk space and app data folder access, then try again. "
@@ -530,7 +536,9 @@ class ActiveRunStore:
                     protected.parent
                 ):
                     raise RunStateError(
-                        "This destination is protected by an interrupted run."
+                        "This destination is protected by an interrupted run.",
+                        cause="protected_output",
+                        stage="admission",
                     )
 
     def prepare_recovery(self) -> list[DownloadJob]:

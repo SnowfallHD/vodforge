@@ -31,6 +31,14 @@ HISTORY_MEDIA_MISSING = "missing"
 HISTORY_MEDIA_UNAVAILABLE = "unavailable"
 RETRY_JOB_METADATA_KEY = "vodforge_retry_job"
 
+
+def history_is_local_media(info: Mapping[str, Any]) -> bool:
+    """Recognize the import/local-creation identity namespace, not a web ID."""
+    return (
+        re.fullmatch(r"local[-_][0-9a-f]{16,64}", str(info.get("id") or "")) is not None
+    )
+
+
 HISTORY_METADATA_KEYS = (
     "id",
     "title",

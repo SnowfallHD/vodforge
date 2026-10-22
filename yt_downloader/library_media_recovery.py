@@ -16,6 +16,7 @@ from .history import (
     HISTORY_MEDIA_UNAVAILABLE,
     RETRY_JOB_METADATA_KEY,
     history_annotation_owner,
+    history_is_local_media,
     history_media_file_state,
     history_output_dir,
 )
@@ -37,7 +38,7 @@ from .run_identity import (
 from .run_state import RunStateError, deserialize_download_job
 
 MediaRecoveryKind = Literal[
-    "available", "missing", "unavailable", "ambiguous", "legacy", "invalid"
+    "available", "missing", "unavailable", "ambiguous", "legacy", "local", "invalid"
 ]
 
 
@@ -237,6 +238,8 @@ class LibraryMediaRecoveryOwner:
             return LibraryMediaRecoveryPlan("ambiguous", destination)
         if media_state != HISTORY_MEDIA_MISSING or destination is None:
             return LibraryMediaRecoveryPlan("invalid", destination)
+        if history_is_local_media(row):
+            return LibraryMediaRecoveryPlan("local", destination)
 
         saved_job: DownloadJob | None = None
         payload = row.get(RETRY_JOB_METADATA_KEY)

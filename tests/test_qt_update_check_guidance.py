@@ -346,3 +346,43 @@ def test_settings_check_keyboard_dispatch(update_notice_scene, monkeypatch, key)
     QTest.qWait(100)
     assert calls == [True]
     assert window.findChild(QObject, "updatePopup").property("visible")
+
+
+@pytest.mark.parametrize(
+    "reason,expected", [("disk_full", "disk space"), ("permission_denied", "access")]
+)
+def test_known_update_storage_status_is_not_replaced_by_generic_repair_copy(
+    tmp_path, monkeypatch, reason, expected
+):
+    import errno
+
+    from yt_downloader.failure_diagnostics import capture_failure
+    from yt_downloader.qt_quick.update_session import _update_failure_status
+
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    bridge = qt_main.Bridge(None)
+    bridge._timer.stop()
+    error = OSError(errno.ENOSPC if reason == "disk_full" else errno.EACCES, PRIVATE)
+    detail = capture_failure(error, stage="download")
+    bridge._updates.recovery = True
+    bridge._updates.stage = "downloading_repair"
+    bridge._updates.status = _update_failure_status(detail, "downloading_repair")
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        popup = window.findChild(QObject, "updatePopup")
+        popup.open()
+        QTest.qWait(100)
+        app.processEvents()
+        body = window.findChild(QObject, "updateBody")
+        assert expected in body.property("text")
+        assert "update cache" in body.property("text")
+        assert PRIVATE not in body.property("text")
+    finally:
+        window.close()
+        bridge.close()
+        engine.deleteLater()
+        app.processEvents()

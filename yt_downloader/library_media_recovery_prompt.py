@@ -29,6 +29,16 @@ def library_media_recovery_prompt(
     """Describe a recovery plan without changing canonical run or Library state."""
 
     destination = str(plan.destination or "Saved location unavailable")
+    if plan.kind == "local":
+        return LibraryMediaRecoveryPrompt(
+            "Local media file not found",
+            "Locate or restore this local file",
+            "Use Find file to locate the moved media, or restore it and try again. "
+            "This item was imported or created locally and has no download source.",
+            destination,
+            "Done",
+            "none",
+        )
     if plan.kind == "unavailable":
         return LibraryMediaRecoveryPrompt(
             "Saved location unavailable",

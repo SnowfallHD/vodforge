@@ -62,6 +62,7 @@ from .failure_diagnostics import (
 )
 from .history import (
     application_data_dir,
+    history_is_local_media,
     observed_output_namespace,
     sanitize_chapters,
     sanitize_durable_text,
@@ -1920,6 +1921,8 @@ def retry_url_for_item(info: dict[str, Any], fallback_url: str) -> str:
 
 def canonical_youtube_url(info: dict[str, Any], fallback_url: str = "") -> str | None:
     """Return a public item URL without copying unrelated query or auth data."""
+    if history_is_local_media(info):
+        return None
     candidates = [
         str(info.get("webpage_url") or "").strip(),
         str(info.get("original_url") or "").strip(),

@@ -3170,9 +3170,7 @@ Window {
                     }
                     Text {
                         objectName: "updateBody"
-                        text: bridge.updateRecovery ?
-                            "Try Repair to download a fresh verified copy, or open the download page." :
-                            bridge.updateBusy && bridge.updateStage === "check" ?
+                        text: bridge.updateBusy && bridge.updateStage === "check" ?
                             "Looking for the latest VODForge release." : bridge.updateStatus
                         color: theme.muted
                         font.pixelSize: 14

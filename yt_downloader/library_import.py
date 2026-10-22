@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import math
 import os
 import subprocess  # nosec B404 - fixed ffprobe arguments
 import threading
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +18,50 @@ from .platform_services import find_runtime_executable, hidden_window_subprocess
 SUPPORTED_IMPORTS = frozenset(
     {".mp4", ".mp3", ".m4a", ".aac", ".wav", ".flac", ".ogg", ".opus"}
 )
+
+
+class MediaImportError(ValueError):
+    """A bounded user-facing validation explanation owned by this module."""
+
+
+class MediaInspectionUnavailable(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class ImportFailure:
+    name: str
+    message: str
+
+
+def import_failure(
+    path: Path | None, error: BaseException, *, publication: bool = False
+) -> ImportFailure:
+    name = " ".join(path.name.split())[:80] if path is not None else "Library"
+    if isinstance(error, FileNotFoundError):
+        message = (
+            "This file is no longer available. Locate or restore it, then import again."
+        )
+    elif isinstance(error, PermissionError):
+        message = "File access was denied. Check folder access, then import again."
+    elif isinstance(error, OSError) and error.errno == errno.ENOSPC:
+        message = "There is not enough disk space. Free space, then import again."
+    elif isinstance(error, MediaInspectionUnavailable):
+        message = "The media inspection component is unavailable. Repair or reinstall VODForge before importing."
+    elif isinstance(error, MediaImportError):
+        message = str(error)[:240]
+    elif publication:
+        message = "Library changes could not be saved safely. Check app data folder access and available space, then import again. The media files were left unchanged."
+    else:
+        message = "Media inspection did not complete. Check that the file is supported and playable, then import again."
+    return ImportFailure(name, message)
+
+
+def import_failure_summary(failures: list[ImportFailure]) -> str:
+    shown = [f"{f.name}: {f.message}" for f in failures[:2]]
+    if len(failures) > 2:
+        shown.append(f"{len(failures) - 2} more files could not be added.")
+    return " ".join(shown)
 
 
 def _file_fingerprint(value: os.stat_result) -> tuple[int, ...]:
@@ -33,11 +79,11 @@ def inspect_local_media(path: Path, cancelled: threading.Event) -> dict[str, Any
         raise InterruptedError("Import cancelled.")
     path = path.expanduser().resolve(strict=True)
     if path.suffix.casefold() not in SUPPORTED_IMPORTS or not path.is_file():
-        raise ValueError("Choose an MP4 video or supported audio file.")
+        raise MediaImportError("Choose an MP4 video or supported audio file.")
     before = path.stat()
     executable = find_runtime_executable("ffprobe")
     if not executable:
-        raise RuntimeError("Media inspection is unavailable.")
+        raise MediaInspectionUnavailable("Media inspection is unavailable.")
     result = subprocess.run(  # nosec B603 - runtime tool and selected path are separate argv
         [
             executable,
@@ -55,7 +101,7 @@ def inspect_local_media(path: Path, cancelled: threading.Event) -> dict[str, Any
         **hidden_window_subprocess_kwargs(),
     )
     if result.returncode or len(result.stdout) > 1024 * 1024:
-        raise ValueError("This file could not be read as media.")
+        raise MediaImportError("This file could not be read as media.")
     data = json.loads(result.stdout)
     streams = [s for s in data.get("streams", [])[:128] if isinstance(s, dict)]
     # Album covers are artwork carried in an audio container, not motion video.
@@ -70,15 +116,17 @@ def inspect_local_media(path: Path, cancelled: threading.Event) -> dict[str, Any
     )
     audio = next((s for s in streams if s.get("codec_type") == "audio"), None)
     if video and path.suffix.casefold() != ".mp4":
-        raise ValueError("Choose an MP4 file for motion video.")
+        raise MediaImportError("Choose an MP4 file for motion video.")
     if not video and not audio:
-        raise ValueError("No playable video or audio was found.")
+        raise MediaImportError("No playable video or audio was found.")
     duration = float((data.get("format") or {}).get("duration") or 0)
     if not math.isfinite(duration) or duration <= 0:
-        raise ValueError("The media duration is unavailable.")
+        raise MediaImportError("The media duration is unavailable.")
     after = path.stat()
     if _file_fingerprint(before) != _file_fingerprint(after):
-        raise ValueError("The file changed while it was being inspected. Try again.")
+        raise MediaImportError(
+            "The file changed while it was being inspected. Try again."
+        )
     if cancelled.is_set():
         raise InterruptedError("Import cancelled.")
     identity = hashlib.sha256(os.path.normcase(str(path)).encode()).hexdigest()
@@ -150,7 +198,7 @@ def commit_imports(history, records, path, *, save=None):
         if expected is not None and tuple(expected) != _file_fingerprint(
             Path(record["vodforge_output_path"]).stat()
         ):
-            raise ValueError(
+            raise MediaImportError(
                 "The file changed after inspection. Try importing it again."
             )
     (save or save_history)(path, prospective)

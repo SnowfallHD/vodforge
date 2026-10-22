@@ -7,6 +7,21 @@ Popup {
     property real surfaceOpacity: 0.84
     property real materialWidth: width
     property real materialHeight: height
+    // Opt in only app-owned dropdowns; modal/native surfaces keep their policy.
+    property bool liquidMotion: false
+    property real reveal: liquidMotion ? 0 : 1
+    enter: Transition {
+        NumberAnimation { target: popup; property: "reveal"; to: 1; duration: popup.liquidMotion && !bridge.reducedMotion ? 240 : 0; easing.type: Easing.InOutCubic }
+    }
+    exit: Transition {
+        NumberAnimation { target: popup; property: "reveal"; to: 0; duration: popup.liquidMotion && !bridge.reducedMotion ? 180 : 0; easing.type: Easing.InOutCubic }
+    }
+    Binding {
+        target: popup.contentItem
+        property: "opacity"
+        when: popup.liquidMotion
+        value: Math.max(0, (popup.reveal - 0.65) / 0.35)
+    }
     property Item triggerItem
     property bool dismissedByTriggerPress: false
     property bool closingFromTrigger: false
@@ -53,6 +68,11 @@ Popup {
     }
     background: StoneField {
         id: surface
+        x: (popup.width - width) / 2
+        y: 0
+        width: popup.width * (popup.liquidMotion ? 0.30 + 0.70 * popup.reveal : 1)
+        height: popup.height * (popup.liquidMotion ? popup.reveal : 1)
+        opacity: popup.liquidMotion ? popup.reveal : 1
         surfaceOpacity: popup.surfaceOpacity
         materialWidth: popup.materialWidth
         materialHeight: popup.materialHeight

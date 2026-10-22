@@ -3,6 +3,7 @@ import QtQuick.Controls
 
 StonePopup {
     id: popup
+    liquidMotion: true
     property Item anchorItem
     property Item scrollViewport
     property bool preferAbove: false
@@ -10,8 +11,8 @@ StonePopup {
     property bool openRight: false
     property int overlap: 3
 
-    function reposition() {
-        if (!visible || !anchorItem || !parent) return
+    function reposition(beforeShow = false) {
+        if ((!visible && !beforeShow) || !anchorItem || !parent) return
         let owner = anchorItem
         while (owner) {
             if (!owner.visible) {
@@ -39,6 +40,7 @@ StonePopup {
                                  alignRight ? point.x + anchorItem.width - width : point.x))
         y = Math.max(0, Math.min(parent.height - height, useAbove ? above : below))
     }
+    onAboutToShow: reposition(true)
     onOpened: reposition()
     onAnchorItemChanged: reposition()
     onWidthChanged: reposition()
