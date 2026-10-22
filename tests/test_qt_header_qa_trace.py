@@ -49,7 +49,50 @@ def test_header_trace_uses_current_native_geometry_and_closed_field_set(current)
         "native_child",
         "actual_screen_x",
         "device_pixel_ratio",
+        "native_endpoint_geometry",
     }
+    if current:
+        endpoint = row["native_endpoint_geometry"]
+        assert set(endpoint) == {
+            "view_bounds",
+            "host_in_own_window",
+            "content_layout",
+            "main_frame",
+            "presentation_flags",
+            "control_bounds",
+            "fullscreen_transition",
+            "measured_endpoint_offsets",
+        }
+        assert endpoint["fullscreen_transition"] is None
+        assert endpoint["host_in_own_window"] == [0, 0, 0, 0]
+    else:
+        assert row["native_endpoint_geometry"] is None
+
+
+def test_endpoint_trace_unknown_measurements_are_json_null_not_inferred():
+    geometry = [float("nan")] * 98
+    geometry[27:31] = geometry[82:86] = [5, 8, 1400, 44]
+    host = SimpleNamespace(
+        snapshot=lambda: (1, 1793, geometry),
+        _row=SimpleNamespace(transition=0),
+    )
+    window = SimpleNamespace(
+        property=lambda name: {} if name == "nativeRowPacket" else False,
+        devicePixelRatio=lambda: 2,
+        _native_window_controls=SimpleNamespace(retired=False, _host=host),
+    )
+    header = SimpleNamespace(
+        property=lambda name: 0 if name == "nativeHeaderInset" else float("nan"),
+        x=lambda: 0,
+    )
+    row = header_timeline_sample(window, header)
+    endpoint = row["native_endpoint_geometry"]
+    assert endpoint["fullscreen_transition"] == 0
+    assert endpoint["presentation_flags"] == [None, None, None]
+    assert endpoint["measured_endpoint_offsets"] == [None, None]
+    # Other old QML fields deliberately remain unknown in this stub; the new
+    # fixed observables themselves must be serializable without NaN guesses.
+    json.dumps(endpoint, allow_nan=False)
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="Mac-only native QA gate")

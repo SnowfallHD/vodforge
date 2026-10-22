@@ -686,6 +686,7 @@ def header_timeline_sample(window, header):
         "native_child": None,
         "actual_screen_x": None,
         "device_pixel_ratio": window.devicePixelRatio(),
+        "native_endpoint_geometry": None,
     }
     owner = getattr(window, "_native_window_controls", None)
     if owner is not None and not owner.retired:
@@ -697,6 +698,38 @@ def header_timeline_sample(window, header):
                 result["actual_screen_x"] = (
                     geometry[82] + header.x() + header.property("nativeHeaderInset")
                 )
+
+                # Already read atomically by the existing ABI6 snapshot. These
+                # are candidate endpoint observables, NOT a claim that menu
+                # visibility or fullscreen transition completion means toolbar
+                # reveal completion. No extra native getter or pointer capture.
+                def finite_values(values):
+                    return [
+                        float(v)
+                        if isinstance(v, (int, float)) and math.isfinite(v)
+                        else None
+                        for v in values
+                    ]
+
+                native_row = getattr(owner._host, "_row", None)
+                result["native_endpoint_geometry"] = {
+                    "view_bounds": finite_values(geometry[8:12]),
+                    "host_in_own_window": finite_values(geometry[12:16]),
+                    "content_layout": finite_values(geometry[4:8]),
+                    "main_frame": finite_values(geometry[16:20]),
+                    "presentation_flags": finite_values(geometry[24:27]),
+                    "control_bounds": [
+                        finite_values(geometry[37 + i * 10 : 41 + i * 10])
+                        for i in range(3)
+                    ],
+                    "fullscreen_transition": getattr(native_row, "transition", None),
+                    "measured_endpoint_offsets": finite_values(
+                        [
+                            header.property("nativeExposedHostOffset"),
+                            header.property("nativeConcealedHostOffset"),
+                        ]
+                    ),
+                }
         except Exception as exc:  # noqa: BLE001 - optional QA read must not change ownership
             result["native_sample_error_class"] = type(exc).__name__
     return result
