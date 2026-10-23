@@ -4952,9 +4952,19 @@ class Bridge(QObject):
         ):
             return False
         window, position = self._pointer_press
-        return bool(
-            item.window() == window and item.contains(item.mapFromScene(position))
-        )
+        # Do not export QQuickItem.window() through a temporary QML argument:
+        # PySide associates the returned window wrapper with that argument and
+        # invalidates the window/children when the temporary wrapper is released.
+        # The exact visual root identifies the delivery window without creating
+        # that ownership relation (including the separate native header surface).
+        try:
+            root = window.contentItem()
+            owner = item
+            while owner is not None and owner is not root:
+                owner = owner.parentItem()
+            return owner is root and bool(item.contains(item.mapFromScene(position)))
+        except RuntimeError:
+            return False
 
     @Slot()
     def helpMenuShown(self) -> None:
