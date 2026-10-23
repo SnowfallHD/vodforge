@@ -95,7 +95,21 @@ static unsigned VFVisibleRect(NSView *view,NSRect *out);
     // AppKit's invalidation rectangle is not the view's drawing ownership.
     // A toolbar item must never cover the main window's content underneath it.
     NSRect paint=NSIntersectionRect(dirty,self.bounds);
-    if(_brandColor&&!NSIsEmptyRect(paint)){[_brandColor setFill];NSRectFill(paint);}
+    if(_brandColor&&!NSIsEmptyRect(paint)){
+        [_brandColor setFill];NSRectFill(paint);
+        // Artwork belongs to the main Qt surface. Keep this moving surface's
+        // lower edge inside its own lane: no external shadow or geometry change.
+        [NSGraphicsContext saveGraphicsState];NSRectClip(paint);
+        const CGFloat alpha[4]={0.02,0.04,0.07,0.22};
+        for(unsigned i=0;i<4;i++){
+            NSRect edge=NSIntersectionRect(self.bounds,
+                NSMakeRect(NSMinX(self.bounds),NSMaxY(self.bounds)-4+i,
+                           NSWidth(self.bounds),1));
+            [[NSColor colorWithWhite:0 alpha:alpha[i]]setFill];
+            NSRectFillUsingOperation(edge,NSCompositingOperationSourceOver);
+        }
+        [NSGraphicsContext restoreGraphicsState];
+    }
 }
 - (void)setFrame:(NSRect)frame {
     _frameMutation++;@try{[super setFrame:frame];}@finally{_frameMutation--;}
