@@ -1088,3 +1088,27 @@ def test_owned_alignment_pause_preserves_header_and_recovers_after_focus_change(
     assert not owner.retired and rig.window.property("nativeHeaderInputReady")
     assert rig.window.property("nativeRowPacket")["width"] == 930
     owner.close()
+
+
+@pytest.mark.parametrize("transition", [1, 2])
+def test_hidden_transition_updates_fitted_child_without_enabling_input(
+    native_owner_rig, monkeypatch, transition
+):
+    rig = native_owner_rig
+    owner = rig.make()
+    sample = rig.host.row_sample
+    monkeypatch.setattr(
+        rig.host, "row_sample", lambda: dict(sample(), host_visible=False)
+    )
+    rig.state.update(transition=transition, rect=(110, 6, 930, 44))
+    rig.native_callback()
+    assert rig.surface.width() == 930
+    assert rig.window.property("nativeRowPacket")["width"] == 930
+    assert rig.window.property("nativeRowPacket")["host_visible"] is False
+    assert rig.window.property("nativeHeaderInputReady") is False
+    assert not owner.retired
+    monkeypatch.setattr(rig.host, "row_sample", sample)
+    rig.state["transition"] = 0
+    rig.native_callback()
+    assert rig.window.property("nativeHeaderInputReady") is True
+    owner.close()

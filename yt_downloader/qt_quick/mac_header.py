@@ -494,7 +494,10 @@ class IntegratedHeader:
                 )
             ) and (
                 not allocated
-                or not sample.get("host_visible")
+                or (
+                    not sample.get("host_visible")
+                    and sample.get("transition") not in (1, 2)
+                )
                 or native_height < self._body_slot
             ):
                 # AppKit can briefly unallocate its exact toolbar even after
@@ -572,7 +575,10 @@ class IntegratedHeader:
                 self._window.setProperty("nativeHeaderAttached", True)
                 self._attached = True
                 # Native height comes from layout policy, not allocated geometry.
-            self._window.setProperty("nativeHeaderInputReady", True)
+            # A current allocated host can be temporarily hidden by AppKit's
+            # fullscreen transition. Keep its fitted geometry current without
+            # admitting input until that host is actually visible again.
+            self._window.setProperty("nativeHeaderInputReady", layout["host_visible"])
             self._window._native_header_diagnostic = {
                 "stage": "success",
                 "flags": child_flags,
