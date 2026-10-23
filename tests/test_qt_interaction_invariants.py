@@ -387,7 +387,8 @@ def test_interrupted_download_stays_visible_when_newer_downloads_complete(
     try:
         requested = []
 
-        def artwork(record, *args):
+        def artwork(record, size=(320, 180), role="media"):
+            assert role in {"media", "run"}
             requested.append(record["title"])
             path = tmp_path / (record["title"] + ".png")
             if not path.exists():
