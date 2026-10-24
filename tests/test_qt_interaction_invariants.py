@@ -41,6 +41,19 @@ def _close(bridge, engine, window):
     bridge.close()
 
 
+def _assert_popup_closed(popup):
+    # Liquid exits retain visible until their 180ms transition completes.
+    # Still require immediate close intent and detect a delayed reopen.
+    assert not popup.property("opened"), "popup did not begin closing"
+    for _ in range(30):
+        if not popup.property("visible"):
+            break
+        QTest.qWait(10)
+    assert not popup.property("visible"), "popup did not finish closing within 300ms"
+    QTest.qWait(250)
+    assert not popup.property("visible"), "popup reopened after closing"
+
+
 def _visual_descendants(item):
     for child in item.childItems():
         yield child
@@ -196,7 +209,7 @@ def test_library_filter_menu_keeps_type_and_collection_choices_separate(
         viewport.property("contentItem").setProperty("contentY", 10000)
         app.processEvents()
         assert viewport.property("contentItem").property("contentY") > 540
-        assert menu.property("visible") is False
+        _assert_popup_closed(menu)
     finally:
         _close(bridge, engine, window)
 
@@ -242,7 +255,7 @@ def test_library_description_and_notes_share_height_and_copy_current_text(
         bridge.selectHome("Library")
         QTest.qWait(150)
         app.processEvents()
-        assert actions.property("visible") is False
+        _assert_popup_closed(actions)
         bridge._playback_record = row
         assert bridge.copyLibraryText(owner, "description")
         assert window.findChild(QObject, "playerCopyDescriptionButton") is not None
@@ -271,7 +284,7 @@ def test_settings_quality_output_and_help_have_own_button_menus(tmp_path, monkey
         output_button.activated.emit()
         app.processEvents()
         assert output.property("visible") is True
-        assert quality.property("visible") is False
+        _assert_popup_closed(quality)
         output.close()
         help_button = next(
             item
@@ -806,7 +819,7 @@ def test_file_path_trail_is_one_line_with_reachable_hidden_parents(
             ancestor.activated.emit()
             app.processEvents()
             assert bridge.libraryFolders["path"] == hidden["key"]
-            assert not popup.property("visible")
+            _assert_popup_closed(popup)
         else:
             assert not back.property("enabled")
             back.activated.emit()
@@ -881,7 +894,7 @@ def test_floating_surfaces_cast_shadow_outside_unchanged_input_bounds(
         shadow.setProperty("visible", True)
         popup.close()
         app.processEvents()
-        assert not popup.property("visible")
+        _assert_popup_closed(popup)
     finally:
         _close(bridge, engine, window)
 
@@ -945,6 +958,13 @@ def test_popup_trigger_click_closes_without_reopening(tmp_path, monkeypatch, men
         for click, expected in enumerate(states):
             QTest.mouseClick(window, Qt.MouseButton.LeftButton, pos=position)
             QTest.qWait(50)
+            if not expected:
+                # Closing clears opened before the 180ms liquid exit finishes.
+                assert not popup.property("opened"), "trigger did not begin closing"
+            # Observe past both the 240ms enter and 180ms exit. A trigger
+            # reopen must still fail the final state, not be hidden by disabling
+            # the product transition for this interaction test.
+            QTest.qWait(250)
             assert popup.property("visible") is expected, (
                 click,
                 expected,
@@ -964,7 +984,7 @@ def test_popup_trigger_click_closes_without_reopening(tmp_path, monkeypatch, men
         assert popup.property("visible")
         QTest.keyClick(window, Qt.Key.Key_Escape)
         QTest.qWait(50)
-        assert not popup.property("visible")
+        _assert_popup_closed(popup)
         QTest.mouseClick(window, Qt.MouseButton.LeftButton, pos=position)
         QTest.qWait(50)
         assert popup.property("visible")
@@ -974,7 +994,7 @@ def test_popup_trigger_click_closes_without_reopening(tmp_path, monkeypatch, men
         QTest.qWait(30)
         QTest.mouseClick(window, Qt.MouseButton.LeftButton, pos=QPoint(2, 2))
         QTest.qWait(50)
-        assert not popup.property("visible")
+        _assert_popup_closed(popup)
         QTest.mouseMove(window, position)
         if menu != "allruns":
             QTest.mouseClick(window, Qt.MouseButton.LeftButton, pos=position)
@@ -1017,7 +1037,7 @@ def test_explicit_popup_close_does_not_consume_the_next_pointer_activation(
         assert bridge.isPointerPressed() and trigger.property("hovered")
         trigger.activated.emit()
         app.processEvents()
-        assert not popup.property("visible")
+        _assert_popup_closed(popup)
         assert not popup.property("dismissedByTriggerPress")
         QTest.mouseRelease(window, Qt.MouseButton.LeftButton, pos=QPoint(2, 2))
         QTest.mouseMove(window, position)

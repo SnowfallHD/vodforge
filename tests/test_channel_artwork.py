@@ -181,21 +181,41 @@ def test_both_roles_are_cached_privately_and_reused_after_restart(tmp_path):
 
 def test_same_named_channels_do_not_share_profile_cache(tmp_path):
     calls = []
+    other_id = "UC" + "B" * 22
+    records = [
+        {**ROW, "channel": "Same name", "channel_id": cid} for cid in (CID, other_id)
+    ]
 
     def loader(request, cancelled):
         calls.append(request)
         result = profile()
         result["channel_id"] = request[1]
+        color = "red" if request[1] == CID else "blue"
+        result["images"]["avatar"] = base64.b64encode(image_bytes(color)).decode()
         return result
 
     owner = ChannelArtworkOwner(tmp_path, loader=loader)
-    first = owner.resolve({**ROW, "channel": "Same name"}, "avatar", threading.Event())
-    second = owner.resolve(
-        {**ROW, "channel": "Same name", "channel_id": "UC" + "B" * 22},
-        "avatar",
-        threading.Event(),
+    paths = [owner.resolve(row, "avatar", threading.Event()) for row in records]
+    assert paths[0] != paths[1] and len(calls) == 2
+
+    def assert_owner_pixels(path, channel_id):
+        with Image.open(path) as image:
+            red, _green, blue = image.convert("RGB").getpixel((40, 40))
+        if channel_id == CID:
+            assert red > 200 and blue < 30
+        else:
+            assert blue > 200 and red < 30
+
+    for row, path in zip(records, paths):
+        assert_owner_pixels(path, row["channel_id"])
+    restarted = ChannelArtworkOwner(
+        tmp_path, loader=lambda *_: pytest.fail("Fresh owner cache must avoid network")
     )
-    assert first != second and len(calls) == 2
+    # Reverse access order so the last loaded creator cannot stand in for both.
+    for row, path in reversed(list(zip(records, paths))):
+        resolved = restarted.resolve(row, "avatar", threading.Event())
+        assert resolved == path
+        assert_owner_pixels(resolved, row["channel_id"])
 
 
 def test_cancelled_channel_lookup_does_not_poison_same_owner_retry(tmp_path):
