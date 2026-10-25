@@ -2486,6 +2486,8 @@ class Bridge(QObject):
             if row is not None:
                 return {
                     "issue": True,
+                    "sidecarsOnly": bool(row.get("vodforge_optional_issue_run_id")),
+                    "retryLabel": str(row.get("vodforge_optional_issue_label") or ""),
                     "title": str(row.get("title") or "Interrupted download"),
                     "artwork": self._artwork.request(row),
                     "creator": str(row.get("channel") or row.get("uploader") or ""),
@@ -2497,7 +2499,12 @@ class Bridge(QObject):
                         and self._issue_job(self._issue_run_id)
                         is self._runtime.active_job
                         else str(
-                            row.get("vodforge_terminal_status")
+                            (
+                                "Partial"
+                                if row.get("vodforge_optional_issue_run_id")
+                                else ""
+                            )
+                            or row.get("vodforge_terminal_status")
                             or row.get("vodforge_run_status")
                             or ""
                         )
@@ -2683,7 +2690,21 @@ class Bridge(QObject):
             terminal_jobs=getattr(self._runtime, "recovered", []),
             annotations=self._annotations.snapshot,
         )
-        return [dict(row) for row in projection.rows]
+        rows = [dict(row) for row in projection.rows]
+        for row in rows:
+            row.pop("vodforge_optional_issue_run_id", None)
+            row.pop("vodforge_optional_issue_label", None)
+        # Keep one saved-media owner. Optional repair is a projection annotation,
+        # not a second completed card or a change to persisted history.
+        for job in self._runtime.recovered:
+            target = optional_target(job, self._runtime.history)
+            if target is None:
+                continue
+            for row in rows:
+                if row.get("vodforge_run_id") == job.run_id:
+                    row["vodforge_optional_issue_run_id"] = job.run_id
+                    row["vodforge_optional_issue_label"] = target.label
+        return rows
 
     @Property(str, notify=libraryCategoryChanged)
     def libraryCategory(self) -> str:
@@ -4161,6 +4182,34 @@ class Bridge(QObject):
         self._issue_settings["output_url"] = QUrl.fromLocalFile(str(path)).toString()
         self.historyChanged.emit()
 
+    @Slot(str, result=bool)
+    def dismissOptionalIssue(self, selection_key: str) -> bool:
+        """Dismiss only a proven optional-file warning, retaining saved media."""
+        if (
+            self._folder_browser.mode != "issues"
+            or selection_key != self._folder_inspector_key
+            or self._sidecar_work.busy
+            or self._update_work_pending()
+        ):
+            return False
+        job = self._issue_job(self._issue_run_id)
+        if job is None or optional_target(job, self._runtime.history) is None:
+            return False
+        try:
+            removed = self._runtime.dismiss_terminal(job.run_id)
+        except RunStateError:
+            return False
+        if removed:
+            self._issue_run_id = ""
+            self._folder_inspector_key = ""
+            self._set_status(
+                "Optional-file warning dismissed. Saved video and metadata kept."
+            )
+            self.historyChanged.emit()
+            self.activityChanged.emit()
+            self.runDeckChanged.emit()
+        return removed
+
     @Slot(result=bool)
     def downloadSelectedIssue(self) -> bool:
         if (
@@ -4180,6 +4229,9 @@ class Bridge(QObject):
         }:
             self._set_status("Select an interrupted run before downloading.")
             return False
+        if optional_outcome(job):
+            # Never fall back to media retry if the saved-file evidence changed.
+            return self.retryTerminal(job.run_id)
         if job.terminal_status in {"Paused", "Partial"}:
             # Resume belongs to the durable run owner, never the editable draft.
             return self._admit_retry(job.run_id, stay_in_issues=True)
@@ -4488,7 +4540,8 @@ class Bridge(QObject):
         ):
             row = self._folder_browser.records[component.indices[0]]
             run_id = str(
-                row.get("vodforge_terminal_run_id")
+                row.get("vodforge_optional_issue_run_id")
+                or row.get("vodforge_terminal_run_id")
                 or row.get("vodforge_active_run_id")
                 or row.get("vodforge_queued_run_id")
                 or ""
@@ -6871,7 +6924,12 @@ class Bridge(QObject):
         for component in self._folder_browser.components:
             if any(
                 str(
-                    self._folder_browser.records[index].get("vodforge_terminal_run_id")
+                    self._folder_browser.records[index].get(
+                        "vodforge_optional_issue_run_id"
+                    )
+                    or self._folder_browser.records[index].get(
+                        "vodforge_terminal_run_id"
+                    )
                     or self._folder_browser.records[index].get("vodforge_active_run_id")
                     or self._folder_browser.records[index].get("vodforge_queued_run_id")
                     or ""

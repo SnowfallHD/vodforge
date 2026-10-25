@@ -85,7 +85,14 @@ def test_bridge_real_retry_route_repairs_only_artwork_and_coalesces_exact_owner(
         assert records[0]["retryLabel"] == "Retry artwork"
         feedback = []
         bridge.operationFeedback.connect(feedback.append)
-        assert bridge.retryTerminal(job.run_id) is True
+        assert bridge.openRunIssues(job.run_id) is True
+        assert len(bridge._folder_browser.components) == 1
+        assert bridge.libraryFolderInspector["sidecarsOnly"] is True
+        assert bridge.libraryFolderInspector["retryLabel"] == "Retry artwork"
+        assert bridge.inspectorRecoveryActions["dismissRunId"] == job.run_id
+        assert bridge.inspectorRecoveryActions["canOpenLocation"] is True
+        assert bridge.inspectorRecoveryActions["location"] == str(tmp_path)
+        assert bridge.downloadSelectedIssue() is True
         assert bridge.status == "Recovering optional files; saved video is unchanged."
         assert feedback[-1] == bridge.status
         assert bridge.retryTerminal(job.run_id) is False  # no queued duplicate
@@ -382,3 +389,82 @@ def test_changed_eligibility_during_fetch_refuses_writes(
         recovery.repair_sidecars(target, tmp_path / "profile", Event())
     assert not (tmp_path / "thumbnail.jpeg").exists()
     assert not (tmp_path / "profile").exists()
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_saved_completed_rows_survive_optional_issue_coalescing(
+    tmp_path, monkeypatch, legacy
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    qt_app()
+    bridge = Bridge(None)
+    job, info, media = fixture(tmp_path)
+    completed = dict(
+        info,
+        id="other",
+        vodforge_run_id="other-run",
+        vodforge_output_path=str(tmp_path / "other.mp4"),
+    )
+    if legacy:
+        completed.pop("vodforge_run_id")
+    (tmp_path / "other.mp4").write_bytes(b"other completed media")
+    bridge._runtime.history = [info, completed]
+    bridge._runtime.recovery.terminal_attempt(job, "Partial", MESSAGE)
+    bridge._runtime.recovered = bridge._runtime.recovery.store.load_terminal_jobs()
+    monkeypatch.setattr(bridge._artwork, "request", lambda *a, **k: "")
+    try:
+        records = bridge.runDeck["records"]
+        assert len(records) == 2
+        assert sum(r["kind"] == "completed" for r in records) == 1
+        assert sum(r.get("retrySidecarsOnly", False) for r in records) == 1
+        assert len(bridge._projected_library()) == 2
+        assert bridge.openRunIssues(job.run_id)
+        assert len(bridge._folder_browser.components) == 1
+        assert "vodforge_optional_issue_run_id" not in info
+        assert "vodforge_optional_issue_run_id" not in completed
+        # Dismissing the attempt must leave the saved video available as completed.
+        assert bridge.dismissOptionalIssue(
+            bridge.inspectorRecoveryActions["selectionKey"]
+        )
+        assert (
+            media.read_bytes() == b"validated media must never be encoded or replaced"
+        )
+        assert len(bridge._runtime.history) == 2
+        assert bridge._runtime.recovery.store.load_terminal_jobs() == []
+        records = bridge.runDeck["records"]
+        assert len(records) == 2
+        assert all(r["kind"] == "completed" for r in records)
+    finally:
+        bridge.close()
+
+
+def test_optional_issue_does_not_retry_media_after_saved_file_disappears(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    qt_app()
+    bridge = Bridge(None)
+    job, info, media = fixture(tmp_path)
+    bridge._runtime.history = [info]
+    bridge._runtime.recovered = [job]
+    monkeypatch.setattr(bridge._artwork, "request", lambda *a, **k: "")
+    monkeypatch.setattr(
+        bridge._runtime,
+        "retry_terminal",
+        lambda *a, **k: pytest.fail("media retry forbidden"),
+    )
+    try:
+        assert bridge.openRunIssues(job.run_id)
+        media.unlink()
+        assert bridge.downloadSelectedIssue() is False
+        assert (
+            bridge.dismissOptionalIssue(
+                bridge.inspectorRecoveryActions.get("selectionKey", "")
+            )
+            is False
+        )
+        assert bridge._runtime.recovered == [job]
+    finally:
+        bridge.close()

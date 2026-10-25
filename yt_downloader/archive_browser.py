@@ -58,7 +58,7 @@ def archive_directory(record: Mapping[str, Any]) -> ArchivePath | None:
         return None
 
 
-def _is_issue_without_export(
+def _is_recoverable_issue(
     record: Mapping[str, Any], directory: ArchivePath | None
 ) -> bool:
     status = str(
@@ -66,11 +66,15 @@ def _is_issue_without_export(
         or record.get("vodforge_run_status")
         or ""
     )
-    return directory is None and (
-        status in ISSUE_STATUSES
-        or (
-            record.get("vodforge_issue_retry") is True
-            and status in TRANSIENT_LIBRARY_STATUSES
+    return (
+        bool(record.get("vodforge_optional_issue_run_id"))
+        or directory is None
+        and (
+            status in ISSUE_STATUSES
+            or (
+                record.get("vodforge_issue_retry") is True
+                and status in TRANSIENT_LIBRARY_STATUSES
+            )
         )
     )
 
@@ -279,7 +283,7 @@ class ArchiveBrowserModel:
             sum(path is not None for path in self._all_directories.values())
             if self.mode == "all"
             else sum(
-                _is_issue_without_export(record, self._all_directories[index])
+                _is_recoverable_issue(record, self._all_directories[index])
                 or (
                     self._all_directories[index] is not None
                     and history_archive_owner(dict(record)) in self.missing_owners
@@ -314,7 +318,7 @@ class ArchiveBrowserModel:
                     and history_archive_owner(dict(record)) in self.missing_owners
                 )
                 if self.mode == "issues" and not (
-                    _is_issue_without_export(record, directory) or missing
+                    _is_recoverable_issue(record, directory) or missing
                 ):
                     continue
                 if self.mode == "activity" and directory is not None:
@@ -332,7 +336,11 @@ class ArchiveBrowserModel:
                         folders.setdefault(child.key, (child, []))[1].append(index)
                         continue
                 key = (
-                    ("missing", history_archive_owner(dict(record)))
+                    ("optional", archive_row_owner(record))
+                    if self.mode == "issues"
+                    and record.get("vodforge_optional_issue_run_id")
+                    and not missing
+                    else ("missing", history_archive_owner(dict(record)))
                     if self.mode == "issues" and missing
                     else (
                         *_source_key(record, index),
@@ -363,12 +371,20 @@ class ArchiveBrowserModel:
                 kind: Literal["media", "activity", "missing"] = (
                     "missing"
                     if self.mode == "issues" and first_missing
+                    else "activity"
+                    if self.mode == "issues"
+                    and first.get("vodforge_optional_issue_run_id")
                     else "media"
                     if self._directories.get(indices[0]) is not None
                     else "activity"
                 )
                 status = str(
-                    first.get("vodforge_terminal_status")
+                    (
+                        "Video saved; optional files unavailable"
+                        if first.get("vodforge_optional_issue_run_id")
+                        else ""
+                    )
+                    or first.get("vodforge_terminal_status")
                     or first.get("vodforge_run_status")
                     or (
                         "Metadata preview"

@@ -318,6 +318,16 @@ Column {
                 label: "Find moved file…"
                 onActivated: inspector.appBridge.requestMissingFileRelink()
             }
+            Text {
+                visible: !!inspector.item.sidecarsOnly
+                text: "Video saved. Repair the optional artwork or metadata without downloading the video again."
+                width: parent.width; wrapMode: Text.WordWrap
+                color: theme.muted; font.pixelSize: 12
+            }
+            Column {
+                width: parent.width
+                spacing: 10
+                visible: !inspector.item.sidecarsOnly
             Text { visible: !inspector.item.missing || inspector.item.canRedownload; text: "SOURCE VIDEO"; color: theme.muted; font.pixelSize: 12; font.bold: true }
             Row {
                 visible: (!inspector.item.missing || inspector.item.canRedownload)
@@ -516,17 +526,25 @@ Column {
                 color: theme.muted; font.pixelSize: 12
             }
             }
+            }
             StoneButton {
                 objectName: "libraryIssueDownload"
                 visible: !inspector.item.missing || inspector.item.canRedownload
                 width: parent.width; height: 42
-                label: !inspector.item.missing && inspector.item.status === "Paused" ? "Resume" :
-                       !inspector.item.missing && inspector.item.status === "Partial" ? "Retry" : "Download"
+                label: inspector.item.retryLabel || (!inspector.item.missing && inspector.item.status === "Paused" ? "Resume" :
+                       !inspector.item.missing && inspector.item.status === "Partial" ? "Retry" : "Download")
                 emphasized: true
                 enabled: inspector.item.missing ?
                          inspector.item.canRedownload && ["Queued", "Preparing", "Downloading", "Transcoding"].indexOf(inspector.item.status) < 0 :
                          ["Failed", "Stopped", "Skipped", "Paused", "Partial"].indexOf(inspector.item.status) >= 0
                 onActivated: inspector.appBridge.downloadSelectedIssue()
+            }
+            StoneButton {
+                objectName: "libraryIssueDismissOptional"
+                visible: !!inspector.item.sidecarsOnly
+                width: parent.width; height: 40
+                label: "Dismiss optional-file warning"
+                onActivated: inspector.appBridge.dismissOptionalIssue(inspector.recoveryActions.selectionKey)
             }
             SelectableText {
                 objectName: "libraryIssueStatusText"
