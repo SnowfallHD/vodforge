@@ -494,3 +494,34 @@ def test_repeated_move_keeps_selected_media_and_annotations(
                 version["owner"] == detail["owner"] for version in detail["versions"]
             )
         assert target.read_bytes() == b"owned disposable fixture"
+
+
+def test_optional_inspector_never_renders_other_run_success(
+    scene, tmp_path, monkeypatch
+):
+    from tests.test_qt_optional_sidecar_recovery import MESSAGE, fixture
+
+    app, bridge, window = scene
+    root = tmp_path / "untouched"
+    root.mkdir()
+    job, info, _media = fixture(root)
+    bridge._runtime.history = [info]
+    bridge._runtime.recovery.terminal_attempt(job, "Partial", MESSAGE)
+    bridge._runtime.recovered = bridge._runtime.recovery.store.load_terminal_jobs()
+    monkeypatch.setattr(bridge._artwork, "request", lambda *a, **k: "")
+    assert bridge.openRunIssues(job.run_id)
+    bridge._status = "Optional files recovered; saved video is unchanged."
+    bridge._sidecar_feedback = ("different-repaired-run", bridge.status)
+    bridge.statusChanged.emit()
+    bridge.historyChanged.emit()
+    app.processEvents()
+    feedback = window.findChild(QObject, "libraryIssueStatusText")
+    assert feedback.property("text") == ""
+    assert not feedback.isVisible()
+    bridge._sidecar_feedback = (job.run_id, "Artwork recovery did not finish.")
+    bridge.historyChanged.emit()
+    app.processEvents()
+    assert feedback.property("text") == "Artwork recovery did not finish."
+    assert feedback.isVisible()
+    assert len(bridge._runtime.recovered) == 1
+    assert not (root / "thumbnail.jpeg").exists()

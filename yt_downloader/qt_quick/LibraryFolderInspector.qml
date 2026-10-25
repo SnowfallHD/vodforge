@@ -548,7 +548,8 @@ Column {
             }
             SelectableText {
                 objectName: "libraryIssueStatusText"
-                text: inspector.appBridge.status !== "Ready" ? inspector.appBridge.status : ""
+                text: inspector.item.sidecarsOnly ? inspector.appBridge.issueOperationStatus :
+                      (inspector.appBridge.status !== "Ready" ? inspector.appBridge.status : "")
                 visible: text.length > 0
                 color: theme.muted; font.pixelSize: 12
                 width: parent.width; wrapMode: Text.WordWrap
@@ -739,7 +740,7 @@ Column {
                 width: Math.min(parent.width, implicitWidth)
                 height: 28
                 size: "inline"
-                label: "Open location"
+                label: inspector.recoveryActions.locationLabel || "Open location"
                 onActivated: inspector.appBridge.openInspectorLocation(inspector.recoveryActions.selectionKey)
             }
             StoneButton {

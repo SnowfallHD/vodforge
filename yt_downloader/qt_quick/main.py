@@ -527,6 +527,7 @@ class Bridge(QObject):
         )
         self._sidecar_work = ArchiveWorkOwner()
         self._sidecar_target = None
+        self._sidecar_feedback = ("", "")
         self._cloud_work = ArchiveWorkOwner()
         self._cloud_seen_attempted = False
         self._cloud_seen_install_id = ""
@@ -844,6 +845,11 @@ class Bridge(QObject):
     @Property(str, notify=statusChanged)
     def status(self) -> str:
         return self._status
+
+    @Property(str, notify=historyChanged)
+    def issueOperationStatus(self) -> str:
+        owner, message = self._sidecar_feedback
+        return message if owner and owner == self._issue_run_id else ""
 
     @Property(bool, notify=analyticsChanged)
     def analyticsAvailable(self) -> bool:
@@ -1194,6 +1200,9 @@ class Bridge(QObject):
         location = (
             str(job.output_dir) if job is not None else str(item.get("location") or "")
         )
+        saved_path = self._run_saved_path(job.run_id) if job is not None else None
+        if saved_path is not None:
+            location = str(saved_path.parent)
         path = Path(location) if location else None
         folder = (
             path
@@ -1210,6 +1219,11 @@ class Bridge(QObject):
             "selectionKey": self._folder_inspector_key,
             "location": location,
             "canOpenLocation": can_open_location,
+            "locationLabel": "Show in folder"
+            if saved_path is not None
+            else "Open output folder"
+            if job is not None
+            else "Open location",
             "dismissRunId": job.run_id
             if job is not None
             and job in self._runtime.recovered
@@ -6904,17 +6918,23 @@ class Bridge(QObject):
         # A configured output directory alone is not evidence of associated files.
         if self._issue_job(run_id) is None:
             return False
+        path = self._run_saved_path(run_id)
+        return bool(
+            path is not None
+            and QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.parent)))
+        )
+
+    def _run_saved_path(self, run_id: str) -> Path | None:
+        """Resolve the same recorded artifact for Forge and the Issues inspector."""
         for row in self._runtime.history:
             if row.get("vodforge_run_id") == run_id:
                 path = history_output_path(row)
                 try:
                     if path is not None and path.is_file():
-                        return QDesktopServices.openUrl(
-                            QUrl.fromLocalFile(str(path.parent))
-                        )
+                        return path
                 except OSError:
                     pass
-        return False
+        return None
 
     @Slot(str, result=bool)
     def runHasSavedFile(self, run_id: str) -> bool:
@@ -7075,6 +7095,8 @@ class Bridge(QObject):
                 self._sidecar_target = target
                 self._file_action_busy = True
                 self._status = "Recovering optional files; saved video is unchanged."
+                self._sidecar_feedback = (run_id, self._status)
+                self.historyChanged.emit()
                 self.statusChanged.emit()
                 self.runDeckChanged.emit()
                 return True
@@ -7118,6 +7140,8 @@ class Bridge(QObject):
             retry = self._runtime.retry_terminal(run_id, current_job=current_job)
         except (OSError, RuntimeError, ValueError) as exc:
             self._status = str(exc)
+            self._sidecar_feedback = (run_id, self._status)
+            self.historyChanged.emit()
             self.statusChanged.emit()
             return False
         if self._composer_resume_run_id == run_id:
@@ -7174,6 +7198,7 @@ class Bridge(QObject):
                     )
             else:
                 self._status = "Artwork recovery did not finish. The saved video and issue are retained."
+            self._sidecar_feedback = (target.job.run_id if target else "", self._status)
             self.statusChanged.emit()
             self.runDeckChanged.emit()
             self.historyChanged.emit()

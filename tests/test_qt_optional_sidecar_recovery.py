@@ -598,3 +598,103 @@ def test_pending_artwork_cards_use_library_order_without_clearing_warnings(
         assert all(bridge.openRunIssues(j.run_id) for j in jobs)
     finally:
         bridge.close()
+
+
+def test_repair_feedback_stays_with_run_when_selection_changes(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    qt_app()
+    bridge = Bridge(None)
+    bridge._timer.stop()
+    entries = []
+    for index in range(2):
+        root = tmp_path / str(index)
+        root.mkdir()
+        job, info, media = fixture(root)
+        job = replace(job, run_id=f"optional-owner-{index}")
+        info["vodforge_run_id"] = job.run_id
+        info["id"] = f"fixture-{index}"
+        (root / "metadata.json").write_text(json.dumps({"id": info["id"]}))
+        entries.append((job, info, media))
+        bridge._runtime.recovery.terminal_attempt(job, "Partial", MESSAGE)
+    bridge._runtime.history = [entry[1] for entry in entries]
+    bridge._runtime.recovered = bridge._runtime.recovery.store.load_terminal_jobs()
+    entered, release = Event(), Event()
+
+    def fetch(*args, **kwargs):
+        entered.set()
+        assert release.wait(3)
+        return image_bytes()
+
+    monkeypatch.setattr(recovery.service, "download_bounded_url_bytes", fetch)
+    monkeypatch.setattr(bridge._artwork, "request", lambda *a, **k: "")
+    first, second = entries[0][0], entries[1][0]
+    try:
+        assert bridge.openRunIssues(first.run_id)
+        assert bridge.downloadSelectedIssue()
+        assert entered.wait(2)
+        assert "Recovering" in bridge.issueOperationStatus
+        assert bridge.openRunIssues(second.run_id)
+        assert bridge.issueOperationStatus == ""
+        assert bridge.inspectorRecoveryActions["location"] == str(tmp_path / "1")
+        release.set()
+        deadline = time.monotonic() + 3
+        while bridge._sidecar_target is not None and time.monotonic() < deadline:
+            bridge._pump()
+            time.sleep(0.005)
+        assert "recovered" in bridge.status
+        assert bridge.issueOperationStatus == ""
+        assert [j.run_id for j in bridge._runtime.recovered] == [second.run_id]
+        assert (tmp_path / "0" / "thumbnail.jpeg").is_file()
+        assert not (tmp_path / "1" / "thumbnail.jpeg").exists()
+        assert all(
+            e[2].read_bytes() == b"validated media must never be encoded or replaced"
+            for e in entries
+        )
+    finally:
+        release.set()
+        bridge.close()
+
+
+def test_issue_location_matches_forge_selected_artifact_not_output_root(
+    tmp_path, monkeypatch
+):
+    from yt_downloader.qt_quick import main as qt_main
+
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    qt_app()
+    bridge = Bridge(None)
+    desktop = tmp_path / "Desktop"
+    nested = desktop / "selected-export"
+    nested.mkdir(parents=True)
+    job, info, media = fixture(nested)
+    job = replace(job, output_dir=desktop)
+    bridge._runtime.history = [info]
+    bridge._runtime.recovery.terminal_attempt(job, "Partial", MESSAGE)
+    bridge._runtime.recovered = bridge._runtime.recovery.store.load_terminal_jobs()
+    monkeypatch.setattr(bridge._artwork, "request", lambda *a, **k: "")
+    opened = []
+    monkeypatch.setattr(
+        qt_main.QDesktopServices,
+        "openUrl",
+        lambda url: opened.append(url.toLocalFile()) or True,
+    )
+    try:
+        assert bridge.openRunIssues(job.run_id)
+        actions = bridge.inspectorRecoveryActions
+        assert actions["location"] == str(nested)
+        assert actions["locationLabel"] == "Show in folder"
+        assert bridge.openInspectorLocation(actions["selectionKey"])
+        assert bridge.openRunFolder(job.run_id)
+        assert opened == [str(nested), str(nested)]
+        assert bridge._runtime.recovered[0].output_dir == desktop
+        assert not bridge.openInspectorLocation("stale-selection")
+        media.unlink()  # controlled fixture only: explicit root fallback
+        actions = bridge.inspectorRecoveryActions
+        assert actions["location"] == str(desktop)
+        assert actions["locationLabel"] == "Open output folder"
+        assert bridge.openInspectorLocation(actions["selectionKey"])
+        assert opened[-1] == str(desktop)
+    finally:
+        bridge.close()
