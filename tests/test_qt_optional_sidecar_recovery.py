@@ -89,6 +89,9 @@ def test_bridge_real_retry_route_repairs_only_artwork_and_coalesces_exact_owner(
         assert len(bridge._folder_browser.components) == 1
         assert bridge.libraryFolderInspector["sidecarsOnly"] is True
         assert bridge.libraryFolderInspector["retryLabel"] == "Retry artwork"
+        assert (
+            bridge.libraryFolderInspector["keepLabel"] == "Keep video without thumbnail"
+        )
         assert bridge.inspectorRecoveryActions["dismissRunId"] == job.run_id
         assert bridge.inspectorRecoveryActions["canOpenLocation"] is True
         assert bridge.inspectorRecoveryActions["location"] == str(tmp_path)
@@ -468,3 +471,81 @@ def test_optional_issue_does_not_retry_media_after_saved_file_disappears(
         assert bridge._runtime.recovered == [job]
     finally:
         bridge.close()
+
+
+@pytest.mark.parametrize(
+    "metadata_missing,thumbnail_missing,expected",
+    [
+        (False, True, "Keep video without thumbnail"),
+        (True, False, "Keep video without metadata file"),
+        (True, True, "Keep video without thumbnail and metadata file"),
+        (False, False, "Keep saved video"),
+    ],
+)
+def test_keep_intent_names_only_actually_missing_optional_files(
+    tmp_path, metadata_missing, thumbnail_missing, expected
+):
+    job, info, _media = fixture(tmp_path)
+    job = replace(job, write_info_json=True)
+    if metadata_missing:
+        (tmp_path / "metadata.json").unlink()
+    if not thumbnail_missing:
+        (tmp_path / "thumbnail.jpeg").write_bytes(image_bytes())
+    target = recovery.optional_target(job, [info])
+    assert target is not None
+    assert target.keep_label == expected
+
+
+def test_keep_video_restores_one_completed_card_after_restart(tmp_path, monkeypatch):
+    from yt_downloader.history import save_history
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    qt_app()
+    bridge = Bridge(None)
+    job, info, media = fixture(tmp_path)
+    bridge._runtime.history = [info]
+    save_history(bridge._runtime.history_path, [info])
+    bridge._runtime.recovery.terminal_attempt(job, "Partial", MESSAGE)
+    bridge._runtime.recovered = bridge._runtime.recovery.store.load_terminal_jobs()
+    history_path = bridge._runtime.history_path
+    before = (
+        media.read_bytes(),
+        (tmp_path / "metadata.json").read_bytes(),
+        history_path.read_bytes(),
+    )
+    monkeypatch.setattr(bridge._artwork, "request", lambda *a, **k: "")
+    try:
+        assert len(bridge.runDeck["records"]) == 1
+        assert bridge.runDeck["records"][0]["status"] == "Partial"
+        assert bridge.openRunIssues(job.run_id)
+        assert (
+            bridge.libraryFolderInspector["keepLabel"] == "Keep video without thumbnail"
+        )
+        assert bridge.dismissOptionalIssue(
+            bridge.inspectorRecoveryActions["selectionKey"]
+        )
+        rows = bridge.runDeck["records"]
+        assert len(rows) == 1 and rows[0]["kind"] == "completed"
+        assert rows[0]["status"] == "Completed  •  MP4"
+        assert not (tmp_path / "thumbnail.jpeg").exists()
+        assert before == (
+            media.read_bytes(),
+            (tmp_path / "metadata.json").read_bytes(),
+            history_path.read_bytes(),
+        )
+    finally:
+        bridge.close()
+    restarted = Bridge(None)
+    monkeypatch.setattr(restarted._artwork, "request", lambda *a, **k: "")
+    try:
+        rows = restarted.runDeck["records"]
+        assert len(rows) == 1 and rows[0]["kind"] == "completed"
+        assert rows[0]["status"] == "Completed  •  MP4"
+        assert restarted._runtime.recovered == []
+        restarted.select("Library")
+        restarted.navigateLibraryFolders("issues")
+        assert not restarted._folder_browser.components
+        assert history_path.read_bytes() == before[2]
+    finally:
+        restarted.close()

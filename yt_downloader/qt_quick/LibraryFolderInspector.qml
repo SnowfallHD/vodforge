@@ -543,7 +543,7 @@ Column {
                 objectName: "libraryIssueDismissOptional"
                 visible: !!inspector.item.sidecarsOnly
                 width: parent.width; height: 40
-                label: "Dismiss optional-file warning"
+                label: inspector.item.keepLabel || "Keep saved video"
                 onActivated: inspector.appBridge.dismissOptionalIssue(inspector.recoveryActions.selectionKey)
             }
             SelectableText {

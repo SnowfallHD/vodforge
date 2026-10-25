@@ -39,10 +39,21 @@ class SidecarTarget:
     metadata: bool
     thumbnail: bool
     source_key: tuple[Any, ...]
+    missing_thumbnail: bool
 
     @property
     def label(self) -> str:
         return "Retry files" if self.metadata else "Retry artwork"
+
+    @property
+    def keep_label(self) -> str:
+        if self.metadata and self.missing_thumbnail:
+            return "Keep video without thumbnail and metadata file"
+        if self.metadata:
+            return "Keep video without metadata file"
+        if self.missing_thumbnail:
+            return "Keep video without thumbnail"
+        return "Keep saved video"
 
 
 def file_identity(path: Path) -> tuple[int, ...]:
@@ -123,6 +134,7 @@ def optional_target(job: Any, history: list[dict[str, Any]]) -> SidecarTarget | 
             metadata_missing,
             job.write_thumbnail,
             source_key(job),
+            job.write_thumbnail and not thumbnail.exists(),
         )
     except (KeyError, OSError, ValueError, TypeError, RuntimeError):
         return None

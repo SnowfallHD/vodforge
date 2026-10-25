@@ -2488,6 +2488,7 @@ class Bridge(QObject):
                     "issue": True,
                     "sidecarsOnly": bool(row.get("vodforge_optional_issue_run_id")),
                     "retryLabel": str(row.get("vodforge_optional_issue_label") or ""),
+                    "keepLabel": str(row.get("vodforge_optional_keep_label") or ""),
                     "title": str(row.get("title") or "Interrupted download"),
                     "artwork": self._artwork.request(row),
                     "creator": str(row.get("channel") or row.get("uploader") or ""),
@@ -2694,6 +2695,7 @@ class Bridge(QObject):
         for row in rows:
             row.pop("vodforge_optional_issue_run_id", None)
             row.pop("vodforge_optional_issue_label", None)
+            row.pop("vodforge_optional_keep_label", None)
         # Keep one saved-media owner. Optional repair is a projection annotation,
         # not a second completed card or a change to persisted history.
         for job in self._runtime.recovered:
@@ -2704,6 +2706,7 @@ class Bridge(QObject):
                 if row.get("vodforge_run_id") == job.run_id:
                     row["vodforge_optional_issue_run_id"] = job.run_id
                     row["vodforge_optional_issue_label"] = target.label
+                    row["vodforge_optional_keep_label"] = target.keep_label
         return rows
 
     @Property(str, notify=libraryCategoryChanged)
@@ -4202,9 +4205,7 @@ class Bridge(QObject):
         if removed:
             self._issue_run_id = ""
             self._folder_inspector_key = ""
-            self._set_status(
-                "Optional-file warning dismissed. Saved video and metadata kept."
-            )
+            self._set_status("Video kept. It now appears as completed in Run Deck.")
             self.historyChanged.emit()
             self.activityChanged.emit()
             self.runDeckChanged.emit()
