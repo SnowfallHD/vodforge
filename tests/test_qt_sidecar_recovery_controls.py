@@ -99,7 +99,15 @@ def test_saved_partial_actual_click_recovers_artwork_without_media_retry(
         assert len(bridge._runtime.recovered) == 1
         assert bridge._runtime.recovered[0].terminal_status == "Partial"
         if surface == "forge":
-            retry = window.findChild(QObject, "forgeFailedRetry")
+            more = window.findChild(QObject, "forgeMoreActions")
+            if more.isVisible():
+                click(window, more)
+                settle(app, window)
+            retry = (
+                visual_item(window.contentItem(), "forgeFailedRetryOverflow")
+                if more.isVisible()
+                else window.findChild(QObject, "forgeFailedRetry")
+            )
         else:
             deck = window.findChild(QObject, "forgeRunDeck")
             card = visual_item(deck, "runCardContextArea")
@@ -115,6 +123,10 @@ def test_saved_partial_actual_click_recovers_artwork_without_media_retry(
         assert retry.property("label") == "Retry artwork"
         assert bridge._runtime.active_job is None and bridge._runtime.queued == []
         if surface == "forge":
+            if more.isVisible():
+                click(window, more)
+                settle(app, window)
+            assert retry.isVisible()
             assert not retry.isEnabled()
             click(window, retry)
             settle(app, window)

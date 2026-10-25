@@ -1644,7 +1644,11 @@ Window {
                     Layout.preferredWidth: 1
                     spacing: window.compactHeight ? 3 : 7
                     Text {
+                        id: forgeSelectedTitle
                         objectName: "forgeSelectedTitle"
+                        Accessible.name: text
+                        HoverHandler { id: forgeTitleHover }
+                        LiquidToolTip { visible: forgeTitleHover.hovered && forgeSelectedTitle.truncated; text: forgeSelectedTitle.text }
                         text: window.selectedForgeRun.title || "Ready for a new run"
                         Layout.fillWidth: true
                         Layout.minimumWidth: 0
@@ -1706,6 +1710,13 @@ Window {
             }
 
             RowLayout {
+                id: forgeSelectedActionRow
+                // Reserve readable selected-run context before admitting the
+                // full horizontal action strip. No height-driven wrap.
+                readonly property real inlineActionWidth: window.selectedForgeRun.kind === "completed" ?
+                    84 + 142 + 136 + 16 + (window.selectedForgeRun.retrySidecarsOnly === true ? 136 + 150 + 80 + 24 : 0) :
+                    window.selectedForgeRun.kind === "terminal" ? 82 + 150 + 80 + 16 + (bridge.runHasSavedFile(window.selectedForgeRun.runId || "") ? 144 : 0) : 0
+                readonly property bool useOverflow: window.forgeDensity === "compact" || forgeViewport.availableWidth < inlineActionWidth + 260
                 visible: window.forgeDensity !== "compact"
                 Layout.fillWidth: true
                 Text {
@@ -1720,6 +1731,33 @@ Window {
                     color: theme.muted; font.pixelSize: 14
                     Layout.fillWidth: true; elide: Text.ElideRight
                 }
+                Item {
+                    id: forgeAdaptiveActions
+                    objectName: "forgeAdaptiveActions"
+                    readonly property bool hasActions: forgeCompletedActions.owner.length > 0 || window.selectedForgeRun.kind === "terminal"
+                    parent: window.forgeDensity === "compact" ? forgeCompactActionSlot : forgeSelectedActionRow
+                    visible: forgeSelectedActionRow.useOverflow && hasActions
+                    implicitWidth: forgeAdaptivePrimary.width + 8 + forgeMoreActions.implicitWidth
+                    implicitHeight: 28
+                    width: implicitWidth
+                    height: implicitHeight
+                    Binding { target: forgeAdaptiveActions; property: "x"; value: 0; when: window.forgeDensity === "compact" }
+                    Binding { target: forgeAdaptiveActions; property: "y"; value: 0; when: window.forgeDensity === "compact" }
+                    Item {
+                        id: forgeAdaptivePrimary
+                        objectName: "forgeAdaptivePrimary"
+                        width: window.selectedForgeRun.kind === "completed" ? forgePlayControl.width + 8 + forgeLibraryControl.width : forgeRetryControl.width + 8 + forgeIssuesControl.width
+                        height: 32
+                    }
+                    StoneButton {
+                        id: forgeMoreActions
+                        objectName: "forgeMoreActions"
+                        x: forgeAdaptivePrimary.width + 8
+                        label: "More actions"
+                        size: "inline"
+                        onActivated: { forgeSecondaryPopup.anchorItem = this; forgeSecondaryPopup.toggleFrom(this) }
+                    }
+                }
                 Row {
                     id: forgeCompletedActions
                     objectName: "forgeCompletedActions"
@@ -1728,26 +1766,53 @@ Window {
                     visible: owner.length > 0
                     spacing: 8
                     StoneButton {
+                        id: forgePlayControl
                         objectName: "forgeCompletedPlay"
+                        Connections { target: forgePlayControl; function onActivated() { forgeSecondaryPopup.close() } }
+                        Binding { target: forgePlayControl; property: "x"; value: 0; when: forgeSelectedActionRow.useOverflow && forgePlayControl.primaryAction }
+                        Binding { target: forgePlayControl; property: "y"; value: 0; when: forgeSelectedActionRow.useOverflow && forgePlayControl.primaryAction }
+                        readonly property bool primaryAction: true
+                        parent: forgeSelectedActionRow.useOverflow ?
+                            (primaryAction ? forgeAdaptivePrimary : forgeCompletedActions) : forgeCompletedActions
+                        readonly property bool available: forgeCompletedActions.owner.length > 0
+                        visible: available && (!forgeSelectedActionRow.useOverflow || primaryAction)
                         enabled: bridge.libraryOwnerHasSavedFile(forgeCompletedActions.owner)
                         deepHover: true
                         label: "Play"; primary: true; size: "inline"
-                        width: 84
+                        width: forgeSelectedActionRow.useOverflow ? (primaryAction ? Math.min(implicitWidth, 190) : forgeSecondaryActions.width) : 84
                         onActivated: bridge.openLibraryOwner(forgeCompletedActions.owner)
                     }
                     StoneButton {
+                        id: forgeLibraryControl
                         objectName: "forgeCompletedShowInLibrary"
+                        Connections { target: forgeLibraryControl; function onActivated() { forgeSecondaryPopup.close() } }
+                        Binding { target: forgeLibraryControl; property: "x"; value: forgePlayControl.width + 8; when: forgeSelectedActionRow.useOverflow && forgeLibraryControl.primaryAction }
+                        Binding { target: forgeLibraryControl; property: "y"; value: 0; when: forgeSelectedActionRow.useOverflow && forgeLibraryControl.primaryAction }
+                        readonly property bool primaryAction: true
+                        parent: forgeSelectedActionRow.useOverflow ?
+                            (primaryAction ? forgeAdaptivePrimary : forgeCompletedActions) : forgeCompletedActions
+                        readonly property bool available: forgeCompletedActions.owner.length > 0
+                        visible: available && (!forgeSelectedActionRow.useOverflow || primaryAction)
                         deepHover: true
                         label: "Show in Library"; size: "inline"
-                        width: 142
+                        width: forgeSelectedActionRow.useOverflow ? (primaryAction ? Math.min(implicitWidth, 190) : forgeSecondaryActions.width) : 142
                         onActivated: { if (bridge.openLibraryDetails(forgeCompletedActions.owner)) bridge.select("Library") }
                     }
                     StoneButton {
+                        id: forgeFolderControl
                         objectName: "forgeCompletedShowInFolder"
+                        Connections { target: forgeFolderControl; function onActivated() { forgeSecondaryPopup.close() } }
+                        Binding { target: forgeFolderControl; property: "x"; value: 0; when: forgeSelectedActionRow.useOverflow && forgeFolderControl.primaryAction }
+                        Binding { target: forgeFolderControl; property: "y"; value: 0; when: forgeSelectedActionRow.useOverflow && forgeFolderControl.primaryAction }
+                        readonly property bool primaryAction: false
+                        parent: forgeSelectedActionRow.useOverflow ?
+                            (primaryAction ? forgeAdaptivePrimary : forgeCompletedActions) : forgeCompletedActions
+                        readonly property bool available: forgeCompletedActions.owner.length > 0
+                        visible: available && (!forgeSelectedActionRow.useOverflow || primaryAction)
                         enabled: bridge.libraryOwnerHasSavedFile(forgeCompletedActions.owner)
                         deepHover: true
                         label: "Show in Folder"; size: "inline"
-                        width: 136
+                        width: forgeSelectedActionRow.useOverflow ? (primaryAction ? Math.min(implicitWidth, 190) : forgeSecondaryActions.width) : 136
                         onActivated: bridge.openLibraryFolder(forgeCompletedActions.owner)
                     }
                 }
@@ -1757,10 +1822,19 @@ Window {
                     visible: window.selectedForgeRun.kind === "terminal" || window.selectedForgeRun.retrySidecarsOnly === true
                     spacing: 8
                     StoneButton {
+                        id: forgeRetryControl
                         objectName: "forgeFailedRetry"
+                        Connections { target: forgeRetryControl; function onActivated() { forgeSecondaryPopup.close() } }
+                        Binding { target: forgeRetryControl; property: "x"; value: 0; when: forgeSelectedActionRow.useOverflow && forgeRetryControl.primaryAction }
+                        Binding { target: forgeRetryControl; property: "y"; value: 0; when: forgeSelectedActionRow.useOverflow && forgeRetryControl.primaryAction }
+                        readonly property bool primaryAction: window.selectedForgeRun.kind !== "completed"
+                        parent: forgeSelectedActionRow.useOverflow ?
+                            (primaryAction ? forgeAdaptivePrimary : forgeFailedActions) : forgeFailedActions
+                        readonly property bool available: window.selectedForgeRun.kind === "terminal" || window.selectedForgeRun.retrySidecarsOnly === true
+                        visible: available && (!forgeSelectedActionRow.useOverflow || primaryAction)
                         label: window.selectedForgeRun.retryLabel || (window.selectedForgeRun.status === "Paused" ? "Resume" : "Retry")
                         enabled: window.selectedForgeRun.retryEnabled !== false
-                        size: "inline"; width: window.selectedForgeRun.retrySidecarsOnly === true ? 136 : 82; deepHover: true
+                        size: "inline"; width: forgeSelectedActionRow.useOverflow ? (primaryAction ? Math.min(implicitWidth, 190) : forgeSecondaryActions.width) : window.selectedForgeRun.retrySidecarsOnly === true ? 136 : 82; deepHover: true
                         onActivated: {
                             if (window.selectedForgeRun.status === "Paused" || window.selectedForgeRun.retrySidecarsOnly === true) { bridge.retryTerminal(window.selectedForgeRun.runId); return }
                             forgeRetryPopup.runId = window.selectedForgeRun.runId
@@ -1769,19 +1843,45 @@ Window {
                         }
                     }
                     StoneButton {
+                        id: forgeIssuesControl
                         objectName: "forgeFailedIssues"
-                        label: "Issues & Recovery"; size: "inline"; width: 150; deepHover: true
+                        Connections { target: forgeIssuesControl; function onActivated() { forgeSecondaryPopup.close() } }
+                        Binding { target: forgeIssuesControl; property: "x"; value: forgeRetryControl.width + 8; when: forgeSelectedActionRow.useOverflow && forgeIssuesControl.primaryAction }
+                        Binding { target: forgeIssuesControl; property: "y"; value: 0; when: forgeSelectedActionRow.useOverflow && forgeIssuesControl.primaryAction }
+                        readonly property bool primaryAction: window.selectedForgeRun.kind !== "completed"
+                        parent: forgeSelectedActionRow.useOverflow ?
+                            (primaryAction ? forgeAdaptivePrimary : forgeFailedActions) : forgeFailedActions
+                        readonly property bool available: window.selectedForgeRun.kind === "terminal" || window.selectedForgeRun.retrySidecarsOnly === true
+                        visible: available && (!forgeSelectedActionRow.useOverflow || primaryAction)
+                        label: "Issues & Recovery"; size: "inline"; width: forgeSelectedActionRow.useOverflow ? (primaryAction ? Math.min(implicitWidth, 190) : forgeSecondaryActions.width) : 150; deepHover: true
                         onActivated: bridge.openRunIssues(window.selectedForgeRun.runId)
                     }
                     StoneButton {
+                        id: forgeFailedFolderControl
                         objectName: "forgeFailedFolder"
-                        label: "Show in Folder"; size: "inline"; width: 136; deepHover: true
-                        visible: forgeFailedActions.visible && window.selectedForgeRun.kind !== "completed" && bridge.runHasSavedFile(window.selectedForgeRun.runId || "")
+                        Connections { target: forgeFailedFolderControl; function onActivated() { forgeSecondaryPopup.close() } }
+                        Binding { target: forgeFailedFolderControl; property: "x"; value: 0; when: forgeSelectedActionRow.useOverflow && forgeFailedFolderControl.primaryAction }
+                        Binding { target: forgeFailedFolderControl; property: "y"; value: 0; when: forgeSelectedActionRow.useOverflow && forgeFailedFolderControl.primaryAction }
+                        readonly property bool primaryAction: false
+                        parent: forgeSelectedActionRow.useOverflow ?
+                            (primaryAction ? forgeAdaptivePrimary : forgeFailedActions) : forgeFailedActions
+                        label: "Show in Folder"; size: "inline"; width: forgeSelectedActionRow.useOverflow ? (primaryAction ? Math.min(implicitWidth, 190) : forgeSecondaryActions.width) : 136; deepHover: true
+                        readonly property bool available: window.selectedForgeRun.kind === "terminal" && bridge.runHasSavedFile(window.selectedForgeRun.runId || "")
+                        visible: available && (!forgeSelectedActionRow.useOverflow || primaryAction)
                         onActivated: bridge.openRunFolder(window.selectedForgeRun.runId)
                     }
                     StoneButton {
+                        id: forgeRemoveControl
                         objectName: "forgeFailedRemove"
-                        label: "Remove"; size: "inline"; width: 80; deepHover: true
+                        Connections { target: forgeRemoveControl; function onActivated() { forgeSecondaryPopup.close() } }
+                        Binding { target: forgeRemoveControl; property: "x"; value: 0; when: forgeSelectedActionRow.useOverflow && forgeRemoveControl.primaryAction }
+                        Binding { target: forgeRemoveControl; property: "y"; value: 0; when: forgeSelectedActionRow.useOverflow && forgeRemoveControl.primaryAction }
+                        readonly property bool primaryAction: false
+                        parent: forgeSelectedActionRow.useOverflow ?
+                            (primaryAction ? forgeAdaptivePrimary : forgeFailedActions) : forgeFailedActions
+                        readonly property bool available: window.selectedForgeRun.kind === "terminal" || window.selectedForgeRun.retrySidecarsOnly === true
+                        visible: available && (!forgeSelectedActionRow.useOverflow || primaryAction)
+                        label: "Remove"; size: "inline"; width: forgeSelectedActionRow.useOverflow ? (primaryAction ? Math.min(implicitWidth, 190) : forgeSecondaryActions.width) : 80; deepHover: true
                         enabled: !bridge.fileActionBusy
                         onActivated: bridge.requestRunRemoval(window.selectedForgeRun.runId)
                     }
@@ -1872,6 +1972,21 @@ Window {
                         Layout.preferredWidth: 116
                         Layout.preferredHeight: 34
                         onActivated: bridge.clearBatchList()
+                    }
+                }
+                Item {
+                    id: forgeCompactActionSlot
+                    objectName: "forgeCompactActionSlot"
+                    visible: window.forgeDensity === "compact" && forgeAdaptiveActions.hasActions
+                    Layout.preferredWidth: forgeAdaptiveActions.implicitWidth
+                    Layout.fillHeight: true
+                    Text {
+                        y: 40
+                        width: parent.width
+                        text: window.selectedForgeRun.kind === "completed" ? "Showing completed run" : "Showing " + (window.selectedForgeRun.status || "selected run").toLowerCase()
+                        color: theme.muted
+                        font.pixelSize: 13
+                        elide: Text.ElideRight
                     }
                 }
                 Rectangle {
@@ -3453,6 +3568,36 @@ Window {
                 StoneButton { label: bridge.localRunning ? "Stop" : "Create MP4"; emphasized: !bridge.localRunning; Layout.preferredWidth: 110; Layout.preferredHeight: 40; onActivated: bridge.localRunning ? bridge.cancelLocalConversion() : bridge.startLocalConversion() }
             }
         }
+    }
+    AnchoredPopup {
+        id: forgeSecondaryPopup
+        objectName: "forgeSecondaryPopup"
+        parent: window.contentItem
+        preferAbove: true
+        width: 230
+        height: forgeSecondaryActions.implicitHeight + padding * 2
+        padding: 6
+        Column {
+            id: forgeSecondaryActions
+            objectName: "forgeSecondaryActions"
+            width: parent.width
+            spacing: 4
+            Repeater {
+                model: [forgeFolderControl, forgeRetryControl, forgeIssuesControl, forgeFailedFolderControl, forgeRemoveControl]
+                StoneButton {
+                    required property var modelData
+                    objectName: modelData.objectName + "Overflow"
+                    visible: modelData.available && !modelData.primaryAction
+                    label: modelData.label
+                    enabled: modelData.enabled
+                    size: "inline"
+                    width: forgeSecondaryActions.width
+                    onActivated: { modelData.activated(); forgeSecondaryPopup.close() }
+                }
+            }
+        }
+        property string selectedKey: window.selectedForgeRun.selectionKey || ""
+        onSelectedKeyChanged: close()
     }
     AnchoredPopup {
         id: forgeRetryPopup
