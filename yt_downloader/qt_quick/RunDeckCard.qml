@@ -13,7 +13,8 @@ StoneField {
     signal actionsRequested(var anchor)
 
     interactive: true
-    accessibilityLabel: (record.title || "Run") + ", " + (record.status || "")
+    accessibilityLabel: (record.title || "Run") + ", " + (record.status || "") +
+                        (record.optionalWarning ? ", " + record.optionalWarning : "")
     implicitHeight: compact ? 50 : 68
     onActivated: chosen()
 
@@ -62,15 +63,28 @@ StoneField {
                 elide: Text.ElideRight
                 Layout.fillWidth: true
             }
-            Text {
-                objectName: "runDeckStatus"
-                text: card.record.status || ""
-                color: runStatusTone.colorFor(card.record.kind,
-                                              card.record.phase === "failed" ? "Failed" : card.record.status,
-                                              theme)
-                font.pixelSize: 12
-                elide: Text.ElideRight
+            RowLayout {
                 Layout.fillWidth: true
+                spacing: 6
+                Text {
+                    objectName: "runDeckStatus"
+                    text: card.record.status || ""
+                    color: runStatusTone.colorFor(card.record.kind,
+                                                  card.record.phase === "failed" ? "Failed" : card.record.status,
+                                                  theme)
+                    font.pixelSize: 12
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
+                }
+                Text {
+                    objectName: "runDeckOptionalWarning"
+                    visible: !!card.record.optionalWarning
+                    text: card.record.optionalWarning || ""
+                    color: theme.warning
+                    font.pixelSize: 10
+                    elide: Text.ElideRight
+                    Layout.maximumWidth: parent.width * 0.5
+                }
             }
             RunProgress {
                 visible: card.record.kind === "active"

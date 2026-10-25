@@ -336,7 +336,7 @@ Item {
                 onActivated: { deck.appBridge.removeQueued(deck.selectedRecord.runId); actionsPopup.close() }
             }
             StoneButton {
-                visible: deck.selectedRecord.kind === "terminal"
+                visible: (deck.selectedRecord.kind === "terminal" || deck.selectedRecord.retrySidecarsOnly === true)
                 objectName: "runResumeOrRetry"
                 label: deck.selectedRecord.retryLabel || (deck.selectedRecord.status === "Paused" ? "Resume" : "Retry run")
                 enabled: deck.selectedRecord.retryEnabled !== false
@@ -345,21 +345,21 @@ Item {
             }
             StoneButton {
                 objectName: "runShowFolder"
-                visible: deck.selectedRecord.kind === "terminal" && deck.appBridge.runHasSavedFile(deck.selectedRecord.runId || "")
+                visible: (deck.selectedRecord.kind === "terminal" || deck.selectedRecord.retrySidecarsOnly === true) && deck.appBridge.runHasSavedFile(deck.selectedRecord.runId || "")
                 label: "Show in Folder"
                 Layout.fillWidth: true
                 onActivated: { deck.appBridge.openRunFolder(deck.selectedRecord.runId); actionsPopup.close() }
             }
             StoneButton {
                 objectName: "dismissTerminalRun"
-                visible: deck.selectedRecord.kind === "terminal" && !deck.selectedRecord.protectedRecovery
+                visible: (deck.selectedRecord.kind === "terminal" || deck.selectedRecord.retrySidecarsOnly === true) && !deck.selectedRecord.protectedRecovery
                 label: "Remove"
                 Layout.fillWidth: true
                 onActivated: { deck.appBridge.requestRunRemoval(deck.selectedRecord.runId); actionsPopup.close() }
             }
             StoneButton {
                 objectName: "runOpenIssues"
-                visible: deck.selectedRecord.kind === "terminal" || deck.selectedRecord.kind === "active"
+                visible: (deck.selectedRecord.kind === "terminal" || deck.selectedRecord.retrySidecarsOnly === true) || deck.selectedRecord.kind === "active"
                 label: "Open Issues & Recovery"
                 Layout.fillWidth: true
                 onActivated: { deck.appBridge.openRunIssues(deck.selectedRecord.runId); actionsPopup.close() }

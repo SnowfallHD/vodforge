@@ -82,6 +82,10 @@ def test_bridge_real_retry_route_repairs_only_artwork_and_coalesces_exact_owner(
         records = bridge.runDeck["records"]
         assert len(records) == 1
         assert records[0]["retrySidecarsOnly"] is True
+        assert records[0]["kind"] == "completed"
+        assert records[0]["status"] == "Completed  •  MP4"
+        assert records[0]["optionalWarning"] == "Thumbnail missing"
+        assert runtime.recovered[0].terminal_status == "Partial"
         assert records[0]["retryLabel"] == "Retry artwork"
         feedback = []
         bridge.operationFeedback.connect(feedback.append)
@@ -419,7 +423,7 @@ def test_saved_completed_rows_survive_optional_issue_coalescing(
     try:
         records = bridge.runDeck["records"]
         assert len(records) == 2
-        assert sum(r["kind"] == "completed" for r in records) == 1
+        assert sum(r["kind"] == "completed" for r in records) == 2
         assert sum(r.get("retrySidecarsOnly", False) for r in records) == 1
         assert len(bridge._projected_library()) == 2
         assert bridge.openRunIssues(job.run_id)
@@ -517,7 +521,8 @@ def test_keep_video_restores_one_completed_card_after_restart(tmp_path, monkeypa
     monkeypatch.setattr(bridge._artwork, "request", lambda *a, **k: "")
     try:
         assert len(bridge.runDeck["records"]) == 1
-        assert bridge.runDeck["records"][0]["status"] == "Partial"
+        assert bridge.runDeck["records"][0]["status"] == "Completed  •  MP4"
+        assert bridge.runDeck["records"][0]["optionalWarning"] == "Thumbnail missing"
         assert bridge.openRunIssues(job.run_id)
         assert (
             bridge.libraryFolderInspector["keepLabel"] == "Keep video without thumbnail"
@@ -549,3 +554,47 @@ def test_keep_video_restores_one_completed_card_after_restart(tmp_path, monkeypa
         assert history_path.read_bytes() == before[2]
     finally:
         restarted.close()
+
+
+def test_pending_artwork_cards_use_library_order_without_clearing_warnings(
+    tmp_path, monkeypatch
+):
+    from yt_downloader.history import history_archive_owner
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    qt_app()
+    bridge = Bridge(None)
+    jobs, infos = [], []
+    for index in range(3):
+        folder = tmp_path / str(index)
+        folder.mkdir()
+        job, info, _media = fixture(folder)
+        info["id"] = str(index)
+        jobs.append(job)
+        infos.append(info)
+    bridge._runtime.history = infos
+    bridge._runtime.recovered = list(reversed(jobs))
+    monkeypatch.setattr(bridge._artwork, "request", lambda *a, **k: "")
+    try:
+        expected = [history_archive_owner(row) for row in bridge._projected_library()]
+        records = bridge.runDeck["records"]
+        assert len(records) == 3
+        assert [r["owner"] for r in records] == expected
+        assert [r["selectionKey"] for r in records] == [
+            "saved:" + owner for owner in expected
+        ]
+        assert all(
+            r["kind"] == "completed" and r["status"] == "Completed  •  MP4"
+            for r in records
+        )
+        assert all(
+            r["optionalWarning"] == "Thumbnail missing" and r["retrySidecarsOnly"]
+            for r in records
+        )
+        assert "3 completed" in bridge.runDeck["summary"]
+        assert len(bridge._runtime.recovered) == 3
+        assert all(j.terminal_status == "Partial" for j in bridge._runtime.recovered)
+        assert all(bridge.openRunIssues(j.run_id) for j in jobs)
+    finally:
+        bridge.close()

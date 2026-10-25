@@ -3381,6 +3381,13 @@ class Bridge(QObject):
             )
             if target is not None:
                 sidecar_runs.add(job.run_id)
+                record["kind"] = "completed"
+                record["status"] = "Completed  •  MP4"
+                record["optionalWarning"] = target.warning_label
+                record["selectionKey"] = "saved:" + history_archive_owner(target.info)
+                record["title"] = str(
+                    target.info.get("title") or target.info.get("id") or "Saved video"
+                )
                 record["retryLabel"] = target.label
                 record["detail"] = (
                     "Video saved; optional artwork / metadata unavailable"
@@ -3425,6 +3432,9 @@ class Bridge(QObject):
         # The journal appends/upserts terminal attempts in finish order. It has
         # no completion timestamp; use that durable ordinal rather than title,
         # provider date or admission time, only within the existing buckets.
+        saved_order = {
+            history_archive_owner(item): index for index, item in enumerate(projected)
+        }
         terminal_order = {
             job.run_id: ordinal for ordinal, job in enumerate(self._runtime.recovered)
         }
@@ -3445,6 +3455,8 @@ class Bridge(QObject):
                 }.get(str(record["kind"]), 5),
                 -terminal_order.get(str(record.get("runId")), -1)
                 if record["kind"] == "terminal"
+                else saved_order.get(str(record.get("owner")), len(projected))
+                if record["kind"] == "completed"
                 else 0,
             )
         )

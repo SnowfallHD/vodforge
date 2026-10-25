@@ -1754,7 +1754,7 @@ Window {
                 Row {
                     id: forgeFailedActions
                     objectName: "forgeFailedActions"
-                    visible: window.selectedForgeRun.kind === "terminal"
+                    visible: window.selectedForgeRun.kind === "terminal" || window.selectedForgeRun.retrySidecarsOnly === true
                     spacing: 8
                     StoneButton {
                         objectName: "forgeFailedRetry"
@@ -1776,7 +1776,7 @@ Window {
                     StoneButton {
                         objectName: "forgeFailedFolder"
                         label: "Show in Folder"; size: "inline"; width: 136; deepHover: true
-                        visible: forgeFailedActions.visible && bridge.runHasSavedFile(window.selectedForgeRun.runId || "")
+                        visible: forgeFailedActions.visible && window.selectedForgeRun.kind !== "completed" && bridge.runHasSavedFile(window.selectedForgeRun.runId || "")
                         onActivated: bridge.openRunFolder(window.selectedForgeRun.runId)
                     }
                     StoneButton {

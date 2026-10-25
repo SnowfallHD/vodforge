@@ -46,6 +46,16 @@ class SidecarTarget:
         return "Retry files" if self.metadata else "Retry artwork"
 
     @property
+    def warning_label(self) -> str:
+        if self.metadata and self.missing_thumbnail:
+            return "Thumbnail and metadata missing"
+        if self.metadata:
+            return "Metadata file missing"
+        if self.missing_thumbnail:
+            return "Thumbnail missing"
+        return "Optional-file warning"
+
+    @property
     def keep_label(self) -> str:
         if self.metadata and self.missing_thumbnail:
             return "Keep video without thumbnail and metadata file"

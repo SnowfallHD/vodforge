@@ -82,13 +82,22 @@ def test_saved_partial_actual_click_recovers_artwork_without_media_retry(
     monkeypatch.setattr(bridge._artwork, "request", lambda *a, **k: "")
     bridge._runtime.recovery.terminal_attempt(job, "Partial", job.terminal_message)
     bridge._runtime.recovered = bridge._runtime.recovery.store.load_terminal_jobs()
-    bridge.selectRunRecord("terminal:" + job.run_id)
+    assert bridge.selectRunRecord(bridge.runDeck["records"][0]["selectionKey"])
     bridge.historyChanged.emit()
     bridge.runDeckChanged.emit()
     bridge._timer.stop()
     try:
         window.resize(width, 740)
         settle(app, window)
+        deck = window.findChild(QObject, "forgeRunDeck")
+        status = visual_item(deck, "runDeckStatus")
+        warning = visual_item(deck, "runDeckOptionalWarning")
+        assert status.isVisible() and status.property("text") == "Completed  •  MP4"
+        assert warning.isVisible() and warning.property("text") == "Thumbnail missing"
+        assert status.x() + status.width() <= warning.x()
+        assert len(bridge.runDeck["records"]) == 1
+        assert len(bridge._runtime.recovered) == 1
+        assert bridge._runtime.recovered[0].terminal_status == "Partial"
         if surface == "forge":
             retry = window.findChild(QObject, "forgeFailedRetry")
         else:
