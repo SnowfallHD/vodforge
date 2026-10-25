@@ -971,12 +971,19 @@ def test_retiring_during_header_motion_cannot_replay_old_geometry(
         rect=(10, 6, 1022, 44),
     )
     owner = rig.make()
+    initial = rig.header.property("nativeContentScreenX")
     rig.state["controls_hidden"] = False
     rig.native_callback()
-    QTest.qWait(45)
-    anchor = rig.header.property("nativeContentScreenX")
     target = rig.window.property("nativeRowPacket")["host_screen"][0] + 89
-    assert 110 < anchor < target
+    # Retirement must occur during actual motion, not at an assumed wall-clock
+    # frame. The concealed content origin is 100 here, not the host origin 110.
+    anchor = initial
+    for _ in range(100):
+        QTest.qWait(5)
+        anchor = rig.header.property("nativeContentScreenX")
+        if initial < anchor < target:
+            break
+    assert initial < anchor < target
     owner.close()
     rig.settle()
     restored = (
