@@ -241,10 +241,24 @@ FAILURE_CODES = frozenset(
 )
 
 
+def _typed_extractor_tls_code(error: BaseException) -> str | None:
+    # Exact upstream type identities, including subclasses; no dependency import
+    # or classification based on arbitrary exception messages/class names alone.
+    types = {(cls.__module__, cls.__name__) for cls in type(error).__mro__}
+    if ("yt_dlp.networking.exceptions", "CertificateVerifyError") in types:
+        return "tls_certificate"
+    if ("yt_dlp.networking.exceptions", "SSLError") in types:
+        return "tls_handshake"
+    return None
+
+
 def failure_code(error: BaseException) -> str | None:
     if isinstance(error, UnsafeOutputPathError):
         # Its typed refusal is authoritative; its local message may contain paths.
         return None
+    extractor_tls = _typed_extractor_tls_code(error)
+    if extractor_tls is not None:
+        return extractor_tls
     if isinstance(error, ssl.SSLCertVerificationError):
         return "tls_certificate"
     if isinstance(error, ssl.SSLError):
@@ -505,7 +519,9 @@ def capture_failure(
             value = getattr(current, "verify_code", None)
             if type(value) is int and 0 <= value <= 65535:
                 facts["tls_verify_code"] = value
-        if isinstance(current, (ssl.SSLError, socket.gaierror)):
+        if isinstance(
+            current, (ssl.SSLError, socket.gaierror)
+        ) or _typed_extractor_tls_code(current):
             facts["reason"] = "network"
         name = type(current).__name__
         error_chain.append(name if name in ERROR_TYPES else "other")

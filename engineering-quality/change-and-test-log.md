@@ -4945,3 +4945,23 @@ Oct22 20:09UTC private successor912b5ca4041038b7707d9bc654d49719cfeff734 package
 Oct22 20:17UTC matchingWindows912privatepreparationcomplete: strictGenesisSSH/exclusivefreshEroot/source942hashes/noCIM/processquery; focusedsharedQML+F11source10PASS6Mac-onlySKIP30.16s,PyInstallercomplete20:15:47/binding+offscreenexe0,4235seal20:16:18. UnsignedSHA7c6376f6881606306da5bb918c448fee31bd361833d777f6f9e73993b72b8f1c; signhelperspreparedNOTRUN/no signingtaskcreated; noGUI/installation/openreviewaction. Ownedtransportnormal0. Ownlogreader initially serializedPowerShellextendedstringsandemittedoversizedtype/drive-metadataJSON; correctedexplicitstringcast, savedboundedsummary; no secretvalues or usercontentquery. IndependentQJSEngine31capturedrows/repeatedentryreviewpass;2newlocalcharacterizations4.51s document directfullscreen96→99fallback andsyntheticchangedendpoint96→80yield82.44vsdeclared99, notrealnativefailureoracceptance. Sourcealwayswindow.show/no fullscreenrestorepathfound; OSrestoration/native endpointchangesunqualified. No guessedoffset/delaypatch;912stillprovisional, current88appuntouched. Evidence final-912b5ca/{ENDPOINT-LIMITS.json,direct-stale-coverage.log,windows/WINDOWS-PREPARATION.json,REPORT.md}. No ownedbuild/sign/jobqueued.
 
 Oct22 endpoint-authority investigation: ABI6transition isFullscreen enter/exitONLY(notmenu-reveal), VFVisibleRect collapsesallpositivepresentationopacitytovisible, rawgeometry24/25options+26globalmenubarvisible/currentrectangleslacksettledendpointcontract. Source normalstartupwindow.show; no savedfullscreenrestorefound, externalOSrestorationunqualified. Addedtwoactualdesiredregressions tests/test_qt_header_endpoint_requirements.py:2FAIL4.63s (direct96→99catchup,syntheticchangedhost80steady82.44vs99); notxfail/notrelabeledacceptance. Preparedopt-inQAtrace-onlyfixednumericendpointgeometryfromALREADYatomic98fields (no newnativegetters/ABI/UI/normalstartupwork), 9traceprivacy/gate/lifecyclechecksPASS1.08s inclunknown→JSONnull. No motionfixinthisdelta. Current912isNOTgenerallyaccepted; Windows signingheld/none dispatched,privateunsignedretained. Exactdependency AUTHORITATIVE-ENDPOINT-DEPENDENCY.json: coordinatedinstrumentednativeobservationofown-window/modelvs screenrectangles; iftheyalsomovewithaperture, needtrueownedmodel/presentation/opacityphaseobservability orlayoutredesign, nottimer/controls-visibleguess. NoGUI/processquery/capture/permissionrequest/productiondata.
+
+
+## October 27 — typed extractor TLS classification
+
+Local classification correction only: upstream yt-dlp CertificateVerifyError/SSLError
+now map to certificate/handshake codes by qualified type identity through nested
+causes, contexts and exc_info, without requiring message tokens. Unrelated
+same-name exceptions remain unknown. No trust-store, certificate verification,
+network, GUI, package or release changes. Existing classifier missed generic
+messages from typed upstream errors; source gap also exists in public0.2.5
+850e19e. This does not establish cause or recovery for monitored Windows attempts.
+
+New wrapped/chained/cyclic/privacy/unknown regressions plus maintained
+test_diagnostic_richness, test_telemetry_failure and test_download_error_presentation:
+100 passed in0.71s. Scoped Ruff lint/format and diff check pass after formatting;
+initial lint cache write was sandbox-refused, corrected with no-cache, and initial
+format findings corrected. No functional test rerun after formatting-only edits.
+Local cert context separately required certificates/hostname checks with121 roots;
+actual affected Windows bundle/peer chain/handshake remain unverified. Private
+carrier comparison and unrelated dirty source are preserved.
