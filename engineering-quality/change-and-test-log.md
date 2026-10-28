@@ -607,3 +607,8 @@ qt-orientation-fixture-after.{log,xml}. Build continuation is justified by this
 actual pre-packaging fixture failure, not by rechecking proven behavior. Native
 Windows source has advanced in its existing checkout; no successor native input,
 production D1 write, Mac foreground change or public release occurred.
+
+
+## October 28 — isolated TLS fix integration
+
+Ported owner-cleared runtime/test changes from 85a1dd88b0bce1b7037ec02827f8167e8e6b1261 onto remote main 58546193218324d7612bff437cef021b4337d11b. Classifier preimage is identical. On an isolated snapshot of this base plus the exact patch, 97 tests passed in 2.24s across typed extractor TLS, diagnostic richness, telemetry failure, and download error presentation. This is a different main base, not a relabel of the owner's 100-test result. No network, trust policy, app package or public release change. Dirty qt-retirement source and its unresolved fullscreen work remain untouched. Main push triggers test CI only; repository hooks and effective branch rules returned empty on October 28.
