@@ -14,6 +14,8 @@ build/
 dist/
 *.spec
 *.zip
+# Native helper built in place for source runs (scripts/build_macos_fullscreen.py)
+yt_downloader/platforms/macos/*.dylib
 
 # Local generated review references, separate from packaged assets/
 /generated_images/
