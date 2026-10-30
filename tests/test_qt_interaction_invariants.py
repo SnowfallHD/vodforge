@@ -235,7 +235,9 @@ def test_library_description_and_notes_share_height_and_copy_current_text(
         more = next(
             item
             for item in _visual_descendants(window.contentItem())
+            # Forge's compact action row also has a (hidden) "More actions".
             if item.property("accessibilityLabel") == "More actions"
+            and item.isVisible()
         )
         more.activated.emit()
         app.processEvents()

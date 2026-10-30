@@ -5,7 +5,7 @@ from PySide6.QtCore import QObject, QPoint, QPointF, Qt
 from PySide6.QtTest import QTest
 
 from tests.test_qt_interaction_invariants import _close, _launch
-from tests.test_qt_scene_port import qt_app, saved, visual_item
+from tests.test_qt_scene_port import qt_app, saved, settle_popups, visual_item
 
 
 def center(item):
@@ -65,12 +65,15 @@ def test_repeated_and_interrupted_popup_gestures(
             QTest.mouseMove(window, center(trigger))
             QTest.mouseDClick(window, Qt.LeftButton, pos=center(trigger), delay=10)
             QTest.qWait(30)
+            # Open-then-close: judge the settled state after the exit motion.
+            settle_popups(window)
             assert not popup.property("visible")
             QTest.mouseClick(window, Qt.LeftButton, pos=center(trigger))
             QTest.qWait(30)
             assert popup.property("visible")
             QTest.keyClick(window, Qt.Key_Escape)
             QTest.qWait(30)
+            settle_popups(window)
             assert not popup.property("visible")
         # Cancel a held button by leaving its bounds, then ensure the next
         # complete click opens once, including after a hidden-scene transition.
@@ -78,6 +81,7 @@ def test_repeated_and_interrupted_popup_gestures(
         QTest.mouseMove(window, QPoint(2, 2))
         QTest.mouseRelease(window, Qt.LeftButton, pos=QPoint(2, 2))
         QTest.qWait(30)
+        settle_popups(window)
         assert not popup.property("visible")
         bridge.select("Activity" if section != "Activity" else "Forge")
         bridge.select(section)
@@ -246,10 +250,17 @@ def test_primary_action_and_selected_tab_are_visibly_distinct(tmp_path, monkeypa
             bridge.select(selected)
             QTest.qWait(30)
             for section in ("Forge", "Library", "Watch", "Activity"):
-                bar = visual_item(
-                    window.contentItem(), "navigationSelectedBar_" + section
+                # 70f3668 retired the underline bar: the selected tab is the
+                # pressed, accent-labelled navigation button itself.
+                button = visual_item(
+                    window.contentItem(), "navigationButton_" + section
                 )
-                assert bar.property("visible") == (section == selected)
+                is_selected = section == selected
+                assert button.property("selected") == is_selected
+                tab_face = face(button).property("source").toString()
+                assert ("/pressed/" in tab_face) == is_selected
+                if is_selected:
+                    assert button.property("labelTone") == QColor(THEME["accent"])
     finally:
         _close(bridge, engine, window)
 

@@ -58,7 +58,10 @@ def test_main_fullscreen_escape_is_window_scoped_and_preserves_modal_priority(
 
 @pytest.mark.parametrize(
     "width,height",
-    [(820, 560), (920, 560), (1100, 560), (1100, 640), (1100, 740), (1280, 800)],
+    # None = the window's own minimum height (raised in fb858b9 so the dial
+    # and deck fit). Offscreen windows do not enforce it, so a fixed smaller
+    # height would test a size users cannot reach.
+    [(820, None), (920, None), (1100, None), (1100, 640), (1100, 740), (1280, 800)],
 )
 @pytest.mark.parametrize("idle", [False, True])
 def test_forge_fits_without_page_scroll(run_scene, width, height, idle):  # noqa: F811
@@ -67,7 +70,7 @@ def test_forge_fits_without_page_scroll(run_scene, width, height, idle):  # noqa
         bridge._runtime.active_job = None
         bridge._runtime.history = []
         bridge.runDeckChanged.emit()
-    window.resize(width, height)
+    window.resize(width, height or window.minimumHeight())
     QTest.qWait(100)
     viewport = window.findChild(QObject, "forgeViewport")
     scene = window.findChild(QObject, "forgeScene")
@@ -127,10 +130,10 @@ def test_accepted_default_forge_insets_remain_unchanged(run_scene):  # noqa: F81
     assert window.property("forgeTopPad") == pytest.approx(26)
 
 
-@pytest.mark.parametrize("height", [560, 640, 740, 900])
+@pytest.mark.parametrize("height", [None, 640, 740, 900])  # None: window minimum
 def test_run_deck_entire_content_fits_its_scroll_extent(run_scene, height):  # noqa: F811
     _app, _bridge, window, _button, _popup = run_scene
-    window.resize(1100, height)
+    window.resize(1100, height or window.minimumHeight())
     QTest.qWait(100)
     deck = window.findChild(QObject, "forgeRunDeck")
     layout = next(
