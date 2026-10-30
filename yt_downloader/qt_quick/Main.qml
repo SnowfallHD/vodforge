@@ -2219,6 +2219,10 @@ Window {
                             objectName: "forgeActivityViewport"
                             Layout.fillWidth: true
                             Layout.fillHeight: true
+                            // Scrolls within whatever height it is given. Its
+                            // text must not feed the row's minimum height, or
+                            // long activity grows the dashboard instead.
+                            implicitHeight: 0
                             clip: true
                             contentWidth: availableWidth
                             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
