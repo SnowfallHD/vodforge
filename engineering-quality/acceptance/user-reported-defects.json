@@ -30,12 +30,12 @@
     {
       "id": "mac-header-disappears-on-resize",
       "status": "open",
-      "scope": "Current private3c60d6b: user reports custom menu row disappears on resizing; parent screenshot observation shows traffic lights/body remain. Requires native rendered reproduction and exact candidate validation. 2026-10-30: macOS default header is now AppKit toolbar items (header_items.m); the reported Qt row is only the VODFORGE_MAC_HEADER=qt fallback. Not yet reproduced or closed on a packaged candidate."
+      "scope": "Current private3c60d6b: user reports custom menu row disappears on resizing; parent screenshot observation shows traffic lights/body remain. Requires native rendered reproduction and exact candidate validation. 2026-10-30: macOS default header is now AppKit toolbar items (header_items.m); the Qt-drawn macOS header row that was reported has been removed (only reachable via VODFORGE_MAC_HEADER=qt). Not yet reproduced or closed on a packaged candidate."
     },
     {
       "id": "mac-header-motion-regression",
       "status": "open",
-      "scope": "Current private3c60d6b: user reports reduced animation smoothness. Static screenshot is not motion proof; prior acceptance superseded. Requires ordered rendered motion evidence. 2026-10-30: AppKit toolbar header moves with the window; user confirmed entry/reveal/hide motion in a source run (recordings in build/safari-reference). Closure still needs packaged-candidate evidence."
+      "scope": "Current private3c60d6b: user reports reduced animation smoothness. Static screenshot is not motion proof; prior acceptance superseded. Requires ordered rendered motion evidence. 2026-10-30: AppKit toolbar header moves with the window; user confirmed entry/reveal/hide motion in a source run (source-run recordings reviewed 2026-10-30). Closure still needs packaged-candidate evidence."
     }
   ]
 }

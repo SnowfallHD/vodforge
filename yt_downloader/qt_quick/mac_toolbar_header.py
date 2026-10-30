@@ -19,7 +19,7 @@ from typing import Any
 from PySide6.QtCore import Property, QObject, QRectF, QSocketNotifier, Signal, Slot
 from PySide6.QtGui import QColor
 
-from yt_downloader.platforms.macos.header_host import _LIBRARY
+from yt_downloader.platforms.macos.window_controls import _LIBRARY
 
 _POINTER = ctypes.c_void_p
 _ABI_VERSION = 1
@@ -66,6 +66,12 @@ def _library():
     if library.vf_toolbar_abi_version() != _ABI_VERSION:
         raise RuntimeError("Incompatible native toolbar header")
     return library
+
+
+def runtime_library_smoke() -> None:
+    """Packaged-app smoke: the bundled helper loads with every toolbar symbol
+    and the expected ABI. Creates no window, toolbar or event source."""
+    _library()
 
 
 def _png(image: Any) -> bytes:

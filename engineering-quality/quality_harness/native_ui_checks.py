@@ -26,9 +26,7 @@ def complete_native_report(path):
 QT_COMPONENT_TESTS = [
     "tests/test_qt_mac_native_runtime.py",
     "tests/test_qt_mac_preferences.py",
-    "tests/test_qt_native_header_host.py",
-    "tests/test_qt_native_header_modal_boundary.py",
-    "tests/test_qt_popup_transient_window_owner.py",
+    "tests/test_qt_native_toolbar_header.py",
     "tests/test_qt_optional_sidecar_recovery.py",
     "tests/test_qt_run_artwork.py",
     "tests/test_qt_sidecar_recovery_controls.py",
