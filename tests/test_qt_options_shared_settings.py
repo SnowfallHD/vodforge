@@ -293,9 +293,11 @@ def test_options_places_groups_by_available_width(tmp_path, monkeypatch, size, c
         assert popup.property("topPadding") == 8
         assert point(mode).y() - popup.property("y") <= 10
         assert point(quality).x() >= point(mode, mode.width()).x() + 15
+        # Custom's four columns may narrow to expandedColumnMinimum before
+        # Settings restacks (restacking mid-motion jumped a whole column).
         enough = (
             size[0] - 40
-            >= 4 * popup.property("columnMinimum")
+            >= 4 * popup.property("expandedColumnMinimum")
             + 3 * popup.property("columnGap")
             + 16
         )
