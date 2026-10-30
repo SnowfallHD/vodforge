@@ -1,7 +1,6 @@
 """Qt submits the shared validated export choices."""
 
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from PIL import Image
@@ -26,7 +25,9 @@ class _Value:
 
 
 @pytest.mark.parametrize("rate_control", ["CBR", "Quality"])
-def test_manual_choices_match_tk_adapter_and_qt_job(tmp_path: Path, rate_control: str):
+def test_manual_choices_match_tk_adapter_and_qt_job(
+    tmp_path: Path, rate_control: str, idle_runtime
+):
     values = {
         "manual_rate_control": rate_control,
         "manual_video_bitrate": "7000",
@@ -39,7 +40,7 @@ def test_manual_choices_match_tk_adapter_and_qt_job(tmp_path: Path, rate_control
     }
     expected = manual_export_settings(values)
 
-    runtime = _idle_runtime()
+    runtime = idle_runtime
     job = runtime.start(
         "https://example.com/watch?v=abc123",
         tmp_path,
@@ -84,7 +85,7 @@ def test_cover_validation_is_one_owner_for_tk_and_qt(tmp_path: Path):
         service_validator(broken)
 
 
-def test_mp3_choices_match_tk_adapter_and_qt_job(tmp_path: Path):
+def test_mp3_choices_match_tk_adapter_and_qt_job(tmp_path: Path, idle_runtime):
     values = {
         "mp3_quality": "High — 256 kbps CBR",
         "mp3_sample_rate": "44.1 kHz — music",
@@ -94,7 +95,7 @@ def test_mp3_choices_match_tk_adapter_and_qt_job(tmp_path: Path):
     }
     expected = mp3_export_settings(values)
 
-    runtime = _idle_runtime()
+    runtime = idle_runtime
     job = runtime.start(
         "https://example.com/watch?v=abc123",
         tmp_path,
@@ -107,7 +108,9 @@ def test_mp3_choices_match_tk_adapter_and_qt_job(tmp_path: Path):
         mp3_export_settings({"mp3_cover_art_mode": "Custom art"})
 
 
-def test_url_list_parser_and_qt_batch_job_use_the_same_source_order(tmp_path: Path):
+def test_url_list_parser_and_qt_batch_job_use_the_same_source_order(
+    tmp_path: Path, idle_runtime
+):
     lines = "# skip\nhttps://example.com/one title\n<https://example.com/two|Label>\n"
     path = tmp_path / "sources.txt"
     path.write_text(lines, encoding="utf-8")
@@ -120,7 +123,7 @@ def test_url_list_parser_and_qt_batch_job_use_the_same_source_order(tmp_path: Pa
             "https://example.com/two",
         ]
     )
-    runtime = _idle_runtime()
+    runtime = idle_runtime
     job = runtime.start(
         "",
         tmp_path,
@@ -134,10 +137,12 @@ def test_url_list_parser_and_qt_batch_job_use_the_same_source_order(tmp_path: Pa
     assert job.batch_mode is True
 
 
-def test_qt_cookie_access_uses_only_the_explicit_session_choice(tmp_path: Path):
+def test_qt_cookie_access_uses_only_the_explicit_session_choice(
+    tmp_path: Path, idle_runtime
+):
     cookie_file = tmp_path / "cookies.txt"
     cookie_file.write_text("private")
-    runtime = _idle_runtime()
+    runtime = idle_runtime
     base = ("https://example.com/watch?v=abc123", tmp_path, "MP4", "Everyday")
 
     public = runtime.start(
@@ -181,13 +186,19 @@ def test_qt_cookie_access_uses_only_the_explicit_session_choice(tmp_path: Path):
     assert windows_chromium_cookie_warning("Firefox", platform="win32") is None
 
 
-def _idle_runtime() -> DownloadRuntime:
-    runtime = DownloadRuntime.__new__(DownloadRuntime)
-    runtime._closing = False
-    runtime.recovery_notice = None
-    runtime.active_job = None
-    runtime.worker = None
-    runtime.queued = []
-    runtime.recovery = SimpleNamespace()
+@pytest.fixture
+def idle_runtime(tmp_path: Path, monkeypatch) -> DownloadRuntime:
+    """A real runtime over an empty, isolated profile with launch stubbed.
+
+    Building one by hand drifted every time admission gained a check; the
+    real constructor keeps the queue and recovery owners in their real state.
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("LOCALAPPDATA", str(home))
+    monkeypatch.setenv("XDG_DATA_HOME", str(home / "data"))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    runtime = DownloadRuntime()
     runtime._launch = lambda job: None
     return runtime

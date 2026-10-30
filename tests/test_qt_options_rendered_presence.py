@@ -19,10 +19,9 @@ def test_options_supported_controls_survive_live_format_round_trip(
     tmp_path, monkeypatch, audio_format, size
 ):
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
-    output = (
-        Path(__file__).resolve().parents[1]
-        / "build/options-rendered-regression-20261018/transitions"
-    )
+    # Evidence images go to the test's own folder unless a reviewer asks for
+    # a retained artifact root; ordinary runs must not litter the checkout.
+    output = tmp_path / "artifacts" / "transitions"
     if root := os.environ.get("VODFORGE_OPTIONS_ARTIFACT_ROOT"):
         output = Path(root) / "transitions"
     output.mkdir(parents=True, exist_ok=True)
@@ -220,9 +219,9 @@ def test_options_supported_controls_survive_live_format_round_trip(
 def test_audio_options_has_two_meaningful_columns(
     tmp_path, monkeypatch, output_format, size
 ):
-    output = (
-        Path(__file__).resolve().parents[1] / "build/options-audio-columns-20261018"
-    )
+    output = tmp_path / "artifacts" / "audio-columns"
+    if root := os.environ.get("VODFORGE_OPTIONS_ARTIFACT_ROOT"):
+        output = Path(root) / "audio-columns"
     output.mkdir(parents=True, exist_ok=True)
     _app, bridge, engine, window = _launch(tmp_path, monkeypatch, [])
     record = {"format": output_format, "size": size}

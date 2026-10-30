@@ -29,6 +29,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import (
     QColor,
+    QCursor,
     QGuiApplication,
     QInputDevice,
     QPointingDevice,
@@ -89,6 +90,27 @@ def polish_scene(item):
         polish_scene(child)
     item.ensurePolished()
 
+
+
+def settle_popups(window):
+    """Let closing popups finish their exit motion before asserting state.
+
+    Shared popups animate out (f9b0b7f), so ``visible`` stays true briefly
+    after close(). Imported lazily: that module imports this one.
+    """
+    from tests.test_qt_popup_toggle_order import settle_liquid
+
+    settle_liquid(window)
+
+
+def hover_pointer(window, point):
+    """Move the real cursor as well as delivering the move event.
+
+    Hover admission checks QCursor.pos(). The offscreen platform does not move
+    the cursor for QTest.mouseMove, so tests must position it explicitly.
+    """
+    QCursor.setPos(window.mapToGlobal(point))
+    QTest.mouseMove(window, point)
 
 def saved(path: Path, name: str, kind: str, *, category: str = "") -> dict:
     return {
@@ -371,6 +393,7 @@ def test_qt_library_group_menu_selects_every_saved_variant(tmp_path, monkeypatch
         assert menu.property("visible")
         window.findChild(QObject, "libraryGroupSelectButton").activated.emit()
         app.processEvents()
+        settle_popups(window)
         assert not menu.property("visible")
         assert scene.property("selectionMode")
         targets = scene.property("selectedGroups").toVariant()
@@ -3709,6 +3732,9 @@ def test_qt_all_runs_hover_shows_work_above_button_and_click_opens_library(
     engine = qt_main.create_engine(bridge)
     try:
         window = engine.rootObjects()[0]
+        # main() binds the window that hover admission listens to; the
+        # engine alone does not (pointer motion is filtered on that window).
+        bridge._window = window
         window.show()
         app.processEvents()
         button = window.findChild(QObject, "allRunsButton")
@@ -3729,8 +3755,8 @@ def test_qt_all_runs_hover_shows_work_above_button_and_click_opens_library(
         center = button.mapToScene(
             QPointF(button.property("width") / 2, button.property("height") / 2)
         )
-        QTest.mouseMove(window, QPoint(2, 2))
-        QTest.mouseMove(window, QPoint(round(center.x()), round(center.y())))
+        hover_pointer(window, QPoint(2, 2))
+        hover_pointer(window, QPoint(round(center.x()), round(center.y())))
         app.processEvents()
         assert popup.property("visible")
         content_item = popup.property("contentItem")
@@ -3748,11 +3774,11 @@ def test_qt_all_runs_hover_shows_work_above_button_and_click_opens_library(
                 content_item.property("width") / 2, content_item.property("height") - 2
             )
         )
-        QTest.mouseMove(window, QPoint(round(popup_point.x()), round(popup_point.y())))
+        hover_pointer(window, QPoint(round(popup_point.x()), round(popup_point.y())))
         QTest.qWait(250)
         assert popup_hover.property("hovered")
         assert popup.property("visible")
-        QTest.mouseMove(window, QPoint(2, 2))
+        hover_pointer(window, QPoint(2, 2))
         QTest.qWait(500)
         assert not button.property("hovered")
         assert not popup_hover.property("hovered")
@@ -3791,7 +3817,9 @@ def test_qt_selected_run_beyond_visible_deck_renders_its_hero_artwork(
         job.terminal_status = "Failed"
         job.preview_info = {
             "id": f"media-{index}",
-            "title": long_title if index == 9 else f"Media {index}",
+            # The deck lists newest first; the oldest run is beyond its four
+            # visible cards, which is the case this test is about.
+            "title": long_title if index == 0 else f"Media {index}",
             "preview_thumbnail_path": str(image),
             "duration": 124,
         }
@@ -5371,6 +5399,9 @@ def test_qt_forge_composer_keeps_bounds_with_download_before_options(
             for _ in range(3):
                 app.processEvents()
             command_y += caption_height
+            # Compact-height dashboards tighten the row gap (d42c600) so the
+            # live pane and Run Deck still fit; the local row follows it.
+            local_y = command_y + 48 + (6 if window.property("compactHeight") else 8)
 
             def bounds(name):
                 item = window.findChild(QObject, name)
@@ -5401,20 +5432,20 @@ def test_qt_forge_composer_keeps_bounds_with_download_before_options(
             )
             assert bounds("forgeLocalRow") == (
                 command_x,
-                command_y + 56,
+                local_y,
                 width - 2 * command_x,
                 44,
             )
-            assert bounds("forgeLoadListButton") == (command_x, command_y + 56, 131, 44)
+            assert bounds("forgeLoadListButton") == (command_x, local_y, 131, 44)
             assert bounds("forgeDestinationField") == (
                 destination_x,
-                command_y + 61,
+                local_y + 5,
                 destination_width,
                 34,
             )
             assert bounds("forgeCreateVideoButton") == (
                 width - command_x - 131,
-                command_y + 56,
+                local_y,
                 131,
                 44,
             )
@@ -6274,6 +6305,7 @@ def test_qt_context_controls_share_labels_scope_and_retirement(
         bridge.runningChanged.emit()
         bridge.runDeckChanged.emit()
         app.processEvents()
+        settle_popups(window)
         assert bridge.runControls == []
         assert not popup.property("visible")
         assert all(
