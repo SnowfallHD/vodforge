@@ -1693,7 +1693,11 @@ Window {
         anchors.leftMargin: window.gutter
         anchors.rightMargin: window.gutter
         anchors.topMargin: 5 + mainFrame.headerHeight
-        anchors.bottomMargin: 10 + 4 * Math.max(0, Math.min(1, (window.width - 920) / 40))
+        // Wide windows earn a slightly deeper bottom inset, but not at compact
+        // heights: the minimum height is sized for 10 px, and the extra 4 px
+        // would push the Run Deck's last pixel row off a 1100x584 window.
+        anchors.bottomMargin: 10 + (window.compactHeight ? 0 :
+            4 * Math.max(0, Math.min(1, (window.width - 920) / 40)))
         spacing: 2
 
         Item {
