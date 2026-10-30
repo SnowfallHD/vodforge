@@ -158,3 +158,129 @@ def test_deferred_native_exit_does_not_retarget_new_presentation(player_scene):
     assert scene.property("presentationMode") == "embedded"
     assert not floating.isVisible()
     assert window.property("playerSurfaceBound")
+
+
+@pytest.mark.parametrize("mode", ["floating", "fullscreen"])
+@pytest.mark.parametrize("menu_name", ["playerOptionsMenu", "presentationCaptionsMenu"])
+def test_external_menu_escape_dismisses_menu_before_player(
+    player_scene, mode, menu_name
+):
+    app, window, scene, floating = player_scene
+    bridge = scene.property("appBridge")
+    bridge._playback_record = saved(
+        bridge._runtime.history_path.parent, "Escape menu", "MP4"
+    )
+    bridge.playerSceneChanged.emit()
+    flush(app)
+    scene.setProperty("presentationMode", mode)
+    floating.requestActivate()
+    flush(app)
+    menu = window.findChild(QObject, menu_name)
+    menu.open()
+    QTest.qWait(200)
+    assert menu.property("visible")
+    QTest.keyClick(floating, Qt.Key_Escape)
+    QTest.qWait(200)
+    assert not menu.property("visible")
+    assert scene.property("presentationMode") == mode
+    assert floating.isVisible()
+    QTest.keyClick(floating, Qt.Key_Escape)
+    flush(app)
+    assert scene.property("presentationMode") == "embedded"
+    assert not floating.isVisible()
+
+
+@pytest.mark.parametrize(
+    ("steps", "expected", "escape_to"),
+    [
+        (("fullscreen", "embedded", "floating"), "floating", "embedded"),
+        (
+            ("floating", "fullscreen", "embedded", "fullscreen"),
+            "fullscreen",
+            "embedded",
+        ),
+        (
+            ("fullscreen", "embedded", "floating", "fullscreen"),
+            "fullscreen",
+            "floating",
+        ),
+        (("floating", "fullscreen", "floating", "embedded"), "embedded", "embedded"),
+    ],
+)
+def test_queued_retirement_and_fullscreen_completion_keep_latest_intent(
+    player_scene,
+    steps,
+    expected,
+    escape_to,
+):
+    app, window, scene, external = player_scene
+    bridge = scene.property("appBridge")
+    bridge._window = window
+    bridge._playback_record = saved(bridge._runtime.history_path.parent, "Rapid", "MP4")
+    bridge.playerSceneChanged.emit()
+    app.processEvents()
+    owner = scene.property("displayedOwner")
+    assert owner
+    # Deliberately queue completion work between commands without settling the
+    # event loop; older retirement/Space callbacks must not cancel newer intent.
+    for mode in steps:
+        scene.setPresentation(mode)
+        if mode == "embedded":
+            scene.scheduleEmbeddedRetirement()
+        elif mode == "fullscreen":
+            scene.scheduleNativeFullscreenExit()
+    for _ in range(5):
+        app.processEvents()
+    assert scene.property("presentationMode") == expected
+    assert external.isVisible() == (expected != "embedded")
+    assert scene.property("displayedOwner") == owner
+    assert window.property("playerSurfaceBound")
+    scene.exitPresentation()
+    for _ in range(5):
+        app.processEvents()
+    assert scene.property("presentationMode") == escape_to
+    assert external.isVisible() == (escape_to != "embedded")
+    assert scene.property("activeSurfaceName") == (
+        "watchVideoSurface"
+        if escape_to == "embedded"
+        else "watchPresentationVideoSurface"
+    )
+    assert window.property("playerSurfaceBound")
+    assert window.findChild(QObject, "watchVideoSurface") is not None
+    if escape_to == "embedded":
+        # A late toolkit-visible completion must also be retired after return.
+        external.setVisibility(QQuickWindow.Windowed)
+        for _ in range(5):
+            app.processEvents()
+        assert not external.isVisible()
+
+
+@pytest.mark.parametrize("mode", ["floating", "fullscreen"])
+def test_escape_on_origin_during_external_window_activation(player_scene, mode):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    app, main, scene, external = player_scene
+    bridge = scene.property("appBridge")
+    bridge._window = main
+    bridge._playback_record = saved(
+        bridge._runtime.history_path.parent, "Rapid key", "MP4"
+    )
+    bridge.playerSceneChanged.emit()
+    main.requestActivate()
+    for _ in range(5):
+        app.processEvents()
+    assert app.focusWindow() is main
+    scene.setPresentation(mode)
+    # QML intent changes synchronously; native window activation is asynchronous.
+    # Escape may still arrive at the old origin before focus transfers.
+    old_focus = app.focusWindow() is main
+    QTest.keyClick(main, Qt.Key_Escape)
+    for _ in range(5):
+        app.processEvents()
+    assert scene.property("presentationMode") == "embedded", {
+        "focus_was_origin": old_focus,
+        "external_visible": external.isVisible(),
+        "external_active": external.isActive(),
+    }
+    assert not external.isVisible()

@@ -82,6 +82,7 @@ def windows_artifact_receipt(
     policy: str,
     *,
     expected_source_commit: str | None = None,
+    retained_source: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     from .e2e_provenance import bundle_tree_receipt
 
@@ -133,9 +134,24 @@ def windows_artifact_receipt(
     consistent = facts.get("version") == bundle_version and bool(
         re.fullmatch(r"\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?", version)
     )
-    source_verification = _build_source_verification(
-        revision, repo_root, expected_source_commit
-    )
+    if retained_source is None:
+        source_verification = _build_source_verification(
+            revision, repo_root, expected_source_commit
+        )
+    else:
+        from .retained_candidate import validate_retained_source_claim
+
+        validate_retained_source_claim(retained_source)
+        original_matches = (
+            revision == expected_source_commit == retained_source["commit"]
+        )
+        source_verification = {
+            "expected_source_commit": expected_source_commit,
+            "verified": original_matches,
+            "frozen_source_binding": True,
+            "source_manifest_sha256": retained_source["manifest_sha256"],
+            "scope": "Retained original build, not the qualification checkout",
+        }
     revision_verified = source_verification["verified"]
     probe = run_command(
         [str(dependencies["ffprobe"]), "-version"], cwd=repo_root, timeout=30

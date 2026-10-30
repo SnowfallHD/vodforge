@@ -1,11 +1,13 @@
 """Real offscreen Qt lifecycle; only native ABI is mocked. No GUI qualification."""
 
 import math
+import sys
 
 import pytest
 from PySide6.QtCore import QObject
 from PySide6.QtTest import QTest
 
+from tests.test_macos_header_opacity import screen_visibility_driver  # noqa: F401
 from tests.test_qt_interaction_invariants import _close
 from tests.test_qt_interaction_invariants import _launch as original_launch
 from tests.test_qt_scene_port import polish_scene
@@ -1118,4 +1120,42 @@ def test_hidden_transition_updates_fitted_child_without_enabling_input(
     rig.state["transition"] = 0
     rig.native_callback()
     assert rig.window.property("nativeHeaderInputReady") is True
+    owner.close()
+
+
+@pytest.mark.skipif(
+    sys.platform != "darwin", reason="compiled AppKit visibility reader"
+)
+def test_native_multiscreen_visibility_keeps_header_input_ready(
+    native_owner_rig,
+    monkeypatch,
+    screen_visibility_driver,  # noqa: F811
+):
+    from tests.test_macos_header_opacity import read_screen_visibility
+
+    rig = native_owner_rig
+    owner = rig.make()
+    surface = rig.surface
+    sample = rig.host.row_sample
+    visibility = {"visible": True}
+    monkeypatch.setattr(
+        rig.host,
+        "row_sample",
+        lambda: dict(sample(), host_visible=visibility["visible"]),
+    )
+    # Feed the actual compiled reader's result into the production Qt owner.
+    # The native ABI geometry remains modeled, not physical monitor evidence.
+    for case, expected in (
+        ("single", True),
+        ("adjacent", True),
+        ("offscreen", False),
+        ("adjacent", True),
+    ):
+        result = read_screen_visibility(screen_visibility_driver, case)["visibility"]
+        visibility["visible"] = result["status"] == 1
+        rig.native_callback()
+        assert rig.window.property("nativeHeaderInputReady") is expected, case
+        assert not owner.retired
+        assert rig.surface is surface
+        assert rig.header.parentItem() is surface.contentItem()
     owner.close()

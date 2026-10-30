@@ -1,0 +1,74 @@
+[
+  {
+    "utc": "2026-10-23T16:56:33.006926+00:00",
+    "packet_host": [
+      96.0,
+      822.0,
+      1336.0,
+      44.0
+    ],
+    "packet_content": [
+      0.0,
+      0.0,
+      1440.0,
+      900.0
+    ],
+    "target_x": 99.0,
+    "packet_state": "controls-visible",
+    "packet_transition": 0
+  },
+  {
+    "utc": "2026-10-23T16:56:34.242304+00:00",
+    "packet_host": [
+      79.0,
+      822.0,
+      1353.0,
+      44.0
+    ],
+    "packet_content": [
+      0.0,
+      0.0,
+      1440.0,
+      900.0
+    ],
+    "target_x": 99.0,
+    "packet_state": "controls-visible",
+    "packet_transition": 0
+  },
+  {
+    "utc": "2026-10-23T16:56:34.286726+00:00",
+    "packet_host": [
+      60.0,
+      828.0,
+      1372.0,
+      44.0
+    ],
+    "packet_content": [
+      0.0,
+      0.0,
+      1440.0,
+      900.0
+    ],
+    "target_x": 99.0,
+    "packet_state": "controls-visible",
+    "packet_transition": 0
+  },
+  {
+    "utc": "2026-10-23T16:56:35.216047+00:00",
+    "packet_host": [
+      10.0,
+      852.0,
+      1422.0,
+      44.0
+    ],
+    "packet_content": [
+      0.0,
+      0.0,
+      1440.0,
+      900.0
+    ],
+    "target_x": 0.0,
+    "packet_state": "controls-hidden",
+    "packet_transition": 0
+  }
+]

@@ -39,6 +39,17 @@ def evaluate_native_channels(report: Mapping[str, Any], requirement: str) -> str
         released = [w for w in windows if w["phase"] == "released"]
         if len(pressed) < 3 or len(released) < 3:
             return "unproven"
+        # Phase labels are not evidence of ordering. Reject inconsistent
+        # observations before interpreting motion as a behavioral failure.
+        if any(not press[0] <= w["t"] < release[0] for w in pressed) or any(
+            w["t"] < release[0] for w in released
+        ):
+            return "unproven"
+        for window in windows:
+            for dimension in ("Width", "Height"):
+                value = window["bounds"][dimension]
+                if isinstance(value, bool) or not math.isfinite(value) or value <= 0:
+                    return "unproven"
         if (
             max(w["bounds"]["Width"] for w in windows)
             - min(w["bounds"]["Width"] for w in windows)
@@ -53,6 +64,15 @@ def evaluate_native_channels(report: Mapping[str, Any], requirement: str) -> str
             for render in renders:
                 images = render["images"]
                 image_count += len(images)
+                for image in images:
+                    bounds = image["bbox"]
+                    if len(bounds) != 4 or any(
+                        isinstance(value, bool) or not math.isfinite(value)
+                        for value in bounds
+                    ):
+                        return "unproven"
+                    if bounds[2] <= bounds[0] or bounds[3] <= bounds[1]:
+                        return "unproven"
                 for index, a in enumerate(images):
                     x, y, right, bottom = a["bbox"]
                     for b in images[index + 1 :]:
@@ -76,6 +96,11 @@ def evaluate_native_channels(report: Mapping[str, Any], requirement: str) -> str
                     if len(region) != 4:
                         return "unproven"
                     layout = float(region[2]) - float(region[0])
+                if any(
+                    isinstance(value, bool) or not math.isfinite(value) or value <= 0
+                    for value in (float(layout), row["canvas_width"])
+                ):
+                    return "unproven"
                 if abs(float(layout) - (row["canvas_width"] - 4)) <= 1:
                     widths.add(float(layout))
             return "detected" if len(widths) < 3 else "not_detected"

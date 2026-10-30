@@ -4,6 +4,34 @@ Consult [the change and test log](change-and-test-log.md) before assigning or
 repeating qualification work. Retain valid prior passes; record a concrete
 affected change or evidence defect before repeating a check.
 
+## Native visibility spans current displays — 2026-10-30
+
+A visible native view does not lose ownership or input readiness when it crosses
+a display boundary. The shared AppKit visibility reader now encloses every
+nonempty intersection with current screen frames. This is the bounding envelope
+of visible fragments, not a painted region or pointer hit mask; gaps between
+displays may lie inside it. Native-control clearance continues to use each
+control's independently measured full bounds, and visible envelopes outside
+those bounds remain refused. Offscreen and zero-opacity views remain hidden.
+
+Previous opacity checks used one view on one actual display and missed a second
+screen intersection. Five maintained no-application native cases fail before
+the correction, covering adjacent/vertical/overlapping/gapped displays and the
+packet consumer. Additional cases cover negative coordinates, mirrored screens,
+partial clipping, a view wholly inside a screen gap, staggered display edges,
+reversed screen enumeration, empty/offscreen layouts and opacity. A focused actual Qt owner
+test consumes the compiled reader's visibility through a single-display,
+spanning, offscreen and spanning-again sequence without retiring the native
+generation. The opacity fixture now supplies its own screen: this restricted
+executor returns no actual screens, which made two original positive-opacity
+tests fail even on the prior source. No assertion was relaxed.
+
+This is bounded source evidence using modeled public display/view properties,
+not physical multi-display or packaged fullscreen acceptance. The existing
+endpoint requirements remain failing and separate. Native visibility ownership
+stays in the same reader; no display service, timer, global input route or
+DownloaderApp responsibility was added.
+
 ## Native allocation refinement preserves motion — 2026-10-20
 
 A coherent native geometry update may refine an animation destination while it

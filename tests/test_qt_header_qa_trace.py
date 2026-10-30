@@ -167,3 +167,21 @@ def test_header_trace_timer_is_local_and_stops_at_elapsed_bound(tmp_path, monkey
         window.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         app.processEvents()
+
+
+def test_header_trace_accepts_real_qml_object_packet():
+    from PySide6.QtQml import QJSEngine
+    from tests.test_qt_scene_port import qt_app
+
+    app = qt_app()
+    engine = QJSEngine()
+    packet = engine.evaluate("({host_screen: [1, 2, 3, 4], transition: 1})")
+    window = SimpleNamespace(
+        property=lambda name: packet if name == "nativeRowPacket" else False,
+        devicePixelRatio=lambda: 2,
+    )
+    header = SimpleNamespace(property=lambda name: 0, x=lambda: 0)
+    row = header_timeline_sample(window, header)
+    assert row["packet_host"] == [1, 2, 3, 4]
+    assert row["packet_transition"] == 1
+    assert app is not None
