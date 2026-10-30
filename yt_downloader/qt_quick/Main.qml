@@ -3945,22 +3945,35 @@ Window {
         objectName: "optionsMenu"
         x: Math.max(0, (window.width - width) / 2)
         y: Math.max(0, (window.height - height) / 2)
-        property real customReveal: window.outputFormat === "MP4" && bridge.exportMode === "Manual Override" ? 1 : 0
+        readonly property bool customTarget: window.outputFormat === "MP4" && bridge.exportMode === "Manual Override"
+        property real customReveal: customTarget ? 1 : 0
         Behavior on customReveal {
             NumberAnimation { duration: bridge.reducedMotion ? 0 : 280; easing.type: Easing.InOutCubic }
         }
         readonly property real columnMinimum: 250
         readonly property real columnGap: 16
         readonly property real baseWidth: Math.min(window.outputFormat === "MP4" ? 3 * columnMinimum + 2 * columnGap + 16 : 2 * columnMinimum + columnGap + 16, window.width - 40)
-        readonly property real expandedWidth: Math.min(4 * columnMinimum + 3 * columnGap + 16, window.width - 40)
-        readonly property bool sideBySideExtras: window.outputFormat !== "MP4" || customReveal === 0 || window.width - 40 >= 4 * columnMinimum + 3 * columnGap + 16
+        // Custom adds a fourth column. Let the four columns narrow (to 232) before
+        // restacking Settings below: restacking mid-animation relocates a whole
+        // column in one frame, and at a 1100pt window the full 250 missed by 4pt.
+        readonly property real expandedColumnMinimum: 232
+        readonly property real expandedColumn: Math.max(expandedColumnMinimum,
+            Math.min(columnMinimum, (window.width - 40 - 3 * columnGap - 16) / 4))
+        readonly property real expandedWidth: Math.min(4 * expandedColumn + 3 * columnGap + 16, window.width - 40)
+        // Decide from the target state, never mid-animation progress, so a
+        // necessary restack happens once, at the start of either direction.
+        readonly property bool sideBySideExtras: window.outputFormat !== "MP4" || !customTarget ||
+            window.width - 40 >= 4 * expandedColumnMinimum + 3 * columnGap + 16
         width: baseWidth + (expandedWidth - baseWidth) * customReveal
         readonly property real customColumnWidth: window.outputFormat !== "MP4"
             ? (availableWidth - columnGap) / 2 : sideBySideExtras
             ? (availableWidth - columnGap * (2 + customReveal)) / (3 + customReveal)
             : (availableWidth - columnGap) / 2
+        // Collapsed is always side by side; when restacked for Custom, Settings
+        // hides its 27pt heading and 8pt gap, which must not shrink this target.
         readonly property real collapsedHeight: Math.min(window.height - 40, 540,
-            Math.max(composerQuickChoices.height, composerQuickExtras.implicitHeight) + 16)
+            Math.max(composerQuickChoices.height,
+                composerQuickExtras.implicitHeight + (sideBySideExtras ? 0 : 27 + composerQuickExtras.spacing)) + 16)
         readonly property real expandedHeight: Math.min(window.height - 40, 540,
             Math.max(composerManualControls.implicitHeight, composerOptionsContent.implicitHeight,
                 composerQuickExtras.implicitHeight) + 16)
@@ -4155,6 +4168,22 @@ Window {
                     y: optionsMenu.sideBySideExtras ? 0 : composerQuickChoices.height + (composerQuickChoices.visible ? 12 : 0)
                     width: parent.width
                     spacing: 8
+                    // A narrow window must restack this column; fade it into its
+                    // new place instead of letting it appear there in one frame.
+                    NumberAnimation {
+                        id: composerExtrasRestackFade
+                        target: composerQuickExtras
+                        property: "opacity"
+                        from: 0; to: 1
+                        duration: 200
+                        easing.type: Easing.OutCubic
+                    }
+                    Connections {
+                        target: optionsMenu
+                        function onSideBySideExtrasChanged() {
+                            if (optionsMenu.visible && !bridge.reducedMotion) composerExtrasRestackFade.restart()
+                        }
+                    }
                     Item {
                         visible: optionsMenu.sideBySideExtras
                         width: parent.width
