@@ -8,11 +8,16 @@ import pytest
 from yt_downloader.qt_quick import mac_windowing
 
 
-def _cocoa(monkeypatch):
+def _cocoa(monkeypatch, header="qt"):
     from PySide6.QtGui import QGuiApplication
 
     monkeypatch.setattr(mac_windowing.sys, "platform", "darwin")
     monkeypatch.setattr(QGuiApplication, "platformName", lambda: "cocoa")
+    # The Qt-in-toolbar owner remains selectable; the default is AppKit items.
+    if header == "qt":
+        monkeypatch.setenv("VODFORGE_MAC_HEADER", "qt")
+    else:
+        monkeypatch.delenv("VODFORGE_MAC_HEADER", raising=False)
 
 
 def _forbid_bridges(monkeypatch):
@@ -263,3 +268,53 @@ def test_constructor_retained_native_owner_prevents_unsafe_style_rollback(monkey
     assert not mac_windowing.integrate_qt_main_window(window)
     assert mutations == [("style", 7 | (1 << 15)), ("title", 1), ("transparent", True)]
     assert not mac_windowing.integrate_qt_main_window(window)
+
+
+@pytest.mark.parametrize("reject_toolbar", [False, True])
+def test_default_header_is_native_toolbar_items_and_rolls_back(
+    monkeypatch, reject_toolbar
+):
+    _cocoa(monkeypatch, header="toolbar")
+    _forbid_bridges(monkeypatch)
+    state = {"style": 7, "title": 0, "transparent": False}
+    native = SimpleNamespace(
+        pointer=61,
+        styleMask=lambda: state["style"],
+        titleVisibility=lambda: state["title"],
+        titlebarAppearsTransparent=lambda: state["transparent"],
+        setStyleMask_=lambda value: state.update(style=value),
+        setTitleVisibility_=lambda value: state.update(title=value),
+        setTitlebarAppearsTransparent_=lambda value: state.update(transparent=value),
+    )
+    monkeypatch.setattr(mac_windowing, "_native_window", lambda _: native)
+    monkeypatch.setattr(
+        mac_windowing,
+        "IntegratedHeader",
+        lambda *_: pytest.fail("Default must not create the Qt-in-toolbar owner"),
+    )
+    owner = SimpleNamespace(closed=False, retired=False, close=lambda: None)
+    created = []
+
+    def toolbar(window, pointer, assets):
+        created.append((pointer, assets.name))
+        if reject_toolbar:
+            raise RuntimeError("Native toolbar refused")
+        return owner
+
+    monkeypatch.setattr(mac_windowing, "NativeToolbarHeader", toolbar)
+    properties = {}
+    window = SimpleNamespace(
+        setProperty=lambda name, value: properties.update({name: value})
+    )
+    assert mac_windowing.integrate_qt_main_window(window) is not reject_toolbar
+    assert created == [(61, "assets")]
+    if reject_toolbar:
+        # A refused toolbar leaves the window exactly as Qt created it.
+        assert state == {"style": 7, "title": 0, "transparent": False}
+        assert not properties
+    else:
+        assert state == {"style": 7 | (1 << 15), "title": 1, "transparent": True}
+        assert properties == {"nativeToolbar": owner, "backgroundOpacity": 1.0}
+        assert window._native_window_controls is owner
+        assert mac_windowing.integrate_qt_main_window(window)
+        assert len(created) == 1

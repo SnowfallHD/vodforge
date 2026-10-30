@@ -47,6 +47,7 @@ def compiler(tmp_path, *, wrong_arch=False, floor=None, foreign=False):
 def test_explicit_helper_targets_and_source_output_provenance(tmp_path, arches):
     source = tmp_path / "owner.m"
     (tmp_path / "header_toolbar.m").write_text("// header fixture")
+    (tmp_path / "header_items.m").write_text("// header items fixture")
     source.write_text("// controlled source, not compiled by this unit fixture\n")
     output = tmp_path / "native"
     run, _calls = compiler(tmp_path)
@@ -77,6 +78,12 @@ def test_explicit_helper_targets_and_source_output_provenance(tmp_path, arches):
                 (tmp_path / "header_toolbar.m").read_bytes()
             ).hexdigest(),
         },
+        {
+            "path": str((tmp_path / "header_items.m").resolve()),
+            "sha256": hashlib.sha256(
+                (tmp_path / "header_items.m").read_bytes()
+            ).hexdigest(),
+        },
     ]
     commands = receipt["commands"]
     for arch in arches:
@@ -88,6 +95,7 @@ def test_explicit_helper_targets_and_source_output_provenance(tmp_path, arches):
             in command
         )
         assert str(source) in command and str(tmp_path / "header_toolbar.m") in command
+        assert str(tmp_path / "header_items.m") in command
         assert "-fno-objc-arc" in command and "-Werror" in command
         assert "QuartzCore" in command
         assert command[command.index("-install_name") + 1] == "@rpath/" + LIBRARY
@@ -101,6 +109,7 @@ def test_explicit_helper_targets_and_source_output_provenance(tmp_path, arches):
 def test_helper_rejects_wrong_abi_floor_and_host_dependency(tmp_path, options):
     source = tmp_path / "owner.m"
     (tmp_path / "header_toolbar.m").write_text("// header fixture")
+    (tmp_path / "header_items.m").write_text("// header items fixture")
     source.write_text("// fixture")
     run, _ = compiler(tmp_path, **options)
     with pytest.raises(ValueError):
@@ -113,6 +122,7 @@ def test_helper_rejects_wrong_abi_floor_and_host_dependency(tmp_path, options):
 def test_compile_failure_preserved_and_never_published_as_helper(tmp_path):
     source = tmp_path / "owner.m"
     (tmp_path / "header_toolbar.m").write_text("// header fixture")
+    (tmp_path / "header_items.m").write_text("// header items fixture")
     source.write_text("// fixture")
 
     def fail(args):
@@ -134,6 +144,7 @@ def test_missing_source_existing_output_and_invalid_targets_stop_before_command(
         build(source, tmp_path / "out", ["arm64"], run)
     assert not (tmp_path / "out").exists()
     (tmp_path / "header_toolbar.m").write_text("// header fixture")
+    (tmp_path / "header_items.m").write_text("// header items fixture")
     source.write_text("// fixture")
     (tmp_path / "out").mkdir()
     with pytest.raises(ValueError, match="existing"):
@@ -166,12 +177,13 @@ def test_header_missing_refuses_before_output_or_compiler(tmp_path):
     assert not (tmp_path / "output").exists()
 
 
-@pytest.mark.parametrize("changed", ["owner.m", "header_toolbar.m"])
+@pytest.mark.parametrize("changed", ["owner.m", "header_toolbar.m", "header_items.m"])
 def test_each_bound_source_mutation_refuses_qualification(tmp_path, changed):
     source = tmp_path / "owner.m"
     source.write_text("// owner")
     header = tmp_path / "header_toolbar.m"
     header.write_text("// header")
+    (tmp_path / "header_items.m").write_text("// header items")
     run, _ = compiler(tmp_path)
 
     def mutating_run(args):
@@ -186,4 +198,4 @@ def test_each_bound_source_mutation_refuses_qualification(tmp_path, changed):
         build(source, tmp_path / "output", ["arm64"], mutating_run)
     receipt = json.loads((tmp_path / "output/build-receipt.json").read_text())
     assert not receipt["qualified"]
-    assert len(receipt["source_inputs"]) == 2
+    assert len(receipt["source_inputs"]) == 3

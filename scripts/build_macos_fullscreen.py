@@ -87,7 +87,10 @@ def build(source: Path, output: Path, arches, run=None):
     header_source = source.with_name("header_toolbar.m")
     if not header_source.is_file():
         raise ValueError("Required native header toolbar source is missing")
-    sources = (source, header_source)
+    items_source = source.with_name("header_items.m")
+    if not items_source.is_file():
+        raise ValueError("Required native header items source is missing")
+    sources = (source, header_source, items_source)
     if output.exists():
         raise ValueError("Refusing existing native fullscreen build output")
     if run is None:

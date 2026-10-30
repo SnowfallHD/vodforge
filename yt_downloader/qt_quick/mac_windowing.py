@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import ctypes
+import os
 import sys
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from yt_downloader.platforms.macos.native_runtime import send
 from yt_downloader.qt_quick.mac_header import IntegratedHeader
+from yt_downloader.qt_quick.mac_toolbar_header import NativeToolbarHeader
+
+_ASSETS = Path(__file__).resolve().parents[2] / "assets"
 
 _FULL_SIZE_CONTENT = 1 << 15
 _FULL_SCREEN = 1 << 14
@@ -92,6 +97,15 @@ def integrate_qt_main_window(window: Any) -> bool:
         native.setStyleMask_(original_style | _FULL_SIZE_CONTENT)
         native.setTitleVisibility_(1)  # NSWindowTitleHidden
         native.setTitlebarAppearsTransparent_(True)
+        if os.environ.get("VODFORGE_MAC_HEADER", "").strip().lower() != "qt":
+            # Default: AppKit draws and positions each header control, so it
+            # moves with the window and menu bar like any native toolbar.
+            owner = NativeToolbarHeader(window, native.pointer, _ASSETS)
+            window.setProperty("nativeToolbar", owner)
+            window.setProperty("backgroundOpacity", 1.0)
+            window._native_window_controls = owner
+            window._native_header_diagnostic = {"stage": "success", "kind": "toolbar"}
+            return True
         # The toolbar contains the actual shared QML header, not an empty strip
         # or a duplicate. Native controls and the Qt delegate remain system owned.
         owner = IntegratedHeader(window, native.pointer)

@@ -98,6 +98,10 @@ Window {
     property bool nativeHeaderFullscreen: diagnosticHeaderPacketReady ? diagnosticHeaderPacket.fullscreen : false
     property bool nativeHeaderReducedMotion: false
     property bool nativeHeaderRevealed: diagnosticHeaderPacketReady ? diagnosticHeaderPacket.state === "controls-visible" : false
+    // macOS default: the header is real AppKit toolbar items (mac_toolbar_header.py).
+    // AppKit draws and moves them; this scene keeps every action and state.
+    property var nativeToolbar: null
+    readonly property bool nativeToolbarActive: nativeToolbar !== null
     property real backgroundOpacity: 1.0
     readonly property color glassSurfaceColor: theme.bg
     readonly property real glassControlOpacity: backgroundOpacity < 1.0 ? 0.64 : 1.0
@@ -156,15 +160,54 @@ Window {
         interval: 1000
         onTriggered: { window.tracePickerPhase(9); window.completePendingOutputFolderOpen() }
     }
+    // AppKit toolbar header: no packet stream, so sample AppKit's chrome while
+    // waiting. A modal panel opened while the menu bar moves stalls its slide.
+    property var pickerChromeLast: null
+    property real pickerChromeChangedAt: 0
+    function pickerChromeBusy(c) { return c.fullscreen && (c.transition !== 0 || c.revealed > 0.5) }
+    Timer {
+        id: pickerChromePoll
+        interval: 16
+        repeat: true
+        onTriggered: {
+            if (!window.outputFolderOpenPending || !window.nativeToolbar) { stop(); return }
+            const c = window.nativeToolbar.chromeState()
+            const last = window.pickerChromeLast
+            if (!last || last.transition !== c.transition || Math.abs(last.revealed - c.revealed) > 0.25 ||
+                    Math.abs(last.x - c.x) > 0.25)
+                window.pickerChromeChangedAt = Date.now()
+            window.pickerChromeLast = c
+            if (!window.pickerChromeBusy(c) && Date.now() - window.pickerChromeChangedAt >= 80) {
+                stop()
+                window.tracePickerPhase(8)
+                window.completePendingOutputFolderOpen()
+            }
+        }
+    }
     function completePendingOutputFolderOpen() {
         if (!outputFolderOpenPending) return
         outputFolderOpenPending = false
         pickerSettledOpen.stop()
         pickerOpenDeadline.stop()
+        pickerChromePoll.stop()
         presentOutputFolderDialog()
     }
     function openOutputFolderDialog() {
         if (outputFolderOpenPending || (outputFolderDialog && outputFolderDialog.visible)) return
+        if (nativeToolbar) {
+            const chrome = nativeToolbar.chromeState()
+            if (pickerChromeBusy(chrome)) {
+                outputFolderOpenPending = true
+                pickerChromeLast = chrome
+                pickerChromeChangedAt = Date.now()
+                tracePickerPhase(7)
+                pickerOpenDeadline.restart()
+                pickerChromePoll.start()
+                return
+            }
+            presentOutputFolderDialog()
+            return
+        }
         const p = nativeRowPacket
         const transitioning = nativeHeaderAttached && p.schema_version === 1 &&
             (p.transition === 1 || p.transition === 2)
@@ -1227,9 +1270,144 @@ Window {
         }
     }
 
+    // Native toolbar header (macOS). The windowed titlebar is transparent, so
+    // paint the same header surface the Qt header used behind AppKit's items.
+    Rectangle {
+        objectName: "nativeToolbarSurface"
+        visible: window.nativeToolbarActive
+        width: window.width
+        height: window.nativeToolbarActive ? window.nativeToolbar.toolbarHeight : 0
+        color: window.glassSurfaceColor
+    }
+    // Scene stand-ins for AppKit controls that anchor Qt popups.
+    Item {
+        id: nativeSettingsAnchor
+        objectName: "nativeSettingsAnchor"
+        visible: window.nativeToolbarActive
+        x: window.nativeToolbarActive ? window.nativeToolbar.settingsAnchor.x : 0
+        y: window.nativeToolbarActive ? window.nativeToolbar.settingsAnchor.y : 0
+        width: window.nativeToolbarActive ? window.nativeToolbar.settingsAnchor.width : 0
+        height: window.nativeToolbarActive ? window.nativeToolbar.settingsAnchor.height : 0
+    }
+    Item {
+        id: nativeXAnchor
+        objectName: "nativeXAnchor"
+        visible: window.nativeToolbarActive
+        x: window.nativeToolbarActive ? window.nativeToolbar.xAnchor.x : 0
+        y: window.nativeToolbarActive ? window.nativeToolbar.xAnchor.y : 0
+        width: window.nativeToolbarActive ? window.nativeToolbar.xAnchor.width : 0
+        height: window.nativeToolbarActive ? window.nativeToolbar.xAnchor.height : 0
+        LiquidToolTip {
+            objectName: "nativeXToolTip"
+            visible: window.nativeToolbarActive && window.nativeToolbar.xHovered && window.menuNavigationAllowed
+            text: "VODForge on X"
+        }
+    }
+    function activateHome(name) {
+        const keepPlaying = window.miniPlayerActive ||
+            (window.mediaPlayer && window.mediaPlayer.playbackState === MediaPlayer.PlayingState)
+        window.miniPlayerActive = !!keepPlaying
+        bridge.selectHome(name, !!keepPlaying)
+    }
+    function syncNativeToolbar() {
+        // Read the object itself: derived bindings may not have updated yet.
+        if (!nativeToolbar) return
+        const watch = bridge.selection === "Watch"
+        nativeToolbar.setSelection(bridge.selection)
+        nativeToolbar.setInteractive(menuNavigationAllowed)
+        nativeToolbar.setSearch(watch || bridge.selection === "Library",
+            watch ? "Search saved videos…" : "Search your library…",
+            bridge.activeSearch,
+            watch ? "Search saved videos" : "Search library")
+    }
+    function applyNativeToolbarTheme() {
+        if (!nativeToolbar) return
+        nativeToolbar.applyTheme({ accent: theme.accent, text: theme.text, muted: theme.muted,
+            icon: theme.icon, selection: theme.selection, surface: window.glassSurfaceColor })
+        syncNativeToolbar()
+    }
+    onNativeToolbarChanged: { applyNativeToolbarTheme(); watchNativeDimmers() }
+    // Repeat Qt's modal dim on the AppKit toolbar: read the dimmers Qt's overlay
+    // actually shows (each popup may choose its own), never a guessed color.
+    property var nativeDimWatched: []
+    function watchNativeDimmers() {
+        const overlay = window.Overlay.overlay
+        if (!nativeToolbar || !overlay) return
+        const watched = nativeDimWatched.filter(item => !!item)
+        for (let i = 0; i < overlay.children.length; i++) {
+            const child = overlay.children[i]
+            if (watched.indexOf(child) >= 0) continue
+            watched.push(child)
+            child.visibleChanged.connect(requestNativeDimSync)
+            child.opacityChanged.connect(requestNativeDimSync)
+            child.widthChanged.connect(requestNativeDimSync)
+            child.heightChanged.connect(requestNativeDimSync)
+        }
+        nativeDimWatched = watched
+        requestNativeDimSync()
+    }
+    // A new dimmer can be visible before it is sized; read it once settled.
+    function requestNativeDimSync() { Qt.callLater(syncNativeDim) }
+    function syncNativeDim() {
+        if (!window) return  // signal delivered during window teardown
+        const overlay = window.Overlay.overlay
+        if (!nativeToolbar || !overlay) return
+        const layers = []
+        for (let i = 0; i < overlay.children.length; i++) {
+            const child = overlay.children[i]
+            if (!child.visible || child.color === undefined || child.opacity <= 0 ||
+                    child.width < overlay.width - 1 || child.height < overlay.height - 1)
+                continue
+            const alpha = child.color.a * child.opacity
+            if (alpha > 0.001) layers.push(Qt.rgba(child.color.r, child.color.g, child.color.b, alpha))
+        }
+        nativeToolbar.setDim(layers)
+    }
+    Connections {
+        target: window.Overlay.overlay
+        enabled: window.nativeToolbarActive
+        function onChildrenChanged() { window.watchNativeDimmers() }
+        function onWidthChanged() { window.requestNativeDimSync() }
+        function onHeightChanged() { window.requestNativeDimSync() }
+    }
+    onMenuNavigationAllowedChanged: if (nativeToolbar) nativeToolbar.setInteractive(menuNavigationAllowed)
+    Connections {
+        target: bridge
+        enabled: window.nativeToolbarActive
+        function onSelectionChanged() { window.syncNativeToolbar() }
+        function onActiveSearchChanged() { window.syncNativeToolbar() }
+        function onThemeRevisionChanged() { window.applyNativeToolbarTheme() }
+    }
+    Connections {
+        target: window.nativeToolbar
+        ignoreUnknownSignals: true
+        // A press on AppKit's toolbar never reaches Qt. Apply the same outcome a
+        // Qt header press had: it dismisses the modal Settings popup and is
+        // consumed, and any other modal surface blocks header navigation.
+        function onNavActivated(name) {
+            if (settingsPopup.visible) { settingsPopup.close(); return }
+            if (window.menuNavigationAllowed) window.activateHome(name)
+        }
+        function onXActivated() {
+            if (settingsPopup.visible) { settingsPopup.close(); return }
+            if (window.menuNavigationAllowed) bridge.openSocialAccount()
+        }
+        function onSettingsActivated() {
+            if (settingsPopup.visible || window.menuNavigationAllowed)
+                settingsPopup.toggleFrom(nativeSettingsAnchor)
+        }
+        function onSearchEdited(text) { bridge.setActiveSearch(text) }
+        function onSearchFocusedChanged() {
+            if (!window.nativeToolbar.searchFocused) return
+            settingsPopup.close()
+            bridge.recordSearchFocus()
+        }
+    }
+
         Item {
             id: focusHeader
             objectName: "focusHeader"
+            visible: !window.nativeToolbarActive
             enabled: !window.nativeHeaderAttached || window.nativeHeaderInputReady
             x: window.nativeHeaderAttached && window.diagnosticHeaderPacketReady ? 0 : window.gutter
             y: window.nativeHeaderAttached && window.diagnosticHeaderPacketReady ? 0 : 5 + mainFrame.headerHeight
@@ -1445,12 +1623,7 @@ Window {
                         sceneIconTone: selected ? theme.selection : theme.icon
                         width: Math.max(86, implicitWidth)
                         height: implicitHeight
-                        onActivated: {
-                            const keepPlaying = window.miniPlayerActive ||
-                                (window.mediaPlayer && window.mediaPlayer.playbackState === MediaPlayer.PlayingState)
-                            window.miniPlayerActive = !!keepPlaying
-                            bridge.selectHome(modelData, !!keepPlaying)
-                        }
+                        onActivated: window.activateHome(modelData)
                     }
                 }
             }
@@ -1526,7 +1699,9 @@ Window {
         Item {
             objectName: "headerGeometrySlot"
             Layout.fillWidth: true
-            Layout.preferredHeight: window.diagnosticHeaderPacketReady
+            Layout.preferredHeight: window.nativeToolbarActive
+                ? Math.max(0, window.nativeToolbar.toolbarHeight - 5 - mainFrame.headerHeight)
+                : window.diagnosticHeaderPacketReady
                 ? window.diagnosticHeaderPacket.body_slot_height : focusHeader.height
         }
 

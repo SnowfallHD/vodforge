@@ -19,6 +19,9 @@ MenuBar {
     signal settingsRequested()
 
     function edit(method) {
+        // AppKit's header search field owns its own text editing.
+        const toolbar = appWindow.nativeToolbar
+        if (toolbar && toolbar.searchFocused && toolbar.edit(method)) return
         const item = appWindow.activeFocusItem
         if (item && typeof item[method] === "function") item[method]()
     }
