@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import ctypes
-import os
 import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from yt_downloader.platforms.macos.native_runtime import send
-from yt_downloader.qt_quick.mac_header import IntegratedHeader
 from yt_downloader.qt_quick.mac_toolbar_header import NativeToolbarHeader
 
 _ASSETS = Path(__file__).resolve().parents[2] / "assets"
@@ -72,7 +70,7 @@ def _native_window(window: Any) -> _NativeWindow | None:
 
 
 def integrate_qt_main_window(window: Any) -> bool:
-    """Embed the one Qt header in a guarded public native toolbar host."""
+    """Give the main window the AppKit toolbar header, or leave it untouched."""
     window._native_header_diagnostic = {"stage": "platform"}
     if sys.platform != "darwin":
         return False
@@ -97,26 +95,14 @@ def integrate_qt_main_window(window: Any) -> bool:
         native.setStyleMask_(original_style | _FULL_SIZE_CONTENT)
         native.setTitleVisibility_(1)  # NSWindowTitleHidden
         native.setTitlebarAppearsTransparent_(True)
-        if os.environ.get("VODFORGE_MAC_HEADER", "").strip().lower() != "qt":
-            # Default: AppKit draws and positions each header control, so it
-            # moves with the window and menu bar like any native toolbar.
-            owner = NativeToolbarHeader(window, native.pointer, _ASSETS)
-            window.setProperty("nativeToolbar", owner)
-            window.setProperty("backgroundOpacity", 1.0)
-            window._native_window_controls = owner
-            window._native_header_diagnostic = {"stage": "success", "kind": "toolbar"}
-            return True
-        # The toolbar contains the actual shared QML header, not an empty strip
-        # or a duplicate. Native controls and the Qt delegate remain system owned.
-        owner = IntegratedHeader(window, native.pointer)
+        # AppKit draws and positions each header control, so it moves with
+        # the window and menu bar like any native toolbar. If this fails the
+        # window is restored and the in-window Qt header is used instead.
+        owner = NativeToolbarHeader(window, native.pointer, _ASSETS)
+        window.setProperty("nativeToolbar", owner)
         window.setProperty("backgroundOpacity", 1.0)
         window._native_window_controls = owner
-        if window._native_header_diagnostic.get("stage") not in {
-            "success",
-            "native_header_pending",
-            "native_header_pending_allocation",
-        }:
-            window._native_header_diagnostic = {"stage": "success"}
+        window._native_header_diagnostic = {"stage": "success", "kind": "toolbar"}
         return True
     except Exception as exc:  # noqa: BLE001 - preserve the usable Qt window
         diagnostic = dict(getattr(window, "_native_header_diagnostic", {}))

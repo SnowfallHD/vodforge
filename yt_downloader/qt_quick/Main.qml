@@ -83,21 +83,6 @@ Window {
     }
     WindowsFrame { id: mainFrame; appWindow: window }
     color: Qt.platform.os === "osx" ? "transparent" : theme.bg
-    // One real header transferred into the native Unified toolbar row.
-    // No original-content header overlay or concurrent toolbar.
-    property var nativeHeaderSurface: null
-    property bool nativeHeaderAttached: false
-    property bool nativeHeaderInputReady: false
-    // Every header field reads one immutable current native packet.
-    property var nativeRowPacket: ({})
-    readonly property var diagnosticHeaderPacket: nativeRowPacket
-    readonly property bool diagnosticHeaderPacketReady: diagnosticHeaderPacket.schema_version === 1
-    property real nativeHeaderWidth: diagnosticHeaderPacketReady ? diagnosticHeaderPacket.width : width - 2 * gutter
-    property real nativeHeaderLeadingInset: diagnosticHeaderPacketReady ? diagnosticHeaderPacket.leading : 0
-    property real nativeHeaderReserve: diagnosticHeaderPacketReady ? diagnosticHeaderPacket.reserve : 0
-    property bool nativeHeaderFullscreen: diagnosticHeaderPacketReady ? diagnosticHeaderPacket.fullscreen : false
-    property bool nativeHeaderReducedMotion: false
-    property bool nativeHeaderRevealed: diagnosticHeaderPacketReady ? diagnosticHeaderPacket.state === "controls-visible" : false
     // macOS default: the header is real AppKit toolbar items (mac_toolbar_header.py).
     // AppKit draws and moves them; this scene keeps every action and state.
     property var nativeToolbar: null
@@ -114,47 +99,8 @@ Window {
     function tracePickerPhase(phase) {
         if (pickerTimelineEnabled) pickerTimelinePhase(phase)
     }
-    // Defer expensive native presentation during a
-    // measured retreat or fullscreen transition. This schedules the picker, never the header animation.
+    // Defer the native folder panel while the fullscreen menu bar moves.
     property bool outputFolderOpenPending: false
-    property real pickerLastHostX: NaN
-    property string pickerLastHostRect: ""
-    property real pickerRetreatObservedAt: 0
-    property int pickerLastTransition: 0
-    function observePickerNativeMotion() {
-        const p = nativeRowPacket
-        const usable = nativeHeaderAttached && p.schema_version === 1 &&
-            p.fullscreen && !p.transition && p.host_screen
-        const x = usable ? p.host_screen[0] : NaN
-        const rect = usable ? JSON.stringify(p.host_screen) : ""
-        const transition = nativeHeaderAttached && p.schema_version === 1 ? p.transition || 0 : 0
-        const transitioning = transition === 1 || transition === 2
-        const transitionEnded = pickerLastTransition !== 0 && !transitioning
-        const changed = rect !== pickerLastHostRect || transition !== pickerLastTransition
-        pickerLastTransition = transition
-        if (!usable || p.state === "controls-hidden") {
-            pickerRetreatObservedAt = 0
-        } else if (isFinite(pickerLastHostX) && x < pickerLastHostX) {
-            pickerRetreatObservedAt = Date.now()
-        } else if (isFinite(pickerLastHostX) && x > pickerLastHostX) {
-            pickerRetreatObservedAt = 0
-        }
-        pickerLastHostX = x
-        pickerLastHostRect = rect
-        if (outputFolderOpenPending && changed) {
-            pickerSettledOpen.stop()
-            if (!transitioning && (transitionEnded || !usable || p.state === "controls-hidden")) pickerSettledOpen.restart()
-        }
-    }
-    Connections {
-        target: window
-        function onNativeRowPacketChanged() { window.observePickerNativeMotion() }
-    }
-    Timer {
-        id: pickerSettledOpen
-        interval: 80
-        onTriggered: { window.tracePickerPhase(8); window.completePendingOutputFolderOpen() }
-    }
     Timer {
         id: pickerOpenDeadline
         interval: 1000
@@ -187,7 +133,6 @@ Window {
     function completePendingOutputFolderOpen() {
         if (!outputFolderOpenPending) return
         outputFolderOpenPending = false
-        pickerSettledOpen.stop()
         pickerOpenDeadline.stop()
         pickerChromePoll.stop()
         presentOutputFolderDialog()
@@ -206,15 +151,6 @@ Window {
                 return
             }
             presentOutputFolderDialog()
-            return
-        }
-        const p = nativeRowPacket
-        const transitioning = nativeHeaderAttached && p.schema_version === 1 &&
-            (p.transition === 1 || p.transition === 2)
-        if (transitioning || (pickerRetreatObservedAt > 0 && Date.now() - pickerRetreatObservedAt < 100)) {
-            outputFolderOpenPending = true
-            tracePickerPhase(7)
-            pickerOpenDeadline.restart()
             return
         }
         presentOutputFolderDialog()
@@ -236,8 +172,7 @@ Window {
         settingsPopup.close()
     }
     property real playerVolume: 0.8
-    readonly property var currentEditingItem: nativeHeaderSurface && nativeHeaderSurface.activeFocusItem
-        ? nativeHeaderSurface.activeFocusItem : activeFocusItem
+    readonly property var currentEditingItem: activeFocusItem
     readonly property bool editingText: currentEditingItem instanceof TextInput ||
                                        currentEditingItem instanceof TextEdit
     function retireHiddenSceneFocus() {
@@ -1408,11 +1343,10 @@ Window {
             id: focusHeader
             objectName: "focusHeader"
             visible: !window.nativeToolbarActive
-            enabled: !window.nativeHeaderAttached || window.nativeHeaderInputReady
-            x: window.nativeHeaderAttached && window.diagnosticHeaderPacketReady ? 0 : window.gutter
-            y: window.nativeHeaderAttached && window.diagnosticHeaderPacketReady ? 0 : 5 + mainFrame.headerHeight
-            width: window.nativeHeaderAttached ? window.nativeHeaderWidth : window.width - 2 * window.gutter
-            height: window.nativeHeaderAttached ? window.diagnosticHeaderPacket.height : (stacked ? 100 : 44)
+            x: window.gutter
+            y: 5 + mainFrame.headerHeight
+            width: window.width - 2 * window.gutter
+            height: stacked ? 100 : 44
             z: 50
             // One original window: mainFullscreenEscape is the sole owner.
             // Keep the compact lockup until the expanded brand and minimum
@@ -1421,105 +1355,11 @@ Window {
             readonly property bool compact: layoutWidth < 960 || layoutWidth <
                 layoutInset + 150 + navWidth +
                 ((bridge.selection === "Library" || bridge.selection === "Watch") ? 193 : 0) + 72
-            readonly property real nativeHostScreenX: window.nativeHeaderAttached && window.diagnosticHeaderPacketReady
-                ? window.diagnosticHeaderPacket.host_screen[0] : 0
-            // Pace one content destination in screen coordinates. Subtract the
-            // CURRENT native aperture immediately: never animate that correction.
-            // Read both destination terms from the same immutable packet.
-            // Native aperture and clearance can change together during reveal.
-            readonly property real nativeContentTargetScreenX: window.nativeHeaderAttached && window.diagnosticHeaderPacketReady
-                ? (window.diagnosticHeaderPacket.content_target_screen_x !== undefined ? window.diagnosticHeaderPacket.content_target_screen_x : window.diagnosticHeaderPacket.host_screen[0] + window.diagnosticHeaderPacket.leading)
-                : (window.nativeHeaderAttached ? window.nativeHeaderLeadingInset : (Qt.platform.os === "osx" ? 82 : 0))
-            readonly property bool nativeHeaderMotionEnabled: window.nativeHeaderAttached &&
-                window.nativeHeaderFullscreen && (!window.diagnosticHeaderPacket.transition) &&
-                !bridge.reducedMotion && !window.nativeHeaderReducedMotion
-            readonly property real nativeContentOriginScreenX: window.nativeHeaderAttached && window.diagnosticHeaderPacketReady &&
-                window.diagnosticHeaderPacket.content_screen
-                ? window.diagnosticHeaderPacket.content_screen[0] : 0
-            readonly property real nativeContentTargetOffset: nativeContentTargetScreenX - nativeContentOriginScreenX
-            property real nativeAnimatedContentOffset: 0
-            property bool nativeMotionWasEnabled: false
-            property bool nativeMotionMayAnimate: false
-            property real nativeMotionDestination: NaN
-            // Native allocation owns reveal/conceal timing. Learn its two
-            // geometric endpoints from this exact window, not elapsed time or
-            // a cached screen origin. The exposed lane is measured windowed;
-            // the concealed lane is measured after fullscreen allocation.
-            property real nativeExposedHostOffset: NaN
-            property real nativeConcealedHostOffset: NaN
-            readonly property real nativeContentScreenX: nativeContentOriginScreenX + nativeAnimatedContentOffset
-            readonly property real nativeHeaderInset: window.nativeHeaderAttached
-                ? Math.max(0, nativeContentScreenX - nativeHostScreenX) : nativeContentScreenX
-
-            function synchronizeNativeMotion() {
-                // Read one raw transaction, not several independently notified
-                // derived properties at the fullscreen/presentation handoff.
-                const p = window.nativeRowPacket
-                const valid = window.nativeHeaderAttached && p.schema_version === 1
-                const origin = valid && p.content_screen ? p.content_screen[0] : 0
-                const screenTarget = valid
-                    ? (p.content_target_screen_x !== undefined ? p.content_target_screen_x : p.host_screen[0] + p.leading)
-                    : (window.nativeHeaderAttached ? window.nativeHeaderLeadingInset : (Qt.platform.os === "osx" ? 82 : 0))
-                const destination = screenTarget - origin
-                const canAnimate = valid && p.fullscreen && !p.transition &&
-                    !bridge.reducedMotion && !window.nativeHeaderReducedMotion
-                const hostOffset = valid ? p.host_screen[0] - origin : NaN
-                if (!valid) {
-                    nativeExposedHostOffset = NaN
-                    nativeConcealedHostOffset = NaN
-                } else if (!p.fullscreen && !p.transition && p.screen_ready !== false) {
-                    nativeExposedHostOffset = hostOffset
-                    nativeConcealedHostOffset = NaN
-                } else if (p.fullscreen && !p.transition && p.state === "controls-hidden") {
-                    nativeConcealedHostOffset = isFinite(nativeConcealedHostOffset)
-                        ? Math.min(nativeConcealedHostOffset, hostOffset) : hostOffset
-                }
-                const span = nativeExposedHostOffset - nativeConcealedHostOffset
-                if (canAnimate && isFinite(span) && span > 0 &&
-                    (p.state === "controls-hidden" || destination >= nativeConcealedHostOffset)) {
-                    // AppKit already animates the aperture. A second Qt clock
-                    // produces max(nativeX, animatedX): a native plateau followed
-                    // by late Qt catch-up. Interpolate only the required design
-                    // clearance with the SAME measured native displacement.
-                    const progress = Math.max(0, Math.min(1,
-                        (hostOffset - nativeConcealedHostOffset) / span))
-                    nativeMotionMayAnimate = false
-                    nativeAnimatedContentOffset = p.state === "controls-hidden"
-                        ? destination : nativeConcealedHostOffset + progress *
-                            (destination - nativeConcealedHostOffset)
-                    nativeMotionDestination = destination
-                    nativeMotionWasEnabled = false
-                    return
-                }
-                nativeMotionMayAnimate = canAnimate && nativeMotionWasEnabled
-                nativeAnimatedContentOffset = destination
-                nativeMotionDestination = destination
-                nativeMotionWasEnabled = canAnimate
-            }
-            Connections {
-                target: window
-                function onNativeRowPacketChanged() { focusHeader.synchronizeNativeMotion() }
-                function onNativeHeaderAttachedChanged() { focusHeader.synchronizeNativeMotion() }
-                function onNativeHeaderReducedMotionChanged() { focusHeader.synchronizeNativeMotion() }
-            }
-            Component.onCompleted: synchronizeNativeMotion()
-            Behavior on nativeAnimatedContentOffset {
-                id: nativeHeaderMotion
-                property int movementDuration: 220
-                onTargetValueChanged: movementDuration = targetValue < focusHeader.nativeAnimatedContentOffset ? 70 : 220
-                enabled: focusHeader.nativeMotionMayAnimate
-                SmoothedAnimation {
-                    id: nativeHeaderSmoothing
-                    duration: nativeHeaderMotion.movementDuration
-                    velocity: -1
-                    maximumEasingTime: 40
-                    reversingMode: SmoothedAnimation.Immediate
-                }
-            }
-            readonly property real layoutInset: window.nativeHeaderAttached
-                ? window.nativeHeaderLeadingInset : (Qt.platform.os === "osx" ? 82 : 0)
-            readonly property real layoutWidth: window.nativeHeaderAttached ? window.nativeHeaderWidth : window.width - 2 * window.gutter
-            readonly property real brandWidth: nativeHeaderInset + (compact ? 46 : 150)
+            // In-window header (Windows, Linux, and macOS only if the AppKit
+            // toolbar cannot load). macOS keeps its traffic-light inset.
+            readonly property real layoutInset: Qt.platform.os === "osx" ? 82 : 0
+            readonly property real layoutWidth: window.width - 2 * window.gutter
+            readonly property real brandWidth: layoutInset + (compact ? 46 : 150)
             readonly property int searchWidth: Math.max(compact ? 124 : 185,
                 Math.min(compact ? 186 : 285,
                     layoutWidth - layoutInset - (compact ? 46 : 150) - navWidth - 88))
@@ -1567,7 +1407,7 @@ Window {
             Row {
                 id: brandRow
                 objectName: "brandRow"
-                x: focusHeader.nativeHeaderInset
+                x: focusHeader.layoutInset
                 y: Math.round((44 - height) / 2)
                 // Canonical lockup: 13px gap at 191px painted mark height.
                 // Account for this mark export's 8px transparent right edge.
@@ -1665,15 +1505,8 @@ Window {
                     width: 28; height: 40
                     onActivated: bridge.openSocialAccount()
                     LiquidToolTip {
-                        independentWindow: window.nativeHeaderAttached
-                        // Popup.Window requires a top-level transient owner.
-                        // The native header is a child QWindow, so anchor in the
-                        // main scene using the button's current global position.
-                        parent: window.nativeHeaderAttached ? window.contentItem : headerXButton
-                        readonly property point mainAnchor: window.contentItem.mapFromGlobal(
-                            headerXButton.mapToGlobal(headerXButton.width / 2, headerXButton.height))
-                        x: window.nativeHeaderAttached ? mainAnchor.x - width / 2 : (headerXButton.width - width) / 2
-                        y: window.nativeHeaderAttached ? mainAnchor.y + 6 : headerXButton.height + 6
+                        x: (headerXButton.width - width) / 2
+                        y: headerXButton.height + 6
                         visible: headerXButton.hovered
                         text: "VODForge on X"
                     }
@@ -1705,8 +1538,7 @@ Window {
             Layout.fillWidth: true
             Layout.preferredHeight: window.nativeToolbarActive
                 ? Math.max(0, window.nativeToolbar.toolbarHeight - 5 - mainFrame.headerHeight)
-                : window.diagnosticHeaderPacketReady
-                ? window.diagnosticHeaderPacket.body_slot_height : focusHeader.height
+                : focusHeader.height
         }
 
         Rectangle {

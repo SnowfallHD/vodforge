@@ -47,16 +47,9 @@ minimum_macos="$("$python_bin" -c 'import os,sys; from scripts.build_macos_fulls
   QT_QUICK_CONTROLS_STYLE=Basic QT_QUICK_BACKEND=software "$python_bin" -m pytest -q \
     tests engineering-quality/tests fine-tuning/tests \
     --ignore=tests/test_qt_application_fullscreen.py \
-    --ignore=tests/test_qt_header_endpoint_requirements.py \
-    --ignore=tests/test_qt_header_motion_timeline.py \
-    --ignore=tests/test_qt_header_native_clock.py \
-    --ignore=tests/test_qt_header_pending_entry_trace.py \
-    --ignore=tests/test_qt_header_qa_trace.py \
-    --ignore=tests/test_qt_header_tooltip_owner.py \
     --ignore=tests/test_qt_import_failure_status.py \
     --ignore=tests/test_qt_local_conversion_validation.py \
     --ignore=tests/test_qt_navigation_selection.py \
-    --ignore=tests/test_qt_picker_retreat_gate.py \
     --ignore=tests/test_qt_popup_lifecycle_wait.py \
     --ignore=tests/test_qt_resource_recovery.py \
     --ignore=tests/test_qt_review_spacing_metrics.py \
@@ -103,9 +96,6 @@ minimum_macos="$("$python_bin" -c 'import os,sys; from scripts.build_macos_fulls
     --ignore=tests/test_qt_watch_close_hero_refresh.py \
     --ignore=tests/test_qt_mac_native_runtime.py \
     --ignore=tests/test_qt_mac_preferences.py \
-    --ignore=tests/test_qt_native_header_host.py \
-    --ignore=tests/test_qt_native_header_modal_boundary.py \
-    --ignore=tests/test_qt_popup_transient_window_owner.py \
     --ignore=tests/test_qt_optional_sidecar_recovery.py \
     --ignore=tests/test_qt_run_artwork.py \
     --ignore=tests/test_qt_sidecar_recovery_controls.py \
@@ -169,16 +159,9 @@ minimum_macos="$("$python_bin" -c 'import os,sys; from scripts.build_macos_fulls
     --ignore=engineering-quality/tests/test_qt_worker_owner.py
   QT_QUICK_CONTROLS_STYLE=Basic QT_QUICK_BACKEND=software "$python_bin" -m pytest -q \
     tests/test_qt_application_fullscreen.py \
-    tests/test_qt_header_endpoint_requirements.py \
-    tests/test_qt_header_motion_timeline.py \
-    tests/test_qt_header_native_clock.py \
-    tests/test_qt_header_pending_entry_trace.py \
-    tests/test_qt_header_qa_trace.py \
-    tests/test_qt_header_tooltip_owner.py \
     tests/test_qt_import_failure_status.py \
     tests/test_qt_local_conversion_validation.py \
     tests/test_qt_navigation_selection.py \
-    tests/test_qt_picker_retreat_gate.py \
     tests/test_qt_popup_lifecycle_wait.py \
     tests/test_qt_resource_recovery.py \
     tests/test_qt_review_spacing_metrics.py \
@@ -225,9 +208,6 @@ minimum_macos="$("$python_bin" -c 'import os,sys; from scripts.build_macos_fulls
     tests/test_qt_watch_close_hero_refresh.py \
     tests/test_qt_mac_native_runtime.py \
     tests/test_qt_mac_preferences.py \
-    tests/test_qt_native_header_host.py \
-    tests/test_qt_native_header_modal_boundary.py \
-    tests/test_qt_popup_transient_window_owner.py \
     tests/test_qt_optional_sidecar_recovery.py \
     tests/test_qt_run_artwork.py \
     tests/test_qt_sidecar_recovery_controls.py \
