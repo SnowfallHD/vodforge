@@ -5,7 +5,7 @@ from dataclasses import replace
 import pytest
 
 from tests.test_run_identity import make_job
-from yt_downloader.archive_browser import _is_issue_without_export
+from yt_downloader.archive_browser import _is_recoverable_issue
 from yt_downloader.library_state import LibraryProjectionOwner
 from yt_downloader.qt_quick.runtime import DownloadRuntime
 
@@ -22,7 +22,7 @@ def issue_rows(runtime):
         )
         .rows
     )
-    return [row for row in rows if _is_issue_without_export(row, None)]
+    return [row for row in rows if _is_recoverable_issue(row, None)]
 
 
 @pytest.mark.parametrize("queued", [False, True])
