@@ -331,6 +331,12 @@ def test_converter_display_labels_render_and_keep_durable_selection(
         monkeypatch.setattr(
             bridge._local, "start", lambda *args: submitted.append(args)
         )
+        # The bridge preflights the picked files before handing off, so the
+        # profile can only reach the converter with a real selection.
+        audio, image = tmp_path / "sound.mp3", tmp_path / "cover.png"
+        audio.write_bytes(b"fixture")
+        image.write_bytes(b"fixture")
+        bridge._local_audio, bridge._local_image = str(audio), str(image)
         for profile, label in zip(
             LocalVideoProfile,
             ("Everyday", "4K", "Broadcast", "Smaller File"),
