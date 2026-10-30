@@ -841,8 +841,11 @@ static unsigned VFVisibleRect(NSView *view,NSRect *out) {
     for(NSScreen *screen in NSScreen.screens){
         NSRect part=NSIntersectionRect(full,screen.frame);
         if(NSIsEmptyRect(part))continue;
-        if(!NSIsEmptyRect(clip)&&!NSEqualRects(clip,part))return 0;
-        clip=part;
+        // A current view may span displays. Consumers need visibility and the
+        // bounds of its visible fragments, never a paint region or hit mask.
+        // An envelope may include a display gap; it stays inside the original
+        // view bounds and preserves conservative native-control clearance.
+        clip=NSIsEmptyRect(clip)?part:NSUnionRect(clip,part);
     }
     if(NSIsEmptyRect(clip))return 2;*out=clip;return 1;
 }

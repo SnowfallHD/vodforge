@@ -352,3 +352,120 @@ def test_pointer_trace_refuses_invalid_sequence_before_input(duration, delta):
             duration=duration,
             scroll_delta=delta,
         )
+
+
+def test_observe_does_not_reactivate_an_already_foreground_attested_app(
+    monkeypatch, tmp_path
+):
+    """Redundant activation must not cause another foreground transition."""
+    from PIL import Image
+
+    app = SimpleNamespace(processIdentifier=lambda: 10)
+
+    def redundant(_):
+        raise AssertionError("Redundant native activation")
+
+    app.activateWithOptions_ = redundant
+    appkit = SimpleNamespace(
+        NSRunningApplication=SimpleNamespace(
+            runningApplicationWithProcessIdentifier_=lambda _: app
+        ),
+        NSApplicationActivateIgnoringOtherApps=1,
+        NSWorkspace=SimpleNamespace(
+            sharedWorkspace=lambda: SimpleNamespace(frontmostApplication=lambda: app)
+        ),
+    )
+    quartz = SimpleNamespace(
+        kCGWindowListOptionOnScreenOnly=1,
+        CGWindowListCopyWindowInfo=lambda *_: [
+            {
+                "kCGWindowOwnerPID": 10,
+                "kCGWindowLayer": 0,
+                "kCGWindowName": "QA",
+                "kCGWindowNumber": 20,
+                "kCGWindowBounds": {"X": 0, "Y": 0, "Width": 100, "Height": 100},
+            }
+        ],
+    )
+    monkeypatch.setitem(sys.modules, "AppKit", appkit)
+    monkeypatch.setitem(sys.modules, "Quartz", quartz)
+    monkeypatch.setattr(
+        native_input, "verify_live_launch", lambda _: {"verified": True}
+    )
+    monkeypatch.setattr(native_input, "focused_window_title", lambda _: "QA")
+
+    def capture(argv, **kwargs):
+        Image.new("RGB", (100, 100)).save(argv[-1])
+
+    monkeypatch.setattr(native_input.subprocess, "run", capture)
+    path = tmp_path / "session.json"
+    path.write_text(json.dumps({"driver_ready": True, "current_launch": {"pid": 10}}))
+    native_input.main(
+        [
+            "--session",
+            str(path),
+            "--window-title",
+            "QA",
+            "--output",
+            str(tmp_path / "observe.json"),
+            "observe",
+        ]
+    )
+    value = json.loads((tmp_path / "observe.json").read_text())
+    assert value["status"] == "observed" and value["input_sent"] is False
+
+
+def test_foreground_wait_pumps_notifications_but_never_accepts_other_pid(monkeypatch):
+    state = SimpleNamespace(pid=99, activations=0, pumps=0, now=0.0)
+    target = SimpleNamespace(processIdentifier=lambda: 10)
+    foreign = SimpleNamespace(processIdentifier=lambda: state.pid)
+
+    def activate(_):
+        state.activations += 1
+        return True
+
+    target.activateWithOptions_ = activate
+
+    def pump(_):
+        state.pumps += 1
+        state.pid = 10
+
+    appkit = SimpleNamespace(
+        NSWorkspace=SimpleNamespace(
+            sharedWorkspace=lambda: SimpleNamespace(
+                frontmostApplication=lambda: foreign
+            )
+        ),
+        NSApplicationActivateIgnoringOtherApps=1,
+        NSRunLoop=SimpleNamespace(
+            currentRunLoop=lambda: SimpleNamespace(runUntilDate_=pump)
+        ),
+        NSDate=SimpleNamespace(dateWithTimeIntervalSinceNow_=lambda x: x),
+    )
+    monkeypatch.setattr(native_input.time, "monotonic", lambda: state.now)
+    monkeypatch.setattr(
+        native_input.time, "sleep", lambda d: setattr(state, "now", state.now + d)
+    )
+    assert native_input.activate_attested_application(appkit, target, 10) is True
+    assert state.activations == 1 and state.pumps == 1
+    state.pid = 99
+    appkit.NSRunLoop.currentRunLoop = lambda: SimpleNamespace(
+        runUntilDate_=lambda _: None
+    )
+    with pytest.raises(RuntimeError, match="no retry sent"):
+        native_input.activate_attested_application(appkit, target, 10)
+    assert state.activations == 2
+    assert state.now < 5.2
+
+
+def test_refused_activation_never_retries_or_posts_input():
+    appkit = SimpleNamespace(
+        NSWorkspace=SimpleNamespace(
+            sharedWorkspace=lambda: SimpleNamespace(frontmostApplication=lambda: None)
+        ),
+        NSApplicationActivateIgnoringOtherApps=1,
+    )
+    with pytest.raises(RuntimeError, match="refused"):
+        native_input.activate_attested_application(
+            appkit, SimpleNamespace(activateWithOptions_=lambda _: False), 10
+        )

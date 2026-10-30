@@ -95,3 +95,36 @@ def test_changing_viewport_does_not_prove_content_layout_was_updated():
     for row in report["renders"][1:-1]:
         row["layout_width"] = report["renders"][0]["layout_width"]
     assert evaluate_native_channels(report, "resize-live-layout") == "detected"
+
+
+@pytest.mark.parametrize(
+    "damage",
+    [
+        "released_before_release",
+        "pressed_after_release",
+        "nonfinite_bounds",
+        "nonfinite_layout",
+        "invalid_bbox",
+    ],
+)
+def test_invalid_observations_cannot_qualify_negative_detection(damage):
+    report = trace()
+    requirement = "resize-live-layout"
+    if damage == "released_before_release":
+        report["windows"][3]["t"] = 3.5
+        report["windows"][3]["bounds"]["Width"] = 260
+        requirement = "resize-release-following-pointer"
+    elif damage == "pressed_after_release":
+        report["windows"][2]["t"] = 4.1
+        for row in report["renders"]:
+            row["layout_width"] = 196
+    elif damage == "nonfinite_bounds":
+        report["windows"][-1]["bounds"]["Width"] = float("nan")
+        requirement = "resize-release-following-pointer"
+    elif damage == "nonfinite_layout":
+        for row in report["renders"]:
+            row["layout_width"] = float("nan")
+    else:
+        report["renders"][1]["images"].append({"bbox": [20, 20, float("inf"), 60]})
+        requirement = "channels-duplicate-artwork"
+    assert evaluate_native_channels(report, requirement) == "unproven"

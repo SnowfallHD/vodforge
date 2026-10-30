@@ -46,6 +46,21 @@ minimum_macos="$("$python_bin" -c 'import os,sys; from scripts.build_macos_fulls
   unset VODFORGE_UI VODFORGE_BUILD_TELEMETRY VODFORGE_BUILD_VERSION VODFORGE_DIST_DIR
   QT_QUICK_CONTROLS_STYLE=Basic QT_QUICK_BACKEND=software "$python_bin" -m pytest -q \
     tests engineering-quality/tests fine-tuning/tests \
+    --ignore=tests/test_qt_application_fullscreen.py \
+    --ignore=tests/test_qt_header_endpoint_requirements.py \
+    --ignore=tests/test_qt_header_motion_timeline.py \
+    --ignore=tests/test_qt_header_native_clock.py \
+    --ignore=tests/test_qt_header_pending_entry_trace.py \
+    --ignore=tests/test_qt_header_qa_trace.py \
+    --ignore=tests/test_qt_header_tooltip_owner.py \
+    --ignore=tests/test_qt_import_failure_status.py \
+    --ignore=tests/test_qt_local_conversion_validation.py \
+    --ignore=tests/test_qt_navigation_selection.py \
+    --ignore=tests/test_qt_picker_retreat_gate.py \
+    --ignore=tests/test_qt_popup_lifecycle_wait.py \
+    --ignore=tests/test_qt_resource_recovery.py \
+    --ignore=tests/test_qt_review_spacing_metrics.py \
+    --ignore=tests/test_qt_shared_popup_motion.py \
     --ignore=tests/test_qt_action_feedback_ownership.py \
     --ignore=tests/test_qt_file_recovery_actions.py \
     --ignore=tests/test_qt_floating_player_chrome.py \
@@ -149,6 +164,21 @@ minimum_macos="$("$python_bin" -c 'import os,sys; from scripts.build_macos_fulls
     --ignore=engineering-quality/tests/test_qt_update_session.py \
     --ignore=engineering-quality/tests/test_qt_worker_owner.py
   QT_QUICK_CONTROLS_STYLE=Basic QT_QUICK_BACKEND=software "$python_bin" -m pytest -q \
+    tests/test_qt_application_fullscreen.py \
+    tests/test_qt_header_endpoint_requirements.py \
+    tests/test_qt_header_motion_timeline.py \
+    tests/test_qt_header_native_clock.py \
+    tests/test_qt_header_pending_entry_trace.py \
+    tests/test_qt_header_qa_trace.py \
+    tests/test_qt_header_tooltip_owner.py \
+    tests/test_qt_import_failure_status.py \
+    tests/test_qt_local_conversion_validation.py \
+    tests/test_qt_navigation_selection.py \
+    tests/test_qt_picker_retreat_gate.py \
+    tests/test_qt_popup_lifecycle_wait.py \
+    tests/test_qt_resource_recovery.py \
+    tests/test_qt_review_spacing_metrics.py \
+    tests/test_qt_shared_popup_motion.py \
     tests/test_qt_action_feedback_ownership.py \
     tests/test_qt_file_recovery_actions.py \
     tests/test_qt_floating_player_chrome.py \

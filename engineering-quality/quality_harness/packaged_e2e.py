@@ -156,6 +156,7 @@ def _artifact_receipt(
     *,
     artifact_policy: str = "release",
     expected_source_commit: str | None = None,
+    retained_source: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if artifact_policy not in {"development", "release"}:
         raise ValueError(f"unsupported artifact policy: {artifact_policy}")
@@ -168,6 +169,7 @@ def _artifact_receipt(
             repo_root,
             artifact_policy,
             expected_source_commit=expected_source_commit,
+            retained_source=retained_source,
         )
     executable = artifact / "Contents" / "MacOS" / "VODForge"
     ffmpeg = artifact / "Contents" / "Frameworks" / "ffmpeg"
@@ -257,6 +259,13 @@ def _artifact_receipt(
     )
     release_eligible = release_eligible and version_consistent
     development_verified = development_verified and version_consistent
+    revision_path = artifact / "Contents" / "Resources" / "VODFORGE_BUILD_REVISION"
+    revision = revision_path.read_text().strip() if revision_path.is_file() else None
+    revision_verified = (
+        expected_source_commit is None or revision == expected_source_commit
+    )
+    release_eligible = release_eligible and revision_verified
+    development_verified = development_verified and revision_verified
     policy_verified = (
         release_eligible if artifact_policy == "release" else development_verified
     )
@@ -272,6 +281,8 @@ def _artifact_receipt(
         "bundle_version": plist.get("CFBundleShortVersionString"),
         "runtime_version": runtime_version,
         "runtime_version_sha256": sha256_file(runtime_version_path),
+        "build_revision": revision,
+        "build_revision_verified": revision_verified,
         "architecture": run_command(
             ["/usr/bin/file", str(executable)], cwd=repo_root, timeout=30
         ).stdout.strip(),
@@ -1850,6 +1861,7 @@ def run_packaged_e2e_session(
             if candidate_binding.get("verified") is True
             else None
         ),
+        retained_source=candidate_binding.get("retained_source"),
     )
     if candidate_binding.get("verified") is True and (
         candidate_binding.get("bundle_tree_sha256")

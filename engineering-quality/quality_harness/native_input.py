@@ -33,7 +33,7 @@ def image_point(bounds, x, y, image_width, image_height):
     )
 
 
-def wait_for(predicate, description, *, timeout=5.0):
+def wait_for(predicate, description, *, timeout=5.0, event_pump=None):
     deadline = time.monotonic() + timeout
     while True:
         result = predicate()
@@ -41,7 +41,37 @@ def wait_for(predicate, description, *, timeout=5.0):
             return result
         if time.monotonic() >= deadline:
             raise RuntimeError(f"Timed out waiting for {description}; no retry sent")
+        if event_pump is not None:
+            event_pump()
         time.sleep(0.05)
+
+
+def activate_attested_application(appkit, application, pid):
+    """Prime Workspace before activation and preserve an existing foreground.
+
+    AppKit notification delivery needs a run loop in this command-line client.
+    This never substitutes isActive or an echoed PID for the foreground check.
+    """
+    workspace = appkit.NSWorkspace.sharedWorkspace()
+
+    def is_foreground():
+        current = workspace.frontmostApplication()
+        return current is not None and current.processIdentifier() == pid
+
+    requested = not is_foreground()
+    if requested and not application.activateWithOptions_(
+        appkit.NSApplicationActivateIgnoringOtherApps
+    ):
+        raise RuntimeError("Attested application activation was refused")
+
+    def pump():
+        if hasattr(appkit, "NSRunLoop") and hasattr(appkit, "NSDate"):
+            appkit.NSRunLoop.currentRunLoop().runUntilDate_(
+                appkit.NSDate.dateWithTimeIntervalSinceNow_(0.05)
+            )
+
+    wait_for(is_foreground, "attested application foreground", event_pump=pump)
+    return requested
 
 
 def focused_window_title(pid):
@@ -395,16 +425,7 @@ def main(argv=None):
     )
     if application is None:
         raise RuntimeError("Attested process exited")
-    application.activateWithOptions_(AppKit.NSApplicationActivateIgnoringOtherApps)
-    wait_for(
-        lambda: (
-            AppKit.NSWorkspace.sharedWorkspace()
-            .frontmostApplication()
-            .processIdentifier()
-            == pid
-        ),
-        "attested application foreground",
-    )
+    activation_requested = activate_attested_application(AppKit, application, pid)
 
     def guard():
         if (
@@ -432,6 +453,7 @@ def main(argv=None):
         "title": args.window_title,
         "action": args.action,
         "input_sent": False,
+        "activation_requested": activation_requested,
         "status": "failed",
     }
 

@@ -104,12 +104,89 @@ Window {
     // Qt's folder helper retains its directory after the first show. A new
     // public dialog instance applies the current destination on every opening.
     readonly property var outputFolderDialog: outputFolderDialogLoader.item
+    // Enabled only by the existing isolated, bounded native QA trace.
+    property bool pickerTimelineEnabled: false
+    signal pickerTimelinePhase(int phase)
+    function tracePickerPhase(phase) {
+        if (pickerTimelineEnabled) pickerTimelinePhase(phase)
+    }
+    // Defer expensive native presentation during a
+    // measured retreat or fullscreen transition. This schedules the picker, never the header animation.
+    property bool outputFolderOpenPending: false
+    property real pickerLastHostX: NaN
+    property string pickerLastHostRect: ""
+    property real pickerRetreatObservedAt: 0
+    property int pickerLastTransition: 0
+    function observePickerNativeMotion() {
+        const p = nativeRowPacket
+        const usable = nativeHeaderAttached && p.schema_version === 1 &&
+            p.fullscreen && !p.transition && p.host_screen
+        const x = usable ? p.host_screen[0] : NaN
+        const rect = usable ? JSON.stringify(p.host_screen) : ""
+        const transition = nativeHeaderAttached && p.schema_version === 1 ? p.transition || 0 : 0
+        const transitioning = transition === 1 || transition === 2
+        const transitionEnded = pickerLastTransition !== 0 && !transitioning
+        const changed = rect !== pickerLastHostRect || transition !== pickerLastTransition
+        pickerLastTransition = transition
+        if (!usable || p.state === "controls-hidden") {
+            pickerRetreatObservedAt = 0
+        } else if (isFinite(pickerLastHostX) && x < pickerLastHostX) {
+            pickerRetreatObservedAt = Date.now()
+        } else if (isFinite(pickerLastHostX) && x > pickerLastHostX) {
+            pickerRetreatObservedAt = 0
+        }
+        pickerLastHostX = x
+        pickerLastHostRect = rect
+        if (outputFolderOpenPending && changed) {
+            pickerSettledOpen.stop()
+            if (!transitioning && (transitionEnded || !usable || p.state === "controls-hidden")) pickerSettledOpen.restart()
+        }
+    }
+    Connections {
+        target: window
+        function onNativeRowPacketChanged() { window.observePickerNativeMotion() }
+    }
+    Timer {
+        id: pickerSettledOpen
+        interval: 80
+        onTriggered: { window.tracePickerPhase(8); window.completePendingOutputFolderOpen() }
+    }
+    Timer {
+        id: pickerOpenDeadline
+        interval: 1000
+        onTriggered: { window.tracePickerPhase(9); window.completePendingOutputFolderOpen() }
+    }
+    function completePendingOutputFolderOpen() {
+        if (!outputFolderOpenPending) return
+        outputFolderOpenPending = false
+        pickerSettledOpen.stop()
+        pickerOpenDeadline.stop()
+        presentOutputFolderDialog()
+    }
     function openOutputFolderDialog() {
+        if (outputFolderOpenPending || (outputFolderDialog && outputFolderDialog.visible)) return
+        const p = nativeRowPacket
+        const transitioning = nativeHeaderAttached && p.schema_version === 1 &&
+            (p.transition === 1 || p.transition === 2)
+        if (transitioning || (pickerRetreatObservedAt > 0 && Date.now() - pickerRetreatObservedAt < 100)) {
+            outputFolderOpenPending = true
+            tracePickerPhase(7)
+            pickerOpenDeadline.restart()
+            return
+        }
+        presentOutputFolderDialog()
+    }
+    function presentOutputFolderDialog() {
         if (outputFolderDialog && outputFolderDialog.visible) return
+        tracePickerPhase(0) // request / before destruction
         outputFolderDialogLoader.active = false
+        tracePickerPhase(1) // destruction returned / before construction
         outputFolderDialogLoader.active = true
+        tracePickerPhase(2) // construction returned
         outputFolderDialog.currentFolder = bridge.outputFolderUrl
+        tracePickerPhase(3) // folder assignment returned / before native open
         outputFolderDialog.open()
+        tracePickerPhase(4) // native open returned
     }
     function closeDownloadSettings() {
         optionsMenu.close()
@@ -867,6 +944,7 @@ Window {
         sourceComponent: Component {
             FolderDialog {
                 objectName: "outputFolderDialog"
+                onVisibleChanged: window.tracePickerPhase(visible ? 5 : 6)
                 title: "Choose output folder"
                 currentFolder: bridge.outputFolderUrl
                 onAccepted: bridge.chooseOutputUrl(selectedFolder)
@@ -1406,13 +1484,26 @@ Window {
                     }
                 }
                 StoneButton {
+                    id: headerXButton
                     objectName: "headerXButton"
                     sceneIcon: "x"
                     quiet: true
                     accessibilityLabel: "VODForge on X"
                     width: 28; height: 40
                     onActivated: bridge.openSocialAccount()
-                    LiquidToolTip { independentWindow: window.nativeHeaderAttached; visible: parent.hovered; text: "VODForge on X" }
+                    LiquidToolTip {
+                        independentWindow: window.nativeHeaderAttached
+                        // Popup.Window requires a top-level transient owner.
+                        // The native header is a child QWindow, so anchor in the
+                        // main scene using the button's current global position.
+                        parent: window.nativeHeaderAttached ? window.contentItem : headerXButton
+                        readonly property point mainAnchor: window.contentItem.mapFromGlobal(
+                            headerXButton.mapToGlobal(headerXButton.width / 2, headerXButton.height))
+                        x: window.nativeHeaderAttached ? mainAnchor.x - width / 2 : (headerXButton.width - width) / 2
+                        y: window.nativeHeaderAttached ? mainAnchor.y + 6 : headerXButton.height + 6
+                        visible: headerXButton.hovered
+                        text: "VODForge on X"
+                    }
                 }
                 StoneButton {
                     objectName: "headerSettingsButton"

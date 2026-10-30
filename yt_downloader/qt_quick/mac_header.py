@@ -677,7 +677,13 @@ class IntegratedHeader:
 
 def header_timeline_sample(window, header):
     """Geometry-only QA sample; never inspect text, URLs, settings or identifiers."""
+    from PySide6.QtQml import QJSValue
+
     row = window.property("nativeRowPacket") or {}
+    if isinstance(row, QJSValue):
+        row = row.toVariant()
+    if not isinstance(row, dict):
+        raise TypeError("Native row diagnostic packet must be an object")
     result = {
         "alignment": getattr(window, "_native_header_diagnostic", {}).get("stage"),
         "input_ready": bool(window.property("nativeHeaderInputReady")),

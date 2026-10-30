@@ -1,6 +1,16 @@
 #import <AppKit/AppKit.h>
 #import <QuartzCore/QuartzCore.h>
+// Opacity is independent of the executor's display access/topology. Use one
+// explicit public screen fixture, like the existing view/window properties.
+@interface VFOpacityTestScreen : NSObject
+@end
+@implementation VFOpacityTestScreen
++ (NSArray *)screens{return @[[[[VFOpacityTestScreen alloc]init]autorelease]];}
+- (NSRect)frame{return NSMakeRect(0,0,1440,900);}
+@end
+#define NSScreen VFOpacityTestScreen
 #import "../../yt_downloader/platforms/macos/header_toolbar.m"
+#undef NSScreen
 #include <stdio.h>
 #define CHECK(c) do{if(!(c)){fprintf(stderr,"FAIL:%s line%d\n",#c,__LINE__);return 3;}}while(0)
 @interface VFReadOnlyTestWindow:NSObject

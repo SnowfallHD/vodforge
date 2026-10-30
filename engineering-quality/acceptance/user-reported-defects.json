@@ -26,6 +26,16 @@
       "id": "resize-delayed-completion",
       "status": "open",
       "scope": "Final commanded native geometry and layout complete after posted and observed OS release, even with stationary pointer; does not establish retained drag."
+    },
+    {
+      "id": "mac-header-disappears-on-resize",
+      "status": "open",
+      "scope": "Current private3c60d6b: user reports custom menu row disappears on resizing; parent screenshot observation shows traffic lights/body remain. Requires native rendered reproduction and exact candidate validation."
+    },
+    {
+      "id": "mac-header-motion-regression",
+      "status": "open",
+      "scope": "Current private3c60d6b: user reports reduced animation smoothness. Static screenshot is not motion proof; prior acceptance superseded. Requires ordered rendered motion evidence."
     }
   ]
 }

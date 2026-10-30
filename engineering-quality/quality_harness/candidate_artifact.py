@@ -446,6 +446,20 @@ def verify_candidate_receipt(receipt: Mapping[str, Any]) -> dict[str, Any]:
         failures.append("release candidate is not release eligible")
     if source_payload.get("clean") is not True:
         failures.append("candidate source was not a clean commit")
+    if source_payload.get("snapshot_kind") == "immutable_git_commit":
+        from .retained_candidate import validate_retained_source_claim
+
+        try:
+            validate_retained_source_claim(source_payload)
+            revision_file = artifact / (
+                "_internal/VODFORGE_BUILD_REVISION"
+                if artifact_payload.get("platform") == "windows"
+                else "Contents/Resources/VODFORGE_BUILD_REVISION"
+            )
+            if revision_file.read_text().strip() != source_payload["commit"]:
+                raise ValueError("Original embedded revision changed")
+        except (OSError, ValueError, KeyError):
+            failures.append("retained original source claim is invalid")
 
     expected_version = receipt.get("candidate_version")
     if artifact_payload.get("runtime_version") != expected_version:
@@ -726,6 +740,18 @@ def materialize_candidate_for_e2e(
                 and artifact_payload.get("release_eligible") is True
             ),
         }
+        if receipt.get("source", {}).get("snapshot_kind") == "immutable_git_commit":
+            from .retained_candidate import validate_retained_source_claim
+
+            validate_retained_source_claim(receipt["source"])
+            revision_file = artifact / (
+                "_internal/VODFORGE_BUILD_REVISION"
+                if artifact_payload.get("platform") == "windows"
+                else "Contents/Resources/VODFORGE_BUILD_REVISION"
+            )
+            if revision_file.read_text().strip() != receipt["source"]["commit"]:
+                raise RuntimeError("Retained embedded source changed")
+            binding["retained_source"] = receipt["source"]
         return artifact, binding
     except Exception:
         shutil.rmtree(destination)
