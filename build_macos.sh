@@ -61,6 +61,7 @@ minimum_macos="$("$python_bin" -c 'import os,sys; from scripts.build_macos_fulls
     --ignore=tests/test_qt_resource_recovery.py \
     --ignore=tests/test_qt_review_spacing_metrics.py \
     --ignore=tests/test_qt_shared_popup_motion.py \
+    --ignore=tests/test_qt_native_toolbar_header.py \
     --ignore=tests/test_qt_action_feedback_ownership.py \
     --ignore=tests/test_qt_file_recovery_actions.py \
     --ignore=tests/test_qt_floating_player_chrome.py \
@@ -179,6 +180,7 @@ minimum_macos="$("$python_bin" -c 'import os,sys; from scripts.build_macos_fulls
     tests/test_qt_resource_recovery.py \
     tests/test_qt_review_spacing_metrics.py \
     tests/test_qt_shared_popup_motion.py \
+    tests/test_qt_native_toolbar_header.py \
     tests/test_qt_action_feedback_ownership.py \
     tests/test_qt_file_recovery_actions.py \
     tests/test_qt_floating_player_chrome.py \
