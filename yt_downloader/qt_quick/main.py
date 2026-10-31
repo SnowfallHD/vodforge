@@ -8158,6 +8158,7 @@ def _argument_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = _argument_parser().parse_args()
+
     def smoke_phase(stage: str) -> None:
         # Explicit dependency-smoke diagnostics only: fixed stage names, no
         # user data. Receipt precedes each fallible Qt constructor/owner call.

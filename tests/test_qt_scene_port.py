@@ -91,7 +91,6 @@ def polish_scene(item):
     item.ensurePolished()
 
 
-
 def settle_popups(window):
     """Let closing popups finish their exit motion before asserting state.
 
@@ -111,6 +110,7 @@ def hover_pointer(window, point):
     """
     QCursor.setPos(window.mapToGlobal(point))
     QTest.mouseMove(window, point)
+
 
 def saved(path: Path, name: str, kind: str, *, category: str = "") -> dict:
     return {
