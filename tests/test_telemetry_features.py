@@ -124,6 +124,7 @@ def test_qt_updater_failures_are_not_classified_as_media_extraction(monkeypatch,
         assert detail.reason != "provider_extraction"
         assert "private" not in str(detail.payload())
 
+
 def test_attempts_link_across_restart_without_exposing_local_identity(tmp_path):
     installation = tmp_path / "installation.json"
     install_id = _permitted_installation(installation)

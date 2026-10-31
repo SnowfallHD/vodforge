@@ -38,7 +38,10 @@ def _library():
         "create": (_POINTER, [_POINTER, ctypes.c_char_p]),
         "event_fd": (ctypes.c_int, [_POINTER]),
         "next_event": (ctypes.c_int, [_POINTER, ctypes.c_char_p, ctypes.c_size_t]),
-        "set_color": (ctypes.c_int, [_POINTER, ctypes.c_char_p] + [ctypes.c_double] * 4),
+        "set_color": (
+            ctypes.c_int,
+            [_POINTER, ctypes.c_char_p] + [ctypes.c_double] * 4,
+        ),
         "set_material": (
             ctypes.c_int,
             [_POINTER, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_size_t]
@@ -54,9 +57,15 @@ def _library():
         "focus_search": (ctypes.c_int, [_POINTER]),
         "search_focused": (ctypes.c_int, [_POINTER]),
         "edit": (ctypes.c_int, [_POINTER, ctypes.c_char_p]),
-        "anchor": (ctypes.c_int, [_POINTER, ctypes.c_char_p, ctypes.POINTER(ctypes.c_double)]),
+        "anchor": (
+            ctypes.c_int,
+            [_POINTER, ctypes.c_char_p, ctypes.POINTER(ctypes.c_double)],
+        ),
         "chrome": (ctypes.c_int, [_POINTER, ctypes.POINTER(ctypes.c_double)]),
-        "set_dim": (ctypes.c_int, [_POINTER, ctypes.c_int, ctypes.POINTER(ctypes.c_double)]),
+        "set_dim": (
+            ctypes.c_int,
+            [_POINTER, ctypes.c_int, ctypes.POINTER(ctypes.c_double)],
+        ),
         "height": (ctypes.c_double, [_POINTER]),
         "destroy": (ctypes.c_int, [_POINTER]),
     }
@@ -87,7 +96,9 @@ def header_materials() -> dict[str, tuple[bytes, tuple[int, int]]]:
     width, height = _BUTTON_SIZE
     materials = {
         "button-" + state: (
-            _png(action_button_image(width, height, accent=False, state=state, density=2)),
+            _png(
+                action_button_image(width, height, accent=False, state=state, density=2)
+            ),
             _BUTTON_SIZE,
         )
         for state in ("normal", "hover", "pressed")
@@ -210,9 +221,17 @@ class NativeToolbarHeader(QObject):
         local = QPointF(2, 2)
         world = QPointF(self._window.mapToGlobal(local.toPoint()))
         for kind in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonRelease):
-            buttons = Qt.MouseButton.LeftButton if kind == QEvent.Type.MouseButtonPress else Qt.MouseButton.NoButton
+            buttons = (
+                Qt.MouseButton.LeftButton
+                if kind == QEvent.Type.MouseButtonPress
+                else Qt.MouseButton.NoButton
+            )
             event = QMouseEvent(
-                kind, local, world, Qt.MouseButton.LeftButton, buttons,
+                kind,
+                local,
+                world,
+                Qt.MouseButton.LeftButton,
+                buttons,
                 Qt.KeyboardModifier.NoModifier,
             )
             QGuiApplication.sendEvent(self._window, event)
@@ -325,11 +344,15 @@ class NativeToolbarHeader(QObject):
 
     @Slot(result=bool)
     def focusSearch(self) -> bool:
-        return not self._closed and bool(self._library.vf_toolbar_focus_search(self._handle))
+        return not self._closed and bool(
+            self._library.vf_toolbar_focus_search(self._handle)
+        )
 
     @Slot(str, result=bool)
     def edit(self, method: str) -> bool:
-        return not self._closed and bool(self._library.vf_toolbar_edit(self._handle, method.encode()))
+        return not self._closed and bool(
+            self._library.vf_toolbar_edit(self._handle, method.encode())
+        )
 
     @Slot()
     def close(self, *_args) -> None:

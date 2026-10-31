@@ -28,11 +28,20 @@ def library(tmp_path_factory):
     out = tmp_path_factory.mktemp("header-items") / "libheaderitems.dylib"
     subprocess.run(
         [
-            "/usr/bin/xcrun", "clang", "-dynamiclib", "-fno-objc-arc",
-            "-Wall", "-Wextra", "-Werror",
-            "-framework", "AppKit", "-framework", "Foundation",
+            "/usr/bin/xcrun",
+            "clang",
+            "-dynamiclib",
+            "-fno-objc-arc",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-framework",
+            "AppKit",
+            "-framework",
+            "Foundation",
             str(ROOT / "yt_downloader/platforms/macos/header_items.m"),
-            "-o", str(out),
+            "-o",
+            str(out),
         ],
         check=True,
         capture_output=True,
@@ -40,8 +49,14 @@ def library(tmp_path_factory):
     lib = ctypes.CDLL(str(out))
     lib.vf_toolbar_probe_material.restype = ctypes.c_int
     lib.vf_toolbar_probe_material.argtypes = [
-        ctypes.c_char_p, ctypes.c_size_t, ctypes.c_double, ctypes.c_double,
-        ctypes.c_double, ctypes.c_int, ctypes.c_int, ctypes.c_char_p,
+        ctypes.c_char_p,
+        ctypes.c_size_t,
+        ctypes.c_double,
+        ctypes.c_double,
+        ctypes.c_double,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_char_p,
     ]
     return lib
 
@@ -53,13 +68,17 @@ def test_button_material_draws_upright_in_flipped_view(library, state):
     from yt_downloader.visual_chrome import action_button_image
 
     width, height, scale = 105, 44, 2
-    source = action_button_image(width, height, accent=False, state=state, density=scale)
+    source = action_button_image(
+        width, height, accent=False, state=state, density=scale
+    )
     png = io.BytesIO()
     source.save(png, format="PNG")
     data = png.getvalue()
     pw, ph = width * scale, height * scale
     buffer = ctypes.create_string_buffer(pw * ph * 4)
-    assert library.vf_toolbar_probe_material(data, len(data), width, height, 14, pw, ph, buffer)
+    assert library.vf_toolbar_probe_material(
+        data, len(data), width, height, 14, pw, ph, buffer
+    )
     drawn = Image.frombuffer("RGBA", (pw, ph), buffer.raw, "raw", "RGBA", 0, 1)
 
     def profile(image, column):

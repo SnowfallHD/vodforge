@@ -73,7 +73,9 @@ class FakeToolbar(QObject):
 
     @Slot("QVariantList")
     def setDim(self, layers):
-        self.calls.append(("dim", [layer.name(QColor.NameFormat.HexArgb) for layer in layers]))
+        self.calls.append(
+            ("dim", [layer.name(QColor.NameFormat.HexArgb) for layer in layers])
+        )
 
     @Slot(result="QVariantMap")
     def chromeState(self):
@@ -102,7 +104,7 @@ def _scene(tmp_path, monkeypatch):
 
 
 def test_native_toolbar_replaces_qt_header_and_body_clears_it(tmp_path, monkeypatch):
-    app, bridge, engine, window, toolbar = _scene(tmp_path, monkeypatch)
+    _app, bridge, engine, window, toolbar = _scene(tmp_path, monkeypatch)
     try:
         header = window.findChild(QObject, "focusHeader")
         slot = window.findChild(QObject, "headerGeometrySlot")
@@ -110,14 +112,19 @@ def test_native_toolbar_replaces_qt_header_and_body_clears_it(tmp_path, monkeypa
         # Body starts exactly at the native toolbar's lower edge.
         assert slot.property("height") == 52 - 5
         assert slot.mapToScene(slot.boundingRect().bottomLeft()).y() == 52
-        assert ("theme", ["accent", "icon", "muted", "selection", "surface", "text"]) in toolbar.calls
+        assert (
+            "theme",
+            ["accent", "icon", "muted", "selection", "surface", "text"],
+        ) in toolbar.calls
         assert ("selection", "Forge") in toolbar.calls
         assert any(c[0] == "search" and c[1] is False for c in toolbar.calls)
     finally:
         _close(bridge, engine, window)
 
 
-def test_native_toolbar_events_drive_navigation_search_and_settings(tmp_path, monkeypatch):
+def test_native_toolbar_events_drive_navigation_search_and_settings(
+    tmp_path, monkeypatch
+):
     app, bridge, engine, window, toolbar = _scene(tmp_path, monkeypatch)
     try:
         toolbar.calls.clear()
@@ -126,14 +133,22 @@ def test_native_toolbar_events_drive_navigation_search_and_settings(tmp_path, mo
         assert bridge.selection == "Library"
         assert ("selection", "Library") in toolbar.calls
         assert (
-            "search", True, "Search your library…", "", "Search library"
+            "search",
+            True,
+            "Search your library…",
+            "",
+            "Search library",
         ) in toolbar.calls
 
         toolbar.searchEdited.emit("ocean")
         _settle(app, window)
         assert bridge.activeSearch == "ocean"
         assert toolbar.calls[-1] == (
-            "search", True, "Search your library…", "ocean", "Search library"
+            "search",
+            True,
+            "Search your library…",
+            "ocean",
+            "Search library",
         )
 
         popup = window.findChild(QObject, "downloadSettingsPopup")
@@ -146,9 +161,10 @@ def test_native_toolbar_events_drive_navigation_search_and_settings(tmp_path, mo
         _settle(app, window)
         assert not popup.property("visible")
         assert bridge.selection == "Library"
-        assert toolbar.calls[-1] == ("interactive", True) or (
-            "interactive", True
-        ) in toolbar.calls
+        assert (
+            toolbar.calls[-1] == ("interactive", True)
+            or ("interactive", True) in toolbar.calls
+        )
 
         toolbar.settingsActivated.emit()
         _settle(app, window)
@@ -201,18 +217,33 @@ def _close_picker(window):
 def test_folder_dialog_waits_for_menu_bar_to_settle(tmp_path, monkeypatch):
     """Recorded regression: opening the panel while the fullscreen menu bar
     retreats stalls AppKit's slide (header overlaps the window buttons)."""
-    app, bridge, engine, window, toolbar = _scene(tmp_path, monkeypatch)
+    _app, bridge, engine, window, toolbar = _scene(tmp_path, monkeypatch)
     phases = _picker(window)
     try:
-        toolbar.chrome = {"fullscreen": True, "transition": 0, "revealed": 24.0, "x": 84.0}
+        toolbar.chrome = {
+            "fullscreen": True,
+            "transition": 0,
+            "revealed": 24.0,
+            "x": 84.0,
+        }
         QMetaObject.invokeMethod(window, "openOutputFolderDialog")
         QMetaObject.invokeMethod(window, "openOutputFolderDialog")  # repeat coalesces
         for revealed, x in ((18.0, 60.0), (9.0, 30.0), (2.0, 10.0)):
             QTest.qWait(40)
-            toolbar.chrome = {"fullscreen": True, "transition": 0, "revealed": revealed, "x": x}
+            toolbar.chrome = {
+                "fullscreen": True,
+                "transition": 0,
+                "revealed": revealed,
+                "x": x,
+            }
         QTest.qWait(40)
         assert 3 not in phases, "native open began while the menu bar was moving"
-        toolbar.chrome = {"fullscreen": True, "transition": 0, "revealed": 0.0, "x": 6.0}
+        toolbar.chrome = {
+            "fullscreen": True,
+            "transition": 0,
+            "revealed": 0.0,
+            "x": 6.0,
+        }
         QTest.qWait(40)
         assert 3 not in phases, "opened before the chrome stayed still"
         QTest.qWait(160)
@@ -230,7 +261,7 @@ def test_folder_dialog_waits_for_menu_bar_to_settle(tmp_path, monkeypatch):
     ],
 )
 def test_folder_dialog_wait_is_bounded(tmp_path, monkeypatch, chrome):
-    app, bridge, engine, window, toolbar = _scene(tmp_path, monkeypatch)
+    _app, bridge, engine, window, toolbar = _scene(tmp_path, monkeypatch)
     phases = _picker(window)
     try:
         toolbar.chrome = chrome  # menu bar held down / fullscreen switch stuck
@@ -245,11 +276,18 @@ def test_folder_dialog_wait_is_bounded(tmp_path, monkeypatch, chrome):
 
 
 @pytest.mark.parametrize("fullscreen", [False, True])
-def test_folder_dialog_opens_at_once_when_chrome_is_settled(tmp_path, monkeypatch, fullscreen):
-    app, bridge, engine, window, toolbar = _scene(tmp_path, monkeypatch)
+def test_folder_dialog_opens_at_once_when_chrome_is_settled(
+    tmp_path, monkeypatch, fullscreen
+):
+    _app, bridge, engine, window, toolbar = _scene(tmp_path, monkeypatch)
     phases = _picker(window)
     try:
-        toolbar.chrome = {"fullscreen": fullscreen, "transition": 0, "revealed": 0.0, "x": 6.0}
+        toolbar.chrome = {
+            "fullscreen": fullscreen,
+            "transition": 0,
+            "revealed": 0.0,
+            "x": 6.0,
+        }
         QMetaObject.invokeMethod(window, "openOutputFolderDialog")
         assert phases.count(3) == 1 and 7 not in phases
     finally:
@@ -268,7 +306,7 @@ def test_toolbar_repeats_qt_modal_dim_and_clears_it(tmp_path, monkeypatch):
         dims = [c[1] for c in toolbar.calls if c[0] == "dim"]
         assert dims and dims[-1], "modal popup open but toolbar not dimmed"
         # Basic style modal dim: palette shadow at 50% alpha.
-        assert all(layer.startswith("#7f") or layer.startswith("#80") for layer in dims[-1])
+        assert all(layer.startswith(("#7f", "#80")) for layer in dims[-1])
         QMetaObject.invokeMethod(popup, "close")
         _settle(app, window)
         assert [c[1] for c in toolbar.calls if c[0] == "dim"][-1] == []

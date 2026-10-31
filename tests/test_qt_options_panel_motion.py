@@ -8,6 +8,7 @@ the animation runs and assert its shape (no restack where it fits, monotonic
 size, nothing moving after it ends), not frame timing.
 """
 
+import itertools
 import time
 
 import pytest
@@ -23,13 +24,15 @@ def _sample(app, menu, extras, ms=380):
     while (time.perf_counter() - start) * 1000 < ms:
         app.processEvents()
         point = extras.mapToScene(extras.boundingRect().topLeft())
-        rows.append({
-            "reveal": menu.property("customReveal"),
-            "width": menu.property("width"),
-            "height": menu.property("height"),
-            "side": menu.property("sideBySideExtras"),
-            "extras": (round(point.x(), 1), round(point.y(), 1)),
-        })
+        rows.append(
+            {
+                "reveal": menu.property("customReveal"),
+                "width": menu.property("width"),
+                "height": menu.property("height"),
+                "side": menu.property("sideBySideExtras"),
+                "extras": (round(point.x(), 1), round(point.y(), 1)),
+            }
+        )
         QTest.qWait(8)
     return rows
 
@@ -45,25 +48,33 @@ def _run(tmp_path, monkeypatch, size):
     start = (menu.property("width"), menu.property("height"))
     bridge.setExportMode("Manual Override")
     grow = _sample(app, menu, extras)
-    everyday = next(o["value"] for o in bridge.exportModeOptions if o["label"] == "Everyday")
+    everyday = next(
+        o["value"] for o in bridge.exportModeOptions if o["label"] == "Everyday"
+    )
     bridge.setExportMode(everyday)
     shrink = _sample(app, menu, extras)
     return (app, bridge, engine, window), start, grow, shrink
 
 
 def _monotonic(values, rising):
-    pairs = list(zip(values, values[1:]))
+    pairs = list(itertools.pairwise(values))
     return all((b >= a - 0.01) if rising else (b <= a + 0.01) for a, b in pairs)
 
 
 @pytest.mark.parametrize("size", [(1100, 740), (1500, 900)])
-def test_custom_reveal_keeps_columns_in_place_where_four_fit(tmp_path, monkeypatch, size):
+def test_custom_reveal_keeps_columns_in_place_where_four_fit(
+    tmp_path, monkeypatch, size
+):
     scene, start, grow, shrink = _run(tmp_path, monkeypatch, size)
     try:
-        assert all(row["side"] for row in grow + shrink), "Settings column restacked mid-motion"
+        assert all(row["side"] for row in grow + shrink), (
+            "Settings column restacked mid-motion"
+        )
         # Settings moves only by the panel's own resize: never a large step.
-        steps = [abs(b["extras"][0] - a["extras"][0]) + abs(b["extras"][1] - a["extras"][1])
-                 for a, b in zip(grow + shrink, (grow + shrink)[1:])]
+        steps = [
+            abs(b["extras"][0] - a["extras"][0]) + abs(b["extras"][1] - a["extras"][1])
+            for a, b in zip(grow + shrink, (grow + shrink)[1:])
+        ]
         assert max(steps) < 140, max(steps)
         for rows, rising in ((grow, True), (shrink, False)):
             assert _monotonic([r["width"] for r in rows], rising)
@@ -81,7 +92,9 @@ def test_narrow_window_restacks_once_without_height_jumps(tmp_path, monkeypatch)
         # Restacking is decided by the target state: once, at the start.
         assert len({row["side"] for row in grow}) == 1 and not grow[0]["side"]
         assert len({row["side"] for row in shrink}) == 1 and shrink[0]["side"]
-        assert _monotonic([r["height"] for r in grow], True), "height dipped before growing"
+        assert _monotonic([r["height"] for r in grow], True), (
+            "height dipped before growing"
+        )
         assert _monotonic([r["width"] for r in grow], True)
         assert _monotonic([r["width"] for r in shrink], False)
         assert (shrink[-1]["width"], shrink[-1]["height"]) == start
