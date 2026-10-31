@@ -86,7 +86,10 @@ def test_repeated_capture_reaps_children_and_releases_resources(
         samples.append({"rss": parent.memory_info().rss, "handles": _handles(parent)})
 
     assert max(sample["handles"] for sample in samples) <= before_handles + 4
-    assert samples[-1]["rss"] <= before_rss + 32 * 1024 * 1024
+    growth = [(sample["rss"] - before_rss) // 1024 for sample in samples]
+    assert samples[-1]["rss"] <= before_rss + 32 * 1024 * 1024, (
+        f"RSS growth per cycle (KiB): {growth}"
+    )
     receipt = {"outcome": outcome, "children_reaped": len(pids), "samples": samples}
     (tmp_path / "process-cleanup.json").write_text(
         json.dumps(receipt), encoding="utf-8"

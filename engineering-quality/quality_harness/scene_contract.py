@@ -350,7 +350,7 @@ SCENE_REQUIRED_TESTS = {
         "tests/test_qt_runtime_event_ownership.py::test_batch_resume_worker_skips_durable_finished_prefix",
         "tests/test_qt_runtime_event_ownership.py::test_resume_uses_immutable_saved_settings_not_current_composer",
         "tests/test_qt_runtime_event_ownership.py::test_invalid_resume_cursor_is_rejected",
-        "tests/test_qt_runtime_event_ownership.py::test_pause_keeps_last_batch_artwork_when_next_item_has_none",
+        "tests/test_qt_runtime_event_ownership.py::test_pause_keeps_batch_artwork_only_for_the_same_item",
         "tests/test_qt_runtime_event_ownership.py::test_batch_checkpoint_does_not_skip_output_when_history_save_fails",
         "tests/test_qt_runtime_event_ownership.py::test_batch_outcome_checkpoint_reopens_and_resumes_prior_issues",
     ),
