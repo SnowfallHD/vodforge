@@ -28,6 +28,8 @@ def _launch(tmp_path, monkeypatch, records):
     bridge._settings["whats_new_seen"] = qt_main.SHOWCASE_ID
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
+    # As main() does: pointer-motion admission listens on this window.
+    bridge._window = window
     window.show()
     for _ in range(4):
         app.processEvents()

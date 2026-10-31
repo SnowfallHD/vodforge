@@ -8,7 +8,7 @@ import pytest
 from PySide6.QtCore import QEventLoop, QMetaObject, QObject, QPoint, Qt, QTimer
 from PySide6.QtTest import QSignalSpy, QTest
 
-from tests.test_qt_scene_port import qt_app
+from tests.test_qt_scene_port import qt_app, settle_popups
 from yt_downloader.qt_quick import main as qt_main
 from yt_downloader.settings_store import load_settings
 
@@ -164,6 +164,7 @@ def test_help_menu_pointer_opens_shared_popup_and_each_slide_fits(bridge, tmp_pa
         popup = window.findChild(QObject, "editorialPopup")
         assert popup.property("visible")
         assert bridge.editorialHeading == "What’s new"
+        settle_popups(window)
         assert not menu.property("visible")
         for index, slide in enumerate(bridge.editorialSlides):
             popup.setProperty("index", index)
@@ -265,6 +266,7 @@ def test_social_invitation_popup_fits_and_not_now_dismisses(bridge, width):
             QPoint(round(point.x()), round(point.y())),
         )
         settle(40)
+        settle_popups(window)
         assert not popup.property("visible")
         assert bridge._settings["social_invitation_dismissed"] is True
         assert window.findChild(QObject, "headerXButton").property("sceneIcon") == "x"

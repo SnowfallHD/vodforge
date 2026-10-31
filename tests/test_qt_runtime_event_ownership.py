@@ -303,22 +303,23 @@ def test_invalid_resume_cursor_is_rejected(tmp_path, cursor):
         deserialize_download_job(payload)
 
 
-@pytest.mark.parametrize("first_thumbnail", [None, "https://example.com/last.jpg"])
-def test_pause_keeps_last_batch_artwork_when_next_item_has_none(
-    runtime, tmp_path, first_thumbnail
-):
+@pytest.mark.parametrize("next_id", ["one", "two"])
+def test_pause_keeps_batch_artwork_only_for_the_same_item(runtime, tmp_path, next_id):
+    """A later preview without artwork keeps the item's own artwork, never the
+    previous video's (9b7e621: items do not borrow each other's thumbnails)."""
     from yt_downloader.run_state import RunRecoveryOwner
 
     job = make_job(tmp_path)
     job.batch_mode = True
     runtime.recovery.begin(job, [])
-    first = {"id": "one", "title": "First"}
-    if first_thumbnail:
-        first["thumbnail"] = first_thumbnail
-    runtime.recovery.store.update_preview(job.run_id, first)
-    runtime.recovery.store.update_preview(job.run_id, {"id": "two", "title": "Second"})
+    runtime.recovery.store.update_preview(
+        job.run_id,
+        {"id": "one", "title": "First", "thumbnail": "https://example.com/one.jpg"},
+    )
+    runtime.recovery.store.update_preview(job.run_id, {"id": next_id, "title": "Next"})
     restored, _ = RunRecoveryOwner(runtime.recovery.store.path).startup_recovery()
-    assert restored[0].preview_info.get("thumbnail") == first_thumbnail
+    expected = "https://example.com/one.jpg" if next_id == "one" else None
+    assert restored[0].preview_info.get("thumbnail") == expected
     assert restored[0].terminal_status == "Paused"
 
 

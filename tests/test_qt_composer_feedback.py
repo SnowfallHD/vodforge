@@ -179,7 +179,8 @@ def test_compact_notice_and_deck_fit_without_outer_dashboard_scroll(feedback_sce
     from PySide6.QtTest import QTest
 
     _app, bridge, window = feedback_scene
-    window.resize(820, 560)
+    # The smallest window users can have (fb858b9); offscreen allows less.
+    window.resize(820, window.minimumHeight())
     QTest.qWait(100)
     viewport = window.findChild(QObject, "forgeViewport")
     flickable = viewport.property("contentItem")

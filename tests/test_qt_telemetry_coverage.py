@@ -588,7 +588,7 @@ def test_rendered_qt_menu_selection_search_and_help_use_real_callbacks(
     from PySide6.QtCore import QMetaObject, QObject, Qt
     from PySide6.QtTest import QTest
 
-    from tests.test_qt_scene_port import visual_item
+    from tests.test_qt_scene_port import settle_popups, visual_item
 
     bridge, telemetry = bridge_fixture(tmp_path, monkeypatch)
     engine = qt_main.create_engine(bridge)
@@ -609,7 +609,10 @@ def test_rendered_qt_menu_selection_search_and_help_use_real_callbacks(
         app.processEvents()
         menu = window.findChild(QObject, "librarySavedActionsPopup")
         assert QMetaObject.invokeMethod(menu, "open", Qt.DirectConnection)
-        app.processEvents()
+        # onOpened (which records menu_opened) fires when the shared enter
+        # motion finishes, not at open().
+        settle_popups(window)
+        assert menu.property("opened")
         QMetaObject.invokeMethod(menu, "close", Qt.DirectConnection)
         assert bridge.openSupport("feedback")
         QTest.qWait(30)

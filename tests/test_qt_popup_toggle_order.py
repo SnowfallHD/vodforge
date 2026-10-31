@@ -12,30 +12,30 @@ from tests.test_qt_scene_port import saved
 from yt_downloader.qt_quick.input_trace import InputTrace
 
 
-def settle_liquid(window):
-    """Wait for the new app-owned popup lifecycle, not a fixed instant-close assumption."""
-    deadline = time.monotonic() + 0.8
-    while time.monotonic() < deadline:
-        moving = [
-            item
-            for item in window.findChildren(QObject)
-            if item.property("liquidMotion")
-            and item.property("visible")
-            and item.property("reveal") < 1
-        ]
-        if not moving:
-            return
-        QTest.qWait(10)
-    # A single offscreen event dispatch can cross the wall-clock deadline.
-    # Judge its resulting state, not the sample captured before that dispatch.
-    moving = [
+def _moving_popups(window):
+    # An exit that has just begun still reports reveal == 1, so exitInProgress
+    # counts as motion too; otherwise a closing popup looks settled-open.
+    return [
         item
         for item in window.findChildren(QObject)
         if item.property("liquidMotion")
         and item.property("visible")
-        and item.property("reveal") < 1
+        and (item.property("reveal") < 1 or item.property("exitInProgress"))
     ]
-    assert not moving, "Liquid popup lifecycle did not finish within its bounded budget"
+
+
+def settle_liquid(window):
+    """Wait for the new app-owned popup lifecycle, not a fixed instant-close assumption."""
+    deadline = time.monotonic() + 0.8
+    while time.monotonic() < deadline:
+        if not _moving_popups(window):
+            return
+        QTest.qWait(10)
+    # A single offscreen event dispatch can cross the wall-clock deadline.
+    # Judge its resulting state, not the sample captured before that dispatch.
+    assert not _moving_popups(window), (
+        "Liquid popup lifecycle did not finish within its bounded budget"
+    )
 
 
 def click(window, item):
@@ -247,7 +247,6 @@ def test_trigger_toggle_during_exit_does_not_poison_next_close(
         "group",
         "selection",
         "saved-actions",
-        "output-details",
     ],
 )
 def test_dropdown_matrix_repeated_pointer_and_keyboard(tmp_path, monkeypatch, menu):
@@ -285,8 +284,6 @@ def test_dropdown_matrix_repeated_pointer_and_keyboard(tmp_path, monkeypatch, me
                 assert bridge.openLibraryDetails(
                     bridge.libraryScene["media"][0]["owner"]
                 )
-        elif menu == "output-details":
-            window.resize(850, 800)
         elif menu == "mp3":
             bridge.setOutputFormat("MP3")
         QTest.qWait(100)
@@ -314,7 +311,6 @@ def test_dropdown_matrix_repeated_pointer_and_keyboard(tmp_path, monkeypatch, me
             )
         else:
             label = {
-                "output-details": "Output details",
                 "theme": bridge.appearanceTheme + "  ▾",
                 "help": "Help",
                 "profile": bridge.localProfile + "  ▾",
@@ -395,5 +391,60 @@ def test_dropdown_matrix_repeated_pointer_and_keyboard(tmp_path, monkeypatch, me
         QTest.qWait(100)
         click(window, trigger)
         assert popup.property("visible"), (menu, "reopen after interruption")
+    finally:
+        _close(bridge, engine, window)
+
+
+def test_compact_output_details_is_a_modal_that_keeps_presses_inside(
+    tmp_path, monkeypatch
+):
+    """Output details is a centered modal, not a dropdown on its button.
+
+    At 850x800 the dialog covers its own button (since 68e9465 moved the
+    compact action row), so a press there must stay inside the dialog rather
+    than toggle; Escape or a background press dismisses it.
+    """
+    from PySide6.QtCore import QPointF
+
+    _app, bridge, engine, window = _launch(
+        tmp_path, monkeypatch, [saved(tmp_path, "Fixture", "MP4")]
+    )
+    try:
+        window.resize(850, 800)
+        QTest.qWait(100)
+        trigger = next(
+            item
+            for item in window.findChildren(QObject)
+            if item.property("label") == "Output details" and item.isVisible()
+        )
+        popup = window.findChild(QObject, "forgeOutputDetailsPopup")
+        activations = []
+        trigger.activated.connect(lambda: activations.append(True))
+        for dismiss in ("covered-press", "escape", "background"):
+            click(window, trigger)
+            assert popup.property("visible"), dismiss
+            body = popup.property("contentItem")
+            origin = body.mapToScene(QPointF(0, 0))
+            spot = center(trigger)
+            covered = (
+                origin.x() <= spot.x() <= origin.x() + body.width()
+                and origin.y() <= spot.y() <= origin.y() + body.height()
+            )
+            opened = len(activations)
+            if dismiss == "covered-press":
+                assert covered  # the layout case this test exists for
+                QTest.mouseClick(window, Qt.LeftButton, pos=spot)
+                QTest.qWait(40)
+                settle_liquid(window)
+                assert popup.property("visible")
+                assert len(activations) == opened  # never reached the button
+                QTest.keyClick(window, Qt.Key_Escape)
+            elif dismiss == "escape":
+                QTest.keyClick(window, Qt.Key_Escape)
+            else:
+                QTest.mouseClick(window, Qt.LeftButton, pos=QPoint(8, 8))
+            QTest.qWait(40)
+            settle_liquid(window)
+            assert not popup.property("visible"), dismiss
     finally:
         _close(bridge, engine, window)

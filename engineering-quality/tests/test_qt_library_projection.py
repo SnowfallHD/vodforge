@@ -181,6 +181,7 @@ def test_qt_annotation_editor_preserves_malformed_private_ledger(
             self.history = [{"title": "Saved item", "vodforge_output_type": "MP4"}]
             self.activity: list[dict[str, str]] = []
             self.active_job = None
+            self.recovered: list[Any] = []
 
         def close(self) -> None:
             pass
@@ -216,12 +217,14 @@ def test_qt_library_uses_shared_projection_for_active_queued_and_terminal_rows(
     application = QGuiApplication.instance() or QGuiApplication([])
     output = tmp_path / "output"
     output.mkdir()
-    maker = qt_runtime.DownloadRuntime.__new__(qt_runtime.DownloadRuntime)
-    maker._closing = False
-    maker.recovery_notice = None
-    maker.active_job = None
-    maker.worker = None
-    maker.queued = []
+    # A real runtime over an empty isolated profile only builds the jobs; a
+    # hand-built one drifted each time admission gained a check.
+    home = tmp_path / "maker-home"
+    home.mkdir()
+    for name in ("HOME", "LOCALAPPDATA"):
+        monkeypatch.setenv(name, str(home))
+    monkeypatch.setenv("XDG_DATA_HOME", str(home / "data"))
+    maker = qt_runtime.DownloadRuntime()
     maker._launch = lambda _job: None
     active, queued, terminal = [
         maker.start(f"https://example.com/{name}", output, "MP4", "Everyday")

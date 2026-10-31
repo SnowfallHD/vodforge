@@ -9,7 +9,7 @@ from PySide6.QtTest import QTest
 from tests.test_qt_click_reliability import center
 from tests.test_qt_interaction_invariants import _close, _launch
 from tests.test_qt_overflow_action_pointer import _items, _record
-from tests.test_qt_scene_port import saved, visual_item
+from tests.test_qt_scene_port import hover_pointer, saved, settle_popups, visual_item
 from yt_downloader.qt_quick import main as qt_main
 
 
@@ -19,7 +19,7 @@ def open_menu(app, window, entry):
         QTest.mouseClick(window, Qt.LeftButton, pos=center(trigger))
     else:
         trigger = window.findChild(QObject, "allRunsButton")
-        QTest.mouseMove(window, center(trigger))
+        hover_pointer(window, center(trigger))
         QTest.qWait(160)
         popup = window.findChild(QObject, "allRunsPopup")
         assert popup.property("visible")
@@ -80,6 +80,7 @@ def test_completed_menu_routes_exact_saved_owner(tmp_path, monkeypatch, entry, a
         assert button.property("enabled")
         QTest.mouseClick(window, Qt.LeftButton, pos=center(button))
         app.processEvents()
+        settle_popups(window)
         assert not popup.property("visible")
         if action == "Play":
             assert calls == [bridge._runtime.history.index(chosen)]

@@ -6,7 +6,7 @@ from PySide6.QtCore import QObject, QPoint, QPointF, Qt
 from PySide6.QtTest import QTest
 
 from tests.test_qt_all_runs_hover_seam import move, run_scene  # noqa: F401
-from tests.test_qt_scene_port import make_job, saved
+from tests.test_qt_scene_port import make_job, saved, settle_popups
 
 
 def _items(item):
@@ -50,9 +50,11 @@ def test_overflow_fifth_owner_right_click_retry_admits_exact_run(
         replace(failed, run_id=f"after-{i}", preview_info={"title": f"After {i}"})
         for i in range(10)
     ]
-    for job in [failed, *after]:
+    # Terminal runs list newest first, so the most recent failure is the
+    # fifth record: the first one beyond the four visible deck cards.
+    for job in [*after, failed]:
         runtime.recovery.terminal_attempt(job, "Failed", "Fixture failure")
-    runtime.recovered = [failed, *after]
+    runtime.recovered = [*after, failed]
     runtime.history = [saved(tmp_path, f"Saved {i}", "MP4") for i in range(3)]
     bridge.historyChanged.emit()
     bridge.activityChanged.emit()
@@ -92,6 +94,7 @@ def test_overflow_fifth_owner_right_click_retry_admits_exact_run(
     app.processEvents()
 
     assert activations == [True]
+    settle_popups(window)
     assert not actions.property("visible")
     assert runtime.active_job is active
     assert len(runtime.queued) == 1

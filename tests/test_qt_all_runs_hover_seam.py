@@ -15,7 +15,14 @@ from PySide6.QtQuick import QQuickItem
 from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtTest import QTest
 
-from tests.test_qt_scene_port import make_job, qt_app, qt_main, saved, visual_item
+from tests.test_qt_scene_port import (
+    make_job,
+    qt_app,
+    qt_main,
+    saved,
+    settle_popups,
+    visual_item,
+)
 
 
 @pytest.fixture
@@ -83,6 +90,7 @@ def test_edge_touch_and_held_face_across_padding_and_seam(run_scene):
         if not popup.property("visible"):
             break
         QTest.qWait(50)
+    settle_popups(window)
     assert not popup.property("visible")
     assert not button.property("held")
     assert "/normal/" in face.property("source").toString()
@@ -105,6 +113,7 @@ def test_click_navigates_without_another_press_face_or_toggle(run_scene):
     )
     app.processEvents()
     assert bridge.selection == "Library"
+    settle_popups(window)
     assert not popup.property("visible")
 
 
@@ -201,6 +210,7 @@ def test_stale_hover_delivery_after_pointer_left_cannot_open(run_scene, monkeypa
     move(window, button.mapToScene(QPointF(button.width() / 2, button.height() / 2)))
     assert button.findChild(QObject, "allRunsPointerArea").property("containsMouse")
     assert not button.property("hovered")
+    settle_popups(window)
     assert not popup.property("visible")
 
 
@@ -222,10 +232,12 @@ def test_primed_hover_is_retired_on_resize_with_pointer_at_corner(
     for width, height in (size, (1100, 740), size):
         window.resize(width, height)
         QTest.qWait(150)
+        settle_popups(window)
         assert not popup.property("visible")
     popup.close()
     window.resize(1100, 740)
     QTest.qWait(150)
+    settle_popups(window)
     assert not popup.property("visible")
 
 
@@ -238,13 +250,16 @@ def test_held_corner_cross_requires_release_and_new_motion(run_scene, primed):
         assert popup.property("visible")
     corner = QPoint(window.width() - 2, window.height() - 2)
     move(window, QPointF(corner))
+    settle_popups(window)
     assert not popup.property("visible")
     QTest.mousePress(window, Qt.LeftButton, pos=corner)
     assert bridge.isPointerPressed()
     move(window, center())
+    settle_popups(window)
     assert not popup.property("visible")
     QTest.mouseRelease(window, Qt.LeftButton, pos=center().toPoint())
     QTest.qWait(120)
+    settle_popups(window)
     assert not popup.property("visible")
     move(window, center() + QPointF(1, 0))
     assert popup.property("visible")
@@ -252,6 +267,7 @@ def test_held_corner_cross_requires_release_and_new_motion(run_scene, primed):
     for size in ((1400, 900), (820, 560), (1100, 740), (820, 560)):
         window.resize(*size)
         QTest.qWait(130)
+        settle_popups(window)
         assert not popup.property("visible")
     move(window, center())
     assert popup.property("visible")
@@ -273,6 +289,7 @@ def test_pending_motion_cannot_reopen_after_geometry_or_dismiss(run_scene, dismi
     else:
         QTest.keyClick(window, Qt.Key_Escape)
     QTest.qWait(160)
+    settle_popups(window)
     assert not popup.property("visible")
 
 
