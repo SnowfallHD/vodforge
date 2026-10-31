@@ -6,7 +6,7 @@ from PySide6.QtGui import QGuiApplication, QWheelEvent
 from PySide6.QtTest import QTest
 
 from tests.test_qt_interaction_invariants import _close, _launch
-from tests.test_qt_scene_port import saved, visual_item
+from tests.test_qt_scene_port import saved, settle_popups, visual_item
 
 
 @pytest.mark.parametrize("held_press", [False, True])
@@ -54,6 +54,7 @@ def test_watch_popup_reopens_on_first_click_after_scrolling(
                 "contentY", page.property("contentHeight") - viewport.height()
             )
             QTest.qWait(150)
+            settle_popups(window)
             assert not popup.property("visible")
             if held_press:
                 QTest.mouseRelease(window, Qt.MouseButton.LeftButton, pos=QPoint(2, 2))
@@ -63,6 +64,7 @@ def test_watch_popup_reopens_on_first_click_after_scrolling(
             click()
             assert popup.property("visible"), popup.property("dismissedByTriggerPress")
             click()
+            settle_popups(window)
             assert not popup.property("visible")
     finally:
         _close(bridge, engine, window)

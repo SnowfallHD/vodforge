@@ -4,7 +4,7 @@ from PySide6.QtCore import QObject, QPoint, QPointF, Qt
 from PySide6.QtTest import QTest
 
 from tests.test_qt_interaction_invariants import _close, _launch, _visual_descendants
-from tests.test_qt_scene_port import saved, visual_item
+from tests.test_qt_scene_port import saved, settle_popups, visual_item
 
 
 def click(window, item):
@@ -38,6 +38,7 @@ def test_hidden_composer_retires_focus_then_watch_first_clicks_work(
         assert popup.property("visible")
         QTest.keyClick(window, Qt.Key_Escape)
         QTest.qWait(50)
+        settle_popups(window)
         assert not popup.property("visible")
         assert not editor.hasActiveFocus()
         assert not window.property("editingText")

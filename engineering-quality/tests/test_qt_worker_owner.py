@@ -125,6 +125,15 @@ def test_qt_recovers_legacy_run_without_retry_url_and_saves_next_source(
         assert runtime.recovery_notice is None
         assert [job.run_id for job in runtime.recovered] == [legacy.run_id]
         assert runtime.recovered[0].url == ""
+        # Startup inspects the interrupted run's leftover resources before new
+        # work is admitted (9b7e621); the app starts it via resume_queued().
+        runtime.resume_queued()
+        deadline = time.monotonic() + 5
+        while runtime.recovery_pending and time.monotonic() < deadline:
+            runtime.poll()
+            time.sleep(0.01)
+        assert not runtime.recovery_pending
+        assert [job.run_id for job in runtime.recovered] == [legacy.run_id]
         first_source = "https://www.youtube.com/watch?v=qtRetry01A&list=PLQtRecovery01"
         second_source = "https://www.youtube.com/watch?v=qtRetry02B&list=PLQtRecovery01"
         fresh = runtime.start(first_source, output_dir, "MP4", "Everyday")

@@ -38,6 +38,26 @@ def qt_gui_thread_collection(request):
             gc.enable()
 
 
+@pytest.fixture(autouse=True)
+def offscreen_cursor_starts_outside_windows():
+    """Tests that move the real offscreen cursor must not leak it.
+
+    Hover admission reads QCursor.pos(), which is process-wide. A cursor left
+    over a trigger by one test opens that popup in the next. Only the offscreen
+    platform is touched, so a native run never moves the user's pointer.
+    """
+    try:
+        from PySide6.QtCore import QPoint
+        from PySide6.QtGui import QCursor, QGuiApplication
+    except ImportError:
+        yield
+        return
+    app = QGuiApplication.instance()
+    if app is not None and QGuiApplication.platformName() == "offscreen":
+        QCursor.setPos(QPoint(-500, -500))
+    yield
+
+
 @pytest.fixture
 def production_telemetry_contract(monkeypatch):
     """Exercise release logic with the individual tests' fake transports only."""

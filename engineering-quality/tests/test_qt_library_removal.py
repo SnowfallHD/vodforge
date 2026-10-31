@@ -47,6 +47,7 @@ def bridge(tmp_path: Path, monkeypatch: Any) -> qt_main.Bridge:
             self.history = [record]
             self.active_job = None
             self.queued: list[Any] = []
+            self.recovered: list[Any] = []
             self.activity: list[Any] = []
 
         def resume_queued(self) -> None:

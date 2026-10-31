@@ -8,7 +8,7 @@ from PySide6.QtCore import QMetaObject, QObject, QPointF, Qt
 from PySide6.QtTest import QTest
 
 from tests.test_qt_interaction_invariants import _close, _launch
-from tests.test_qt_scene_port import polish_scene, visual_item
+from tests.test_qt_scene_port import polish_scene, settle_popups, visual_item
 from yt_downloader.settings_store import load_settings
 
 
@@ -119,6 +119,7 @@ def test_options_subtitle_menu_remains_open_in_its_scroll_owner(
         app.processEvents()
         assert bridge.translatedSubtitleLanguage == "el"
         assert "Greek" in button.property("label")
+        settle_popups(window)
         assert not menu.property("visible")
         geometry["reopen_trigger"] = _scroll_subtitle_button_into_view(
             app, popup.property("contentItem"), button, viewport
@@ -162,6 +163,7 @@ def test_options_retains_quick_surface_and_reaches_shared_controls(
         popup.open()
         QTest.qWait(100)
         assert popup.property("visible")
+        settle_popups(window)
         assert not settings.property("visible")
         assert body.isVisible() and tags.isVisible()
         assert not window.findChild(QObject, "settingsBodyViewport").isVisible()
@@ -470,6 +472,7 @@ def test_options_playlist_choice_and_full_settings_are_reachable(
             ).toPoint(),
         )
         app.processEvents()
+        settle_popups(window)
         assert not popup.property("visible")
         assert window.findChild(QObject, "downloadSettingsPopup").property("visible")
         canonical_body = window.findChild(QObject, "settingsBodyViewport")

@@ -61,6 +61,9 @@ def test_other_action_and_old_callbacks_do_not_poison_successor(
     monkeypatch.setattr(runtime_module.threading, "Thread", DormantThread)
     old = make_job(tmp_path)
     old_sink = start_owned(bridge, old)
+    # A successor only takes the durable slot once the old run has ended; the
+    # store refuses two concurrent owners. Its worker sink stays reachable.
+    bridge._runtime.recovery.finished(old.run_id, application_closing=False)
     successor = replace(old, preview_info={"title": "Successor"})
     sink = start_owned(bridge, successor)
     sink.put(("status", "Downloading successor"))
