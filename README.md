@@ -109,11 +109,16 @@ Get VODForge from the [website](https://getvodforge.com/) or
 [GitHub Releases](https://github.com/SnowfallHD/vodforge/releases/latest).
 Packaged downloads include the required runtimes; you do not need Python to use them.
 
-GitHub Releases are the intended public download channel. Release notes put the recommended **Newer Macs — Apple silicon** download first (usually late 2020 and newer), followed by **Older Macs — Intel-based** (generally 2020 and earlier) and **Windows**. Because model years overlap, Mac users should rely on **About This Mac**: choose Apple silicon when it shows **Chip**, and Intel when it shows **Processor**.
+GitHub Releases are the intended public download channel. Mac users download one
+DMG, `VODForge-macOS-universal2-v<version>.dmg`: open it and double-click
+**Install VODForge**. It installs a universal app that runs natively on Apple
+silicon (macOS 26 or newer) and Intel (macOS 15 or newer). Releases up to 0.2.5
+shipped separate Apple silicon and Intel ZIPs; installed copies of those versions
+keep updating in place (see [Releasing VODForge](docs/release.md)).
 
 On Windows, use the per-user `VODForge-Windows-Setup` installer. It installs under `%LOCALAPPDATA%\Programs\VODForge`, keeps the packaged `_internal` runtime beside the app automatically, adds normal shortcuts, and provides an uninstaller. The portable ZIP remains available for users who specifically want it.
 
-The macOS release is a normal `VODForge.app`; its bundled runtime is inside the application package. Public macOS releases are Developer ID signed, notarized, stapled, and Gatekeeper-checked before publication. Unsigned workflow artifacts are explicitly named `unsigned-review` and are never public-ready downloads.
+The installed macOS app is a normal `VODForge.app`; its bundled runtime is inside the application package. Public macOS releases are Developer ID signed, notarized, stapled, and Gatekeeper-checked before publication. Unsigned workflow artifacts are explicitly named `unsigned-review` and are never public-ready downloads.
 
 ## Run from source
 
@@ -354,16 +359,19 @@ It does not require an external player or shell `PATH` configuration for package
 
 ## Release workflow
 
-The manually dispatched **Build Release Draft** GitHub Actions workflow builds:
+[Releasing VODForge](docs/release.md) is the full guide: what a release publishes,
+the checks that must pass first (CI, the engineering-quality harness, telemetry
+journeys, and hands-on testing on an Apple silicon Mac, an Intel Mac and a Windows
+PC), and the steps to draft, sign, test and publish.
 
-- a Windows per-user installer;
-- an optional Windows portable ZIP;
-- separate Apple Silicon and Intel macOS review archives; and
-- `SHA256SUMS.txt` for every artifact.
-
-It creates a GitHub **draft** release only. Windows application and installer signing uses Azure Artifact Signing through a repository-specific OIDC identity; no long-lived Azure password is stored in GitHub. The macOS jobs produce explicit unsigned review archives for both architectures. On the signing Mac, `./finalize_macos_release.sh <version>` downloads those review builds, Developer ID signs them, submits each to Apple notarization, staples and Gatekeeper-checks them, runs the packaged-runtime smoke tests, uploads the final archives, removes the unsigned review assets, and regenerates `SHA256SUMS.txt`.
-
-After the draft assets and checksums are reviewed, publishing the draft makes it the update source. Packaged apps check only the latest public, stable GitHub Release after startup and every six hours, while retaining the manual **Check for updates** control. When a newer version is approved by the user, Windows downloads the matching installer, verifies its exact size, SHA-256 checksum, Kryden Ventures Authenticode publisher, and trusted timestamp, then starts the silent installer. macOS downloads the matching architecture, verifies its size and checksum, exact VODForge bundle and Apple team identities, strict Developer ID signature, stapled notarization ticket, and Gatekeeper acceptance, then uses a detached rollback-capable swapper to replace and relaunch the app.
+In short, the **Build Release Draft** GitHub Actions workflow builds and signs the
+Windows files and creates a draft release; `./finalize_macos_release.sh <version>`
+signs and notarizes the Mac files on the signing Mac; the exact draft files are
+tested; then the draft is published. Packaged apps check the latest public release
+at startup and every six hours (plus **Check for updates**), and verify size,
+SHA-256 checksum and publisher identity before installing. Windows also checks the
+Authenticode timestamp; macOS also checks notarization and Gatekeeper, then swaps
+and relaunches the app with rollback.
 
 ## Development
 

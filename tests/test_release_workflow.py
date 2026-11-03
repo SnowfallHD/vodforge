@@ -280,26 +280,25 @@ def test_release_finalizer_replaces_unsigned_reviews_and_regenerates_checksums()
     assert 'release edit "$tag"' in script
 
 
-def test_release_notes_lead_with_clear_user_facing_platform_choices():
-    notes = _release_notes_module().render_release_notes("1.2.3")
+def test_release_notes_offer_one_mac_download_and_explain_legacy_files():
+    notes = _release_notes_module().render_release_notes("0.2.6")
 
-    newer = notes.index("### Newer Macs — Apple silicon")
-    older = notes.index("### Older Macs — Intel-based")
+    mac = notes.index("### Mac")
     windows = notes.index("### Windows")
-    assert newer < older < windows
-    assert "late 2020 and newer" in notes
-    assert "2020 and earlier" in notes
-    assert "About This Mac" in notes
-    assert "VODForge-macOS-arm64-v1.2.3.zip" in notes
-    assert "VODForge-macOS-x64-v1.2.3.zip" in notes
-    assert "VODForge-Windows-Setup-v1.2.3.exe" in notes
-    assert "**More reliable optional analytics:**" in notes
-    assert "installation-scoped" in notes
-    assert "**Consent stays in control:**" in notes
-    assert "Qt Quick desktop interface" in notes
-    assert "failure in red" in notes
-    assert "stopped or skipped work in orange" in notes
-    assert "What’s New and Did You Know" in notes
+    assert mac < windows
+    assert "VODForge-macOS-universal2-v0.2.6.dmg" in notes
+    assert "Apple silicon" in notes and "Intel" in notes
+    assert "VODForge-Windows-Setup-v0.2.6.exe" in notes
+    assert "What’s new in 0.2.6" in notes
+    # The legacy ZIPs are named only as in-app update files, never as downloads.
+    assert "releases/download/v0.2.6/VODForge-macOS-arm64" not in notes
+    assert "releases/download/v0.2.6/VODForge-macOS-x64" not in notes
+    assert "0.2.5 and earlier" in notes
+
+
+def test_final_notes_require_written_highlights():
+    with pytest.raises(ValueError, match="highlights"):
+        _release_notes_module().render_release_notes("1.2.3")
 
 
 def test_review_draft_accepts_qa_prerelease_version_without_unsafe_tag_text():

@@ -1,5 +1,8 @@
 # VODForge release gate
 
+This file defines the evidence a release must have. For the step-by-step release
+process and the list of published files, see [Releasing VODForge](../docs/release.md).
+
 The gate binds one source commit to one immutable ZIP and never treats a rebuild as equivalent. It preserves the existing architecture and complexity findings as visible debt; only explicitly reviewed debt is nonblocking.
 
 ## Behavioral acceptance prerequisite
@@ -122,6 +125,8 @@ For a public macOS candidate, the byte-changing order is:
 8. freeze and hash that ZIP as the candidate;
 9. freshly extract and run packaged E2E against that exact ZIP;
 10. re-hash the frozen ZIP and publish only those same bytes.
+
+For the universal Mac release the distribution files are the DMG (which contains the separately signed and notarized installer) and the universal app ZIP, published under its universal name and both legacy architecture names. Each published file is created once, after stapling, and the same bytes that were tested are the ones uploaded. See [universal macOS](UNIVERSAL_MACOS.md).
 
 Signing or stapling after E2E creates a new artifact and invalidates the candidate receipt. The release process must not rebuild or re-archive after the tested hash is established.
 
