@@ -1,3 +1,5 @@
+> **History.** October 2026 fixture-isolation fix for the Library reflow probe.
+
 # Library reflow fixture isolation
 
 The Library thumbnail reflow probe tests painted artwork during scrolling and resizing. It already marks welcome and What’s New as seen. It must also mark the unrelated social invitation dismissed so the normal idle invitation cannot dim the canvas while pixel samples are collected.

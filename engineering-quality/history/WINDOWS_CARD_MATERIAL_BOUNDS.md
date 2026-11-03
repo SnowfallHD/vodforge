@@ -1,3 +1,5 @@
+> **History.** October 2026 investigation of Windows card material bounds.
+
 # Responsive card material bounds
 
 Exact f66b5e9 Windows offscreen tests returned31passed/2failed; native windows-platform tests returned24passed/9failed. Both include an image-provider exception for a535-point button raster. Other native input/focus failures remain unclassified: the reused offscreen launcher did not wait for native exposure/activation, so those are not established product defects.

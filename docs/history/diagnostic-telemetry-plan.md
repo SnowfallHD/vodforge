@@ -1,3 +1,5 @@
+> **History.** The September 2026 plan for richer failure diagnostics. It was implemented and merged in October 2026 (provider denial, extractor fallback, updater and conversion failure context); see [telemetry features](../telemetry-features.md).
+
 # Prospective diagnostic telemetry: evidence contract
 
 Status: source implementation in progress; qualification pending. Existing docs and historical schema2

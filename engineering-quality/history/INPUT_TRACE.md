@@ -1,3 +1,5 @@
+> **History.** Notes for the opt-in Qt input trace used during October 2026 investigations.
+
 # Bounded candidate input trace
 
 `yt_downloader.qt_quick.input_trace.InputTrace` is opt-in, local-only diagnostic

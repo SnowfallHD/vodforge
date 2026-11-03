@@ -1,8 +1,50 @@
 # VODForge engineering-quality harness
 
-Consult [the change and test log](change-and-test-log.md) before assigning or
-repeating qualification work. Retain valid prior passes; record a concrete
-affected change or evidence defect before repeating a check.
+The quality harness checks VODForge beyond its unit tests: the real download
+pipeline under faults, security and lifecycle behavior, packaged-app journeys,
+telemetry, and the evidence a release needs. It lives outside the app code and
+never changes production behavior.
+
+## Start here
+
+| Need | Go to |
+| --- | --- |
+| Set up and run checks | [Setup](#setup) and [Commands](#commands) below |
+| How the harness works and how to extend it | [HARNESS_GUIDE.md](HARNESS_GUIDE.md) |
+| What a release must prove | [RELEASE_GATE.md](RELEASE_GATE.md), [TELEMETRY_RELEASE_GATE.md](TELEMETRY_RELEASE_GATE.md) |
+| How to perform a release | [Releasing VODForge](../docs/release.md) |
+| Universal Mac app and DMG | [UNIVERSAL_MACOS.md](UNIVERSAL_MACOS.md) |
+| Mandatory regression classes | [RECOVERY_REGRESSION_CLASSES.md](RECOVERY_REGRESSION_CLASSES.md), [SCENE_REGRESSION_CLASSES.md](SCENE_REGRESSION_CLASSES.md) |
+| Open user-reported defects | [acceptance/user-reported-defects.json](acceptance/user-reported-defects.json) |
+| What changed and what was tested | [change-and-test-log.md](change-and-test-log.md) |
+| Windows QA on the Windows PC | [runners/README.md](runners/README.md) (`E:\VODForgeQA`) |
+| Past investigations and checkpoints | [history/](history/) and the app's [docs/history/](../docs/history/) |
+
+The three profiles: `./engineering-quality/run fast` before committing,
+`./engineering-quality/run normal` before merging, and `./engineering-quality/run deep`
+before a release.
+
+Folders: `quality_harness/` (the harness), `tests/` (its self-tests), `runners/`
+(platform QA scripts), `acceptance/` (defect ledger and required inventories),
+`schemas/`, `fixtures/`, `corpus/` and `faults/` (test inputs). Generated report
+folders (`reports/<id>/`), `.runs/` and frozen `candidates/` are ignored by Git.
+
+Consult the change and test log before assigning or repeating qualification
+work. Keep valid earlier passes, and record a concrete affected change or evidence
+defect before repeating a check.
+
+Other notes kept here describe current behavior: [OUTPUT_PICKER_RELIABILITY.md](OUTPUT_PICKER_RELIABILITY.md),
+[POINTER_OWNED_VERTICAL_SCROLL.md](POINTER_OWNED_VERTICAL_SCROLL.md),
+[ONBOARDING_SOCIAL_INVITATION.md](ONBOARDING_SOCIAL_INVITATION.md),
+[QT_RECOVERY_DRAFT_RETIREMENT.md](QT_RECOVERY_DRAFT_RETIREMENT.md),
+[TRANSFER_REFRESH.md](TRANSFER_REFRESH.md), [COMPLETED_MEDIA_LOCKS.md](COMPLETED_MEDIA_LOCKS.md)
+and [workflow-coverage.md](workflow-coverage.md).
+
+## Learning log
+
+Each entry below records a defect class that was found, why the existing checks
+missed it, and what now covers it, newest first. Entries describe the code at
+their date; some name modules that have since been removed.
 
 ## Native visibility spans current displays — 2026-10-30
 
@@ -105,7 +147,7 @@ request. Existing independent browser-handoff tests missed that earlier boundary
 The current invariant gates issue, persistence, browser dispatch, status and
 confirmation against fresh feature policy/current explicit permission, including
 Off/regrant and replaced policy. Blocked work must not consume a one-time attempt.
-See [the app contract and rights protocol](ATTRIBUTION_PERMISSION_AND_RIGHTS.md)
+See [the app contract and rights protocol](history/ATTRIBUTION_PERMISSION_AND_RIGHTS.md)
 for prior failures, representative cross-owner coverage and unqualified live gates.
 Rights requests use existing ownership only; page opening is not deletion proof.
 
@@ -198,7 +240,7 @@ is required only by the legacy Tk player, not the Qt Multimedia build.
 
 A popup close must survive the remainder of the same held trigger gesture and
 must not become a fresh open request when Qt restores editor focus. The
-[popup reliability audit](POPUP_TOGGLE_RELIABILITY.md) documents reproduced
+[popup reliability audit](history/POPUP_TOGGLE_RELIABILITY.md) documents reproduced
 category/hover defects, the narrow fixes, prior-failure evidence, a cross-surface
 pointer/keyboard matrix, and untested native acceptance. These changes do not
 explain the separate persistent physical Done-click report.
@@ -637,7 +679,7 @@ routing; default centering and explicit Try it dismissal remain checked. No new
 onboarding behavior or automatic invocation. Physical Windows192 is separate from
 local injected metrics, and neither proves fractional/mixed-monitor qualification.
 
-## Start here
+## Guides and the fine-tuning harness
 
 Use the [harness operating and maintenance guide](HARNESS_GUIDE.md) for how the
 harness works, how to run and extend checks, and the required before/during/after
@@ -1293,8 +1335,8 @@ Normal adversarial run (generated local corpus, real pipeline, faults, short soa
 ./engineering-quality/run normal
 ```
 
-For a Qt Quick release candidate, pass `--ui qt` to `normal` and `deep`. The
-native-surface scenario then executes the rendered Qt scene, metadata,
+`normal` and `deep` run the Qt contracts (`--ui qt` is the only, and default,
+choice). The native-surface scenario executes the rendered Qt scene, metadata,
 terminal, preview, relink, and interaction-invariant contracts and records
 `metrics.ui=qt`. The interaction suite exercises collection item versus batch
 selection, nested Library filters, aligned detail panels and copy actions, and
@@ -1952,7 +1994,7 @@ case list is not a waiver for exact packaged-artifact or OS-input qualification.
 
 ## Archive, Watch and embedded-player boundaries
 
-See [the feature validation ledger](ARCHIVE_WATCH_QA.md) for the new required
+See [the feature validation ledger](history/ARCHIVE_WATCH_QA.md) for the new required
 regression, class lifecycle, native and telemetry acceptance coverage. The native
 surface gate now enrolls test_archive_native.py and test_archive_actual_playback.py;
 skipped cases cannot count as
@@ -3243,7 +3285,7 @@ asserts that no release mutation lives in the artifact jobs and that the default
 draft behavior remains review-only. No existing release/tag/assets are altered.
 
 For the bounded 0.2.6 recovery, use
-`engineering-quality/release-026-recovery-checklist.md` as the single current
+`engineering-quality/history/release-026-recovery-checklist.md` as the single current
 decision list. Before scheduling a build or check, map the changed runtime,
 dependency, configuration and observation method to the saved change-and-test
 receipts. Carry forward each unaffected bounded result under its original source

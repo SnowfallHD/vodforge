@@ -1,3 +1,5 @@
+> **History.** Evidence from October 2026 for the macOS minimum versions (macOS 26 on Apple silicon, macOS 15 on Intel). Paths under `build/` no longer exist. Current minimums: [Releasing VODForge](../release.md).
+
 # macOS runtime support assessment
 
 This records dependency targets and private build qualification. Declared targets are necessary conditions; they do not establish older-OS runtime acceptance.

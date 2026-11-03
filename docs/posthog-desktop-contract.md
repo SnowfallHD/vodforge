@@ -1,6 +1,6 @@
 # Desktop analytics contract, schema 2
 
-This successor changes runtime code and needs a new immutable private candidate. The earlier signed 0.2.6 packages and their checksums remain preserved; their approval does not cover successor bytes. Planned package version remains 0.2.6 for existing released-version admission, with a distinct source SHA, output directory, executable and archive hashes. No ordinary app replacement, upload or public publication is implied by private qualification.
+This is the desktop analytics contract on `main`; it first ships with the next public release (0.2.6). Released 0.2.5 clients send the older events described in [telemetry features](telemetry-features.md).
 
 ## Identity and traffic classification
 

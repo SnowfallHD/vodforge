@@ -134,8 +134,13 @@ waive it by rerunning until it passes.
    installed apps see the update within six hours or on **Check for updates**.
 5. **Website.** Push the website repo's `main`. Its build reads the latest release
    (`npm run sync:release`) and refuses to build if the DMG, Windows files or
-   checksums are missing. Confirm the live site offers the new version's DMG and
-   Windows downloads.
+   checksums are missing, so the website can only go out once the release is
+   public. Apply any pending D1 migrations first, in the order given in the
+   website README ("Pending production migrations"). Confirm the live site offers
+   the new version's DMG and Windows downloads, and that the old
+   `/download/mac-arm` and `/download/mac-intel` links land on the DMG. Then
+   regenerate the session-replay text allowlist from that build
+   (`python3 scripts/generate-replay-public-content.py`) and commit it.
 6. **Afterwards.** Watch the CRM for `client_update` events and updater failures over
    the next days. Check that downloads from the website start correctly.
 

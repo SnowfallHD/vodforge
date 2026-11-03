@@ -1,3 +1,5 @@
+> **History.** The October 2026 0.2.6 recovery checklist. Its status reflects that time; the current release process is [Releasing VODForge](../../docs/release.md).
+
 # Finite 0.2.6 recovery checklist
 
 Cooper authorized public app release and new site publication on October15.

@@ -43,7 +43,7 @@ milestone. EngagementUI sequences surfaces; the existing native showcase owns to
 rendering. SupportPanel owns the consent snapshot and protected form layout.
 SupportTransport owns explicit delivery using a separate private support credential,
 not telemetry enrollment. The existing private JSON primitive is shared without
-sharing identity. DownloaderApp only connects terminal outcomes and UI entry points.
+sharing identity. The Qt Bridge only connects terminal outcomes and UI entry points.
 
 The server accepts only a closed, bounded schema. Independent credential ownership,
 revocation, edge limiting, atomic daily budgets, and exact idempotency receipts apply.

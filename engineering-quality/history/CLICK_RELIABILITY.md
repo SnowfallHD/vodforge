@@ -1,3 +1,5 @@
+> **History.** The October 2026 click-reliability investigation and its two fixes.
+
 # Shared input reliability
 
 The October 2026 investigation identified two independently reproducible defects.
