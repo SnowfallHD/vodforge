@@ -34,7 +34,7 @@ Start with install and usage below. For development, follow [Development](#devel
 [harness operating and maintenance guide](engineering-quality/HARNESS_GUIDE.md), with
 [testing setup and commands](engineering-quality/README.md).
 The [release gate](engineering-quality/RELEASE_GATE.md) defines required evidence.
-The [Mac/Windows owner map](docs/architecture.md#shared-product-and-native-implementations)
+The [Mac/Windows owner map](docs/architecture.md#platforms)
 separates native implementations while keeping one shared product UI and behavior contract.
 
 ## The current app
@@ -246,7 +246,7 @@ it excludes media URLs, titles, filenames, paths, searches, notes, tags, and
 playback positions. The first-install thank-you page can open independently of
 consent, but attribution requires permission. Closing that tab does not cause it
 to reopen for late consent. See the [privacy notice](https://getvodforge.com/privacy/)
-and [local-state ownership](docs/architecture.md#privacy-and-onboarding-state).
+and [local-state ownership](docs/architecture.md#who-owns-what).
 
 App-open and failure observations include numeric OS/Python/Qt/downloader versions,
 processor architecture and logical CPU count, total/available memory in MB, and

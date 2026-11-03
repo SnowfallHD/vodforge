@@ -1,3 +1,5 @@
+> **History.** October 2026 review that added the supported Qt telemetry observations.
+
 # Qt observation owners and renderer applicability
 
 This change supplies the 18 supported Qt observations identified by the Oct 11

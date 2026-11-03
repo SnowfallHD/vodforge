@@ -1,6 +1,8 @@
+> **History.** Implementation log for the desktop PostHog integration (October 2026). The current contract is [desktop analytics contract](../posthog-desktop-contract.md).
+
 ## Current comprehensive successor — October15 evening
 
-The new authorized implementation is additive. See [desktop contract](posthog-desktop-contract.md) for the exact current schema, privacy boundaries, supported native alternatives and QA classification. Historical acceptance notes below retain their original scope. Earlier packages do not contain these successor changes.
+The new authorized implementation is additive. See [desktop contract](../posthog-desktop-contract.md) for the exact current schema, privacy boundaries, supported native alternatives and QA classification. Historical acceptance notes below retain their original scope. Earlier packages do not contain these successor changes.
 
 Fresh separately resolved provider policy may default ordinary analytics on only where the parent-reviewed regional service permits it; explicit general/provider refusals always win. Old generic cached defaults cannot enable PostHog. Product event names and the authoritative first-party owner/outbox/acknowledgements remain unchanged. PostHog additionally receives safe session context and lifecycle events, standard screen events, categorized manual error tracking and existing processing/UI-performance categories. Qt-native visual replay is unsupported by the documented SDK set; the supported alternative is a semantic event timeline, without content capture. QA uses explicit test labels and independent first-party/provider readback; no adoption is inferred.
 

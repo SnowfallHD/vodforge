@@ -1,3 +1,5 @@
+> **History.** Records from the Tk-to-Qt port (September–October 2026). It stays here because harness code reads it.
+
 # Qt port feature inventory
 
 Source: current Tk code at `d67b11c8297dff409b05944357f0b8b8bd46ebc0`, inspected on 2026-09-23. The Tk screenshots are a **state and feature index**, not a pixel oracle: preserve the newer intended Qt concave design and controls where the Tk render is old or broken. The source owners below define behavior and reachability. The Qt column describes the current port, not release qualification.

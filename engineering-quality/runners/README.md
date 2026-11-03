@@ -22,7 +22,7 @@ Browser matrix scripts need a freshly built site ZIP in
 intercept external/API traffic, and exercise the built claim-page JavaScript.
 The default-browser probe is separately loopback-only and never reads cookies
 or changes browser configuration. These receipts are **not** interchangeable
-with the strict full-app E2E recorder below. See `ANALYTICS_JOURNEY_QA.md` for
+with the strict full-app E2E recorder below. See `../history/ANALYTICS_JOURNEY_QA.md` for
 executed coverage and remaining combined-journey gaps.
 
 ## Canonical full-app recorder

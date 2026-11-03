@@ -1,3 +1,5 @@
+> **History.** October 2026 repair of stale test contracts found during a release candidate.
+
 # Private RC qualification corrections
 
 The d264460 aggregate found stale test contracts and static-check gaps. Existing empty-destination move behavior remains intentional: unchanged, inode-proven empty folders may be reused; occupied/redirected/changing targets remain blocked. The older nested-destination test now supplies occupied bytes and asserts that they and the source remain intact. No move behavior revert was made.

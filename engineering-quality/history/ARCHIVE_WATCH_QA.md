@@ -1,3 +1,5 @@
+> **History.** QA notes for the Library and Watch work (September 2026).
+
 # Archive, Watch and embedded player validation ledger
 
 Status: local source candidate under review; not release qualified. Desktop branch
@@ -303,4 +305,4 @@ No source-native result is packaged, Windows, preview-D1 or deployment proof.
 
 ## Recovery and presentation regression gates
 
-The five classes in [RECOVERY_REGRESSION_CLASSES.md](RECOVERY_REGRESSION_CLASSES.md) are mandatory NORMAL/DEEP scenarios. Run the maintained before/after source contract and retain exact-artifact code binding separately from native/packaged GUI evidence. Source checks never waive the packaged journey gate.
+The five classes in [RECOVERY_REGRESSION_CLASSES.md](../RECOVERY_REGRESSION_CLASSES.md) are mandatory NORMAL/DEEP scenarios. Run the maintained before/after source contract and retain exact-artifact code binding separately from native/packaged GUI evidence. Source checks never waive the packaged journey gate.

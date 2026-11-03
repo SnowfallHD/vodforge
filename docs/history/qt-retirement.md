@@ -1,3 +1,5 @@
+> **History.** Checkpoint notes from October 2026, when the Tk front end was removed and the app became Qt-only.
+
 # Qt retirement checkpoint
 
 Canonical checkout `/Users/coop/Dev/vodforge`, ordinary `qt-retirement` branch. Frozen signed5854619 and existing receipts remain untouched. Source changes require their own successor qualification. No build, worktree, clone, generated-object deletion or publication occurred.

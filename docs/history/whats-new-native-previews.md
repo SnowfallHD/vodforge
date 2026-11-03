@@ -1,7 +1,9 @@
+> **History.** How the Tk-era What's New carousel built its native exhibits. The editorial switch `SHOWCASE_MODE` in `whats_new.py` still selects the showcase; the current Qt previews are `FeaturePreview.qml` and `RecordedFeaturePreview.qml`.
+
 # Native What’s New previews
 
-For the current Qt Quick screen and control contract, use [current design](current-design.md)
-and [shared UI components](ui-components.md). Retained implementation and showcase
+For the current Qt Quick screen and control contract, use [current design](../current-design.md)
+and [shared UI components](../ui-components.md). Retained implementation and showcase
 history below applies to its named owner; it does not override current Qt navigation.
 
 

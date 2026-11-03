@@ -1,3 +1,5 @@
+> **History.** Record of the September 10, 2026 fix for quiet-AAC validation failures and clearer failure details. The validation rules it introduced are current; see `output_validation.py`.
+
 # Failure details and quiet AAC validation — 2026-09-10
 
 The reported Ocean Sea Waves run (`IxF55qB4CuQ`, formats `137+140-drc`)

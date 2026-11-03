@@ -1,3 +1,5 @@
+> **History.** Records from the Tk-to-Qt port (September–October 2026). It stays here because harness code reads it.
+
 # Qt port code parity ledger
 
 This ledger compares the current Tk behavior and geometry owners with the Qt

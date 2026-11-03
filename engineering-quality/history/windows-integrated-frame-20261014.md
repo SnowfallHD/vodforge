@@ -1,3 +1,5 @@
+> **History.** October 14, 2026 notes on the integrated Windows window frame.
+
 # Windows integrated frame — private qualification
 
 The existing Windows main and floating player windows previously delegated the entire title bar to native decorations. The user's requested application-owned frame must keep the OS lifetime, sizing and system-command owner intact rather than hiding those capabilities with decorations.

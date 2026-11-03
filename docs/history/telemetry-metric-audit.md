@@ -1,3 +1,5 @@
+> **History.** Record of the September 11, 2026 telemetry metric audit and its fixes. The current contract is [telemetry features](../telemetry-features.md).
+
 # Telemetry metric contract audit — September 11, 2026
 
 ## Findings and fixes
@@ -53,7 +55,7 @@ on both shipping platforms; local tests alone do not establish that tier.
 
 No telemetry consent defaults, production database records, user profiles, or
 third-party provider permissions are changed by this audit. See
-[the required release journey](../engineering-quality/TELEMETRY_RELEASE_GATE.md).
+[the required release journey](../../engineering-quality/TELEMETRY_RELEASE_GATE.md).
 
 ## Verification recorded in this lane
 

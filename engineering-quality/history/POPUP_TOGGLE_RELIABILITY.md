@@ -1,3 +1,5 @@
+> **History.** October 2026 popup toggle investigation on an isolated source candidate.
+
 # Popup close/reopen reliability — 2026-10-06
 
 Scope: isolated source candidate based on `6cdea0e0b1ad324165aa148bc04f5726bef716dd`.

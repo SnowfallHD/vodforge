@@ -1,3 +1,5 @@
+> **History.** Design and verification notes from building Library and Watch (September 2026); written while that work was in progress.
+
 # Library and Watch design acceptance
 
 Status: implementation and native verification in progress. This is the current
@@ -83,8 +85,8 @@ never block the requested action or navigation.
 ## Shared interaction requirements
 
 Use the maintained components and behavior owners documented in
-[the UI component catalog](../docs/ui-components.md), with architecture and
-ownership in [the architecture guide](../docs/architecture.md). Thin adapters supply
+[the UI component catalog](../../docs/ui-components.md), with architecture and
+ownership in [the architecture guide](../../docs/architecture.md). Thin adapters supply
 content and scoped actions; they must not share unrelated mutable selection.
 
 Scrolling is fractional and smooth, supports both axes, and routes nested input
@@ -123,7 +125,7 @@ Keep source checks, native input, packaged execution and physical-device claims
 separate. OS-injected input is not physical input, a playback state is not proof
 of audible sound, and a minimal-Tk comparison does not establish causality.
 Preserve genuine failures and interrupted runs. Use the maintained
-[quality workflow](README.md) and [release gate](RELEASE_GATE.md) to bind evidence
+[quality workflow](../README.md) and [release gate](../RELEASE_GATE.md) to bind evidence
 to the exact tested source and package.
 
 The final private Mac replacement follows completion of the requested scope,

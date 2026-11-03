@@ -1,3 +1,7 @@
+# Change and test log
+
+Every change, the checks actually run and their results. Entries are mostly chronological, with the newest near the end. Evidence paths in older entries (under `build/`, `engineering-quality/reports/`, `/tmp/` or `~/Documents/Codex/`) point to folders removed in the November 2026 cleanup; the entries remain the record of what was run and found.
+
 ## Shared fixture deltas, reuse sidecars and exact latency roster — 2026-10-11
 
 - One bounded 54-scenario regeneration at clean harness source `018f5105eeed5b1240a60b369cba3cf3d9b31bc9` replaced only lost raw observations. All 54 functional scenarios passed; independent review initially retained 50 passes and four failures. Those failures were two incorrect global-empty fixture assumptions, a reuse oracle rejecting the production atomic thumbnail-sidecar staging transaction, and three missing resumed-format-hint cases in the exact artwork-latency roster. Original functional results, the initial failed independent assessment and every raw source identity remain unchanged.

@@ -1,3 +1,5 @@
+> **History.** Source contract for attribution permission and the rights intake, from October 2026.
+
 # Attribution permission and privacy requests
 
 Private successor to 8159164; public 0.2.5 is unchanged. This is a source/test contract, not a deployment, deletion-completion, or native-package receipt.

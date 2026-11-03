@@ -1,10 +1,12 @@
+> **History.** Record of how the Tk-era player chose libVLC. The current app plays media with Qt Multimedia ([architecture](../architecture.md)).
+
 # Embedded playback backend evaluation
 
 ## Applicability
 
 This records the retained Tk playback decision. The current Qt Quick interface
-uses Qt Multimedia; see [current design](current-design.md) and
-[architecture](architecture.md). Historical prototype receipts below remain unchanged.
+uses Qt Multimedia; see [current design](../current-design.md) and
+[architecture](../architecture.md). Historical prototype receipts below remain unchanged.
 
 ## Retained Tk decision
 

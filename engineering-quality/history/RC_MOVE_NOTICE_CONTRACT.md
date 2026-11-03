@@ -1,3 +1,5 @@
+> **History.** October 2026 notes on the Move notice wording during a release candidate.
+
 # Move notice test contract
 
 Commit3613d2c intentionally replaces older per-item Move wording with the shared all-selection summary. The aggregate RC2 run completed476Qt component passes and found two older notice tests still asserting the removed strings. Runtime Move behavior and wording are unchanged here.

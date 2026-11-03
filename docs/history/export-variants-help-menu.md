@@ -1,7 +1,9 @@
+> **History.** Notes on an October 2026 output-ownership fix and the deferred native Help commands, written for the Tk-era owners. Current UI rules: [UI components](../ui-components.md).
+
 # Output ownership and deferred native Help commands
 
-For the current Qt Quick screen and control contract, use [current design](current-design.md)
-and [shared UI components](ui-components.md). Retained implementation and showcase
+For the current Qt Quick screen and control contract, use [current design](../current-design.md)
+and [shared UI components](../ui-components.md). Retained implementation and showcase
 history below applies to its named owner; it does not override current Qt navigation.
 
 

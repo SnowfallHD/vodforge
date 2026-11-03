@@ -26,7 +26,7 @@ installed an app; neither check proved an upgrade of a running older version.
   with an actionable message. Its normal postinstall launch now runs in silent
   mode too. New helpers opt out with `/VODFORGEHANDOFF=1` to avoid double launch.
 - macOS retains the existing verified swap, explicit `open`, and rollback on
-  relaunch-command failure. The app now uses safe close rather than direct Tk
+  relaunch-command failure. The app now uses safe close rather than a direct window
   destruction before the swap. Existing signature/notarization checks remain.
 
 The updater does not claim installation success from process creation alone.

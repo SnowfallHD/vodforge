@@ -1,3 +1,5 @@
+> **History.** October 2026 notes on description keyboard focus and scrolling.
+
 # Read-only description keyboard scrolling
 
 Native private candidate 07a7a4d established description text focus by Tab after
