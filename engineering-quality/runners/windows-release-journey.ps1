@@ -68,7 +68,7 @@ try {
   if (Get-Process LogonUI -ErrorAction SilentlyContinue | Where-Object SessionId -eq $result.session_id) { throw 'The desktop is locked' }
   if ($Installer) {
     New-Item -ItemType Directory -Path $backup | Out-Null
-    & reg.exe export $uninstallKey "$backup\uninstall.reg" /y 2>$null | Out-Null
+    cmd.exe /c "reg export `"$uninstallKey`" `"$backup\uninstall.reg`" /y >nul 2>&1"
     foreach ($link in $shortcuts) { if (Test-Path $link) { Copy-Item $link (Join-Path $backup (Backup-Name $link)) } }
     # Wait for the installer only: after a silent install it starts VODForge
     # (that is how in-app updates relaunch), and -Wait would wait on that too.
@@ -101,17 +101,33 @@ try {
   $result.error = $_.Exception.Message
 } finally {
   if ($Installer -and (Test-Path $backup)) {
-    Get-Process VODForge -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$App\*" } | Stop-Process -Force
-    & reg.exe delete $uninstallKey /f 2>$null | Out-Null
-    if (Test-Path "$backup\uninstall.reg") { & reg.exe import "$backup\uninstall.reg" 2>$null | Out-Null }
+    # Each restore step runs on its own, so one failure can't skip the others.
+    # Native tools go through cmd: Windows PowerShell 5 under 'Stop' turns any
+    # stderr text (reg.exe reports success there) into a terminating error.
+    $ErrorActionPreference = 'Continue'
+    $restore = @()
+    try { Get-Process VODForge -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$App\*" } | Stop-Process -Force } catch { $restore += "stop: $_" }
+    cmd.exe /c "reg delete `"$uninstallKey`" /f >nul 2>&1"
+    if (Test-Path "$backup\uninstall.reg") {
+      cmd.exe /c "reg import `"$backup\uninstall.reg`" >nul 2>&1"
+      if ($LASTEXITCODE -ne 0) { $restore += "registry import exit $LASTEXITCODE" }
+    }
     foreach ($link in $shortcuts) {
-      Remove-Item $link -Force -ErrorAction SilentlyContinue
-      $saved = Join-Path $backup (Backup-Name $link)
-      if (Test-Path $saved) { Copy-Item $saved $link }
+      try {
+        Remove-Item $link -Force -ErrorAction SilentlyContinue
+        $saved = Join-Path $backup (Backup-Name $link)
+        if (Test-Path $saved) {
+          Copy-Item $saved $link -Force
+          if ((Get-FileHash $saved).Hash -ne (Get-FileHash $link).Hash) { $restore += "shortcut differs: $link" }
+        }
+      } catch { $restore += "shortcut ${link}: $_" }
     }
     Start-Sleep -Seconds 2
     Remove-Item $App -Recurse -Force -ErrorAction SilentlyContinue
-    $result.registration_restored = $true
+    if (Test-Path $App) { $restore += "test install still present: $App" }
+    $result.registration_restored = ($restore.Count -eq 0)
+    $result.restore_problems = $restore
+    if ($restore.Count -gt 0) { $result.passed = $false }
   }
   $result | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $run 'receipt.json')
 }
