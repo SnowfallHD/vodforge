@@ -38,7 +38,7 @@ import sys
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 HARNESS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(HARNESS))
@@ -166,6 +166,13 @@ class MacDriver:
     def texts(self) -> list[str]:
         return [self._label(e) for window in self.windows() for e in self._walk(window)]
 
+    def describe(self) -> list[dict[str, str]]:
+        return [
+            {"type": str(self._attr(e, "AXRole")), "name": self._label(e)}
+            for window in self.windows()
+            for e in self._walk(window)
+        ]
+
     def press(self, element) -> None:
         if self.ax.AXUIElementPerformAction(element, "AXPress") != 0:
             raise JourneyError("Accessibility press failed")
@@ -217,6 +224,10 @@ class MacDriver:
 
 class WindowsDriver:
     """Windows UI Automation through pywinauto."""
+
+    # Controls whose macOS accessible name comes from a placeholder have no UIA
+    # name; match them by the QML objectName at the end of their automation ID.
+    OBJECT_NAMES: ClassVar[dict[str, str]] = {"Paste a video URL": "forgeUrlInput"}
 
     def __init__(self) -> None:
         from pywinauto import Application, keyboard
@@ -273,8 +284,13 @@ class WindowsDriver:
         if window is None:
             return None
         control = {"AXButton": "Button", "AXTextField": "Edit"}[role]
+        object_names = {self.OBJECT_NAMES[n] for n in names if n in self.OBJECT_NAMES}
         for element in window.descendants(control_type=control):
-            if element.window_text() in names and element.is_enabled():
+            automation_id = element.element_info.automation_id or ""
+            if (
+                element.window_text() in names
+                or automation_id.rsplit(".", 1)[-1] in object_names
+            ) and element.is_enabled():
                 return element
         return None
 
@@ -283,6 +299,21 @@ class WindowsDriver:
         if window is None:
             return []
         return [e.window_text() for e in window.descendants()]
+
+    def describe(self) -> list[dict[str, str]]:
+        rows = []
+        for window in self.app.windows():
+            rows.append({"window": window.window_text(), "class": window.class_name()})
+            for e in window.descendants():
+                info = e.element_info
+                rows.append(
+                    {
+                        "type": info.control_type,
+                        "name": info.name,
+                        "id": info.automation_id,
+                    }
+                )
+        return rows
 
     def press(self, element) -> None:
         element.invoke()
@@ -530,9 +561,21 @@ class Journey:
         env = self.environment()
         log = self.output / "app.log"
         held: dict[str, Any] = {}
+        launched: list[subprocess.Popen] = []
+
+        def start_app():
+            # One instance at a time: a copy left by a failed step would make the
+            # next launch exit ("finishing an update") and fail every later step.
+            for process in launched:
+                if process.poll() is None:
+                    self.driver.process = process
+                    self.driver.kill()
+                    process.wait(timeout=30)
+            self.driver.launch(self.app, env, log)
+            launched.append(self.driver.process)
 
         def launch():
-            self.driver.launch(self.app, env, log)
+            start_app()
             self.wait_ready()
             return {"dismissed": self.dismiss_first_run()}
 
@@ -559,7 +602,7 @@ class Journey:
             return {"pressed": label, "files_in_flight": len(held["partial"])}
 
         def relaunch():
-            self.driver.launch(self.app, env, log)
+            start_app()
             self.wait_ready()
             self.dismiss_first_run()
             state = wait_for(
@@ -613,7 +656,7 @@ class Journey:
             self.driver.close()
             code = self.driver.process.wait(timeout=60)
             staging = [str(p) for p in self.downloads.rglob(".vfstage") if p.exists()]
-            self.driver.launch(self.app, env, log)
+            start_app()
             self.wait_ready()
             self.dismiss_first_run()
             time.sleep(3)
@@ -657,11 +700,11 @@ class Journey:
                 ):
                     self.driver.close()
                     self.driver.process.wait(timeout=60)
-            except Exception:  # noqa: BLE001 - last resort below
-                if (
-                    self.driver.process is not None
-                    and self.driver.process.poll() is None
-                ):
+            except Exception as exc:  # noqa: BLE001 - every launch is stopped below
+                print(f"Normal close failed ({exc}); stopping the app", flush=True)
+            for process in launched:
+                if process.poll() is None:
+                    self.driver.process = process
                     self.driver.kill()
             self.server.stop()
         result = {
@@ -679,12 +722,15 @@ class Journey:
             },
         }
         (self.output / "journey-result.json").write_text(
-            json.dumps(result, indent=2) + "\n"
+            json.dumps(result, indent=2) + "\n", encoding="utf-8"
         )
         return result
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Control labels contain symbols like "▾"; Windows consoles default to cp1252.
+    for stream in (sys.stdout, sys.stderr):
+        stream.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -701,9 +747,31 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         help="Development only: run main.py from this checkout (macOS)",
     )
+    parser.add_argument(
+        "--inspect",
+        action="store_true",
+        help="Launch, list every control's type and name to controls.json, then quit",
+    )
     args = parser.parse_args(argv)
     if args.source is not None:
         MacDriver.source = args.source.resolve()
+    if args.inspect:
+        journey = Journey(args.app, args.output, args.youtube_url)
+        journey.output.mkdir(parents=True, exist_ok=True)
+        journey.driver.launch(
+            journey.app, journey.environment(), journey.output / "app.log"
+        )
+        try:
+            wait_for(journey.driver.window, 90, "the VODForge window")
+            time.sleep(8)
+            rows = journey.driver.describe()
+        finally:
+            journey.driver.kill()
+        (journey.output / "controls.json").write_text(
+            json.dumps(rows, indent=1, ensure_ascii=False), encoding="utf-8"
+        )
+        print(f"{len(rows)} controls: {journey.output / 'controls.json'}")
+        return 0
     result = Journey(args.app, args.output, args.youtube_url).run()
     print(
         ("PASSED" if result["passed"] else "FAILED")
