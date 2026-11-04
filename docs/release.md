@@ -90,7 +90,11 @@ waive it by rerunning until it passes.
      `python engineering-quality/runners/release_journey.py --app /Applications/VODForge.app --output <folder>`
      (the terminal needs Accessibility permission; Screen Recording too for window
      images).
-   - **Intel Mac:** the same, from the same DMG.
+   - **Intel Mac:** the same, from the same DMG. If no Intel Mac is available, add
+     `--arch x86_64` on an Apple silicon Mac to run the app's Intel code under
+     Rosetta (the run fails unless macOS reports the app as translated). That
+     exercises the Intel build but not Intel hardware or macOS 15 on Intel, so
+     run it on a real Intel Mac before release when you can.
    - **Windows PC:** `engineering-quality/runners/windows-release-journey.ps1` over the
      established SSH route, once with the extracted portable ZIP (`-App`) and once
      with `-Installer` pointing at the signed installer. The installer run backs up and

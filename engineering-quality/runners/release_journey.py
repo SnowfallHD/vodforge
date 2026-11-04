@@ -83,6 +83,7 @@ class MacDriver:
     """macOS Accessibility. Reads only the VODForge window, never the menu bar."""
 
     source: Path | None = None  # Development: run main.py from this checkout.
+    arch: str | None = None  # Run a universal app as this architecture.
 
     def __init__(self) -> None:
         import ApplicationServices as ax
@@ -99,7 +100,21 @@ class MacDriver:
     def command(self, app: Path) -> list[str]:
         if self.source is not None:
             return [sys.executable, str(self.source / "main.py")]
-        return [str(app / "Contents/MacOS/VODForge")]
+        binary = [str(app / "Contents/MacOS/VODForge")]
+        # arch replaces itself with the app, so the PID stays the app's.
+        return ["/usr/bin/arch", f"-{self.arch}", *binary] if self.arch else binary
+
+    def translated(self) -> bool | None:
+        """Whether the running app is Intel code under Rosetta (P_TRANSLATED)."""
+        if self.process is None or self.process.poll() is not None:
+            return None
+        out = subprocess.run(
+            ["/bin/ps", "-o", "flags=", "-p", str(self.process.pid)],
+            capture_output=True,
+            check=False,
+            text=True,
+        ).stdout.strip()
+        return bool(int(out, 16) & 0x20000) if out else None
 
     def helper(self, app: Path, name: str) -> Path:
         if self.source is not None:
@@ -577,7 +592,12 @@ class Journey:
         def launch():
             start_app()
             self.wait_ready()
-            return {"dismissed": self.dismiss_first_run()}
+            details = {"dismissed": self.dismiss_first_run()}
+            if hasattr(self.driver, "translated"):
+                details["rosetta"] = self.driver.translated()
+                if MacDriver.arch == "x86_64" and details["rosetta"] is not True:
+                    raise JourneyError("The app is not running under Rosetta")
+            return details
 
         def interrupt():
             label = self.submit(self.server.url("/slow/page"))
@@ -715,6 +735,7 @@ class Journey:
                 "os": platform.platform(),
             },
             "app": str(self.app),
+            "app_arch": MacDriver.arch or "native",
             "steps": self.steps,
             "saved_media": [self.probe(p) for p in self.saved_media()],
             "fixtures": {
@@ -748,6 +769,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Development only: run main.py from this checkout (macOS)",
     )
     parser.add_argument(
+        "--arch",
+        choices=["arm64", "x86_64"],
+        help="macOS: run a universal app as this architecture (x86_64 uses Rosetta)",
+    )
+    parser.add_argument(
         "--inspect",
         action="store_true",
         help="Launch, list every control's type and name to controls.json, then quit",
@@ -755,6 +781,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.source is not None:
         MacDriver.source = args.source.resolve()
+    if args.arch is not None:
+        MacDriver.arch = args.arch
     if args.inspect:
         journey = Journey(args.app, args.output, args.youtube_url)
         journey.output.mkdir(parents=True, exist_ok=True)
