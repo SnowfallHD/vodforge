@@ -8,8 +8,10 @@ from pathlib import Path
 
 import pytest
 
-from yt_downloader.download_service import _planned_output_summary, build_vod_ffmpeg_command
-
+from yt_downloader.download_service import (
+    _planned_output_summary,
+    build_vod_ffmpeg_command,
+)
 from yt_downloader.export_planning import (
     EXPORT_MODES,
     QUALITY_PRESETS,
@@ -322,7 +324,6 @@ def test_nvenc_preset_preserves_task_contract_and_uses_distinct_quality(mode):
 @pytest.mark.parametrize("mode", list(QUALITY_PRESETS))
 def test_selected_gpu_reaches_worker_plan_and_changes_reuse_identity(tmp_path, mode):
     from yt_downloader.download_service import _build_download_item_plan
-
     from yt_downloader.models import DownloadJob, Mp3ExportSettings, OutputType
     from yt_downloader.run_identity import job_attempt_signature
 

@@ -63,8 +63,13 @@ def test_disabled_transports_never_call_network(monkeypatch):
 def test_release_builds_explicitly_enable_telemetry():
     root = Path(__file__).resolve().parents[1]
     workflow = (root / ".github/workflows/release.yml").read_text()
-    assert workflow.count("VODFORGE_BUILD_TELEMETRY: production") == 2
-    for script in ("build_macos.sh", "build_windows.ps1"):
+    # Windows, the per-architecture Macs and the universal Mac.
+    assert workflow.count("VODFORGE_BUILD_TELEMETRY: production") == 3
+    for script in (
+        "build_macos.sh",
+        "build_windows.ps1",
+        "scripts/build_universal_macos.py",
+    ):
         assert "VODFORGE_TELEMETRY_POLICY" in (root / script).read_text()
 
 

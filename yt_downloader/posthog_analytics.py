@@ -141,7 +141,7 @@ def capture_payload(event: ProductTelemetryEvent) -> dict[str, Any] | None:
         "release_channel": event.release_channel,
         "$insert_id": event.event_id,
         "$geoip_disable": True,
-        "$ip": "0.0.0.0",
+        "$ip": "0.0.0.0",  # nosec B104 - tells PostHog to store no IP; not a socket bind
         "$process_person_profile": False,
         "schema_version": "2",
         "measurement_scope": "production",
@@ -154,12 +154,12 @@ def capture_payload(event: ProductTelemetryEvent) -> dict[str, Any] | None:
             properties["$session_id"] = str(session)
     except (ValueError, TypeError, AttributeError):
         pass
-    for name, value, maximum in (
+    for name, number, maximum in (
         ("event_sequence", event.posthog_sequence, 1000000),
         ("session_elapsed_ms", event.posthog_elapsed_ms, 86400000),
     ):
-        if type(value) is int and 0 <= value <= maximum:
-            properties[name] = value
+        if type(number) is int and 0 <= number <= maximum:
+            properties[name] = number
     qa = valid_qa_run_id(event.posthog_qa_run_id or "")
     if qa:
         properties.update(
@@ -170,10 +170,13 @@ def capture_payload(event: ProductTelemetryEvent) -> dict[str, Any] | None:
             is_test=True,
             build_release_channel=event.release_channel,
         )
-    for name, value in (("attempt_id", event.attempt_id), ("retry_of", event.retry_of)):
+    for name, identifier in (
+        ("attempt_id", event.attempt_id),
+        ("retry_of", event.retry_of),
+    ):
         try:
-            if value and uuid.UUID(value).version == 5:
-                properties[name] = value
+            if identifier and uuid.UUID(identifier).version == 5:
+                properties[name] = identifier
         except (ValueError, AttributeError, TypeError):
             pass
     if event.feature is not None:
@@ -190,9 +193,9 @@ def capture_payload(event: ProductTelemetryEvent) -> dict[str, Any] | None:
     if event.failure_reason in FAILURE_REASONS:
         properties["failure_reason"] = event.failure_reason
     for name in DIMENSION_CHOICES:
-        value = event.dimensions.get(name)
-        if isinstance(value, str) and value in DIMENSION_CHOICES[name]:
-            properties[name] = value
+        choice = event.dimensions.get(name)
+        if isinstance(choice, str) and choice in DIMENSION_CHOICES[name]:
+            properties[name] = choice
     for name in (
         "item_count",
         "committed_count",
@@ -208,11 +211,11 @@ def capture_payload(event: ProductTelemetryEvent) -> dict[str, Any] | None:
         "missing_count",
         "unavailable_count",
     ):
-        value = event.dimensions.get(name, "")
-        if isinstance(value, str) and re.fullmatch(r"0|[1-9][0-9]{0,5}", value):
+        count = event.dimensions.get(name, "")
+        if isinstance(count, str) and re.fullmatch(r"0|[1-9][0-9]{0,5}", count):
             low, high = DIMENSION_RANGES[name]
-            if low <= int(value) <= high:
-                properties[name] = int(value)
+            if low <= int(count) <= high:
+                properties[name] = int(count)
     revision = event.dimensions.get("build_revision", "")
     if isinstance(revision, str) and re.fullmatch(r"[0-9a-f]{40}", revision):
         properties["build_revision"] = revision

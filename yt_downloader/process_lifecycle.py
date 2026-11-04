@@ -269,7 +269,13 @@ def terminate_recorded_children(
         if command is None:
             continue
         birth = child.get("birth_time")
-        if type(birth) not in {int, float} or not math.isfinite(birth) or birth <= 0:
+        # Exactly int or float (not bool), finite and positive.
+        if (
+            not isinstance(birth, (int, float))
+            or isinstance(birth, bool)
+            or not math.isfinite(birth)
+            or birth <= 0
+        ):
             raise ProcessOwnershipError(
                 "The live legacy child has no verified creation identity; preserved without signalling."
             )

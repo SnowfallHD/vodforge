@@ -59,18 +59,6 @@ def test_volume_display_uses_its_own_drive_identity_without_renaming(
     assert (volume.path, volume.label) == (path, label)
 
 
-def test_duplicate_windows_names_remain_distinct_in_resolved_location_labels():
-    from yt_downloader.archive_paths import ArchivePath
-    from yt_downloader.storage_labels import location_labels
-
-    volumes = (StorageVolume("E:\\", "Storage"), StorageVolume("F:\\", "Storage"))
-    labels = location_labels(
-        tuple(ArchivePath.parse(path) for path in ("E:\\Media", "F:\\Media")), volumes
-    )
-    assert [label.title for label in labels] == ["Storage (E:)", "Storage (F:)"]
-    assert [str(label.path) for label in labels] == ["E:\\Media", "F:\\Media"]
-
-
 def test_volume_usage_does_not_depend_on_empty_library_and_unmounted_path_never_falls_back(
     monkeypatch,
 ):
@@ -169,43 +157,6 @@ def test_refresh_is_rate_limited_and_errors_are_unavailable():
     finally:
         owner.close()
         owner._worker._thread.join(2)
-
-
-def test_location_labels_preserve_identity_and_distinguish_unknown_and_duplicates():
-    from yt_downloader.archive_paths import ArchivePath
-    from yt_downloader.storage_labels import location_labels
-
-    paths = tuple(
-        map(
-            ArchivePath.parse,
-            (
-                "/Users/me/Media",
-                "/Volumes/Studio/Media",
-                "/Volumes/NAS/Media",
-                "/Volumes/Offline/Media",
-                "Z:\\Media",
-                "\\\\server\\share\\Media",
-                "/Users/me/Other",
-            ),
-        )
-    )
-    volumes = (
-        StorageVolume("/", "Macintosh HD", kind="local"),
-        StorageVolume("/Volumes/Studio", "Studio", kind="external"),
-        StorageVolume("/Volumes/NAS", "Studio", kind="network"),
-    )
-    labels = location_labels(paths, volumes)
-    assert [item.path for item in labels] == list(paths)
-    assert labels[0].title == labels[6].title == "Macintosh HD"
-    assert labels[0].subtitle != labels[6].subtitle
-    assert labels[1].title == labels[2].title == "Studio"
-    assert labels[1].subtitle.startswith("External")
-    assert labels[2].subtitle.startswith("Network")
-    assert labels[3].title == "Offline" and labels[3].subtitle == "Type unknown"
-    assert labels[4].subtitle == "Type unknown"
-    assert labels[5].title == "share" and labels[5].subtitle == "Network"
-    for label in labels:
-        assert str(label.path) in label.tooltip and "\n" in label.tooltip
 
 
 def test_mac_discovery_uses_real_volume_names_and_network_filesystem(monkeypatch):

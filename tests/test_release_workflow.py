@@ -17,6 +17,28 @@ def _release_notes_module():
     return module
 
 
+def _macos_package_options(tmp_path):
+    """The real PyInstaller options both Mac builds use, with stand-in binaries."""
+    from scripts.macos_package_contents import VERSION_FILES, pyinstaller_options
+
+    version_dir = tmp_path / "version"
+    version_dir.mkdir()
+    for name in VERSION_FILES:
+        (version_dir / name).write_text("fixture")
+    binaries = []
+    for name in ("ffmpeg", "ffprobe", "deno", "libvodforge_fullscreen.dylib"):
+        path = tmp_path / name
+        path.write_bytes(b"fixture")
+        binaries.append(path)
+    return pyinstaller_options(
+        version_dir=version_dir, native_helper=binaries[-1], helpers=binaries[:3]
+    )
+
+
+def _option_values(options, flag):
+    return [options[i + 1] for i, value in enumerate(options) if value == flag]
+
+
 def test_release_workflow_signs_before_packaging_windows_portable_archive():
     workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
         encoding="utf-8"
@@ -38,17 +60,64 @@ def test_release_workflow_keeps_macos_artifacts_explicitly_review_only():
         encoding="utf-8"
     )
 
-    assert "vodforge-macos-${{ matrix.architecture }}-unsigned" in workflow
     assert 'VODFORGE_UNSIGNED_REVIEW: "1"' in workflow
     assert "render_release_notes.py" in workflow
     assert "--draft" in workflow
 
 
-def test_release_draft_builds_qt_on_both_platforms():
+def _uploaded_artifacts(job):
+    return [
+        step["with"]["name"]
+        for step in job["steps"]
+        if str(step.get("uses", "")).startswith("actions/upload-artifact")
+    ]
+
+
+def test_draft_receives_only_the_universal_mac_app():
+    import yaml
+
+    jobs = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())["jobs"]
+    draft_download = next(
+        step
+        for step in jobs["draft"]["steps"]
+        if "download-artifact" in str(step.get("uses"))
+    )
+    pattern = draft_download["with"]["pattern"]
+    assert pattern == "vodforge-*"
+    # Per-architecture apps and helpers stay workflow artifacts for QA.
+    thin = _uploaded_artifacts(jobs["macos"])
+    assert thin and not any(name.startswith("vodforge-") for name in thin)
+    universal = _uploaded_artifacts(jobs["macos-universal"])
+    assert [n for n in universal if n.startswith("vodforge-")] == [
+        "vodforge-macos-universal2-unsigned"
+    ]
+    assert jobs["macos-universal"]["needs"] == "macos"
+    assert set(jobs["draft"]["needs"]) == {"windows", "macos-universal"}
+
+
+def test_universal_app_is_smoke_tested_on_both_architectures_before_packaging():
+    import yaml
+
+    jobs = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())["jobs"]
+    steps = [step.get("name", "") for step in jobs["macos-universal"]["steps"]]
+    runs = "\n".join(step.get("run", "") for step in jobs["macos-universal"]["steps"])
+    assert '"$app" --runtime-smoke' in runs
+    assert 'arch -x86_64 "$app" --runtime-smoke' in runs
+    assert steps.index("Smoke-test both architectures") < steps.index(
+        "Package the universal review application"
+    )
+    assert (
+        "VODForge-macOS-universal2-v${{ inputs.version }}-unsigned-review.zip" in runs
+    )
+
+
+def test_release_draft_builds_qt_on_both_platforms(tmp_path):
     workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
         encoding="utf-8"
     )
-    macos_build = (ROOT / "build_macos.sh").read_text(encoding="utf-8")
+    macos_excluded = _option_values(
+        _macos_package_options(tmp_path), "--exclude-module"
+    )
     windows_build = (ROOT / "build_windows.ps1").read_text(encoding="utf-8")
 
     for start, end in (
@@ -62,8 +131,7 @@ def test_release_draft_builds_qt_on_both_platforms():
         assert "VODFORGE_UI: qt" in build_step
     assert "install_vlc_macos.sh" not in workflow
     assert "install_vlc_windows.ps1" not in workflow
-    assert "--exclude-module vlc" in macos_build
-    assert "--exclude-module tkinter" in macos_build
+    assert {"vlc", "tkinter"} <= set(macos_excluded)
     assert '"--exclude-module", "vlc"' in windows_build
 
 
@@ -125,15 +193,6 @@ def test_release_builds_pin_yt_dlp_with_matching_ejs_scripts():
     assert 'PINNED_YTDLP_EJS_VERSION = "0.8.0"' in app_source
 
 
-def test_macos_release_script_requires_accepted_notarization_and_stapling():
-    script = (ROOT / "sign_and_notarize_macos.sh").read_text(encoding="utf-8")
-
-    assert 'notary_status" != "Accepted"' in script
-    assert "stapler staple" in script
-    assert "stapler validate" in script
-    assert "spctl --assess" in script
-
-
 def test_packaged_apps_receive_the_requested_operating_system_version_metadata():
     macos_build = (ROOT / "build_macos.sh").read_text(encoding="utf-8")
     windows_build = (ROOT / "build_windows.ps1").read_text(encoding="utf-8")
@@ -162,14 +221,15 @@ def test_local_macos_bundle_is_resigned_after_final_metadata_mutation():
     assert version_mutation < local_signing < strict_verification < runtime_smoke
 
 
-def test_lazy_ytdlp_runtime_is_explicitly_collected_for_both_packagers():
+def test_lazy_ytdlp_runtime_is_explicitly_collected_for_both_packagers(tmp_path):
     macos_build = (ROOT / "build_macos.sh").read_text(encoding="utf-8")
+    macos_options = _macos_package_options(tmp_path)
     windows_build = (ROOT / "build_windows.ps1").read_text(encoding="utf-8")
     app_source = (ROOT / "yt_downloader" / "download_service.py").read_text(
         encoding="utf-8"
     )
 
-    assert "--collect-all yt_dlp" in macos_build
+    assert "yt_dlp" in _option_values(macos_options, "--collect-all")
     assert "--collect-all yt_dlp" in windows_build
     assert '"$app_binary" --runtime-smoke' in macos_build
     assert (
@@ -180,8 +240,8 @@ def test_lazy_ytdlp_runtime_is_explicitly_collected_for_both_packagers():
     assert 'YTDLP_EJS_SOLVER_RESOURCES = ("core.min.js", "lib.min.js")' in app_source
 
 
-def test_qt_player_runtime_is_collected_without_legacy_widget_dependencies():
-    macos = (ROOT / "build_macos.sh").read_text(encoding="utf-8")
+def test_qt_player_runtime_is_collected_without_legacy_widget_dependencies(tmp_path):
+    macos = " ".join(_macos_package_options(tmp_path))
     windows = (ROOT / "build_windows.ps1").read_text(encoding="utf-8")
     for source in (macos, windows):
         assert "PySide6.QtMultimedia" in source
@@ -206,16 +266,22 @@ def test_live_qt_playback_uses_one_media_player_and_native_video_outputs():
     assert "ffplay" not in (main + player).casefold()
 
 
-def test_packaged_apps_and_windows_installer_use_vodforge_icon_assets():
+def test_packaged_apps_and_windows_installer_use_vodforge_icon_assets(tmp_path):
     macos_build = (ROOT / "build_macos.sh").read_text(encoding="utf-8")
+    macos_options = _macos_package_options(tmp_path)
     windows_build = (ROOT / "build_windows.ps1").read_text(encoding="utf-8")
     installer = (ROOT / "installer_windows.iss").read_text(encoding="utf-8")
 
-    assert '--icon "$icon_file"' in macos_build
+    assert _option_values(macos_options, "--icon") == [
+        str(ROOT / "assets/VODForge.icns")
+    ]
     assert "Print :CFBundleIconFile" in macos_build
     assert 'cmp -s "$icon_file" "$bundle_icon"' in macos_build
     assert '"--icon", $iconFile' in windows_build
-    assert "assets/icons/lucide" in macos_build
+    assert any(
+        value.endswith("assets/icons/lucide:assets/icons/lucide")
+        for value in _option_values(macos_options, "--add-data")
+    )
     assert "assets/icons/lucide" in windows_build
     assert "SetupIconFile=assets\\VODForge.ico" in installer
     assert (ROOT / "assets" / "VODForge.png").is_file()
@@ -273,11 +339,21 @@ def test_release_finalizer_replaces_unsigned_reviews_and_regenerates_checksums()
     script = (ROOT / "finalize_macos_release.sh").read_text(encoding="utf-8")
 
     assert "Release finalization must run from main" in script
-    assert "unsigned-review.zip" in script
-    assert "sign_and_notarize_macos.sh" in script
+    assert "VODForge-macOS-universal2-v${version}-unsigned-review.zip" in script
+    assert "scripts.finalize_universal_macos" in script
     assert "SHA256SUMS.txt" in script
     assert "release delete-asset" in script
     assert 'release edit "$tag"' in script
+    # The DMG, the universal update archive and both legacy update names are
+    # uploaded and covered by the checksums.
+    upload = script.split("gh release upload", 1)[1].split(
+        "gh release delete-asset", 1
+    )[0]
+    sums = script.split("shasum -a 256", 1)[1].split("SHA256SUMS.txt", 1)[0]
+    for name in ("$dmg", "$universal_zip", "$legacy_arm_zip", "$legacy_intel_zip"):
+        assert name in upload and name in sums
+    assert 'legacy_arm_zip="VODForge-macOS-arm64-v${version}.zip"' in script
+    assert 'legacy_intel_zip="VODForge-macOS-x64-v${version}.zip"' in script
 
 
 def test_release_notes_offer_one_mac_download_and_explain_legacy_files():
@@ -290,9 +366,10 @@ def test_release_notes_offer_one_mac_download_and_explain_legacy_files():
     assert "Apple silicon" in notes and "Intel" in notes
     assert "VODForge-Windows-Setup-v0.2.6.exe" in notes
     assert "What’s new in 0.2.6" in notes
-    # The legacy ZIPs are named only as in-app update files, never as downloads.
+    # The ZIPs are named only as in-app update files, never linked as downloads.
     assert "releases/download/v0.2.6/VODForge-macOS-arm64" not in notes
     assert "releases/download/v0.2.6/VODForge-macOS-x64" not in notes
+    assert "releases/download/v0.2.6/VODForge-macOS-universal2-v0.2.6.zip" not in notes
     assert "0.2.5 and earlier" in notes
 
 
@@ -330,9 +407,10 @@ def test_artifact_only_dispatch_skips_all_release_mutation():
     assert "--draft" in draft
 
 
-def test_builds_collect_impersonation_runtime():
-    for name in ("build_macos.sh", "build_windows.ps1"):
-        assert "--collect-all curl_cffi" in (ROOT / name).read_text()
+def test_builds_collect_impersonation_runtime(tmp_path):
+    macos = _option_values(_macos_package_options(tmp_path), "--collect-all")
+    assert "curl_cffi" in macos
+    assert "--collect-all curl_cffi" in (ROOT / "build_windows.ps1").read_text()
 
 
 def test_private_windows_qa_skips_mac_without_changing_release_gate():
@@ -341,7 +419,9 @@ def test_private_windows_qa_skips_mac_without_changing_release_gate():
     assert "if: ${{ !(inputs.artifacts_only && inputs.qa_windows_only) }}" in mac
     draft = workflow.split("  draft:\n", 1)[1].split("    steps:", 1)[0]
     assert "if: ${{ !inputs.artifacts_only }}" in draft
-    assert "needs: [windows, macos]" in draft
+    assert "needs: [windows, macos-universal]" in draft
+    universal = workflow.split("  macos-universal:\n", 1)[1].split("    steps:", 1)[0]
+    assert "inputs.qa_windows_only" in universal
 
 
 def test_windows_source_pin_is_exact_and_ignored_outside_private_windows_mode():

@@ -318,55 +318,6 @@ def primary_action_color() -> str:
     return _blend_color(THEME["surface"], THEME["surface_2"], 0.15)
 
 
-def control_material_roles() -> dict[str, tuple[str, str]]:
-    """Return the shared control face and contour colors for interaction states.
-
-    Hover keeps the idle colors and uses an inset contour in the image owner.
-    Focus remains a separate, high-contrast accessibility state.
-    """
-    return {
-        "button": (
-            THEME["surface"],
-            _blend_color(THEME["surface"], THEME["border"], 0.58),
-        ),
-        "hover": (
-            THEME["surface"],
-            _blend_color(THEME["surface"], THEME["border"], 0.58),
-        ),
-        "pressed": (THEME["surface"], THEME["accent_dark"]),
-        "focus": (THEME["surface"], THEME["focus"]),
-        "disabled": (
-            THEME["panel"],
-            _blend_color(THEME["panel"], THEME["border"], 0.35),
-        ),
-        "accent": (primary_action_color(), THEME["accent"]),
-        "accent_hover": (primary_action_color(), THEME["accent"]),
-        "accent_focus": (primary_action_color(), THEME["focus"]),
-        "nav_idle": (THEME["bg"], THEME["bg"]),
-        "nav_hover": (THEME["bg"], THEME["bg"]),
-        "nav_focus": (THEME["bg"], THEME["accent"]),
-        "nav_pressed": (THEME["surface"], THEME["accent_dark"]),
-        # Selection retains the impressed material and semantic icon/text roles.
-        # Keyboard focus deepens the selected well without another perimeter.
-        "nav_selected_focus": (THEME["bg"], THEME["focus"]),
-        "nav_selected": (THEME["bg"], THEME["bg"]),
-        "field": (THEME["surface"], THEME["border"]),
-        "field_focus": (THEME["surface"], THEME["focus"]),
-        "transport": (
-            THEME["accent_dark"],
-            _blend_color(THEME["accent"], "#ffffff", 0.14),
-        ),
-        "transport_hover": (
-            THEME["accent_dark"],
-            _blend_color(THEME["accent"], "#ffffff", 0.14),
-        ),
-        "transport_pressed": (THEME["accent_dark"], THEME["border"]),
-        "transport_focus": (primary_action_color(), THEME["focus"]),
-        "transport_disabled": (THEME["panel"], THEME["border"]),
-        "panel": (THEME["panel"], _blend_color(THEME["panel"], THEME["border"], 0.42)),
-    }
-
-
 def _theme_button_lighting() -> tuple[str, str]:
     """Keep both sides of the original bevel in the accent's hue family."""
     red, green, blue = ImageColor.getrgb(THEME["accent"])
@@ -432,45 +383,6 @@ def action_button_image(
         lighting_colors=lighting,
         lip_color=THEME["accent"] if outlined else "",
     )
-
-
-def navigation_button_image(
-    width: int,
-    height: int,
-    *,
-    background: str,
-    selected: bool = False,
-    state: str = "normal",
-    density: int = 1,
-    transparent: bool = True,
-    unit_scale: int = 1,
-) -> Image.Image:
-    """Interactive navigation rests raised and uses the same face when impressed."""
-    image = control_surface_image(
-        width,
-        height=height,
-        fill=background,
-        edge=THEME["focus"] if state == "focus" else "",
-        recessed=selected or state in {"hover", "pressed", "focus"},
-        depth=0.9
-        if state == "focus"
-        else 1.0
-        if state == "pressed"
-        else 0.8
-        if selected
-        else 0.62
-        if state == "hover"
-        else 1.0,
-        density=density,
-        stretch=True,
-        inset_face=True,
-        unit_scale=unit_scale,
-    )
-    if not transparent:
-        base = Image.new("RGBA", image.size, background)
-        base.alpha_composite(image)
-        return base
-    return image
 
 
 def watch_welcome_emblem() -> Image.Image:

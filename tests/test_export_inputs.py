@@ -13,7 +13,7 @@ from yt_downloader.export_inputs import (
 )
 from yt_downloader.models import CookieSource, ExportMode, OutputType
 from yt_downloader.qt_quick.runtime import DownloadRuntime
-from yt_downloader.url_list_inputs import parse_url_list_text, read_url_list_file
+from yt_downloader.url_list_inputs import parse_url_list_text
 
 
 class _Value:
@@ -116,7 +116,7 @@ def test_url_list_parser_and_qt_batch_job_use_the_same_source_order(
     path.write_text(lines, encoding="utf-8")
     urls = parse_url_list_text(lines)
     assert (
-        read_url_list_file(path)
+        parse_url_list_text(path.read_text(encoding="utf-8"))
         == urls
         == [
             "https://example.com/one",

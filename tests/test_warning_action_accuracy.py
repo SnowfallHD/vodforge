@@ -78,7 +78,9 @@ def test_reserved_destination_has_ownership_specific_guidance(tmp_path):
 
 
 @pytest.mark.parametrize("code", [errno.ENOSPC, errno.EACCES])
-def test_update_known_storage_failure_preserves_prerequisite(tmp_path, monkeypatch, code):
+def test_update_known_storage_failure_preserves_prerequisite(
+    tmp_path, monkeypatch, code
+):
     from yt_downloader.qt_quick import update_session as module
     from yt_downloader.updates import ReleaseInfo
 
@@ -107,9 +109,7 @@ def test_update_known_storage_failure_preserves_prerequisite(tmp_path, monkeypat
 
 
 @pytest.mark.parametrize("failure", ["missing_file", "missing_probe"])
-def test_import_retains_per_file_actionable_reason(
-    tmp_path, monkeypatch, failure
-):
+def test_import_retains_per_file_actionable_reason(tmp_path, monkeypatch, failure):
     import threading
 
     from PySide6.QtCore import QUrl

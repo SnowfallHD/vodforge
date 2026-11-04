@@ -28,14 +28,6 @@ def needs_packet_average(data: dict[str, Any]) -> bool:
         return True
 
 
-def packet_average_bps(data: dict[str, Any]) -> float | None:
-    """Require complete packet size/duration evidence, excluding container bytes."""
-    packets = data.get("packets")
-    if not isinstance(packets, list) or not packets:
-        return None
-    return _average(packets)
-
-
 def _average(packets: Iterable[dict[str, Any]]) -> float | None:
     size = 0
     duration = 0.0

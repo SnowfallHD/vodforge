@@ -906,13 +906,6 @@ int vf_toolbar_set_interactive(void *handle, int interactive) {
     return 1;
 }
 
-int vf_toolbar_focus_search(void *handle) {
-    VFTB_GUARD(handle);
-    VFTBHeader *header = handle;
-    if (!header->_searchVisible) return 0;
-    return [header->_window makeFirstResponder:header->_searchField] ? 1 : 0;
-}
-
 int vf_toolbar_search_focused(void *handle) {
     VFTB_GUARD(handle);
     return ((VFTBHeader *)handle)->_searchField.currentEditor != nil;

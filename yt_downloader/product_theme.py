@@ -155,27 +155,6 @@ def normalize_hex_color(value: object, fallback: str = "#796aff") -> str:
     return text.lower()
 
 
-def _darken(color: str, factor: float = 0.78) -> str:
-    channels = [int(color[index : index + 2], 16) for index in (1, 3, 5)]
-    return "#" + "".join(f"{round(channel * factor):02x}" for channel in channels)
-
-
-def _mix_hex(background: str, foreground: str, amount: float) -> str:
-    """Blend one opaque UI color without introducing platform alpha behavior."""
-
-    ratio = max(0.0, min(1.0, float(amount)))
-    background_channels = [
-        int(background[index : index + 2], 16) for index in (1, 3, 5)
-    ]
-    foreground_channels = [
-        int(foreground[index : index + 2], 16) for index in (1, 3, 5)
-    ]
-    return "#" + "".join(
-        f"{round(base + ((top - base) * ratio)):02x}"
-        for base, top in zip(background_channels, foreground_channels, strict=True)
-    )
-
-
 def apply_theme_selection(
     name: object, custom_accent: object = "#796aff"
 ) -> ThemeSelection:

@@ -90,7 +90,6 @@ minimum_macos="$("$python_bin" -c 'import os,sys; from scripts.build_macos_fulls
     --ignore=tests/test_qt_artwork_continuity.py \
     --ignore=tests/test_qt_card_material_bounds.py \
     --ignore=tests/test_qt_click_reliability.py \
-    --ignore=tests/test_qt_input_trace.py \
     --ignore=tests/test_qt_library_section_selection.py \
     --ignore=tests/test_qt_popup_toggle_order.py \
     --ignore=tests/test_qt_watch_close_hero_refresh.py \
@@ -202,7 +201,6 @@ minimum_macos="$("$python_bin" -c 'import os,sys; from scripts.build_macos_fulls
     tests/test_qt_artwork_continuity.py \
     tests/test_qt_card_material_bounds.py \
     tests/test_qt_click_reliability.py \
-    tests/test_qt_input_trace.py \
     tests/test_qt_library_section_selection.py \
     tests/test_qt_popup_toggle_order.py \
     tests/test_qt_watch_close_hero_refresh.py \
@@ -277,10 +275,6 @@ if [[ "$ui_mode" != "qt" ]]; then
   exit 1
 fi
 entrypoint="main.py"
-qt_args=(--hidden-import PySide6.QtMultimedia --hidden-import PySide6.QtQuickControls2)
-for qml_file in yt_downloader/qt_quick/*.qml; do
-  qt_args+=(--add-data "$qml_file:yt_downloader/qt_quick")
-done
 
 build_version="${VODFORGE_BUILD_VERSION:-0.1.0-dev}"
 if [[ ! "$build_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
@@ -317,7 +311,6 @@ if [[ -z "$ffmpeg" || -z "$ffprobe" || -z "$deno" ]]; then
   echo "Run ./install_macos_dependencies.sh first."
   exit 1
 fi
-vlc_args=(--exclude-module vlc --exclude-module tkinter --exclude-module PIL.ImageTk)
 
 # Build this candidate's native phase owner explicitly; app startup never
 # compiles or searches for an external helper. Keep failures/receipts for review.
@@ -327,51 +320,29 @@ native_build_root="$(mktemp -d build/macos-fullscreen-XXXXXX)"
   --output "$native_build_root/helper" --arch "$native_arch"
 native_helper="$native_build_root/helper/libvodforge_fullscreen.dylib"
 
+# The bundle's contents are listed once, in scripts/macos_package_contents.py,
+# which the universal build uses too.
+package_args=()
+while IFS= read -r -d '' option; do
+  package_args+=("$option")
+done < <("$python_bin" -m scripts.macos_package_contents \
+  --version-dir "$build_version_dir" \
+  --native-helper "$native_helper" \
+  --ffmpeg "$ffmpeg" --ffprobe "$ffprobe" --deno "$deno")
+if [[ "${#package_args[@]}" -eq 0 ]]; then
+  echo "The macOS package contents could not be listed."
+  exit 1
+fi
+
 # --clean only clears the selected cache; candidate-specific caches otherwise
 # accumulate. This wrapper owns and retires only this invocation's binary cache,
 # including command failure. PyInstaller work diagnostics and dist stay intact.
 "$python_bin" scripts/run_with_ephemeral_pyinstaller_cache.py "$python_bin" -m PyInstaller \
   --noconfirm \
   --clean \
-  --windowed \
-  --onedir \
-  --name "VODForge" \
   --target-arch "$native_arch" \
   --distpath "$dist_dir" \
-  --collect-all yt_dlp \
-  --collect-all curl_cffi \
-  --collect-data certifi \
-  --osx-bundle-identifier "com.snowfallhd.vodforge" \
-  --icon "$icon_file" \
-  --add-data "$build_version_file:." \
-  --add-data "$build_version_dir/VODFORGE_BUILD_REVISION:." \
-  --add-data "$build_version_dir/VODFORGE_TELEMETRY_POLICY:." \
-  --add-data "$icon_png:assets" \
-  --add-data "assets/posthog-public-config.json:assets" \
-  --add-data "assets/brand:assets/brand" \
-  --add-data "assets/materials:assets/materials" \
-  --add-data "$icon_asset_dir:assets/icons/lucide" \
-  --add-data "assets/watch-welcome-scenic.png:assets" \
-  --add-data "assets/preview_thumbnails/alpine-lake.jpg:assets/preview_thumbnails" \
-  --add-data "assets/whats-new/forge-feedback.mp4:assets/whats-new" \
-  --add-data "assets/whats-new/forge-feedback.jpg:assets/whats-new" \
-  --add-data "assets/whats-new/watch-player.mp4:assets/whats-new" \
-  --add-data "assets/whats-new/watch-player.jpg:assets/whats-new" \
-  --add-data "assets/whats-new/library-actions.mp4:assets/whats-new" \
-  --add-data "assets/whats-new/library-actions.jpg:assets/whats-new" \
-  --add-data "assets/whats-new/captions-player.mp4:assets/whats-new" \
-  --add-data "assets/whats-new/captions-player.jpg:assets/whats-new" \
-  --add-data "assets/whats-new/manifest.json:assets/whats-new" \
-  --add-data "assets/onboarding/library.png:assets/onboarding" \
-  --add-data "assets/onboarding/watch.png:assets/onboarding" \
-  --add-data "assets/onboarding/forge.png:assets/onboarding" \
-  --add-data "THIRD_PARTY_NOTICES.md:." \
-  --add-binary "$ffmpeg:." \
-  --add-binary "$ffprobe:." \
-  --add-binary "$deno:." \
-  --add-binary "$native_helper:yt_downloader/platforms/macos" \
-  "${vlc_args[@]}" \
-  "${qt_args[@]}" \
+  "${package_args[@]}" \
   "$entrypoint"
 
 app_binary="$app_bundle/Contents/MacOS/VODForge"

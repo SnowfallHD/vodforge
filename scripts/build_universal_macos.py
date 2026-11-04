@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import plistlib
 import re
 import subprocess
 from pathlib import Path
 
-from scripts.build_macos_fullscreen import PACKAGE_DESTINATION
 from scripts.build_macos_fullscreen import build as build_fullscreen
 from scripts.macos_native_closure import ARCHES, MACHO, audit_payload
+from scripts.macos_package_contents import pyinstaller_options
 
 
 def inspect_inputs(roots, run=subprocess.check_output):
@@ -101,6 +102,12 @@ def package(source: Path, python: Path, tools: Path, output: Path, version: str)
         raise ValueError("Refusing existing package output")
     if not re.fullmatch(r"\d+\.\d+\.\d+", version):
         raise ValueError("Expected stable semantic version")
+    # Same rule as build_macos.sh: telemetry is off unless the build asks for it.
+    telemetry = os.environ.get("VODFORGE_BUILD_TELEMETRY", "disabled")
+    if telemetry not in {"disabled", "production", "preview"}:
+        raise ValueError(
+            "VODFORGE_BUILD_TELEMETRY must be disabled, production, or preview"
+        )
     if subprocess.check_output(
         ["git", "status", "--porcelain"], cwd=source, text=True
     ).strip():
@@ -129,7 +136,7 @@ def package(source: Path, python: Path, tools: Path, output: Path, version: str)
         raise ValueError(
             "Universal input qualification failed: " + json.dumps(preflight["errors"])
         )
-    for tool in ["ffmpeg", "ffprobe", "deno", "libsqlite3.dylib"]:
+    for tool in ["ffmpeg", "ffprobe", "deno"]:
         if not (tools / tool).is_file():
             raise ValueError("Missing required tool: " + tool)
     output.mkdir(parents=True)
@@ -149,18 +156,21 @@ def package(source: Path, python: Path, tools: Path, output: Path, version: str)
     for name, value in {
         "VODFORGE_VERSION": version,
         "VODFORGE_BUILD_REVISION": revision,
-        "VODFORGE_TELEMETRY_POLICY": "production",
+        "VODFORGE_TELEMETRY_POLICY": telemetry,
     }.items():
         (metadata / name).write_text(value)
+    helpers = [tools / n for n in ("ffmpeg", "ffprobe", "deno")]
+    helpers += sorted(tools.glob("*.dylib"))
+    # Same cache wrapper as build_macos.sh: a private PyInstaller cache that is
+    # removed afterwards, so earlier thin builds can't leak into this one.
     command = [
+        str(python),
+        str(source / "scripts/run_with_ephemeral_pyinstaller_cache.py"),
         str(python),
         "-m",
         "PyInstaller",
+        "--noconfirm",
         "--clean",
-        "--windowed",
-        "--onedir",
-        "--name",
-        "VODForge",
         "--target-arch",
         "universal2",
         "--distpath",
@@ -169,42 +179,13 @@ def package(source: Path, python: Path, tools: Path, output: Path, version: str)
         str(output / "work"),
         "--specpath",
         str(output),
-        "--osx-bundle-identifier",
-        "com.snowfallhd.vodforge",
-        "--icon",
-        str(source / "assets/VODForge.icns"),
-        "--collect-all",
-        "yt_dlp",
-        "--collect-all",
-        "curl_cffi",
-        "--collect-data",
-        "certifi",
-        "--hidden-import",
-        "PySide6.QtMultimedia",
-        "--hidden-import",
-        "PySide6.QtQuickControls2",
-        "--exclude-module",
-        "tkinter",
-        "--exclude-module",
-        "PIL.ImageTk",
-        "--exclude-module",
-        "vlc",
+        *pyinstaller_options(
+            version_dir=metadata,
+            native_helper=Path(native_helper["library"]),
+            helpers=helpers,
+            root=source,
+        ),
     ]
-    for path in metadata.iterdir():
-        command += ["--add-data", str(path) + ":."]
-    command += ["--add-binary", native_helper["library"] + ":" + PACKAGE_DESTINATION]
-    command += [
-        "--add-data",
-        str(source / "assets") + ":assets",
-        "--add-data",
-        str(source / "THIRD_PARTY_NOTICES.md") + ":.",
-    ]
-    for qml in sorted((source / "yt_downloader/qt_quick").glob("*.qml")):
-        command += ["--add-data", str(qml) + ":yt_downloader/qt_quick"]
-    for tool in [tools / n for n in ["ffmpeg", "ffprobe", "deno"]] + sorted(
-        tools.glob("*.dylib")
-    ):
-        command += ["--add-binary", str(tool) + ":."]
     command.append(str(source / "main.py"))
     subprocess.run(command, cwd=source, check=True)
     plist = output / "dist/VODForge.app/Contents/Info.plist"
@@ -216,6 +197,16 @@ def package(source: Path, python: Path, tools: Path, output: Path, version: str)
         LSMinimumSystemVersionByArchitecture={"arm64": "26.0", "x86_64": "15.0"},
     )
     plist.write_bytes(plistlib.dumps(info))
+    # Editing Info.plist invalidates PyInstaller's ad-hoc signature. Re-sign so
+    # the unsigned review app is structurally valid for the runtime smoke test;
+    # release signing replaces this with Developer ID.
+    app = output / "dist/VODForge.app"
+    subprocess.run(
+        ["/usr/bin/codesign", "--force", "--deep", "--sign", "-", str(app)], check=True
+    )
+    subprocess.run(
+        ["/usr/bin/codesign", "--verify", "--deep", "--strict", str(app)], check=True
+    )
     closure = audit_payload(output / "dist/VODForge.app")
     (output / "dependency-closure.json").write_text(
         json.dumps(closure, indent=2) + "\n"

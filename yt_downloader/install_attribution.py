@@ -98,27 +98,6 @@ def _validated_claim_url(value: Any, claim_token: str) -> str | None:
     return f"{telemetry_site_origin()}/claim#token={claim_token}"
 
 
-def cancel_claim(claim_token: str) -> None:
-    """Privacy withdrawal uses only the capability, even with analytics disabled."""
-    if not telemetry_collection_allowed() or not CLAIM_TOKEN_PATTERN.fullmatch(
-        claim_token
-    ):
-        return
-    request = urllib.request.Request(
-        f"{ATTRIBUTION_CLAIM_PAGE_ORIGIN}/api/attribution/claim/cancel",
-        data=json.dumps({"claim_token": claim_token}).encode(),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        # Fixed HTTPS origin/path; the validated capability is JSON body data,
-        # never a caller-controlled URL or scheme.
-        with telemetry_urlopen(request, timeout=2) as response:  # nosec B310
-            response.read(1024)
-    except OSError:
-        pass
-
-
 def issue_claim(
     install_id: str,
     claim_token: str,
@@ -258,12 +237,6 @@ class InstallationAttributionOwner:
             return False
         return bool(state.attribution_claim_token) or not state.attribution_claim_opened
 
-    def prepare_browser_link(
-        self, *, cancelled: Callable[[], bool] = lambda: False
-    ) -> ClaimIssueResult | None:
-        """Prepare a capability on a worker; never opens a browser itself."""
-        return self._prepare_browser_link(cancelled=cancelled, usage_required=True)
-
     def prepare_browser_attribution(
         self,
         *,
@@ -330,25 +303,6 @@ class InstallationAttributionOwner:
         if not permitted() or not CLAIM_TOKEN_PATTERN.fullmatch(token):
             return None
         return ClaimIssueResult(f"{telemetry_site_origin()}/claim#token={token}")
-
-    def record_browser_opened(self, claim_url: str, *, epoch: Any) -> bool:
-        """Called only after an explicit UI action's real browser dispatch."""
-        consent = AnalyticsConsentOwner(self._state_path.parent)
-        if (
-            not telemetry_collection_allowed()
-            or not self.consent.attribution_allowed
-            or not consent.allowed
-            or consent.snapshot().get("collection_epoch") != epoch
-        ):
-            return False
-        state = load_or_create_installation_state(self._state_path)
-        token = state.attribution_claim_token
-        if not token or claim_url != f"{telemetry_site_origin()}/claim#token={token}":
-            return False
-        saved = mark_attribution_claim_opened(
-            self._state_path, state.install_id, claim_token=token
-        )
-        return saved.attribution_claim_opened and saved.attribution_claim_token == token
 
     def record_browser_attribution_opened(
         self, claim_url: str, *, cancelled: Callable[[], bool] = lambda: False

@@ -29,9 +29,11 @@ from yt_downloader.product_telemetry import (
     ProductTelemetryOwner,
 )
 from yt_downloader.run_state import RunRecoveryOwner
-from yt_downloader.telemetry_policy import telemetry_collection_allowed
 from yt_downloader.telemetry_credentials import TelemetryCredentialOwner
-from yt_downloader.telemetry_policy import telemetry_site_origin
+from yt_downloader.telemetry_policy import (
+    telemetry_collection_allowed,
+    telemetry_site_origin,
+)
 
 
 class QtAnalyticsSession:

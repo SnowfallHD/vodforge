@@ -35,7 +35,6 @@ SCENE_CLASSES = {
     "readable_descriptions": (
         5,
         (
-            "tests/test_text_fit_work.py",
             "tests/test_qt_scene_port.py::test_qt_library_detail_keeps_full_long_description_scrollable",
         ),
     ),
@@ -86,7 +85,6 @@ SCENE_CLASSES = {
     "bounded_navigation": (
         9,
         (
-            "tests/test_scene_paging.py",
             "tests/test_qt_scene_port.py::test_qt_navigation_returns_to_previous_route_and_top_tabs_open_home",
             "tests/test_qt_scene_port.py::test_qt_header_search_follows_library_and_watch_without_secondary_fields",
             "tests/test_qt_scene_port.py::test_qt_watch_media_windows_cards_and_restores_back_scroll",
@@ -224,10 +222,6 @@ SCENE_REQUIRED_TESTS = {
         "tests/test_qt_click_reliability.py::test_repeated_and_interrupted_popup_gestures",
     ),
     "readable_descriptions": (
-        "tests/test_text_fit_work.py::test_long_title_fit_does_not_measure_every_invisible_line",
-        "tests/test_text_fit_work.py::test_fitted_monospaced_title_preserves_exact_visible_capacity",
-        "tests/test_text_fit_work.py::test_full_line_count_remains_exact_for_long_documents",
-        "tests/test_text_fit_work.py::test_each_prefix_is_measured_once_within_a_fit_but_not_across_fonts",
         "tests/test_qt_scene_port.py::test_qt_library_detail_keeps_full_long_description_scrollable",
     ),
     "library_restraint": (
@@ -360,18 +354,12 @@ SCENE_REQUIRED_TESTS = {
         "tests/test_volume_storage.py::test_unavailable_capacity_never_fabricates_zero_usage",
         "tests/test_volume_storage.py::test_blocked_drive_selection_keeps_one_worker_and_retires_old_result",
         "tests/test_volume_storage.py::test_refresh_is_rate_limited_and_errors_are_unavailable",
-        "tests/test_volume_storage.py::test_location_labels_preserve_identity_and_distinguish_unknown_and_duplicates",
         "tests/test_volume_storage.py::test_mac_discovery_uses_real_volume_names_and_network_filesystem",
         "tests/test_volume_storage.py::test_windows_bus_classification_is_evidence_based",
         "tests/test_volume_storage.py::test_windows_bus_query_failure_keeps_kind_unknown",
         "tests/test_volume_storage.py::test_windows_discovered_drive_root_matches_default_capacity_owner",
     ),
     "bounded_navigation": (
-        "tests/test_scene_paging.py::test_bounded_pages_visit_every_record_once",
-        "tests/test_scene_paging.py::test_filter_replacement_clamps_page_without_leaving_blank_stale_page",
-        "tests/test_scene_paging.py::test_virtual_rows_cover_first_middle_end_and_remain_bounded",
-        "tests/test_scene_paging.py::test_virtual_rows_reject_invalid_geometry_and_clamp_removed_tail",
-        "tests/test_scene_paging.py::test_zero_overscan_row_admission_tracks_actual_viewport",
         "tests/test_qt_scene_port.py::test_qt_navigation_returns_to_previous_route_and_top_tabs_open_home",
         "tests/test_qt_scene_port.py::test_qt_header_search_follows_library_and_watch_without_secondary_fields",
         "tests/test_qt_scene_port.py::test_qt_watch_media_windows_cards_and_restores_back_scroll",

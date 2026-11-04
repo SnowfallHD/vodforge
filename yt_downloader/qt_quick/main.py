@@ -242,6 +242,7 @@ from yt_downloader.qt_quick.scene_projection import (
 )
 from yt_downloader.qt_quick.sidecar_recovery import (
     SidecarReceipt,
+    SidecarTarget,
     optional_outcome,
     optional_target,
     repair_sidecars,
@@ -526,7 +527,7 @@ class Bridge(QObject):
             data_dir=self._runtime.history_path.parent
         )
         self._sidecar_work = ArchiveWorkOwner()
-        self._sidecar_target = None
+        self._sidecar_target: SidecarTarget | None = None
         self._sidecar_feedback = ("", "")
         self._cloud_work = ArchiveWorkOwner()
         self._cloud_seen_attempted = False
@@ -624,7 +625,11 @@ class Bridge(QObject):
         self._issue_settings: dict[str, Any] = {}
         self._library_detail_origin: tuple[str, str, str] | None = None
         self._pending_library_removal: tuple[str, str] | None = None
-        self._annotation_values = {"note": "", "tags": "", "category": ""}
+        self._annotation_values: dict[str, Any] = {
+            "note": "",
+            "tags": "",
+            "category": "",
+        }
         self._local = LocalConversionRuntime()
         self._local.product_telemetry = self._analytics.telemetry
         self._playback_progress = PlaybackProgressOwner(
@@ -992,7 +997,7 @@ class Bridge(QObject):
             message += "\n\nThe run is removed only after all selected entries are cleared. Unverified files and unrelated folders are kept."
         return message
 
-    @Property("QVariantList", notify=fileActionChanged)
+    @Property(_QVARIANT_LIST, notify=fileActionChanged)
     def fileActionPaths(self) -> list[str]:
         if self._files.phase != "preview" or self._files.plan is None:
             return []
@@ -3378,11 +3383,13 @@ class Bridge(QObject):
         for record in records:
             if record["kind"] != "terminal":
                 continue
-            job = next(
+            recovered = next(
                 (j for j in self._runtime.recovered if j.run_id == record["runId"]),
                 None,
             )
-            target = optional_target(job, self._runtime.history) if job else None
+            target = (
+                optional_target(recovered, self._runtime.history) if recovered else None
+            )
             record["retrySidecarsOnly"] = target is not None
             record["retryEnabled"] = (
                 record.get("retryEnabled", True)
@@ -3390,11 +3397,11 @@ class Bridge(QObject):
                 and (
                     not self._update_work_pending()
                     if target is not None
-                    else not (job and optional_outcome(job))
+                    else not (recovered and optional_outcome(recovered))
                 )
             )
-            if target is not None:
-                sidecar_runs.add(job.run_id)
+            if target is not None and recovered is not None:
+                sidecar_runs.add(recovered.run_id)
                 record["kind"] = "completed"
                 record["status"] = "Completed  •  MP4"
                 record["optionalWarning"] = target.warning_label
@@ -6753,13 +6760,14 @@ class Bridge(QObject):
             or window.findChild(QObject, "watchPlayerScene") is not scene
         ):
             return
+        owner: QObject = window  # Not None here; the closure keeps this exact window.
 
         def allowed() -> bool:
             return bool(
                 not self._closed
-                and self._window is window
-                and window.findChild(QObject, "watchPresentationWindow") is presentation
-                and window.findChild(QObject, "watchPlayerScene") is scene
+                and owner is self._window
+                and owner.findChild(QObject, "watchPresentationWindow") is presentation
+                and owner.findChild(QObject, "watchPlayerScene") is scene
                 and scene.property("presentationMode") == "embedded"
             )
 
@@ -7187,6 +7195,7 @@ class Bridge(QObject):
                 and repaired.value.unchanged()
                 and not repaired.error
                 and current
+                and target is not None
             ):
                 try:
                     if not self._runtime.dismiss_terminal(target.job.run_id):
@@ -7239,7 +7248,7 @@ class Bridge(QObject):
                     self._folder_browser.set_folder_entries(current_path, ())
                 self.historyChanged.emit()
         elif availability is not None and availability.kind.startswith("availability_"):
-            current = {
+            fingerprints = {
                 history_archive_owner(row): record_fingerprint(row)
                 for row in self._runtime.history
             }
@@ -7258,7 +7267,7 @@ class Bridge(QObject):
                     if not isinstance(observation, tuple) or len(observation) != 2:
                         continue
                     fingerprint, state = observation
-                    if current.get(owner) != fingerprint:
+                    if fingerprints.get(owner) != fingerprint:
                         continue
                     if state == HISTORY_MEDIA_MISSING:
                         self._missing_files[owner] = fingerprint

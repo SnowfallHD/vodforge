@@ -37,13 +37,9 @@ from yt_downloader.download_service import (
     best_thumbnail_for_download,
     build_auto_export_plan,
     build_description_display_text,
-    build_encoding_summary_display,
     build_encoding_summary_metadata,
-    build_failed_encoding_summary_metadata,
     build_mp3_export_plan,
-    build_tags_display_text,
     build_vod_ffmpeg_command,
-    bundled_asset_path,
     cached_thumbnail_path,
     canonical_youtube_url,
     center_alpha_content,
@@ -57,21 +53,16 @@ from yt_downloader.download_service import (
     create_staging_dir,
     diagnostics_dir,
     download_bounded_url_bytes,
-    download_job_display_title,
     embed_custom_mp3_cover_art,
     existing_cached_thumbnail_path,
     existing_output_candidate_dirs,
     export_mode_display_name,
     find_valid_existing_output,
-    flatten_alpha_image,
-    focus_icon_color_variant,
-    focus_metadata_profile_text,
     format_duration,
     format_ytdlp_user_error,
     iter_video_infos,
-    legacy_cached_thumbnail_path,
+    legacy_cached_thumbnail_paths,
     load_yt_dlp,
-    metadata_indices_for_output_type,
     metadata_output_type,
     output_artifact_matches_plan,
     package_downloaded_media_from_staging,
@@ -81,14 +72,9 @@ from yt_downloader.download_service import (
     playlist_folder_name,
     prepare_batch_item_url,
     prepare_custom_cover_art,
-    preview_output_summary_display,
     process_download_from_preflight,
-    render_monochrome_icon,
     resolved_video_output_target,
     retry_url_for_item,
-    rounded_contain_image,
-    rounded_cover_image,
-    rounded_fit_image,
     run_cancellable_blocking_step,
     run_ffprobe_json,
     runtime_executable_candidates,
@@ -98,14 +84,12 @@ from yt_downloader.download_service import (
     save_thumbnail_image,
     single_video_url_requires_video_id_error,
     staging_output_template,
-    summary_label_color,
     terminate_and_reap_process,
     transcode_temp_paths,
     transcode_to_vod_streaming_settings,
     validate_output_artifact,
     validate_output_directory_access,
     video_file_name,
-    video_list_row_values,
     video_output_dir,
     write_compact_video_metadata,
     youtube_url_playlist_id,
@@ -124,38 +108,9 @@ from yt_downloader.history import (
 )
 from yt_downloader.library_state import is_metadata_preview
 from yt_downloader.models import CookieSource, ManualExportSettings, Mp3ExportSettings
-from yt_downloader.platform_services import (
-    configure_windows_app_identity,
-    runtime_window_icon_asset,
-)
 from yt_downloader.safe_output import (
     UnsafeOutputPathError,
     cleanup_private_staging_directory,
-)
-from yt_downloader.ui_layout import (
-    FOCUS_LIBRARY_SELECTED_DETAILS_HEIGHT,
-    accumulated_row_scroll,
-    bounded_window_size,
-    ellipsize_wrapped_text,
-    focus_hero_thumbnail_visible,
-    focus_layout_mode,
-    focus_library_horizontal_padding,
-    focus_library_layout_mode,
-    focus_library_vertical_layout_mode,
-    focus_run_deck_capacity,
-    focus_wheel_pixels,
-    initial_window_geometry,
-    library_thumbnail_size,
-    measured_wrapped_line_count,
-    pixel_scroll_target,
-    pixel_table_visible_row_window,
-    resized_table_column_width,
-    responsive_table_stretch_indices,
-    selected_description_max_height,
-    selected_overview_line_budget,
-    stretched_table_column_widths,
-    thumbnail_size_within,
-    youtube_thumbnail_size,
 )
 
 
@@ -464,364 +419,6 @@ def test_yt_dlp_loader_imports_once_and_reuses_the_module(monkeypatch):
     assert calls == ["yt_dlp"]
 
 
-def test_macos_uses_bundle_icns_without_a_runtime_png_override():
-    assert runtime_window_icon_asset("darwin") is None
-    assert runtime_window_icon_asset("win32") == "VODForge.ico"
-    assert runtime_window_icon_asset("linux") == "VODForge.png"
-
-
-def test_focus_icon_colors_select_exact_vector_variants():
-    assert focus_icon_color_variant(app_module.THEME["muted"]) == "muted"
-    assert focus_icon_color_variant(app_module.THEME["accent"]) == "accent"
-    assert focus_icon_color_variant(app_module.THEME["text"]) == "text"
-    assert focus_icon_color_variant("#FFFFFF") == "white"
-    assert focus_icon_color_variant("#123456") is None
-
-
-def test_initial_window_size_leaves_room_for_screen_chrome():
-    assert bounded_window_size(1920, 1080) == (1180, 900)
-    assert bounded_window_size(1366, 768) == (1180, 648)
-    assert bounded_window_size(1280, 720) == (1180, 600)
-    assert bounded_window_size(800, 600) == (776, 552)
-
-
-def test_initial_window_geometry_is_centered_and_dock_safe():
-    assert (
-        initial_window_geometry(1440, 900, platform_name="darwin") == "1180x780+130+28"
-    )
-    assert (
-        initial_window_geometry(1920, 1080, platform_name="win32") == "1180x900+370+90"
-    )
-
-
-def test_unresolved_run_titles_never_expose_the_raw_source_url(tmp_path: Path):
-    job = DownloadJob(
-        url="https://www.youtube.com/watch?v=private-source-token",
-        output_dir=tmp_path,
-        output_type=OutputType.MP4,
-        quality_label="1080p Full HD",
-        export_mode=ExportMode.AUTO_CBR,
-        manual_settings=ManualExportSettings(),
-        mp3_settings=Mp3ExportSettings(),
-        single_video_only=True,
-        use_nvenc=False,
-        embed_thumbnail=False,
-        write_thumbnail=False,
-        embed_metadata=False,
-        write_info_json=False,
-        tags=[],
-    )
-
-    assert download_job_display_title(job) == "Preparing video run"
-    assert download_job_display_title(job, queued=True) == "Queued video run"
-    job.preview_info = {"title": "Resolved title"}
-    assert download_job_display_title(job) == "Resolved title"
-
-
-def test_focus_layout_collapses_before_live_details_are_clipped():
-    assert focus_layout_mode(1180, 780) == "wide"
-    assert focus_layout_mode(1000, 720) == "balanced"
-    assert focus_layout_mode(920, 650) == "compact"
-    assert focus_layout_mode(820, 560) == "compact"
-
-
-def test_fraction_addressed_pixel_scroll_uses_the_visible_viewport_ratio():
-    # Canvas-style surfaces expose a visible fraction; converting a 36 px
-    # gesture through that ratio must move precisely and clamp at the tail.
-    target = pixel_scroll_target(0.0, 0.1, 47, 36)
-
-    assert target == pytest.approx(0.0765957447)
-    assert pixel_scroll_target(0.9, 1.0, 47, 36) == pytest.approx(0.9)
-    assert pixel_scroll_target(0.0, 1.0, 47, 36) == 0.0
-
-
-def test_focus_library_layout_protects_selected_item_at_medium_widths():
-    assert focus_library_layout_mode(1180) == "wide"
-    assert focus_library_layout_mode(1080) == "wide"
-    assert focus_library_layout_mode(1000) == "wide"
-    assert focus_library_layout_mode(999) == "balanced"
-    assert focus_library_layout_mode(920) == "balanced"
-    assert focus_library_layout_mode(919) == "compact"
-
-
-def test_focus_library_vertical_layout_protects_description_before_it_can_collapse():
-    assert focus_library_vertical_layout_mode(920) == "wide"
-    assert focus_library_vertical_layout_mode(919) == "balanced"
-    assert focus_library_vertical_layout_mode(740) == "balanced"
-    assert focus_library_vertical_layout_mode(739) == "compact"
-
-
-def test_selected_overview_reduces_path_lines_before_title_lines():
-    path_only = selected_overview_line_budget(
-        title_lines=3,
-        metadata_lines=1,
-        location_lines=3,
-        available_height=96,
-        title_line_height=20,
-        metadata_line_height=14,
-        location_line_height=14,
-    )
-    assert path_only.location == 1
-    assert path_only.title == 2
-    assert path_only.metadata == 1
-
-    path_then_title = selected_overview_line_budget(
-        title_lines=3,
-        metadata_lines=1,
-        location_lines=3,
-        available_height=76,
-        title_line_height=20,
-        metadata_line_height=14,
-        location_line_height=14,
-    )
-    assert path_then_title.location == 1
-    assert path_then_title.title == 2
-    assert path_then_title.metadata == 1
-
-
-def test_selected_overview_caps_title_at_two_measured_lines() -> None:
-    budget = selected_overview_line_budget(
-        title_lines=4,
-        metadata_lines=1,
-        location_lines=1,
-        available_height=140,
-        title_line_height=20,
-        metadata_line_height=14,
-        location_line_height=14,
-    )
-
-    assert budget.title == 2
-    assert budget.metadata == 1
-    assert budget.location == 1
-
-
-def test_selected_overview_protects_terminal_message_before_title() -> None:
-    budget = selected_overview_line_budget(
-        title_lines=3,
-        metadata_lines=1,
-        location_lines=2,
-        available_height=90,
-        title_line_height=20,
-        metadata_line_height=14,
-        location_line_height=14,
-        protect_location=True,
-    )
-
-    assert budget.title == 2
-    assert budget.metadata == 1
-    assert budget.location == 2
-
-
-def test_selected_description_max_height_is_measured_to_library_table_bottom():
-    tags_height = 96
-    description_top = 440
-    library_table_bottom = 620
-
-    description_height = selected_description_max_height(
-        description_top=description_top,
-        library_table_bottom=library_table_bottom,
-    )
-
-    assert description_height > tags_height
-    assert description_top + description_height == library_table_bottom
-
-
-def test_selected_description_max_height_caps_constrained_layout_at_table_edge():
-    description_top = 480
-    library_table_bottom = 505
-
-    description_height = selected_description_max_height(
-        description_top=description_top,
-        library_table_bottom=library_table_bottom,
-    )
-
-    assert description_height == 25
-    assert description_top + description_height <= library_table_bottom
-    assert (
-        selected_description_max_height(
-            description_top=description_top,
-            library_table_bottom=description_top - 1,
-        )
-        == 0
-    )
-
-
-def test_selected_description_height_contract_does_not_raise_selected_item_height():
-    assert FOCUS_LIBRARY_SELECTED_DETAILS_HEIGHT == 360
-
-
-def test_selected_overview_ellipsizes_from_measured_wrapping_not_character_caps():
-    def measure(value: str) -> int:
-        return len(value)
-
-    full = "alpha beta"
-    assert (
-        ellipsize_wrapped_text(
-            full,
-            maximum_width=10,
-            maximum_lines=1,
-            measure_width=measure,
-        )
-        == full
-    )
-
-    extreme = "alpha beta gamma delta epsilon"
-    shortened = ellipsize_wrapped_text(
-        extreme,
-        maximum_width=10,
-        maximum_lines=2,
-        measure_width=measure,
-    )
-    assert shortened.endswith("…")
-    assert shortened != extreme
-    assert (
-        measured_wrapped_line_count(
-            shortened,
-            maximum_width=10,
-            measure_width=measure,
-        )
-        <= 2
-    )
-
-
-def test_table_spare_width_expands_every_eligible_column_and_respects_limits():
-    assert stretched_table_column_widths([40, 100, 60], 260, {0: None, 1: None}) == [
-        70,
-        130,
-        60,
-    ]
-    assert stretched_table_column_widths([40, 100, 60], 300, {0: 50, 1: None}) == [
-        50,
-        190,
-        60,
-    ]
-    assert stretched_table_column_widths([40, 100, 60], 260, {}) == [40, 100, 60]
-    assert stretched_table_column_widths([80, 100], 120, {0: None, 1: None}) == [
-        80,
-        100,
-    ]
-
-
-def test_manual_table_widths_stay_exact_while_other_columns_fill_the_viewport():
-    columns = ("index", "title", "duration")
-    widths = [44, 360, 72]
-    eligible = set(columns)
-
-    title_manual = responsive_table_stretch_indices(
-        columns,
-        eligible,
-        {"title"},
-        last_resized_column="title",
-    )
-    assert title_manual == [0, 2]
-    assert stretched_table_column_widths(
-        widths,
-        600,
-        {index: None for index in title_manual},
-    ) == [106, 360, 134]
-    assert stretched_table_column_widths(
-        widths,
-        800,
-        {index: None for index in title_manual},
-    ) == [206, 360, 234]
-
-    all_manual = responsive_table_stretch_indices(
-        columns,
-        eligible,
-        set(columns),
-        last_resized_column="duration",
-    )
-    assert all_manual == [0, 1]
-    assert stretched_table_column_widths(
-        widths,
-        800,
-        {index: None for index in all_manual},
-    ) == [206, 522, 72]
-
-
-def test_ultrawide_library_workspace_is_bounded_and_centered():
-    assert focus_library_horizontal_padding(1180) == 18
-    assert focus_library_horizontal_padding(1600) == 18
-    assert focus_library_horizontal_padding(2560) == 480
-    assert focus_library_horizontal_padding(2000) == focus_library_horizontal_padding(
-        2015
-    )
-    assert focus_library_horizontal_padding(2016) > focus_library_horizontal_padding(
-        2015
-    )
-
-
-def test_virtual_table_clamps_a_stale_scroll_offset_after_filtering_to_fewer_rows():
-    offset, first_row, last_row = pixel_table_visible_row_window(
-        total_rows=3,
-        row_height=30,
-        viewport_height=60,
-        y_offset=1200,
-    )
-
-    assert offset == 30
-    assert (first_row, last_row) == (0, 3)
-
-
-def test_library_column_resize_clamps_only_at_the_column_minimum():
-    assert resized_table_column_width(320, 80, 200) == 400
-    assert resized_table_column_width(320, -40, 200) == 280
-    assert resized_table_column_width(320, -500, 200) == 200
-
-
-def test_preview_and_completed_profiles_omit_redundant_media_placeholders():
-    mp4_preview = {"vodforge_output_type": "MP4"}
-    mp3_completed = {
-        "vodforge_output_type": "MP3",
-        "vodforge_encoding_summary": {
-            "output": {
-                "Output resolution": "Audio only",
-                "Output rate-control mode": "CBR",
-            }
-        },
-    }
-    mp4_completed = {
-        "vodforge_output_type": "MP4",
-        "vodforge_encoding_summary": {
-            "output": {
-                "Output resolution": "1920x1080",
-                "Output rate-control mode": "CBR",
-            }
-        },
-    }
-    legacy_mp4_completed = {
-        "vodforge_output_type": "MP4",
-        "vodforge_encoding_summary": {
-            "output": {
-                "Resolution": "1280x720",
-                "Output rate-control mode": "CBR",
-            }
-        },
-    }
-
-    assert (
-        focus_metadata_profile_text(mp4_preview, "preview")
-        == "MP4  •  Preview complete"
-    )
-    assert focus_metadata_profile_text(mp3_completed, "completed") == "MP3  •  CBR"
-    assert (
-        focus_metadata_profile_text(mp4_completed, "completed")
-        == "MP4  •  1920x1080  •  CBR"
-    )
-    assert (
-        focus_metadata_profile_text(legacy_mp4_completed, "completed")
-        == "MP4  •  1280x720  •  CBR"
-    )
-    assert (
-        focus_metadata_profile_text({"vodforge_output_type": "MP4"}, "failed") == "MP4"
-    )
-    assert preview_output_summary_display() == (
-        "Output status: Preview complete\n"
-        "Output file path: Not produced\n"
-        "Next action: Start download in Forge"
-    )
-
-
 def test_only_explicit_completed_metadata_is_a_preview():
     assert is_metadata_preview({"id": "preview", "vodforge_preview_complete": True})
     assert not is_metadata_preview({"id": "active-metadata"})
@@ -841,118 +438,6 @@ def test_only_explicit_completed_metadata_is_a_preview():
     )
 
 
-def test_bundled_asset_path_uses_packaged_or_source_asset_root(tmp_path: Path):
-    assert (
-        bundled_asset_path("VODForge.ico", meipass=tmp_path)
-        == tmp_path / "assets" / "VODForge.ico"
-    )
-    assert (
-        bundled_asset_path("VODForge.png", meipass=None, repo_root=tmp_path)
-        == tmp_path / "assets" / "VODForge.png"
-    )
-
-
-def test_rounded_cover_image_fills_slot_and_keeps_only_rounded_corners_transparent():
-    source = Image.new("RGB", (640, 360), "#336699")
-
-    rendered = rounded_cover_image(source, (160, 90), 10)
-
-    assert rendered.size == (160, 90)
-    assert rendered.mode == "RGBA"
-    assert rendered.getpixel((0, 0))[3] == 0
-    assert any(
-        0 < rendered.getpixel((x, y))[3] < 255 for x in range(10) for y in range(10)
-    )
-    assert rendered.getpixel((80, 45)) == (51, 102, 153, 255)
-
-
-def test_youtube_thumbnail_slots_use_standard_16_by_9_geometry():
-    assert youtube_thumbnail_size(152) == (152, 86)
-    assert youtube_thumbnail_size(80) == (80, 45)
-    assert youtube_thumbnail_size(64) == (64, 36)
-
-
-def test_library_thumbnail_stays_16_by_9_but_caps_its_metadata_footprint():
-    assert library_thumbnail_size(196) == (196, 110)
-    assert library_thumbnail_size(320) == (240, 135)
-    assert library_thumbnail_size(600) == (240, 135)
-
-
-def test_thumbnail_size_is_bounded_without_cropping_or_distortion():
-    assert thumbnail_size_within((1280, 720), (240, 135)) == (240, 135)
-    assert thumbnail_size_within((480, 360), (240, 135)) == (180, 135)
-    assert thumbnail_size_within((720, 1280), (240, 135)) == (76, 135)
-    assert thumbnail_size_within((0, 360), (240, 135)) == (1, 1)
-
-
-def test_rounded_fit_thumbnail_preserves_full_source_aspect_inside_maximum_box():
-    source = Image.new("RGB", (480, 360), "#ff0000")
-    rendered = rounded_fit_image(source, (240, 135), 10)
-
-    assert rendered.size == (180, 135)
-    assert rendered.getpixel((90, 67))[:3] == (255, 0, 0)
-
-
-def test_focus_deck_capacity_and_hero_art_follow_available_width_not_density_label():
-    assert focus_run_deck_capacity(1100) == 4
-    assert focus_run_deck_capacity(880) == 4
-    assert focus_run_deck_capacity(700) == 3
-    assert focus_run_deck_capacity(500) == 2
-    assert focus_run_deck_capacity(200) == 1
-    assert focus_hero_thumbnail_visible(720)
-    assert not focus_hero_thumbnail_visible(719)
-
-
-def test_focus_run_drop_up_normalizes_trackpad_and_mouse_wheel_motion_to_pixels():
-    assert focus_wheel_pixels(0) == 0
-    assert focus_wheel_pixels(3) == -3
-    assert focus_wheel_pixels(-7) == 7
-    assert focus_wheel_pixels(0.4) == -1
-    assert focus_wheel_pixels(-0.4) == 1
-    assert focus_wheel_pixels(120) == -36
-    assert focus_wheel_pixels(-120) == 36
-    assert focus_wheel_pixels(480) == -72
-
-
-def test_row_scrollers_accumulate_trackpad_pixels_without_amplifying_each_event():
-    rows, remainder = accumulated_row_scroll(0, 7, 30)
-    assert rows == 0
-    assert remainder == 7
-    rows, remainder = accumulated_row_scroll(remainder, 25, 30)
-    assert rows == 1
-    assert remainder == 2
-    rows, remainder = accumulated_row_scroll(remainder, -33, 30)
-    assert rows == -1
-    assert remainder == -1
-
-
-def test_rounded_contain_image_preserves_placeholder_artwork_without_cropping():
-    source = Image.new("RGB", (100, 100), "#ff0000")
-
-    rendered = rounded_contain_image(source, (160, 90), 10, "#121419")
-
-    assert rendered.size == (160, 90)
-    assert rendered.getpixel((0, 0))[3] == 0
-    assert rendered.getpixel((8, 45)) == (18, 20, 25, 255)
-    assert rendered.getpixel((80, 45)) == (255, 0, 0, 255)
-
-
-def test_thumbnail_flattening_bakes_antialiased_edges_against_the_ui_background():
-    source = Image.new("RGB", (640, 360), "#336699")
-    rounded = rounded_cover_image(source, (160, 90), 10)
-
-    rendered = flatten_alpha_image(rounded, "#08090a")
-
-    assert rendered.size == (160, 90)
-    assert rendered.getpixel((0, 0)) == (8, 9, 10, 255)
-    assert rendered.getextrema()[3] == (255, 255)
-    assert any(
-        rendered.getpixel((x, y))[:3] not in {(8, 9, 10), (51, 102, 153)}
-        for x in range(10)
-        for y in range(10)
-    )
-
-
 def test_center_alpha_content_moves_visible_bounds_to_the_canvas_center():
     source = Image.new("RGBA", (24, 24), (0, 0, 0, 0))
     for x in range(1, 10):
@@ -964,24 +449,6 @@ def test_center_alpha_content_moves_visible_bounds_to_the_canvas_center():
 
     assert abs((left + right) - 24) <= 1
     assert abs((top + bottom) - 24) <= 1
-
-
-def test_monochrome_icon_renderer_preserves_hard_centers_and_antialiased_edges():
-    source = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
-    for x in range(12, 52):
-        for y in range(20, 44):
-            source.putpixel((x, y), (0, 0, 0, 255))
-
-    rendered = render_monochrome_icon(source, 16, "#ffffff")
-
-    assert rendered.size == (16, 16)
-    assert rendered.getpixel((8, 8)) == (255, 255, 255, 255)
-    assert rendered.getpixel((0, 0))[3] == 0
-
-
-def test_windows_app_identity_is_a_noop_on_other_platforms():
-    assert configure_windows_app_identity("darwin") is False
-    assert configure_windows_app_identity("linux") is False
 
 
 def test_windows_output_picker_isolated_process_returns_network_path(
@@ -1133,12 +600,6 @@ def test_optional_imageio_ffmpeg_failure_emits_a_secret_free_receipt(monkeypatch
     ]
     assert "canary" not in receipts[0]
     assert "password" not in receipts[0]
-
-
-def test_build_tags_display_text_uses_comma_space_for_copying():
-    info = {"tags": ["zebra", "alpha", "alpha", "  spaced  ", ""]}
-
-    assert build_tags_display_text(info) == "zebra, alpha, spaced"
 
 
 def test_cancellable_blocking_step_returns_quickly_when_cancel_requested():
@@ -2448,7 +1909,7 @@ def test_thumbnail_cache_key_is_stable_when_history_keeps_a_different_thumbnail_
     canonical.parent.mkdir(parents=True)
     Image.new("RGB", (16, 9), "purple").save(canonical, format="JPEG")
     assert existing_cached_thumbnail_path(compact, data_dir=tmp_path) == canonical
-    assert legacy_cached_thumbnail_path(full, data_dir=tmp_path) != canonical
+    assert canonical not in legacy_cached_thumbnail_paths(full, data_dir=tmp_path)
 
 
 def test_v015_thumbnail_variant_is_found_and_migrated_after_a_cold_history_restart(
@@ -2456,11 +1917,10 @@ def test_v015_thumbnail_variant_is_found_and_migrated_after_a_cold_history_resta
 ):
     old_variant = "https://i.ytimg.com/vi/beat123/maxresdefault.jpg"
     history_variant = "https://i.ytimg.com/vi/beat123/default.jpg"
-    old_cache = legacy_cached_thumbnail_path(
+    old_cache = legacy_cached_thumbnail_paths(
         {"id": "beat123", "thumbnail": old_variant},
         data_dir=tmp_path,
-    )
-    assert old_cache is not None
+    )[0]
     old_cache.parent.mkdir(parents=True)
     Image.new("RGB", (32, 18), "purple").save(old_cache, format="JPEG")
     full_info = {
@@ -3136,36 +2596,6 @@ def test_format_duration_uses_readable_hours_minutes_seconds():
     assert format_duration(float("-inf")) == "—"
 
 
-@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
-def test_nonfinite_provider_numbers_use_display_fallbacks(value: float):
-    row = video_list_row_values(
-        {"playlist_index": value, "duration": value},
-        fallback_index=7,
-    )
-
-    assert row[0] == "007"
-    assert row[2] == "—"
-    assert app_module._format_fractional_fps(value) == "Unknown"
-    assert app_module._format_bytes(value) == "Not available"
-    assert app_module._format_kbps(value) == "Unknown"
-
-
-def test_video_list_row_values_preserves_full_long_title_and_identifiers():
-    long_title = "A very long video title " * 8
-    item = {
-        "playlist_index": 12,
-        "title": long_title,
-        "id": "abc123",
-        "duration": 3661,
-        "uploader": "Creator",
-    }
-
-    values = video_list_row_values(item, fallback_index=1)
-
-    assert values == ("012", long_title.strip(), "1:01:01", "Creator", "abc123")
-    assert len(values[1]) > 120
-
-
 def test_vod_ffmpeg_command_matches_requested_h264_aac_cbr_summary(tmp_path: Path):
     source = tmp_path / "source.mp4"
     output = tmp_path / "output.mp4"
@@ -3432,24 +2862,6 @@ def test_encoding_summary_metadata_includes_source_and_planned_output():
     assert output["Validation status"] == "Pending"
 
 
-def test_completed_profile_reads_the_canonical_generated_output_resolution():
-    info = _summary_test_info()
-    plan = build_auto_export_plan(info, mode=ExportMode.AUTO_CBR, max_height=1080)
-
-    enriched = build_encoding_summary_metadata(
-        info, plan, validation_status="Validated"
-    )
-
-    assert (
-        enriched["vodforge_encoding_summary"]["output"]["Output resolution"]
-        == "1920x1080"
-    )
-    assert (
-        focus_metadata_profile_text(enriched, "completed")
-        == "MP4  •  1920x1080  •  Auto CBR"
-    )
-
-
 def test_encoding_summary_metadata_includes_final_ffprobe_output_values():
     info = _summary_test_info()
     plan = build_auto_export_plan(
@@ -3540,11 +2952,6 @@ def test_mp3_plan_uses_highest_quality_audio_only_source_and_truthful_summary():
     enriched = build_encoding_summary_metadata(
         info, plan, output_path=Path("Producer Beat.mp3")
     )
-    source_text, output_text = build_encoding_summary_display(enriched)
-    assert "Audio target:" in output_text
-    assert "Effective/target audio bitrate:" not in output_text
-    assert "Effective audio:" in source_text
-
     assert isinstance(plan, AudioExportPlan)
     assert plan.output_type == OutputType.MP3
     assert plan.audio_format_id == "251"
@@ -3554,115 +2961,6 @@ def test_mp3_plan_uses_highest_quality_audio_only_source_and_truthful_summary():
     assert plan.embed_cover_art is False
     assert plan.cover_art_source == "None (no art)"
     assert metadata_output_type(enriched) == OutputType.MP3
-    assert "Audio format ID: 251" in source_text
-    assert "Audio target: 320 kbps" in output_text
-    assert "Embedded cover art: None (no art)" in output_text
-    assert "Video format ID" not in source_text + output_text
-
-
-def test_mp3_summary_uses_measured_audio_values_without_video_rows():
-    info = {
-        "id": "beat123",
-        "formats": [
-            {
-                "format_id": "251",
-                "ext": "webm",
-                "vcodec": "none",
-                "acodec": "opus",
-                "abr": 160,
-                "asr": 48000,
-                "audio_channels": 2,
-            },
-        ],
-    }
-    plan = build_mp3_export_plan(
-        info, Mp3ExportSettings(sample_rate="44100", channels="2")
-    )
-    ffprobe = {
-        "format": {
-            "filename": "Producer Beat.mp3",
-            "format_name": "mp3",
-            "duration": "60",
-            "size": "2400000",
-        },
-        "streams": [
-            {
-                "codec_type": "audio",
-                "codec_name": "mp3",
-                "bit_rate": "320000",
-                "sample_rate": "44100",
-                "channels": 2,
-            }
-        ],
-    }
-
-    enriched = build_encoding_summary_metadata(
-        info,
-        plan,
-        output_path=Path("Producer Beat.mp3"),
-        ffprobe_data=ffprobe,
-        validation_status="Validated",
-    )
-    source_text, output_text = build_encoding_summary_display(enriched)
-
-    assert "Audio bitrate: 320 kbps" in output_text
-    assert "Audio sample rate: 44100" in output_text
-    assert "Validation status: Validated" in output_text
-    assert "Video codec" not in source_text + output_text
-
-
-def test_encoding_summary_display_switches_per_selected_video_and_handles_missing_fields():
-    one = {
-        "id": "one",
-        "vodforge_encoding_summary": {
-            "source": {"Video format ID": "137"},
-            "output": {"Output file path": "one.mp4", "Validation status": "Validated"},
-            "warnings": [],
-        },
-    }
-    two = {
-        "id": "two",
-        "vodforge_encoding_summary": {
-            "source": {"Video format ID": "136"},
-            "output": {"Output file path": "two.mp4", "Validation status": "Pending"},
-            "warnings": ["source limited"],
-        },
-    }
-
-    source_one, output_one = build_encoding_summary_display(one)
-    source_two, output_two = build_encoding_summary_display(two)
-    source_missing, output_missing = build_encoding_summary_display({"id": "missing"})
-
-    assert "Video format ID: 137" in source_one
-    assert "Output file path: one.mp4" in output_one
-    assert "Video format ID: 136" in source_two
-    assert "Warnings: source limited" in output_two
-    assert "None" not in source_missing + output_missing
-    assert "Format selector: Not available" in source_missing
-    assert "Output file path: Not produced" in output_missing
-    assert "Format selector:" not in output_two
-    assert "Video format ID:" not in output_two
-    assert "Audio format ID:" not in output_two
-
-
-@pytest.mark.parametrize(
-    "summary",
-    [
-        None,
-        "invalid",
-        [],
-        {"source": None, "output": "invalid", "warnings": "invalid"},
-    ],
-)
-def test_encoding_summary_consumers_normalize_malformed_persisted_sections(summary):
-    info = {"id": "malformed", "vodforge_encoding_summary": summary}
-
-    source_text, output_text = build_encoding_summary_display(info)
-
-    assert metadata_output_type(info) == OutputType.MP4
-    assert focus_metadata_profile_text(info, "completed") == "MP4  •  Completed"
-    assert "None" not in source_text + output_text
-    assert "Output file path: Not produced" in output_text
 
 
 @pytest.mark.parametrize("format_section", [None, "invalid", []])
@@ -3675,40 +2973,6 @@ def test_ffprobe_output_summary_normalizes_malformed_format_sections(format_sect
     assert summary["Output file path"] == "saved.mp4"
     assert summary["Output container"] == "mp4"
     assert summary["Output duration"] == "—"
-
-
-def test_encoding_summary_comparison_labels_use_stable_restrained_colors():
-    comparable_labels = [
-        "Container/ext",
-        "Resolution",
-        "Frame rate",
-        "Video codec",
-        "Video bitrate",
-        "Audio codec",
-        "Audio bitrate",
-        "File size",
-    ]
-    colors = [summary_label_color(label) for label in comparable_labels]
-
-    assert len(colors) == len(set(colors))
-    assert all(color.startswith("#") and len(color) == 7 for color in colors)
-    assert summary_label_color("Output status") == app_module.THEME["muted"]
-
-
-def test_failed_video_encoding_summary_preserves_source_and_no_output_reason():
-    info = _summary_test_info()
-    plan = build_auto_export_plan(info, mode=ExportMode.AUTO_CBR, max_height=1080)
-
-    failed = build_failed_encoding_summary_metadata(info, plan, "yt-dlp failed")
-    source_text, output_text = build_encoding_summary_display(failed)
-
-    assert "Format selector: 137+251" in source_text
-    assert "Format selector:" not in output_text
-    assert "Video format ID:" not in output_text
-    assert "Audio format ID:" not in output_text
-    assert "Output file path: Not produced" in output_text
-    assert "Validation status: Failed" in output_text
-    assert "Failure reason: yt-dlp failed" in output_text
 
 
 def test_playlist_results_preserve_per_video_encoding_metadata():
@@ -5258,21 +4522,6 @@ def test_mp4_audio_source_does_not_trade_material_quality_for_direct_transport()
 
     formats[1]["abr"] = 150
     assert choose_best_audio_format(formats)["format_id"] == "direct-low"
-
-
-def test_library_media_filter_keeps_original_metadata_indices():
-    items = [
-        {"id": "old-defaults-to-mp4"},
-        {"id": "audio", "vodforge_output_type": "MP3"},
-        {"id": "video", "vodforge_output_type": "MP4"},
-        {
-            "id": "inferred-audio",
-            "vodforge_encoding_summary": {"output": {"Output file path": "beat.mp3"}},
-        },
-    ]
-
-    assert metadata_indices_for_output_type(items, OutputType.MP4) == [0, 2]
-    assert metadata_indices_for_output_type(items, OutputType.MP3) == [1, 3]
 
 
 def test_thumbnail_cache_path_is_private_deterministic_and_filename_safe(

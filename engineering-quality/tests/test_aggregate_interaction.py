@@ -116,7 +116,6 @@ def build(tmp_path, sid):
                     "--ignore-missing-imports",
                     "--follow-imports=skip",
                     "yt_downloader",
-                    "tests/typecheck",
                 ],
                 "bandit": [
                     "/python",

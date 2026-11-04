@@ -1,7 +1,8 @@
-"""Create a private universal2 DMG without Finder automation.
+"""Create the VODForge DMG around the signed "Install VODForge" app.
 
-New single-icon packaging takes a separately signed Install VODForge.app.
-The original app input retains historical drag-layout tooling for old receipts.
+The DMG opens a branded window with a single installer icon; its layout is
+written directly (no Finder scripting). Sign, notarize and staple the DMG
+afterwards (`scripts/finalize_universal_macos.py` does this for releases).
 """
 
 from __future__ import annotations
@@ -93,95 +94,19 @@ def require_installer_app(app: Path, run=command):
     }
 
 
-def write_background(path: Path, logo: Path):
-    from PIL import Image, ImageDraw, ImageFont
-
-    image = Image.new("RGB", (1280, 840), "#101923")
-    draw = ImageDraw.Draw(image)
-    font = "/System/Library/Fonts/Supplemental/Arial.ttf"
-    title = ImageFont.truetype(font, 54)
-    body = ImageFont.truetype(font, 25)
-    mark = Image.open(logo).convert("RGBA")
-    mark.thumbnail((110, 110))
-    image.paste(mark, ((1280 - mark.width) // 2, 48), mark)
-    draw.text((640, 178), "VODForge", font=title, fill="#ffffff", anchor="mm")
-    draw.text(
-        (640, 245),
-        "Drag VODForge to Applications",
-        font=body,
-        fill="#c7d3df",
-        anchor="mm",
-    )
-    draw.line((550, 420, 730, 420), fill="#63b4ed", width=8)
-    draw.polygon([(730, 420), (704, 402), (704, 438)], fill="#63b4ed")
-    draw.text(
-        (640, 704),
-        "Apple Silicon: macOS 26+  •  Intel: macOS 15+",
-        font=body,
-        fill="#acbac8",
-        anchor="mm",
-    )
-    draw.text(
-        (640, 752),
-        "Open VODForge from Applications after copying.",
-        font=body,
-        fill="#acbac8",
-        anchor="mm",
-    )
-    image.save(path, dpi=(144, 144))
-
-
-def decorate_volume(volume: Path):
-    from ds_store import DSStore
-    from mac_alias import Alias
-
-    background = volume / ".background/install.png"
-    with DSStore.open(str(volume / ".DS_Store"), "w+") as store:
-        store["."]["bwsp"] = {
-            "WindowBounds": "{{120, 120}, {640, 420}}",
-            "ShowToolbar": False,
-            "ShowSidebar": False,
-            "ShowStatusBar": False,
-        }
-        store["."]["icvp"] = {
-            "viewOptionsVersion": 1,
-            "backgroundType": 2,
-            "backgroundImageAlias": Alias.for_file(str(background)).to_bytes(),
-            "iconSize": 112.0,
-            "textSize": 13.0,
-            "labelOnBottom": True,
-            "arrangeBy": "none",
-            "gridOffsetX": 0.0,
-            "gridOffsetY": 0.0,
-            "gridSpacing": 100.0,
-        }
-        store["."]["vSrn"] = ("long", 1)
-        store["VODForge.app"]["Iloc"] = (180, 205)
-        store["Applications"]["Iloc"] = (460, 205)
-
-
 def build_dmg(app: Path, output: Path, logo: Path):
     if output.exists() or output.suffix != ".dmg":
         raise ValueError("Require fresh .dmg output; refusing overwrite")
-    installer = app.name == "Install VODForge.app"
-    audit = require_installer_app(app) if installer else require_universal_app(app)
+    audit = require_installer_app(app)
     output.parent.mkdir(parents=True, exist_ok=True)
     stage = Path(tempfile.mkdtemp(prefix="dmg-stage-", dir=output.parent))
     command(["/usr/bin/ditto", str(app), str(stage / app.name)])
-    if installer:
-        from scripts.macos_installer_window import BACKGROUND, write_assets
+    from scripts.macos_installer_window import BACKGROUND, write_assets
 
-        artwork = stage / ".generated-artwork"
-        write_assets(artwork, logo)
-        (artwork / BACKGROUND).rename(stage / BACKGROUND)
-        shutil.rmtree(artwork)  # Only this newly generated temporary artwork.
-    else:
-        (stage / "Applications").symlink_to("/Applications")
-        (stage / ".background").mkdir()
-        write_background(stage / ".background/install.png", logo)
-        (stage / "Compatibility.txt").write_text(
-            "Apple Silicon: macOS 26 or newer. Intel: macOS 15 or newer.\nPrivate candidate; release acceptance is separate.\n"
-        )
+    artwork = stage / ".generated-artwork"
+    write_assets(artwork, logo)
+    (artwork / BACKGROUND).rename(stage / BACKGROUND)
+    shutil.rmtree(artwork)  # Only this newly generated temporary artwork.
     writable = output.with_suffix(".rw.dmg")
     if writable.exists():
         raise ValueError("Refusing existing writable image")
@@ -196,7 +121,7 @@ def build_dmg(app: Path, output: Path, logo: Path):
             "-format",
             "UDRW",
             "-volname",
-            "Install VODForge" if installer else "VODForge",
+            "Install VODForge",
             str(writable),
         ]
     )
@@ -228,14 +153,9 @@ def build_dmg(app: Path, output: Path, logo: Path):
         if len(matching) != 1:
             raise RuntimeError("Owned mountpoint not established")
         device = matching[0]["dev-entry"]
-        if installer:
-            from scripts.macos_installer_window import (
-                decorate_volume as decorate_installer,
-            )
+        from scripts.macos_installer_window import decorate_volume
 
-            decorate_installer(mount)
-        else:
-            decorate_volume(mount)
+        decorate_volume(mount)
     finally:
         if device:
             command(["/usr/bin/hdiutil", "detach", device])
@@ -258,7 +178,7 @@ def build_dmg(app: Path, output: Path, logo: Path):
                 "audit": audit,
                 "image": str(output),
                 "stage": str(stage),
-                "scope": "Private packaging candidate; DMG signing/notarization and native install acceptance still required",
+                "next": "Sign, notarize and staple this DMG before distributing it",
             },
             indent=2,
         )

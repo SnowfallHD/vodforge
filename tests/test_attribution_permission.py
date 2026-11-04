@@ -152,8 +152,9 @@ def test_blocked_automatic_admission_can_run_after_new_explicit_optin(
 ):
     import time
     from unittest.mock import Mock
-    from yt_downloader.qt_quick import analytics
+
     from yt_downloader.install_attribution import ClaimIssueResult
+    from yt_downloader.qt_quick import analytics
 
     monkeypatch.setattr(analytics, "telemetry_collection_allowed", lambda: True)
     path = tmp_path / "installation.json"
@@ -195,7 +196,7 @@ def test_blocked_automatic_admission_can_run_after_new_explicit_optin(
 def test_low_level_transport_requires_permission_and_does_not_consume_admission(
     tmp_path,
 ):
-    from yt_downloader.install_attribution import issue_claim, claim_state
+    from yt_downloader.install_attribution import claim_state, issue_claim
 
     calls = []
 
@@ -244,6 +245,7 @@ def test_queued_worker_revocation_preserves_unused_automatic_attempt(
 ):
     import threading
     from unittest.mock import Mock
+
     from yt_downloader.qt_quick import analytics
 
     class DeferredWork:

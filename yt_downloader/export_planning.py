@@ -168,19 +168,6 @@ def migrate_export_preferences(saved: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def mp3_sample_rate_display(
-    sample_rate: str | int | None,
-    *,
-    source_label: str,
-) -> str:
-    if sample_rate is None or sample_rate == "":
-        return source_label
-    try:
-        return f"{int(sample_rate) / 1000:g} kHz"
-    except (TypeError, ValueError):
-        return str(sample_rate)
-
-
 def _num(value: Any, default: float = 0.0) -> float:
     try:
         if value is None or value == "":

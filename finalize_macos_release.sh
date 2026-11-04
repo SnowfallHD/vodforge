@@ -40,34 +40,33 @@ cleanup() {
 }
 trap cleanup EXIT
 
-arm_unsigned="VODForge-macOS-arm64-v${version}-unsigned-review.zip"
-x64_unsigned="VODForge-macOS-x64-v${version}-unsigned-review.zip"
+universal_unsigned="VODForge-macOS-universal2-v${version}-unsigned-review.zip"
 windows_installer="VODForge-Windows-Setup-v${version}.exe"
 windows_portable="VODForge-Windows-Portable-v${version}.zip"
+dmg="VODForge-macOS-universal2-v${version}.dmg"
+universal_zip="VODForge-macOS-universal2-v${version}.zip"
+# Same universal app under the names VODForge 0.2.5 and earlier update from.
+# See docs/release.md before removing these.
+legacy_arm_zip="VODForge-macOS-arm64-v${version}.zip"
+legacy_intel_zip="VODForge-macOS-x64-v${version}.zip"
 
 gh release download "$tag" --repo "$repo" --dir "$finalize_dir" \
-  --pattern "$arm_unsigned" \
-  --pattern "$x64_unsigned" \
+  --pattern "$universal_unsigned" \
   --pattern "$windows_installer" \
   --pattern "$windows_portable"
 
-for arch in arm64 x64; do
-  unsigned_name="VODForge-macOS-${arch}-v${version}-unsigned-review.zip"
-  signed_name="VODForge-macOS-${arch}-v${version}.zip"
-  extract_dir="$finalize_dir/${arch}"
-  mkdir -p "$extract_dir"
-  ditto -x -k "$finalize_dir/$unsigned_name" "$extract_dir"
-  app_path="$extract_dir/VODForge.app"
-  if [[ ! -d "$app_path" ]]; then
-    echo "Expected VODForge.app was not found in $unsigned_name"
-    exit 1
-  fi
-  ./sign_and_notarize_macos.sh "$app_path" "$finalize_dir/$signed_name"
-  if [[ "$arch" == "arm64" ]]; then
-    "$app_path/Contents/MacOS/VODForge" --runtime-smoke
-  else
-    arch -x86_64 "$app_path/Contents/MacOS/VODForge" --runtime-smoke
-  fi
+python_bin=".venv/bin/python"
+if [[ ! -x "$python_bin" ]]; then
+  echo "Run ./install_macos_dependencies.sh first so the release tools can run."
+  exit 1
+fi
+mac_dir="$finalize_dir/mac"
+"$python_bin" -m scripts.finalize_universal_macos \
+  --unsigned-zip "$finalize_dir/$universal_unsigned" \
+  --output "$mac_dir" \
+  --version "$version"
+for file in "$dmg" "$universal_zip" "$legacy_arm_zip" "$legacy_intel_zip"; do
+  mv "$mac_dir/$file" "$finalize_dir/$file"
 done
 
 (
@@ -75,19 +74,26 @@ done
   shasum -a 256 \
     "$windows_installer" \
     "$windows_portable" \
-    "VODForge-macOS-arm64-v${version}.zip" \
-    "VODForge-macOS-x64-v${version}.zip" \
+    "$dmg" \
+    "$universal_zip" \
+    "$legacy_arm_zip" \
+    "$legacy_intel_zip" \
     | sort -k2 > SHA256SUMS.txt
 )
 
 gh release upload "$tag" --repo "$repo" --clobber \
-  "$finalize_dir/VODForge-macOS-arm64-v${version}.zip" \
-  "$finalize_dir/VODForge-macOS-x64-v${version}.zip" \
+  "$finalize_dir/$dmg" \
+  "$finalize_dir/$universal_zip" \
+  "$finalize_dir/$legacy_arm_zip" \
+  "$finalize_dir/$legacy_intel_zip" \
   "$finalize_dir/SHA256SUMS.txt"
-gh release delete-asset "$tag" "$arm_unsigned" --repo "$repo" --yes
-gh release delete-asset "$tag" "$x64_unsigned" --repo "$repo" --yes
+gh release delete-asset "$tag" "$universal_unsigned" --repo "$repo" --yes
 python3 .github/scripts/render_release_notes.py "$version" > "$finalize_dir/release-notes.md"
 gh release edit "$tag" --repo "$repo" --notes-file "$finalize_dir/release-notes.md"
 
-echo "Final signed artifacts and checksums uploaded to draft release $tag."
+# Keep the notarization receipt; the temporary folder is removed on exit.
+mkdir -p build
+cp "$mac_dir/macos-release-receipt.json" "build/macos-release-receipt-v${version}.json"
+echo "Signed Mac DMG, update archives and checksums uploaded to draft release $tag."
+echo "Apple notarization results: build/macos-release-receipt-v${version}.json"
 echo "Review the release assets and checksums before publishing."

@@ -6,7 +6,6 @@ import shutil
 # This service accepts only a fixed or resolved executable and never invokes a shell.
 import subprocess  # nosec B404
 import sys
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -62,34 +61,6 @@ def platform_font_families(platform_name: str | None = None) -> tuple[str, str]:
     if is_windows(platform_name):
         return "Segoe UI", "Cascadia Mono"
     return "Sans Serif", "Monospace"
-
-
-def focus_view_shortcut_bindings(
-    platform_name: str | None = None,
-) -> tuple[tuple[str, str], ...]:
-    """Return stable real-user shortcuts for the three primary app views."""
-    modifier = "Command" if is_macos(platform_name) else "Control"
-    return tuple(
-        (f"<{modifier}-Key-{index}>", view_name)
-        for index, view_name in enumerate(("forge", "library", "activity"), start=1)
-    )
-
-
-def runtime_window_icon_asset(platform_name: str | None = None) -> str | None:
-    """Return the runtime window icon, leaving macOS to the bundle ICNS."""
-    if is_windows(platform_name):
-        return "VODForge.ico"
-    if is_macos(platform_name):
-        return None
-    return "VODForge.png"
-
-
-def configure_windows_app_identity(platform_name: str | None = None) -> bool:
-    if not is_windows(platform_name):
-        return False
-    from .platforms.windows.windowing import configure_app_identity
-
-    return configure_app_identity()
 
 
 def runtime_executable_candidates(
@@ -170,28 +141,6 @@ def choose_windows_output_directory(
     return choose(initial_dir, runner=runner)
 
 
-def choose_output_directory(
-    initial_dir: str,
-    *,
-    standard_picker: Callable[[str], str | None],
-    platform_name: str | None = None,
-    windows_picker: Callable[[str], str | None] = choose_windows_output_directory,
-) -> str | None:
-    """Route the folder picker without leaking OS policy into the composition root."""
-    if is_windows(platform_name):
-        return windows_picker(initial_dir)
-    return standard_picker(initial_dir)
-
-
-def output_directory_failure_guidance(platform_name: str | None = None) -> str:
-    if is_windows(platform_name):
-        return (
-            "Windows could not browse that location. VODForge stayed open.\n\n"
-            "You can paste a mapped-drive or \\\\server\\share path directly into Output folder."
-        )
-    return "VODForge could not browse that location. You can type or paste the folder path directly."
-
-
 def runtime_version_command(tool_name: str, executable: str) -> list[str]:
     return (
         [executable, "--version"] if tool_name == "deno" else [executable, "-version"]
@@ -223,47 +172,6 @@ def probe_runtime_version(
         (line.strip() for line in result.stdout.splitlines() if line.strip()),
         "version output unavailable",
     )
-
-
-def open_path(
-    path: Path,
-    *,
-    create: bool = True,
-    platform_name: str | None = None,
-    popen: Callable[[list[str]], Any] = subprocess.Popen,
-    which: Callable[[str], str | None] = shutil.which,
-    startfile: Callable[[Path], Any] | None = None,
-) -> None:
-    """Open a folder without deferring executable selection to subprocess PATH lookup."""
-    if create:
-        path.mkdir(parents=True, exist_ok=True)
-    elif not path.is_dir():
-        raise OSError("The folder is unavailable.")
-    if is_windows(platform_name):
-        windows_startfile = (
-            getattr(os, "startfile", None) if startfile is None else startfile
-        )
-        if not callable(windows_startfile):
-            raise RuntimeError("The Windows folder opener is unavailable.")
-        windows_startfile(path)
-        return
-
-    if is_macos(platform_name):
-        opener = "/usr/bin/open"
-    else:
-        resolved = which("xdg-open")
-        candidate = Path(resolved) if resolved else None
-        if candidate is None or not candidate.is_absolute():
-            raise RuntimeError("No trusted system folder opener is available.")
-        try:
-            resolved_opener = candidate.resolve(strict=True)
-        except OSError as exc:
-            raise RuntimeError("No trusted system folder opener is available.") from exc
-        if not resolved_opener.is_file() or not os.access(resolved_opener, os.X_OK):
-            raise RuntimeError("No trusted system folder opener is available.")
-        opener = str(resolved_opener)
-
-    popen([opener, str(path)])
 
 
 def system_trash_available() -> bool:

@@ -231,15 +231,93 @@ jobs:
           VODFORGE_UNSIGNED_REVIEW: "1"
           VODFORGE_BUILD_TELEMETRY: production
         run: ./build_and_package_macos.sh "${{ inputs.version }}"
+      # The single-architecture app stays a workflow artifact for QA; releases
+      # publish the universal app built below.
       - uses: actions/upload-artifact@v4
         with:
-          name: vodforge-macos-${{ matrix.architecture }}-unsigned
+          name: macos-${{ matrix.architecture }}-review-app
+          path: dist/release/*
+          if-no-files-found: error
+      - name: Collect this architecture's FFmpeg and Deno for the universal app
+        run: |
+          .venv/bin/python -m scripts.collect_macos_helpers --output build/helpers-${{ matrix.architecture }}
+          # A tar keeps the executable bits that artifact uploads drop.
+          tar -C build -cf build/helpers-${{ matrix.architecture }}.tar \
+            helpers-${{ matrix.architecture }} helpers-${{ matrix.architecture }}-receipt.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-helpers-${{ matrix.architecture }}
+          path: build/helpers-${{ matrix.architecture }}.tar
+          if-no-files-found: error
+
+  macos-universal:
+    if: ${{ !(inputs.artifacts_only && (inputs.qa_windows_only || inputs.qa_intel_only)) }}
+    needs: macos
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: build/helper-archives
+          pattern: macos-helpers-*
+          merge-multiple: true
+      - name: Unpack both architectures' helpers
+        run: |
+          for arch in arm64 x64; do
+            tar -C build -xf "build/helper-archives/helpers-${arch}.tar"
+          done
+      - name: Install the universal python.org Python
+        run: |
+          sudo softwareupdate --install-rosetta --agree-to-license
+          sudo "$(command -v python3)" -m scripts.create_universal_python_env install-python
+      - name: Create the universal Python environment
+        run: |
+          /Library/Frameworks/Python.framework/Versions/3.13/bin/python3.13 \
+            -m scripts.create_universal_python_env create-env --output build/universal-env
+      - name: Combine the helpers into universal binaries
+        run: |
+          build/universal-env/bin/python -m scripts.assemble_universal_helpers \
+            --arm build/helpers-arm64 --intel build/helpers-x64 --output build/universal-helpers
+      - name: Build the unsigned universal review application
+        env:
+          VODFORGE_BUILD_TELEMETRY: production
+        run: |
+          build/universal-env/bin/python -m scripts.build_universal_macos --build \
+            --python build/universal-env/bin/python \
+            --tools build/universal-helpers \
+            --output build/universal \
+            --report build/universal-preflight.json \
+            --version "${{ inputs.version }}"
+      - name: Smoke-test both architectures
+        run: |
+          app=build/universal/dist/VODForge.app/Contents/MacOS/VODForge
+          "$app" --runtime-smoke
+          arch -x86_64 "$app" --runtime-smoke
+      - name: Package the universal review application
+        run: |
+          mkdir -p dist/release
+          ditto -c -k --sequesterRsrc --keepParent build/universal/dist/VODForge.app \
+            "dist/release/VODForge-macOS-universal2-v${{ inputs.version }}-unsigned-review.zip"
+      - name: Preserve universal build receipts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-universal-receipts
+          path: |
+            build/universal-env/universal-env.json
+            build/universal-helpers/universal-helper-closure.json
+            build/universal/*.json
+            build/universal-preflight.json
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vodforge-macos-universal2-unsigned
           path: dist/release/*
           if-no-files-found: error
 
   draft:
     if: ${{ !inputs.artifacts_only }}
-    needs: [windows, macos]
+    needs: [windows, macos-universal]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

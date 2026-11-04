@@ -10,40 +10,48 @@ Intel needs macOS 15 or newer, until the older OS is actually tested.
 
 ## Current status (November 2026)
 
-- **Built privately, not yet in the release script.** Universal apps were built,
-  Developer ID signed with empty entitlements on both architectures, notarized and
-  stapled on Oct 17–18, 2026. The single-icon installer DMG was built, signed and
-  notarized too (last refresh: Apple submission `1722a79b-db9b-4cfe-a397-e9921ae19c21`,
-  Oct 18). On an Intel Mac the installer completed a default install into
-  Applications; on Apple silicon only its Replace/Cancel prompt was observed.
-- **Release automation is the remaining gap.** `finalize_macos_release.sh` still
-  signs separate arm64 and x64 apps. The steps below run by hand and must be folded
-  into it before the first DMG release.
-- **Not yet verified end to end:** updating a signed 0.2.5 install to the universal
-  app on both architectures (including Repair), and Intel under Rosetta in the
-  headless smoke test. A signed Rosetta smoke run timed out in its Qt phase on
-  Oct 17, with the cause unknown; an Intel Mac ran the app normally.
+- **In the release pipeline.** The **Build Release Draft** workflow builds the
+  unsigned universal app (`macos-universal` job), and `finalize_macos_release.sh`
+  signs it, builds the installer and DMG, and uploads all Mac files. The steps
+  are described in [Releasing VODForge](../docs/release.md).
+- **Not yet run end to end in CI.** The pipeline was assembled in November 2026
+  from the scripts used for the private builds of Oct 17–18, 2026 (universal app
+  and installer DMG Developer ID signed, notarized and stapled; Apple submission
+  for the DMG `1722a79b-db9b-4cfe-a397-e9921ae19c21`). Helper collection and wheel
+  fusing were exercised locally on Apple silicon. The first draft run is the
+  first time the whole chain runs together; watch its `macos-universal` job.
+- **Not yet verified end to end:** updating a signed 0.2.5 install to the
+  universal app on both architectures (including Repair). Signed universal builds
+  passed the packaged smoke test under Rosetta on Oct 19–20 after the Intel
+  startup fix below; an Intel Mac ran the app normally.
 
-The evidence from those private builds (receipts, Apple submission IDs, hashes) is
-recorded in `change-and-test-log.md` entries from Oct 16–18, 2026. The build folders
-themselves were removed in the Oct 30 cleanup.
+The evidence from the private builds (receipts, Apple submission IDs, hashes) is
+recorded in `change-and-test-log.md` entries from Oct 16–20, 2026.
 
-## Build steps and their owners
+## How the release builds it
 
-| Step | Script | What it does |
+| Step | Where | What it does |
 | --- | --- | --- |
-| 1. Helpers | `scripts/assemble_universal_helpers.py --arm A --intel B --output OUT` | Combines the verified thin helper binaries (FFmpeg, ffprobe and Deno, with their libraries) from the two architectures into universal ones. It keeps the distinct ARM x265 ABI 217 and Intel ABI 216 and rebases each load edge. It never merges finished apps. |
-| 2. Inputs check | `python -m scripts.build_universal_macos --input PATH --report REPORT.json` | Read-only. Requires universal executables and extensions, checks each architecture's deployment floor, and rejects wrong, missing or unused thin libraries. |
-| 3. App | `python -m scripts.build_universal_macos --build --source CLEAN_SOURCE --python UNIVERSAL_VENV/bin/python --tools HELPERS --output OUT --report REPORT.json --version V` | PyInstaller `--target-arch universal2` from a clean source tree. The finished app is audited for loader, executable and rpath dependencies before the build receipt is written. |
-| 4. Sign | `python -m scripts.sign_universal_macos --app APP --output OUT` | Developer ID signature with no entitlements on either architecture, notarization (notarytool profile `kryden`), stapling and Gatekeeper check. The thin-build script applies Intel's executable-memory entitlement to the whole binary, so don't use it for universal apps. |
-| 5. Installer | `python -m scripts.build_macos_installer --payload SIGNED_APP --output OUT` | Builds the single-icon **Install VODForge** app. Sign and notarize it like step 4. |
-| 6. DMG | `python -m scripts.build_macos_dmg --app SIGNED_INSTALLER --output VODForge-macOS-universal2-vV.dmg` | Refuses thin or unsigned inputs and creates the branded Retina window without Finder scripting. Then sign, notarize and staple the DMG itself and re-verify its checksum. |
+| 1. Helpers per architecture | `scripts/collect_macos_helpers.py` on the Apple silicon and Intel runners | Copies FFmpeg, ffprobe and Deno plus every non-system library they load into a flat folder, stored under the names the loader asks for. |
+| 2. Universal Python | `scripts/create_universal_python_env.py` | Installs the pinned python.org universal2 Python (SHA-256 and Apple signature checked), creates a virtual environment, downloads each dependency for both architectures at the same version, and fuses packages that only publish separate arm64 and x86_64 wheels into universal2 wheels. Refuses any package whose architectures differ in more than compiled code. Checks that both architectures import the app's dependencies. |
+| 3. Universal helpers | `scripts/assemble_universal_helpers.py` | Combines the two helper folders with `lipo` and rebases each library reference. It keeps the distinct ARM x265 ABI 217 and Intel ABI 216. It never merges finished apps. |
+| 4. App | `scripts/build_universal_macos.py --build` | Read-only input check (universal executables and extensions, per-architecture deployment floors, no wrong or unused thin libraries), then PyInstaller `--target-arch universal2` from clean source, with the same contents as the regular build (`scripts/macos_package_contents.py`). The finished app's dependency closure is audited. |
+| 5. Sign the app | `scripts/sign_universal_macos.py` | Developer ID signature with no entitlements on either architecture, notarization (notarytool profile `kryden`), stapling and Gatekeeper check. |
+| 6. Installer and DMG | `scripts/finalize_universal_macos.py` (calls `build_macos_installer.py` and `build_macos_dmg.py`) | Builds the single-icon **Install VODForge** app around the signed app and signs, notarizes and staples it without re-signing the app inside. Then builds the branded DMG and signs, notarizes and staples it. Also writes the universal update ZIP and its two legacy-name copies. |
 
-**Universal Python environment (step 3):** use the official python.org universal2
-Python, hash-verified PyPI wheels, and universal Qt and PyObjC wheels. Where a
-dependency publishes only thin wheels, combine the arm64 and x86_64 wheels. The
-environment from the private builds was not kept, so the release automation must
-recreate it from pinned hashes.
+Steps 1–4 run in CI; steps 5–6 run on the signing Mac.
+
+**Python version:** the universal environment uses python.org 3.13.17, the newest
+3.13 release with a macOS installer (later 3.13 releases are source-only). To move
+on, update `PYTHON_VERSION` and `PYTHON_PKG_SHA256` in
+`scripts/create_universal_python_env.py` from python.org's release file list.
+
+**Intel and entitlements:** the per-architecture Intel app used to be signed with
+`com.apple.security.cs.allow-unsigned-executable-memory` because PyObjC and ctypes
+callbacks allocated libffi closures at startup. Those paths were replaced with a
+compiled native bridge (Oct 19, 2026), and the universal app runs on Intel with no
+entitlements. Don't add that entitlement back; if a new Intel startup hang appears,
+look for a new libffi closure first.
 
 ## Update behavior
 

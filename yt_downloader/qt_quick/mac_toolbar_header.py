@@ -54,7 +54,6 @@ def _library():
             [_POINTER, ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p],
         ),
         "set_interactive": (ctypes.c_int, [_POINTER, ctypes.c_int]),
-        "focus_search": (ctypes.c_int, [_POINTER]),
         "search_focused": (ctypes.c_int, [_POINTER]),
         "edit": (ctypes.c_int, [_POINTER, ctypes.c_char_p]),
         "anchor": (
@@ -341,12 +340,6 @@ class NativeToolbarHeader(QObject):
             "x": float(values[3]),
         }
         return state
-
-    @Slot(result=bool)
-    def focusSearch(self) -> bool:
-        return not self._closed and bool(
-            self._library.vf_toolbar_focus_search(self._handle)
-        )
 
     @Slot(str, result=bool)
     def edit(self, method: str) -> bool:

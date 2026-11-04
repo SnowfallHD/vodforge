@@ -101,7 +101,7 @@ $addData += @("--add-data", "THIRD_PARTY_NOTICES.md;.")
 $uiMode = if ($env:VODFORGE_UI) { $env:VODFORGE_UI } else { "qt" }
 if ($uiMode -ne "qt") { throw "VODFORGE_UI must be qt." }
 $entrypoint = "main.py"
-$qtArgs = @("--hidden-import", "PySide6.QtMultimedia", "--hidden-import", "PySide6.QtQuickControls2", "--exclude-module", "vlc", "--exclude-module", "tkinter", "--exclude-module", "PIL.ImageTk")
+$qtArgs = @("--hidden-import", "PySide6.QtMultimedia", "--hidden-import", "PySide6.QtQuickControls2", "--exclude-module", "vlc", "--exclude-module", "tkinter", "--exclude-module", "PIL.ImageTk", "--exclude-module", "imageio_ffmpeg")
 foreach ($qmlFile in (Get-ChildItem "yt_downloader/qt_quick" -File -Filter "*.qml")) {
   $addData += @("--add-data", "$($qmlFile.FullName);yt_downloader/qt_quick")
 }

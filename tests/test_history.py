@@ -13,7 +13,6 @@ from yt_downloader.history import (
     HistoryError,
     application_data_dir,
     history_identity,
-    history_media_file_exists,
     history_media_file_state,
     history_media_identity,
     history_output_dir,
@@ -358,7 +357,7 @@ def test_exact_missing_output_is_not_hidden_by_an_unrelated_sibling_file(
     )[0]
 
     assert history_media_file_state(record) == history_module.HISTORY_MEDIA_MISSING
-    assert history_media_file_exists(record) is False
+    assert history_media_file_state(record) != history_module.HISTORY_MEDIA_PRESENT
 
 
 def test_redownload_replaces_a_missing_same_item_location(tmp_path: Path):
@@ -411,7 +410,7 @@ def test_redownload_preserves_another_location_that_still_has_media(tmp_path: Pa
         replace_missing_media=True,
     )
 
-    assert history_media_file_exists(original[0]) is True
+    assert history_media_file_state(original[0]) == history_module.HISTORY_MEDIA_PRESENT
     assert len(updated) == 2
     assert {history_output_dir(item) for item in updated} == {
         first_location.resolve(),

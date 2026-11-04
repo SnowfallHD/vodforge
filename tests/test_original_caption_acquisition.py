@@ -9,7 +9,6 @@ from yt_downloader.download_service import (
 )
 
 
-
 @pytest.mark.parametrize("manual", [True, False])
 def test_original_manual_then_automatic_and_no_translation(manual):
     track = [{"ext": "vtt", "url": "https://example.invalid/private"}]
@@ -129,7 +128,6 @@ def test_real_mp4_caption_transcode_roundtrip(tmp_path):
 def test_caption_failure_does_not_claim_success():
     from yt_downloader.download_service import require_original_caption_stream
 
-
     for probe in ({}, {"streams": [{"codec_type": "video"}, {"codec_type": "audio"}]}):
         with pytest.raises(RuntimeError, match="no output was committed"):
             require_original_caption_stream(probe)
@@ -137,8 +135,10 @@ def test_caption_failure_does_not_claim_success():
 
 
 def test_closed_summary_has_no_provider_secrets():
-    from yt_downloader.download_service import compact_video_metadata, sanitized_caption_summary
-
+    from yt_downloader.download_service import (
+        compact_video_metadata,
+        sanitized_caption_summary,
+    )
 
     value = {
         "language": "ru",
