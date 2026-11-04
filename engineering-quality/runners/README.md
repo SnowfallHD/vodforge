@@ -15,6 +15,13 @@ replaces the per-commit native controller scripts earlier rounds wrote by hand;
 the screenshot-backed recorder below remains for release receipts.
 
 
+## Reproducing a Windows test failure
+
+`windows-dev-tests.ps1 -Source <checkout> -Tests <a,b,...>` runs pytest on the
+Windows test PC the way CI does (offscreen, software Qt). It fails with exit 2
+if the account's real VODForge folder changed during the run: tests on that PC
+run as its real user, so restore the profile first if that ever happens.
+
 ## Windows Genesis probes
 
 The `windows-*.ps1` / `windows-*-probe.py` runners use `E:\VODForgeQA` and

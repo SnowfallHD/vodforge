@@ -1,10 +1,14 @@
 """Main.qml wiring for the AppKit toolbar header (mac_toolbar_header.py).
 
 A stand-in exposes the exact Qt interface of NativeToolbarHeader, so these
-tests cover the scene contract on every platform: what the native controls'
-events do, what state the scene pushes back, and how the body makes room.
-Native drawing and AppKit motion are exercised separately by native QA.
+tests cover the scene contract: what the native controls' events do, what state
+the scene pushes back, and how the body makes room. Native drawing and AppKit
+motion are exercised separately by native QA. The toolbar and the application
+Edit menu exist only on macOS (Windows keeps its own title bar), so these run
+there only.
 """
+
+import sys
 
 import pytest
 from PySide6.QtCore import Property, QMetaObject, QObject, QRectF, Signal, Slot
@@ -13,6 +17,10 @@ from PySide6.QtTest import QTest
 
 from tests.test_qt_interaction_invariants import _close, _launch
 from tests.test_qt_scene_port import polish_scene
+
+pytestmark = pytest.mark.skipif(
+    sys.platform != "darwin", reason="the native toolbar header is macOS only"
+)
 
 
 class FakeToolbar(QObject):
