@@ -12,3 +12,6 @@ radon>=6,<7
 vulture>=2.14,<3
 mutmut>=3.3,<4
 pyobjc-framework-Quartz>=11,<13; sys_platform == "darwin"
+# Accessibility drivers for runners/release_journey.py.
+pyobjc-framework-ApplicationServices==12.2.2; sys_platform == "darwin"
+pywinauto>=0.6.9,<0.7; sys_platform == "win32"

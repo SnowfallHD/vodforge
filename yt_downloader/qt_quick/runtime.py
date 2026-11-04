@@ -581,7 +581,11 @@ class DownloadRuntime:
             self._launch_next_queued()
         if self.active_job is not None or self.busy or self.recovery_pending:
             pending = [*self.queued, retry]
-            self.recovery.queue_changed(pending, superseded_run_id=previous.run_id)
+            self.recovery.queue_changed(
+                pending,
+                superseded_run_id=previous.run_id,
+                successor_run_id=retry.run_id,
+            )
             self.queued = pending
             self._activity_upsert(retry, "Queued", "Waiting for the active download")
             self._observe_run("run_queued", retry)
@@ -754,6 +758,8 @@ class DownloadRuntime:
             return False
         if not self.recovery.store.clear(run_id, terminal_only=True):
             return False
+        # Removing a retry ends its lineage; free any predecessor's held files.
+        self.recovery.store.release_superseded()
         self.recovered = [job for job in self.recovered if job is not matches[0]]
         return True
 
@@ -763,6 +769,7 @@ class DownloadRuntime:
             return False
         remaining = [job for job in self.queued if job.run_id != run_id]
         self.recovery.queue_changed(remaining)
+        self.recovery.store.release_superseded()
         self.queued = remaining
         self._observe_run("run_dequeued", matches[0])
         self._activity_upsert(matches[0], "Removed", "Removed from the queue")
