@@ -4112,3 +4112,21 @@ is offered and a new download isn't blocked". None followed the resumed run to
 completion and then looked at the run list and the output folder after a
 restart. `tests/test_resumed_run_lineage.py` covers the lineage end to end, and
 the journey's reopen step now fails on any stale Paused item or leftover staging.
+
+### Tests that share process-wide state must reset it — 2026-11-04
+
+The first CI run of the consolidated work failed in ways no local run showed.
+Each failure came from one test's leftovers deciding another test's outcome:
+- Six modules borrowed Qt scene fixtures without a `test_qt_` name, so they ran
+  in the backend process, where Qt aborts on a display-less Ubuntu runner. The
+  partition guard now treats any module importing a Qt test module as Qt.
+- A download installs a process-wide child-process observer. A test that
+  starts a run without finishing it left the observer behind, and later fake
+  processes failed against it. Moving those six modules changed the order and
+  exposed it. Both conftest files now reset the observer around every test.
+- Animation tests used fixed waits tuned to local frame timing. They now poll
+  for each state and judge movement against animation progress.
+
+Rule: a test that touches process-wide state (Qt application, cursor, child
+observer) resets it, and a fixture-borrowing module runs where its fixtures can.
+Local passes in one order don't show these; the CI partitions and slow runners do.

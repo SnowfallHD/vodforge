@@ -80,14 +80,26 @@ waive it by rerunning until it passes.
 4. **Telemetry journeys.** Run the preview-D1 telemetry journey on the final signed
    Mac and Windows builds, plus the consent-denied and telemetry-off checks
    ([telemetry release gate](../engineering-quality/TELEMETRY_RELEASE_GATE.md)).
-5. **Hands-on testing on three machines**, using the final signed files:
-   - **Apple silicon Mac:** install from the DMG. Download an MP4 and an MP3, check
-     Library, Watch playback, My Files and Issues & Recovery, enter and leave full
-     screen, reveal the menu bar, resize the window, then quit and relaunch.
+5. **Hands-on testing on three machines**, using the final signed files. Start each
+   with the unattended journey, `engineering-quality/runners/release_journey.py`. It
+   drives the real app through the OS accessibility interface: a download killed
+   mid-transfer, relaunch, a new download while the killed one is held, Resume,
+   real YouTube MP4 and MP3, and a quit and reopen that must show no stale Paused
+   item or leftover staging. It probes every saved file and takes about two minutes:
+   - **Apple silicon Mac:** install from the DMG, then
+     `python engineering-quality/runners/release_journey.py --app /Applications/VODForge.app --output <folder>`
+     (the terminal needs Accessibility permission; Screen Recording too for window
+     images).
    - **Intel Mac:** the same, from the same DMG.
-   - **Windows PC:** the same, with both the installer and the portable ZIP.
-     Windows runs go through the established SSH route and the QA folder
-     `E:\VODForgeQA` (see `engineering-quality/runners/README.md`).
+   - **Windows PC:** `engineering-quality/runners/windows-release-journey.ps1` over the
+     established SSH route, once with the extracted portable ZIP (`-App`) and once
+     with `-Installer` pointing at the signed installer. The installer run backs up and
+     restores the PC's own VODForge uninstall entry and shortcuts. Runs use the
+     QA folder `E:\VODForgeQA` (see `engineering-quality/runners/README.md`).
+
+   Then check by hand what the journey can't: Library, Watch playback, My Files and
+   Issues & Recovery look right, full screen and the menu-bar reveal on the Macs, and
+   window resizing.
 6. **Updates from the previous public release.** On each of the three machines,
    install the current public version in an isolated test profile and point its
    updater at the candidate through the local QA update feed instead of GitHub

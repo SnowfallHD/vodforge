@@ -58,6 +58,19 @@ def offscreen_cursor_starts_outside_windows():
     yield
 
 
+@pytest.fixture(autouse=True)
+def no_leaked_child_process_observer():
+    """A download sets a process-wide child-process observer and clears it when
+    the run ends. A test that starts a run without finishing it would leave the
+    observer behind, and a later test's fake processes would trip over it, so
+    the outcome depended on test order. Clear it around every test."""
+    from yt_downloader.download_service import set_active_child_process_observer
+
+    set_active_child_process_observer(None)
+    yield
+    set_active_child_process_observer(None)
+
+
 @pytest.fixture
 def production_telemetry_contract(monkeypatch):
     """Exercise release logic with the individual tests' fake transports only."""

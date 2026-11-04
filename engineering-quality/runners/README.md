@@ -1,5 +1,20 @@
 # Packaged-app UI driver protocol
 
+## Unattended pre-release journey
+
+`release_journey.py` runs one packaged app through the pre-release journey
+without anyone at the keyboard: hard kill mid-download, relaunch, a new
+download while the interrupted run is held, Resume, real YouTube MP4 and MP3,
+then a normal quit and reopen. It finds controls by accessible name (macOS
+Accessibility, Windows UI Automation through pywinauto), dismisses prompts a
+user would, and probes every saved file with the app's own ffprobe. State lives
+in the output folder and telemetry is off. On Windows, run it through
+`windows-release-journey.ps1` (interactive-session task; `-Installer` for the
+signed installer with the PC's registration restored afterwards). This journey
+replaces the per-commit native controller scripts earlier rounds wrote by hand;
+the screenshot-backed recorder below remains for release receipts.
+
+
 ## Windows Genesis probes
 
 The `windows-*.ps1` / `windows-*-probe.py` runners use `E:\VODForgeQA` and
