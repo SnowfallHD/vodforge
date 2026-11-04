@@ -78,6 +78,12 @@ minimum_macos="$("$python_bin" -c 'import os,sys; from scripts.build_macos_fulls
     --ignore=tests/test_qt_player_responsive_stage.py \
     --ignore=tests/test_qt_player_resize_continuity.py \
     --ignore=tests/test_qt_retry_recovery_membership.py \
+    --ignore=tests/test_automatic_updates.py \
+    --ignore=tests/test_library_shutdown_pending.py \
+    --ignore=tests/test_resource_recovery_issues.py \
+    --ignore=tests/test_run_completion_sidecar_identity.py \
+    --ignore=tests/test_run_deck_terminal_order.py \
+    --ignore=tests/test_workflow_coverage.py \
     --ignore=tests/test_qt_without_tk.py \
     --ignore=tests/test_qt_history_startup.py \
     --ignore=tests/test_qt_mac_windowing_ownership.py \
@@ -189,6 +195,12 @@ minimum_macos="$("$python_bin" -c 'import os,sys; from scripts.build_macos_fulls
     tests/test_qt_player_responsive_stage.py \
     tests/test_qt_player_resize_continuity.py \
     tests/test_qt_retry_recovery_membership.py \
+    tests/test_automatic_updates.py \
+    tests/test_library_shutdown_pending.py \
+    tests/test_resource_recovery_issues.py \
+    tests/test_run_completion_sidecar_identity.py \
+    tests/test_run_deck_terminal_order.py \
+    tests/test_workflow_coverage.py \
     tests/test_qt_without_tk.py \
     tests/test_qt_history_startup.py \
     tests/test_qt_mac_windowing_ownership.py \

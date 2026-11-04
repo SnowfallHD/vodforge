@@ -81,6 +81,11 @@ jobs:
           --ignore=tests/test_qt_file_recovery_actions.py
           --ignore=tests/test_qt_terminal_dismissal.py
           --ignore=tests/test_qt_retry_recovery_membership.py
+          --ignore=tests/test_automatic_updates.py
+          --ignore=tests/test_library_shutdown_pending.py
+          --ignore=tests/test_resource_recovery_issues.py
+          --ignore=tests/test_run_completion_sidecar_identity.py
+          --ignore=tests/test_run_deck_terminal_order.py
           --ignore=tests/test_qt_inspector_recovery_details.py
           --ignore=tests/test_qt_folder_columns_responsive.py
           --ignore=tests/test_qt_inspector_action_contract.py
@@ -197,6 +202,11 @@ jobs:
           tests/test_qt_file_recovery_actions.py
           tests/test_qt_terminal_dismissal.py
           tests/test_qt_retry_recovery_membership.py
+          tests/test_automatic_updates.py
+          tests/test_library_shutdown_pending.py
+          tests/test_resource_recovery_issues.py
+          tests/test_run_completion_sidecar_identity.py
+          tests/test_run_deck_terminal_order.py
           tests/test_qt_inspector_recovery_details.py
           tests/test_qt_folder_columns_responsive.py
           tests/test_qt_inspector_action_contract.py
