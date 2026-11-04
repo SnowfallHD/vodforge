@@ -23,6 +23,9 @@ def _moving_popups(window):
     ]
 
 
+LIQUID_SETTLE_BUDGET_S = 3.0
+
+
 def settle_liquid(window):
     """Wait for the new app-owned popup lifecycle, not a fixed instant-close assumption.
 
@@ -30,7 +33,7 @@ def settle_liquid(window):
     open in a process also builds its border and shadow, which can take over a
     second with software rendering (Windows CI); a stuck popup still fails.
     """
-    deadline = time.monotonic() + 3.0
+    deadline = time.monotonic() + LIQUID_SETTLE_BUDGET_S
     while time.monotonic() < deadline:
         if not _moving_popups(window):
             return
