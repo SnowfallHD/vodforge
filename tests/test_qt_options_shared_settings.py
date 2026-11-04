@@ -384,7 +384,14 @@ def test_custom_resize_relocates_extras_and_keeps_scroll_owners_independent(
         )
         rate.setProperty("expanded", True)
         wait_for_reveal(rate, 1)
-        QTest.qWait(40)
+        # Content height settles after the expansion animations; poll for it.
+        for _ in range(200):
+            if (
+                left.property("contentHeight") > left.height()
+                and right.property("contentHeight") > right.height()
+            ):
+                break
+            QTest.qWait(10)
         assert left.property("contentHeight") > left.height()
         assert right.property("contentHeight") > right.height()
         left.setProperty("contentY", 0)

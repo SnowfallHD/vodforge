@@ -58,6 +58,18 @@ def run_scene(tmp_path, monkeypatch):
     bridge.close()
 
 
+def wait_visible(popup, visible, timeout_ms=2000):
+    """Poll for the popup's state: hover timers fire later on slow runners."""
+    waited = 0
+    while popup.property("visible") != visible:
+        if waited >= timeout_ms:
+            raise AssertionError(
+                f"popup visible={popup.property('visible')}, expected {visible}"
+            )
+        QTest.qWait(10)
+        waited += 10
+
+
 def move(window, point):
     window.setProperty("qaPointerPosition", window.mapToGlobal(point.toPoint()))
     QTest.mouseMove(window, QPoint(round(point.x()), round(point.y())))
@@ -69,7 +81,7 @@ def test_edge_touch_and_held_face_across_padding_and_seam(run_scene):
     face = button.findChild(QObject, "allRunsTriggerFace")
     center = button.mapToScene(QPointF(button.width() / 2, button.height() / 2))
     move(window, center)
-    assert popup.property("visible")
+    wait_visible(popup, True)
     assert button.property("held")
     assert "/pressed/" in face.property("source").toString()
     content = popup.property("contentItem")
@@ -81,7 +93,7 @@ def test_edge_touch_and_held_face_across_padding_and_seam(run_scene):
     # Repeated crossings include the frame's 9px padding, excluded previously.
     for dy in (-1, -5, -9, -1, 0, 1, -1, 1):
         move(window, QPointF(center.x(), top + dy))
-        assert popup.property("visible")
+        wait_visible(popup, True)
         assert button.property("held")
         assert "/pressed/" in face.property("source").toString()
     move(window, QPointF(2, 2))
@@ -91,7 +103,7 @@ def test_edge_touch_and_held_face_across_padding_and_seam(run_scene):
             break
         QTest.qWait(50)
     settle_popups(window)
-    assert not popup.property("visible")
+    wait_visible(popup, False)
     assert not button.property("held")
     assert "/normal/" in face.property("source").toString()
 
@@ -107,14 +119,14 @@ def test_click_navigates_without_another_press_face_or_toggle(run_scene):
     )
     app.processEvents()
     assert face.property("source") == before
-    assert popup.property("visible")
+    wait_visible(popup, True)
     QTest.mouseRelease(
         window, Qt.LeftButton, Qt.NoModifier, QPoint(round(point.x()), round(point.y()))
     )
     app.processEvents()
     assert bridge.selection == "Library"
     settle_popups(window)
-    assert not popup.property("visible")
+    wait_visible(popup, False)
 
 
 @pytest.mark.parametrize("gesture", ["ellipsis", "right_click"])
@@ -144,7 +156,7 @@ def test_overflow_actions_keep_owner_and_anchor_alive(run_scene, gesture):
     # Moving into the actions must not retire the overflow delegate/anchor.
     content = actions.property("contentItem")
     move(window, content.mapToScene(QPointF(20, 20)))
-    assert popup.property("visible")
+    wait_visible(popup, True)
     assert actions.property("visible")
     assert card.property("record")["runId"] == owner
 
@@ -197,7 +209,7 @@ def test_hovering_overflow_ellipsis_keeps_listing_open(run_scene):
     move(window, action.mapToScene(QPointF(action.width() / 2, action.height() / 2)))
     QTest.qWait(250)
     assert action.property("hovered")
-    assert popup.property("visible")
+    wait_visible(popup, True)
 
 
 def test_stale_hover_delivery_after_pointer_left_cannot_open(run_scene, monkeypatch):
@@ -211,7 +223,7 @@ def test_stale_hover_delivery_after_pointer_left_cannot_open(run_scene, monkeypa
     assert button.findChild(QObject, "allRunsPointerArea").property("containsMouse")
     assert not button.property("hovered")
     settle_popups(window)
-    assert not popup.property("visible")
+    wait_visible(popup, False)
 
 
 @pytest.mark.parametrize("size", [(820, 560), (1400, 900)])
@@ -222,7 +234,7 @@ def test_primed_hover_is_retired_on_resize_with_pointer_at_corner(
 
     _app, _bridge, window, button, popup = run_scene
     move(window, button.mapToScene(QPointF(button.width() / 2, button.height() / 2)))
-    assert popup.property("visible")
+    wait_visible(popup, True)
     # No Qt move delivery: native resize capture can keep containsMouse stale.
     monkeypatch.setattr(
         QCursor,
@@ -233,12 +245,12 @@ def test_primed_hover_is_retired_on_resize_with_pointer_at_corner(
         window.resize(width, height)
         QTest.qWait(150)
         settle_popups(window)
-        assert not popup.property("visible")
+        wait_visible(popup, False)
     popup.close()
     window.resize(1100, 740)
     QTest.qWait(150)
     settle_popups(window)
-    assert not popup.property("visible")
+    wait_visible(popup, False)
 
 
 @pytest.mark.parametrize("primed", [False, True])
@@ -247,30 +259,30 @@ def test_held_corner_cross_requires_release_and_new_motion(run_scene, primed):
     center = lambda: button.mapToScene(QPointF(button.width() / 2, button.height() / 2))
     if primed:
         move(window, center())
-        assert popup.property("visible")
+        wait_visible(popup, True)
     corner = QPoint(window.width() - 2, window.height() - 2)
     move(window, QPointF(corner))
     settle_popups(window)
-    assert not popup.property("visible")
+    wait_visible(popup, False)
     QTest.mousePress(window, Qt.LeftButton, pos=corner)
     assert bridge.isPointerPressed()
     move(window, center())
     settle_popups(window)
-    assert not popup.property("visible")
+    wait_visible(popup, False)
     QTest.mouseRelease(window, Qt.LeftButton, pos=center().toPoint())
     QTest.qWait(120)
     settle_popups(window)
-    assert not popup.property("visible")
+    wait_visible(popup, False)
     move(window, center() + QPointF(1, 0))
-    assert popup.property("visible")
+    wait_visible(popup, True)
     popup.close()
     for size in ((1400, 900), (820, 560), (1100, 740), (820, 560)):
         window.resize(*size)
         QTest.qWait(130)
         settle_popups(window)
-        assert not popup.property("visible")
+        wait_visible(popup, False)
     move(window, center())
-    assert popup.property("visible")
+    wait_visible(popup, True)
 
 
 @pytest.mark.parametrize("dismiss", ["resize", "keyboard"])
@@ -278,7 +290,7 @@ def test_pending_motion_cannot_reopen_after_geometry_or_dismiss(run_scene, dismi
     _app, _bridge, window, button, popup = run_scene
     point = button.mapToScene(QPointF(button.width() / 2, button.height() / 2))
     move(window, point)
-    assert popup.property("visible")
+    wait_visible(popup, True)
     # Queue another legitimate move, then invalidate it before the deferred
     # admission callback. Neither resize nor Escape may resurrect that motion.
     point += QPointF(1, 0)
@@ -290,7 +302,7 @@ def test_pending_motion_cannot_reopen_after_geometry_or_dismiss(run_scene, dismi
         QTest.keyClick(window, Qt.Key_Escape)
     QTest.qWait(160)
     settle_popups(window)
-    assert not popup.property("visible")
+    wait_visible(popup, False)
 
 
 def test_public_pointer_query_checks_live_rect_visibility_and_stale_item(run_scene):

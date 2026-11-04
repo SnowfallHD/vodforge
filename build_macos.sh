@@ -162,7 +162,7 @@ minimum_macos="$("$python_bin" -c 'import os,sys; from scripts.build_macos_fulls
     --ignore=engineering-quality/tests/test_qt_stone_button_accessibility.py \
     --ignore=engineering-quality/tests/test_qt_update_session.py \
     --ignore=engineering-quality/tests/test_qt_worker_owner.py
-  QT_QUICK_CONTROLS_STYLE=Basic QT_QUICK_BACKEND=software "$python_bin" -m pytest -q \
+  QT_QUICK_CONTROLS_STYLE=Basic QT_QUICK_BACKEND=software "$python_bin" -m pytest -q --tb=short \
     tests/test_qt_application_fullscreen.py \
     tests/test_qt_import_failure_status.py \
     tests/test_qt_local_conversion_validation.py \
@@ -278,7 +278,7 @@ minimum_macos="$("$python_bin" -c 'import os,sys; from scripts.build_macos_fulls
     engineering-quality/tests/test_qt_stone_button_accessibility.py \
     engineering-quality/tests/test_qt_update_session.py \
     engineering-quality/tests/test_qt_worker_owner.py
-  QT_QUICK_CONTROLS_STYLE=Basic QT_QUICK_BACKEND=software "$python_bin" -m pytest -q tests/test_qt_scene_port.py
+  QT_QUICK_CONTROLS_STYLE=Basic QT_QUICK_BACKEND=software "$python_bin" -m pytest -q --tb=short tests/test_qt_scene_port.py
 )
 
 ui_mode="${VODFORGE_UI:-qt}"

@@ -42,8 +42,11 @@ def retained(tmp_path):
     (root / "engineering-quality").mkdir()
     writer = root / "scripts/write_build_revision.py"
     writer.parent.mkdir()
+    # The audit pins the committed (LF) bytes; a Windows checkout may hold CRLF.
     writer.write_bytes(
-        (Path(__file__).parents[2] / "scripts/write_build_revision.py").read_bytes()
+        (Path(__file__).parents[2] / "scripts/write_build_revision.py")
+        .read_bytes()
+        .replace(b"\r\n", b"\n")
     )
     product = root / "yt_downloader/demo.py"
     product.parent.mkdir()
