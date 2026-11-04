@@ -744,12 +744,7 @@ class ActiveRunStore:
                 raise RunStateError("A preserved recovery owns this run identity.")
             failures = self._failure_records(existing)
             if superseded_run_id:
-                failures = [
-                    record
-                    for record in failures
-                    if record.get("ownership")
-                    or str(record["job"].get("run_id") or "") != superseded_run_id
-                ]
+                failures = self._supersede(failures, superseded_run_id, job.run_id)
             self._write_unlocked(
                 {
                     "schema_version": RUN_STATE_SCHEMA_VERSION,
@@ -773,6 +768,7 @@ class ActiveRunStore:
         jobs: Sequence[DownloadJob],
         *,
         superseded_run_id: str | None = None,
+        successor_run_id: str | None = None,
     ) -> None:
         """Durably replace the ordered queue without disturbing active ownership."""
 
@@ -780,12 +776,9 @@ class ActiveRunStore:
             payload = self._read_unlocked()
             failures = self._failure_records(payload)
             if superseded_run_id:
-                failures = [
-                    record
-                    for record in failures
-                    if record.get("ownership")
-                    or str(record["job"].get("run_id") or "") != superseded_run_id
-                ]
+                failures = self._supersede(
+                    failures, superseded_run_id, successor_run_id
+                )
             if payload is None:
                 payload = {
                     "schema_version": RUN_STATE_SCHEMA_VERSION,
@@ -845,6 +838,104 @@ class ActiveRunStore:
                 # erase records, invent URLs, or launch incomplete jobs.
                 self._write_unlocked(payload)
             return jobs
+
+    @staticmethod
+    def _supersede(
+        failures: list[dict[str, Any]],
+        superseded_run_id: str,
+        successor_run_id: str | None,
+    ) -> list[dict[str, Any]]:
+        """Hand an attempt's lineage to the retry that replaces it.
+
+        A record without resources is dropped. A settled record that still holds
+        partial files (recovery "ready", no process records) is kept for its
+        files but linked to the successor with ``superseded_by``, which hides it
+        from the run list; ``release_superseded`` frees the files once that
+        lineage ends. Records with unresolved processes or a recovery in
+        progress stay exactly as they were.
+        """
+        kept = []
+        for record in failures:
+            if successor_run_id and record.get("superseded_by") == superseded_run_id:
+                # The successor itself was retried: follow the lineage.
+                record = {**record, "superseded_by": successor_run_id}
+            if str(record["job"].get("run_id") or "") != superseded_run_id:
+                kept.append(record)
+                continue
+            ownership = record.get("ownership")
+            if not ownership:
+                continue
+            if (
+                successor_run_id
+                and record.get("recovery_state") == "ready"
+                and not record.get("recovery_inflight")
+                and not ownership.get("children")
+            ):
+                record = {**record, "superseded_by": successor_run_id}
+            kept.append(record)
+        return kept
+
+    def _release_superseded_unlocked(self, payload: dict[str, Any]) -> bool:
+        """Free the held partial files of attempts whose successor has finished.
+
+        The successor's lineage has ended when it is no longer active, queued or
+        listed as a terminal run (it completed or the user removed it). Its
+        predecessor's partial files are then useless, since every attempt stages
+        separately. Cleanup goes through the safe staging owner; a record whose
+        files can't be removed safely stays protected for the next pass.
+        """
+        failures = self._failure_records(payload)
+        live = {
+            str(record["job"].get("run_id") or "")
+            for record in failures
+            if not record.get("superseded_by")
+        }
+        live.update(
+            str(record.get("run_id") or "") for record in self._queued_records(payload)
+        )
+        if payload.get("state") == "active" and isinstance(payload.get("job"), dict):
+            live.add(str(payload["job"].get("run_id") or ""))
+        kept, changed = [], False
+        for record in failures:
+            successor = record.get("superseded_by")
+            if not successor or successor in live:
+                kept.append(record)
+                continue
+            staging = [Path(v) for v in record["ownership"].get("staging_dirs", [])]
+            root = (
+                Path(
+                    os.path.abspath(str(record["job"].get("output_dir") or ""))
+                ).resolve(strict=False)
+                / ".vfstage"
+            )
+            try:
+                if any(path.parent != root for path in staging):
+                    raise UnsafeOutputPathError(
+                        "Held staging is outside its output root."
+                    )
+                cleanup_abandoned_staging_transactions(staging)
+            except (UnsafeOutputPathError, OSError):
+                kept.append(record)
+                continue
+            changed = True
+        if changed:
+            payload["recovered_failures"] = kept
+        return changed
+
+    def release_superseded(self) -> bool:
+        with self._lock:
+            payload = self._read_unlocked()
+            if payload is None or not self._release_superseded_unlocked(payload):
+                return False
+            if (
+                payload.get("state") != "active"
+                and not payload.get("recovered_failures")
+                and not self._queued_records(payload)
+            ):
+                self._unlink_unlocked()
+            else:
+                self._write_unlocked(payload)
+            return True
 
     @staticmethod
     def _failure_records(payload: Mapping[str, Any] | None) -> list[dict[str, Any]]:
@@ -1147,6 +1238,8 @@ class ActiveRunStore:
             payload = self._read_unlocked()
             jobs: list[DownloadJob] = []
             for record in self._failure_records(payload):
+                if record.get("superseded_by"):
+                    continue  # Replaced by a retry; only its held files remain.
                 job = deserialize_download_job(
                     record["job"], allow_missing_retry_url=True
                 )
@@ -1565,6 +1658,9 @@ class RunRecoveryOwner:
                     cause="live_owner",
                     stage="owner_check",
                 )
+            # No other live owner: free files held for attempts whose retry
+            # finished while the app was closing.
+            self.store.release_superseded()
             terminal = self.store.prepare_recovery()
             return terminal, self.store.load_queued_jobs(retire_missing_sources=True)
         except (RunStateError, ProcessOwnershipError, OSError) as exc:
@@ -1671,13 +1767,18 @@ class RunRecoveryOwner:
         jobs: Sequence[DownloadJob],
         *,
         superseded_run_id: str | None = None,
+        successor_run_id: str | None = None,
     ) -> None:
         if not self._available:
             raise RunStateError(
                 "The durable run queue is unavailable because recovery failed safely."
             )
         try:
-            self.store.replace_queue(jobs, superseded_run_id=superseded_run_id)
+            self.store.replace_queue(
+                jobs,
+                superseded_run_id=superseded_run_id,
+                successor_run_id=successor_run_id,
+            )
         except RunStateError as exc:
             self._observe_write_failure(
                 exc, jobs[0].run_id if len(jobs) == 1 else None, entry="queue_update"
@@ -1746,6 +1847,8 @@ class RunRecoveryOwner:
     def finished(self, run_id: str, *, application_closing: bool) -> None:
         if not application_closing:
             self.store.clear(run_id)
+            self.store.release_superseded()
 
     def removed_or_retried(self, run_id: str) -> None:
         self.store.clear(run_id)
+        self.store.release_superseded()

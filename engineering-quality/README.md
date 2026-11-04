@@ -4089,3 +4089,26 @@ width across idle, hover, held and selected across six themes. Existing selected
 material tests only compared the painted face and missed label metric changes.
 New controls inherit shared behavior; no new fontweight transition or duplicated
 color palette is introduced. User screenshots and negative controls retained.
+
+### A retry must retire the attempt it replaces — 2026-11-04
+
+Found by the unattended pre-release journey (`runners/release_journey.py`), not by
+the existing suites: kill the app mid-download, relaunch, press Resume, let it
+finish, quit and reopen. The original attempt was still listed as Paused with a
+Resume button, and its partial files stayed in `Downloads/.vfstage` for good.
+Startup recovery deliberately keeps a killed attempt's partial files, and
+supersession deliberately skips records that hold files, so nothing ever retired
+that record: every Resume starts a fresh staging folder, so the kept files had no
+user, and dismissal refused the card because it held files.
+
+Rule: when a retry or resume is accepted, the replaced attempt's lineage moves
+to the successor. A settled record (recovery `ready`, no process records) is
+hidden and linked with `superseded_by`; its files are released through the safe
+staging owner once the successor's lineage ends (finished, removed, or found
+finished at startup). Unsettled records keep today's behavior.
+
+Why earlier coverage missed it: recovery tests stopped at "the interrupted run
+is offered and a new download isn't blocked". None followed the resumed run to
+completion and then looked at the run list and the output folder after a
+restart. `tests/test_resumed_run_lineage.py` covers the lineage end to end, and
+the journey's reopen step now fails on any stale Paused item or leftover staging.
