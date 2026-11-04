@@ -10,7 +10,20 @@ $url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
 
 New-Item -ItemType Directory -Force -Path $vendor | Out-Null
 Write-Host "Downloading FFmpeg from $url"
-Invoke-WebRequest -Uri $url -OutFile $tmp
+# The download host sometimes answers 503 under load; retry with growing waits
+# rather than failing a whole CI job on one busy moment.
+$delays = @(10, 30, 60, 120)
+for ($attempt = 1; ; $attempt++) {
+  try {
+    Invoke-WebRequest -Uri $url -OutFile $tmp
+    break
+  } catch {
+    if ($attempt -gt $delays.Count) { throw }
+    $wait = $delays[$attempt - 1]
+    Write-Host "Download attempt $attempt failed ($($_.Exception.Message.Split([Environment]::NewLine)[0])); retrying in $wait s"
+    Start-Sleep -Seconds $wait
+  }
+}
 
 $extract = Join-Path $env:TEMP "ffmpeg-release-essentials"
 Remove-Item -Recurse -Force $extract -ErrorAction SilentlyContinue
