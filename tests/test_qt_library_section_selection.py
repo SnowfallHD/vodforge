@@ -1,10 +1,12 @@
 """Section switching and bulk dispatch cannot retain hidden Library targets."""
 
+import time
+
 import pytest
 from PySide6.QtCore import QObject, QPointF, Qt, QUrl
 from PySide6.QtTest import QTest
 
-from tests.test_qt_scene_port import qt_app, saved, visual_item
+from tests.test_qt_scene_port import polish_scene, qt_app, saved, visual_item
 from yt_downloader.qt_quick import main as qt_main
 
 
@@ -16,6 +18,11 @@ def library(tmp_path, monkeypatch):
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
     app = qt_app()
     bridge = qt_main.Bridge(None)
+    # A fresh profile shows the welcome screen, a modal popup that swallows
+    # clicks; when it opens depends on startup timing, so dismiss it up front
+    # as the other scene fixtures do.
+    bridge._engagement.presented_welcome()
+    bridge._settings["whats_new_seen"] = qt_main.SHOWCASE_ID
     bridge._runtime.history = [
         saved(tmp_path, "Clip", "MP4", category="Clips"),
         saved(tmp_path, "Nature", "MP4", category="Nature"),
@@ -34,6 +41,12 @@ def library(tmp_path, monkeypatch):
     bridge.select("Library")
     app.processEvents()
     QTest.qWait(30)
+    # Finish pending layout before any test measures or clicks: on slow
+    # software rendering the collection cards could still share one position,
+    # so a click landed on the wrong card.
+    for _ in range(3):
+        polish_scene(window.contentItem())
+        app.processEvents()
     scene = window.findChild(QObject, "libraryBrowseScene")
     yield app, bridge, window, scene
     bridge.close()
@@ -187,8 +200,13 @@ def test_collection_context_delete_uses_existing_guard_without_selection(
     assert context is not None
     position = context.mapToScene(QPointF(context.width() / 2, context.height() / 2))
     QTest.mouseClick(window, Qt.RightButton, Qt.NoModifier, position.toPoint())
-    QTest.qWait(40)
     popup = window.findChild(QObject, "libraryGroupMenu")
+    # Measure once the menu has opened, not after a fixed delay: on a loaded
+    # runner 40 ms could pass before it opened, leaving its default position.
+    deadline = time.monotonic() + 3
+    while not popup.property("opened") and time.monotonic() < deadline:
+        QTest.qWait(10)
+    assert popup.property("opened")
     menu_position = scene.mapToScene(QPointF(popup.property("x"), popup.property("y")))
     card_position = context.mapToScene(QPointF(0, 0))
     assert menu_position.x() <= card_position.x() + context.width()

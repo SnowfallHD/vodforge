@@ -12,6 +12,16 @@ from pathlib import Path
 
 HELPERS = {"ffmpeg", "ffprobe", "deno"}
 ARCHES = ("arm64", "x86_64")
+# Helper libraries sit beside Python's and Qt's in Contents/Frameworks. Without
+# a private name a thin helper copy (Intel FFmpeg's OpenSSL 3 libcrypto.3) took
+# the place of Python's universal library of the same name, leaving _ssl with
+# no arm64 provider. The prefix keeps the helpers' own copies apart.
+PRIVATE_PREFIX = "vodforge-helper-"
+
+
+def private_name(name: str) -> str:
+    """The bundled file name for a helper input: libraries become private."""
+    return name if name in HELPERS else PRIVATE_PREFIX + name
 
 
 def run(args):
@@ -75,7 +85,7 @@ def assemble(arm: Path, intel: Path, output: Path):
         stage = thin / arch
         stage.mkdir()
         for name in inventories[arch]:
-            source, target = folder / name, stage / name
+            source, target = folder / name, stage / private_name(name)
             shutil.copy2(source, target)
             deps = dependency_names(source, arch)
             for dep in deps:
@@ -89,13 +99,18 @@ def assemble(arm: Path, intel: Path, output: Path):
                         "/usr/bin/install_name_tool",
                         "-change",
                         dep,
-                        "@loader_path/" + provider,
+                        "@loader_path/" + private_name(provider),
                         str(target),
                     ]
                 )
             if name.endswith(".dylib"):
                 run(
-                    ["/usr/bin/install_name_tool", "-id", "@rpath/" + name, str(target)]
+                    [
+                        "/usr/bin/install_name_tool",
+                        "-id",
+                        "@rpath/" + private_name(name),
+                        str(target),
+                    ]
                 )
             load = run(["/usr/bin/otool", "-l", str(target)])
             for block in load.split("Load command"):
@@ -112,8 +127,9 @@ def assemble(arm: Path, intel: Path, output: Path):
                         )
     slices = {}
     for name in sorted(set(inventories["arm64"]) | set(inventories["x86_64"])):
-        inputs = [thin / arch / name for arch in ARCHES if name in inventories[arch]]
-        destination = output / name
+        bundled = private_name(name)
+        inputs = [thin / arch / bundled for arch in ARCHES if name in inventories[arch]]
+        destination = output / bundled
         if len(inputs) == 2:
             run(
                 [
@@ -129,7 +145,7 @@ def assemble(arm: Path, intel: Path, output: Path):
                 raise ValueError("Standalone helper lacks both architectures")
             shutil.copy2(inputs[0], destination)
         run(["/usr/bin/codesign", "--force", "--sign", "-", str(destination)])
-        slices[name] = sorted(
+        slices[bundled] = sorted(
             run(["/usr/bin/lipo", "-archs", str(destination)]).split()
         )
     errors = check_edges(
