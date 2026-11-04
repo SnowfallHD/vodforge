@@ -14,6 +14,10 @@ signed installer with the PC's registration restored afterwards). This journey
 replaces the per-commit native controller scripts earlier rounds wrote by hand;
 the screenshot-backed recorder below remains for release receipts.
 
+On an Apple silicon Mac, `--arch x86_64` runs a universal app as Intel code
+under Rosetta and fails unless macOS reports the process as translated
+(`P_TRANSLATED`); the result records `app_arch` and, at launch, `rosetta`.
+
 
 ## Reproducing a Windows test failure
 
