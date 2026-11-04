@@ -79,7 +79,9 @@ def test_automatic_browser_claim_preserves_independent_usage_choice(
             browser_opener=lambda *a, **kw: pytest.fail("Worker opened browser"),
             poll_attempts=1,
         )
-        deadline = time.monotonic() + 2
+        # Exits as soon as the claim settles; the wide limit is for a cold
+        # first test on a slow Windows runner, where 2 s once ran out.
+        deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
             session.poll_first_launch_delivery()
             state = load_or_create_installation_state(path)
@@ -138,7 +140,7 @@ def test_automatic_handoff_is_once_only_and_respects_operational_boundaries(
         elif boundary == "build_disabled":
             enabled[0] = False
         release.set()
-        deadline = time.monotonic() + 2
+        deadline = time.monotonic() + 10  # exits early; slow Windows runner
         while session._attribution_work is not None and time.monotonic() < deadline:
             if session._closed:
                 session.close()
