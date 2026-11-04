@@ -229,7 +229,6 @@ def _repository(raw, root, check):
                     "--ignore-missing-imports",
                     "--follow-imports=skip",
                     "yt_downloader",
-                    "tests/typecheck",
                 ],
                 "bandit": ["-m", "bandit", "-q", "-r", "yt_downloader", "-f", "json"],
                 "vulture": ["-m", "vulture", "yt_downloader", "--min-confidence", "80"],

@@ -115,7 +115,7 @@ def integrate_windows_frames(engine: Any) -> Any:
                 hwnd, None, 0, 0, 0, 0, 0x0037
             )  # frame changed, no move/size/activate/z-order
 
-        def nativeEventFilter(self, event_type: Any, message: int) -> tuple[bool, int]:
+        def nativeEventFilter(self, _event_type: Any, message: int) -> tuple[bool, int]:
             msg = w.MSG.from_address(int(message))
             window = self.handles.get(msg.hWnd)
             if window is None:

@@ -77,8 +77,10 @@ def test_single_settings_toggle_saves_both_choices_without_network(
     tmp_path, monkeypatch, height
 ):
     from unittest.mock import Mock
+
     from PySide6.QtCore import QPointF, Qt
     from PySide6.QtTest import QTest
+
     from yt_downloader.analytics_consent import AnalyticsConsentOwner
 
     monkeypatch.setenv("HOME", str(tmp_path))

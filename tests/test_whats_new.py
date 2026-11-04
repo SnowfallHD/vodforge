@@ -92,10 +92,12 @@ def test_recorded_showcase_manifest_integrity_and_explicit_packaging():
             assert hashlib.sha256(payload).hexdigest() == entry[hash_field]
             names.add(name)
     assert sum((assets / name).stat().st_size for name in names) < 12_000_000
-    for script, separator in (("build_macos.sh", ":"), ("build_windows.ps1", ";")):
-        source = (root / script).read_text()
-        for name in names:
-            assert f"assets/whats-new/{name}{separator}assets/whats-new" in source
+    from scripts.macos_package_contents import DATA
+
+    windows = (root / "build_windows.ps1").read_text()
+    for name in names:
+        assert (f"assets/whats-new/{name}", "assets/whats-new") in DATA
+        assert f"assets/whats-new/{name};assets/whats-new" in windows
     public = (assets / "manifest.json").read_text()
     assert "/Users/" not in public and "launch_id" not in public
 

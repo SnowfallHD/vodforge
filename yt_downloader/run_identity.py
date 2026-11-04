@@ -286,30 +286,3 @@ def metadata_output_profile(info: dict[str, Any]) -> str:
     mode = str(output.get("Output rate-control mode") or "").strip()
     details = " • ".join(value for value in (resolution, mode) if value)
     return f"MP4 • {details}" if details else "MP4"
-
-
-def metadata_output_profile_details(info: dict[str, Any]) -> str:
-    stored = str(info.get(OUTPUT_PROFILE_DETAILS_KEY) or "").strip()
-    if stored:
-        return local_video_profile_text(stored)
-    profile = metadata_output_profile(info)
-    summary = info.get("vodforge_encoding_summary")
-    output = summary.get("output") if isinstance(summary, dict) else None
-    if not isinstance(output, dict):
-        return profile
-    detail_keys = (
-        "Output video codec",
-        "Target video bitrate",
-        "Output audio codec",
-        "Target audio bitrate",
-        "Audio sample rate",
-        "Audio channels",
-        "Output file path",
-    )
-    lines = [profile]
-    lines.extend(
-        f"{key}: {output[key]}"
-        for key in detail_keys
-        if str(output.get(key) or "").strip() not in {"", "Pending", "Not produced"}
-    )
-    return "\n".join(lines)

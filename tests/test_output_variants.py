@@ -6,7 +6,6 @@ import pytest
 
 from tests.test_run_identity import make_job
 from yt_downloader.download_service import package_downloaded_media_from_staging
-
 from yt_downloader.models import Mp3ExportSettings, OutputType
 from yt_downloader.run_identity import annotate_job_metadata
 
@@ -93,7 +92,6 @@ def test_original_extensions_keep_the_same_requested_variant(tmp_path, kind, ext
     info = annotate_job_metadata(job, {"id": "audio", "title": "Audio"})
     from yt_downloader.download_service import resolved_video_output_target
 
-
     directory, _ = resolved_video_output_target(tmp_path, info, extension)
     other, _ = resolved_video_output_target(
         tmp_path, info, ".opus" if extension == ".m4a" else ".m4a"
@@ -118,7 +116,6 @@ def test_variant_namespace_uses_effective_settings_not_only_display_label(tmp_pa
 
 def test_shortened_paths_preserve_variant_and_item_identity(tmp_path):
     from yt_downloader.download_service import resolved_video_output_target
-
     from yt_downloader.run_identity import job_output_variant
 
     job = make_job(tmp_path)
@@ -142,7 +139,6 @@ def test_shortened_paths_preserve_variant_and_item_identity(tmp_path):
 
 def test_provider_cannot_inject_variant_path(tmp_path):
     from yt_downloader.download_service import video_output_dir
-
 
     base = {"id": "abc", "title": "Video"}
     assert video_output_dir(
@@ -286,7 +282,6 @@ def test_observed_intent_relation_requires_actual_source_evidence(tmp_path):
 
     from yt_downloader.download_service import DownloadWorkerCore
 
-
     job = make_job(tmp_path)
     info = {"id": "abc123", "webpage_url": job.url}
     old = annotate_job_metadata(job, info)
@@ -328,7 +323,6 @@ def test_intent_observation_malformed_evidence_is_unknown(tmp_path, history):
 
     from yt_downloader.download_service import DownloadWorkerCore
 
-
     job = make_job(tmp_path)
     info = annotate_job_metadata(job, {"id": "abc123", "webpage_url": job.url})
     assert (
@@ -343,7 +337,6 @@ def test_intent_observation_distinguishes_absent_and_empty_history(tmp_path):
     from types import SimpleNamespace
 
     from yt_downloader.download_service import DownloadWorkerCore
-
 
     job = make_job(tmp_path)
     info = {"id": "abc123", "webpage_url": job.url}

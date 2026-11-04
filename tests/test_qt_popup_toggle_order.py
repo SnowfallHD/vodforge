@@ -9,7 +9,6 @@ from PySide6.QtTest import QTest
 from tests.test_qt_click_reliability import center
 from tests.test_qt_interaction_invariants import _close, _launch
 from tests.test_qt_scene_port import saved
-from yt_downloader.qt_quick.input_trace import InputTrace
 
 
 def _moving_popups(window):
@@ -52,7 +51,6 @@ def test_category_trigger_closes_after_text_field_focus_open(
     _app, bridge, engine, window = _launch(
         tmp_path, monkeypatch, [saved(tmp_path, "Fixture", "MP4")]
     )
-    trace = None
     try:
         owner = bridge.collectionPicker["videos"][0]["owner"]
         assert bridge.createCollection("Travel", [owner])
@@ -73,9 +71,6 @@ def test_category_trigger_closes_after_text_field_focus_open(
         menu.visibleChanged.connect(
             lambda: states.append(bool(menu.property("visible")))
         )
-        trace = InputTrace(window)
-        trace.watch_action(arrow, "fixture_action")
-        trace.watch_popup(menu, "fixture_popup")
         click(window, field)
         assert menu.property("visible")
         if dismissal == "trigger":
@@ -94,23 +89,20 @@ def test_category_trigger_closes_after_text_field_focus_open(
             )
             click(window, choice)
             assert field.property("text") == "Travel"
-        assert not menu.property("visible"), (states, focus_states, trace.snapshot())
+        assert not menu.property("visible"), (states, focus_states)
         assert dialog.property("visible"), (
             dismissal,
             states,
             focus_states,
-            trace.snapshot(),
         )
         click(window, arrow)
         assert menu.property("visible")
         click(window, arrow)
-        assert not menu.property("visible"), (states, focus_states, trace.snapshot())
+        assert not menu.property("visible"), (states, focus_states)
         QTest.keyClick(window, Qt.Key_Escape)
         QTest.qWait(40)
         assert not dialog.property("visible")
     finally:
-        if trace:
-            trace.stop()
         _close(bridge, engine, window)
 
 

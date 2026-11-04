@@ -111,39 +111,6 @@ def history_record_event(
     }
 
 
-def thumbnail_preview_event(
-    request_id: int,
-    url: str,
-    target: str,
-    run_id: str,
-    *,
-    data: bytes | None = None,
-    error: str | None = None,
-) -> tuple[Literal["thumbnail_preview_result"], ThumbnailPreviewPayload]:
-    payload: ThumbnailPreviewPayload = {
-        "id": request_id,
-        "url": url,
-        "target": target,
-        "run_id": run_id,
-    }
-    if data is not None:
-        payload["data"] = data
-    if error is not None:
-        payload["error"] = error
-    return "thumbnail_preview_result", payload
-
-
-def installation_result_event(
-    name: Literal["cloud_seen_result", "first_launch_result"],
-    success: bool,
-    install_id: str,
-) -> tuple[
-    Literal["cloud_seen_result", "first_launch_result"],
-    InstallationResultPayload,
-]:
-    return name, {"success": success, "install_id": install_id}
-
-
 class UiEventSink(Protocol):
     """Minimal FIFO producer contract shared by Queue and harness tracing sinks."""
 

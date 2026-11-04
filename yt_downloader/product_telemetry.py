@@ -24,7 +24,6 @@ from .failure_diagnostics import (
     FailureDiagnostic,
     validate_failure_detail,
 )
-from .history import application_data_dir
 from .private_files import write_private_bytes
 from .telemetry_credentials import RejectedTelemetryEvent, TelemetryCredentialOwner
 from .telemetry_features import (
@@ -170,10 +169,6 @@ class ProductTelemetryEvent:
                 else {}
             ),
         }
-
-
-def product_telemetry_path(**kwargs: Any) -> Path:
-    return application_data_dir(**kwargs) / PRODUCT_TELEMETRY_STATE_FILENAME
 
 
 def release_channel(

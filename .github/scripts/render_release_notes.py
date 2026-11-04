@@ -47,9 +47,7 @@ def render_release_notes(version: str, *, draft: bool = False) -> str:
             "files have been Developer ID signed, notarized, stapled and verified, "
             "the checksums regenerated, and these notes finalized.\n\n"
         )
-    whats_new = (
-        f"\n## What’s new in {version}\n\n{highlights}" if highlights else ""
-    )
+    whats_new = f"\n## What’s new in {version}\n\n{highlights}" if highlights else ""
 
     return f"""{draft_notice}## Download VODForge
 
@@ -67,7 +65,7 @@ One download for every Mac. Open it and double-click **Install VODForge**; it se
 
 Already using VODForge? It updates itself: choose **Check for updates**, or wait for the update prompt.
 {whats_new}
-Checksums for every download are available in `SHA256SUMS.txt` below. The `VODForge-macOS-arm64` and `VODForge-macOS-x64` ZIP files are for in-app updates from VODForge 0.2.5 and earlier; new installs should use the Mac download above.
+Checksums for every download are available in `SHA256SUMS.txt` below. The Mac ZIP files are in-app update files: `VODForge-macOS-universal2` for VODForge 0.2.6 and later, and `VODForge-macOS-arm64` and `VODForge-macOS-x64` (the same app under the names older versions look for) for 0.2.5 and earlier. New installs should use the Mac download above.
 """
 
 

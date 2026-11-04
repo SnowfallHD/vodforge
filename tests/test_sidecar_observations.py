@@ -29,7 +29,6 @@ def sidecar_case(tmp_path, monkeypatch):
         installation_state_path=installation,
         app_version="0.2.1",
         d1_recorder=lambda _event: False,
-
     )
     app = app_module.DownloadWorkerCore.__new__(app_module.DownloadWorkerCore)
     app.product_telemetry = owner

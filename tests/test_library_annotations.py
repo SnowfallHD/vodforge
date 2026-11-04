@@ -11,7 +11,6 @@ from yt_downloader.library_annotations import (
     LibraryAnnotation,
     LibraryAnnotationsError,
     LibraryAnnotationsOwner,
-    library_annotations_file_path,
     load_library_annotations,
     sanitize_library_annotation,
     save_library_annotations,
@@ -37,16 +36,6 @@ def test_annotation_round_trip_is_private_atomic_and_bounded(tmp_path: Path) -> 
     if os.name != "nt":
         assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert list(path.parent.glob("*.tmp")) == []
-
-
-def test_annotation_path_uses_private_application_data_location(tmp_path: Path) -> None:
-    assert library_annotations_file_path(platform_name="darwin", home=tmp_path) == (
-        tmp_path
-        / "Library"
-        / "Application Support"
-        / "VODForge"
-        / "library-annotations.json"
-    )
 
 
 def test_annotation_sanitization_deduplicates_tags_without_provider_mutation() -> None:

@@ -576,11 +576,6 @@ def history_media_file_state(record: dict[str, Any]) -> str:
     return HISTORY_MEDIA_MISSING
 
 
-def history_media_file_exists(record: dict[str, Any]) -> bool:
-    """Return whether a recorded item folder still contains its media artifact."""
-    return history_media_file_state(record) == HISTORY_MEDIA_PRESENT
-
-
 def sanitize_history_record(
     info: dict[str, Any],
     output_dir: Path | str,

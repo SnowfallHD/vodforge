@@ -7,7 +7,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
-from .history import application_data_dir, history_annotation_owner
+from .history import history_annotation_owner
 from .models import DownloadJob
 from .private_files import write_private_bytes
 
@@ -50,10 +50,6 @@ def resolve_annotation_owner(
     if canonical_owner in annotations or not source_owner:
         return canonical_owner
     return source_owner if source_owner in annotations else canonical_owner
-
-
-def library_annotations_file_path(**kwargs: Any) -> Path:
-    return application_data_dir(**kwargs) / "library-annotations.json"
 
 
 def referenced_annotation_owners(

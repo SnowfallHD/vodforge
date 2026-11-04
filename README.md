@@ -365,8 +365,9 @@ journeys, and hands-on testing on an Apple silicon Mac, an Intel Mac and a Windo
 PC), and the steps to draft, sign, test and publish.
 
 In short, the **Build Release Draft** GitHub Actions workflow builds and signs the
-Windows files and creates a draft release; `./finalize_macos_release.sh <version>`
-signs and notarizes the Mac files on the signing Mac; the exact draft files are
+Windows files, builds the unsigned universal Mac app and creates a draft release;
+`./finalize_macos_release.sh <version>` signs and notarizes the Mac app, installer
+and DMG on the signing Mac; the exact draft files are
 tested; then the draft is published. Packaged apps check the latest public release
 at startup and every six hours (plus **Check for updates**), and verify size,
 SHA-256 checksum and publisher identity before installing. Windows also checks the

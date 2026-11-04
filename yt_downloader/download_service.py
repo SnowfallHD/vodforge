@@ -20,7 +20,7 @@ import urllib.error
 import urllib.parse
 import uuid
 import warnings
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from contextlib import ExitStack
 from dataclasses import dataclass, replace
 from datetime import datetime
@@ -41,7 +41,6 @@ from .cookie_inputs import (
     windows_chromium_cookie_warning,
 )
 from .download_error_presentation import technical_download_error
-from .encoding_summary import AUDIO_SUMMARY_COMPARISON_ROWS, SUMMARY_COMPARISON_ROWS
 from .export_inputs import (
     validate_custom_cover_art,
 )
@@ -79,9 +78,6 @@ from .libvlc_backend import (
     find_libvlc_runtime,
     probe_libvlc_runtime,
 )
-from .media_player import (
-    MediaPlayerError as MediaPlayerError,  # noqa: PLC0414 - compatibility export
-)
 from .models import (
     AUDIO_CHANNELS,
     AUDIO_SAMPLE_RATE,
@@ -116,9 +112,6 @@ from .private_files import open_private_text_file, write_private_bytes
 from .process_lifecycle import ACTIVE_CHILD_PROCESS_REGISTRY
 from .product_telemetry import (
     product_output_kind,
-)
-from .product_theme import (
-    THEME,
 )
 from .run_identity import (
     annotate_job_metadata,
@@ -283,96 +276,11 @@ AUTO_UPDATE_INITIAL_DELAY_MS = 0
 AUTO_UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1_000
 
 
-def _persisted_bool(values: dict[str, Any], key: str, default: bool) -> bool:
-    value = values.get(key)
-    return value if isinstance(value, bool) else default
-
-
-def _persisted_choice(
-    values: dict[str, Any], key: str, allowed: set[str], default: str
-) -> str:
-    value = values.get(key)
-    return value if isinstance(value, str) and value in allowed else default
-
-
-def _persisted_int_text(
-    values: dict[str, Any], key: str, default: int, *, minimum: int, maximum: int
-) -> str:
-    value = values.get(key)
-    if isinstance(value, bool) or not isinstance(value, (int, str)):
-        return str(default)
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        parsed = default
-    if not minimum <= parsed <= maximum:
-        parsed = default
-    return str(parsed)
-
-
 AUTO_UPDATE_BUSY_RETRY_MS = 10 * 60 * 1_000
 
 THUMBNAIL_CACHE_MAX_ITEMS = 1000
 
 CUSTOM_COVER_MAX_OUTPUT_BYTES = 2 * 1024 * 1024
-
-
-def bundled_asset_path(
-    name: str, *, meipass: Path | None = None, repo_root: Path | None = None
-) -> Path:
-    raw_meipass = getattr(sys, "_MEIPASS", None) if meipass is None else meipass
-    base = (
-        Path(raw_meipass)
-        if raw_meipass
-        else (Path(__file__).resolve().parents[1] if repo_root is None else repo_root)
-    )
-    return base / "assets" / name
-
-
-def rounded_cover_image(source: Any, size: tuple[int, int], radius: int) -> Any:
-    """Return a cover-cropped RGBA image with clean transparent corners."""
-    if Image is None or ImageDraw is None or ImageOps is None:
-        raise RuntimeError("Pillow is required for thumbnail rendering")
-    resampling = getattr(Image, "Resampling", Image)
-    cover = ImageOps.fit(
-        source.convert("RGBA"), size, method=resampling.LANCZOS, centering=(0.5, 0.5)
-    )
-    mask = rounded_alpha_mask(size, radius)
-    cover.putalpha(mask)
-    return cover
-
-
-def rounded_fit_image(source: Any, maximum_size: tuple[int, int], radius: int) -> Any:
-    """Return a bounded, aspect-preserving thumbnail with no backing container."""
-    if Image is None or ImageDraw is None or ImageOps is None:
-        raise RuntimeError("Pillow is required for thumbnail rendering")
-    resampling = getattr(Image, "Resampling", Image)
-    fitted = ImageOps.contain(
-        source.convert("RGBA"), maximum_size, method=resampling.LANCZOS
-    )
-    fitted.putalpha(rounded_alpha_mask(fitted.size, min(radius, min(fitted.size) // 2)))
-    return fitted
-
-
-def rounded_contain_image(
-    source: Any, size: tuple[int, int], radius: int, background: str
-) -> Any:
-    """Fit placeholder artwork inside a 16:9 slot without cropping its edges."""
-    if Image is None or ImageDraw is None or ImageOps is None:
-        raise RuntimeError("Pillow is required for thumbnail rendering")
-    resampling = getattr(Image, "Resampling", Image)
-    padding = max(3, round(min(size) * 0.07))
-    bounds = (max(1, size[0] - 2 * padding), max(1, size[1] - 2 * padding))
-    contained = ImageOps.contain(
-        source.convert("RGBA"), bounds, method=resampling.LANCZOS
-    )
-    canvas = Image.new("RGBA", size, background)
-    canvas.alpha_composite(
-        contained, ((size[0] - contained.width) // 2, (size[1] - contained.height) // 2)
-    )
-    mask = rounded_alpha_mask(size, radius)
-    canvas.putalpha(mask)
-    return canvas
 
 
 def rounded_alpha_mask(size: tuple[int, int], radius: int, *, scale: int = 4) -> Any:
@@ -393,15 +301,6 @@ def rounded_alpha_mask(size: tuple[int, int], radius: int, *, scale: int = 4) ->
     return mask.resize(size, resampling.LANCZOS)
 
 
-def flatten_alpha_image(source: Any, background: str) -> Any:
-    """Precompose an RGBA surface so Tk never quantizes its antialiased edge."""
-    if Image is None:
-        raise RuntimeError("Pillow is required for image compositing")
-    image = source.convert("RGBA")
-    backdrop = Image.new("RGBA", image.size, background)
-    return Image.alpha_composite(backdrop, image)
-
-
 def center_alpha_content(source: Any) -> Any:
     """Center visible RGBA content while preserving the source canvas and scale."""
     if Image is None:
@@ -418,34 +317,6 @@ def center_alpha_content(source: Any) -> Any:
     centered = Image.new("RGBA", image.size, (0, 0, 0, 0))
     centered.alpha_composite(image, (offset_x, offset_y))
     return centered
-
-
-def render_monochrome_icon(source: Any, size: int, color: str) -> Any:
-    """Render a centered monochrome icon with crisp, contrast-preserving alpha."""
-    if Image is None:
-        raise RuntimeError("Pillow is required for icon rendering")
-    raw = source.convert("RGBA")
-    icon = raw if raw.size == (size, size) else center_alpha_content(raw)
-    resampling = getattr(Image, "Resampling", Image)
-    alpha = icon.getchannel("A")
-    if alpha.size != (size, size):
-        alpha = alpha.resize((size, size), resampling.LANCZOS)
-    alpha = alpha.point(
-        lambda value: max(0, min(255, round((value - 128) * 1.24 + 128)))
-    )
-    rendered = Image.new("RGBA", (size, size), color)
-    rendered.putalpha(alpha)
-    return rendered
-
-
-def focus_icon_color_variant(color: str) -> str | None:
-    """Map fixed Focus Deck colors to their bundled vector variants."""
-    return {
-        THEME["muted"].lower(): "muted",
-        THEME["accent"].lower(): "accent",
-        THEME["text"].lower(): "text",
-        "#ffffff": "white",
-    }.get(str(color).lower())
 
 
 def ytdlp_ffmpeg_location(ffmpeg: str) -> str:
@@ -1077,26 +948,8 @@ def _encoding_summary_sections(
     return source, output, warnings
 
 
-def build_tags_display_text(info: dict[str, Any]) -> str:
-    """Return YouTube tags comma-separated so the GUI copy action is compact."""
-    return ", ".join(_clean_list(info.get("tags")))
-
-
 def build_description_display_text(info: dict[str, Any]) -> str:
     return str(info.get("description") or "").strip()
-
-
-def metadata_indices_for_output_type(
-    items: Sequence[dict[str, Any]],
-    output_type: OutputType | str,
-) -> list[int]:
-    """Return stable source-list indices for one Library media type."""
-    selected = OutputType(output_type)
-    return [
-        index
-        for index, item in enumerate(items)
-        if metadata_output_type(item) == selected
-    ]
 
 
 def mark_metadata_output_type(
@@ -1189,20 +1042,6 @@ def _float_or_none(value: Any) -> float | None:
     if number is None:
         return None
     return number if number > 0 else None
-
-
-def video_list_row_values(
-    info: dict[str, Any], fallback_index: int
-) -> tuple[str, str, str, str, str]:
-    raw_index = info.get("playlist_index") or fallback_index
-    try:
-        index = f"{int(raw_index):03d}"
-    except (TypeError, ValueError, OverflowError):
-        index = f"{fallback_index:03d}"
-    title = str(info.get("title") or info.get("id") or "Untitled video").strip()
-    uploader = str(info.get("uploader") or info.get("channel") or "—").strip() or "—"
-    video_id = str(info.get("id") or "—").strip() or "—"
-    return (index, title, format_duration(info.get("duration")), uploader, video_id)
 
 
 def _display_value(value: Any, fallback: str = "Unknown") -> str:
@@ -1621,63 +1460,6 @@ SUMMARY_LABEL_COLORS = {
     "Effective/target audio bitrate": "#879fa1",
     "Selection/status": "#9b95a7",
 }
-
-
-def summary_label_color(label: str) -> str:
-    return SUMMARY_LABEL_COLORS.get(str(label), THEME["muted"])
-
-
-def build_encoding_summary_display(info: dict[str, Any]) -> tuple[str, str]:
-    source, output, warnings = _encoding_summary_sections(info)
-    source_lines: list[str] = []
-    output_lines: list[str] = []
-    rows = (
-        AUDIO_SUMMARY_COMPARISON_ROWS
-        if metadata_output_type(info) != OutputType.MP4
-        else SUMMARY_COMPARISON_ROWS
-    )
-    for label, source_key, output_key in rows:
-        source_label = label
-        output_label = label
-        if output_key in {"Target audio bitrate", "Target video bitrate"}:
-            media = "audio" if output_key == "Target audio bitrate" else "video"
-            source_label = f"Effective {media}"
-            output_label = f"{media.capitalize()} target"
-        source_lines.append(
-            f"{source_label}: {_display_value(source.get(source_key), 'Not available')}"
-        )
-        if output_key is not None:
-            output_lines.append(
-                f"{output_label}: {_display_value(output.get(output_key), 'Not available')}"
-            )
-    output_lines.extend(
-        [
-            f"Output status: {_display_value(output.get('Output status'), 'Not available')}",
-            f"Output file path: {_display_value(output.get('Output file path'), 'Not produced')}",
-            f"Output rate-control mode: {_display_value(output.get('Output rate-control mode'), 'Not available')}",
-            f"Validation status: {_display_value(output.get('Validation status'), 'Not available')}",
-            f"Output duration: {_display_value(output.get('Output duration'), 'Not available')}",
-        ]
-    )
-    if metadata_output_type(info) == OutputType.MP3:
-        output_lines.extend(
-            [
-                f"Embedded ID3 metadata: {_display_value(output.get('Embedded ID3 metadata'), 'Not available')}",
-                f"Embedded cover art: {_display_value(output.get('Embedded cover art'), 'Not available')}",
-            ]
-        )
-    elif metadata_output_type(info) == OutputType.MP4:
-        output_lines.append(
-            f"H.264 profile: {_display_value(output.get('H.264 profile'), 'Not available')}"
-        )
-    if output.get("Failure reason"):
-        output_lines.append(
-            f"Failure reason: {_display_value(output.get('Failure reason'), 'Unknown')}"
-        )
-    output_lines.append(
-        f"Warnings: {', '.join(str(w) for w in warnings) if warnings else 'No warnings'}"
-    )
-    return "\n".join(source_lines), "\n".join(output_lines)
 
 
 def best_thumbnail(info: dict[str, Any]) -> dict[str, Any] | None:
@@ -2692,22 +2474,6 @@ def write_compact_video_metadata(
     )
     _report_sidecar_result(on_result, _sidecar_write_result(before))
     return written
-
-
-def write_all_compact_video_metadata(
-    output_dir: Path, info: dict[str, Any], extra_tags: list[str]
-) -> list[Path]:
-    paths: list[Path] = []
-    for video in iter_video_infos(info):
-        paths.append(
-            write_compact_video_metadata(
-                video_output_dir(output_dir, video),
-                video,
-                extra_tags,
-                output_root=output_dir,
-            )
-        )
-    return paths
 
 
 STAGED_MEDIA_EXTENSIONS = {
@@ -4074,14 +3840,6 @@ def legacy_cached_thumbnail_paths(
     return tuple(paths)
 
 
-def legacy_cached_thumbnail_path(
-    info: dict[str, Any], *, data_dir: Path | None = None
-) -> Path | None:
-    """Return the first v0.1.5 cache candidate for compatibility callers."""
-    paths = legacy_cached_thumbnail_paths(info, data_dir=data_dir)
-    return paths[0] if paths else None
-
-
 def existing_cached_thumbnail_path(
     info: dict[str, Any], *, data_dir: Path | None = None
 ) -> Path | None:
@@ -4374,73 +4132,6 @@ def _quality_max_height(label: str) -> int:
     if "360" in label:
         return 360
     return DEFAULT_MAX_HEIGHT
-
-
-def _plans_by_video_id(
-    info: dict[str, Any], mode: ExportMode, max_height: int
-) -> dict[str, ExportPlan]:
-    plans: dict[str, ExportPlan] = {}
-    for item in iter_video_infos(info):
-        if item.get("formats"):
-            plan = build_auto_export_plan(item, mode=mode, max_height=max_height)
-            video_id = str(item.get("id") or "").strip()
-            if video_id:
-                plans[video_id] = plan
-    if not plans and info.get("formats"):
-        plan = build_auto_export_plan(info, mode=mode, max_height=max_height)
-        video_id = str(info.get("id") or "").strip()
-        if video_id:
-            plans[video_id] = plan
-    return plans
-
-
-def download_job_display_title(job: DownloadJob, *, queued: bool = False) -> str:
-    """Return resolved run metadata or a neutral state, never a raw source URL."""
-    title = str((job.preview_info or {}).get("title") or "").strip()
-    if title:
-        return title
-    state = "Queued" if queued else "Preparing"
-    media = "video" if job.output_type == OutputType.MP4 else "audio"
-    return f"{state} {media} run"
-
-
-def focus_metadata_profile_text(info: dict[str, Any], record_kind: str) -> str:
-    """Describe saved output or a completed preview without redundant placeholders."""
-    output_type = metadata_output_type(info)
-    _source, output, _warnings = _encoding_summary_sections(info)
-    tokens = [output_type.value]
-    resolution = str(
-        output.get("Output resolution") or output.get("Resolution") or ""
-    ).strip()
-    if resolution.casefold() not in {
-        "",
-        "unknown",
-        "not available",
-        "mp4",
-        "audio only",
-    }:
-        tokens.append(resolution)
-    mode = str(
-        output.get("Output rate-control mode")
-        or output.get("Target audio bitrate")
-        or ""
-    ).strip()
-    if mode.casefold() not in {"", "unknown", "not available", "not applicable"}:
-        tokens.append(mode)
-    if record_kind == "preview":
-        tokens.append("Preview complete")
-    elif record_kind == "completed" and len(tokens) == 1:
-        tokens.append("Completed")
-    return "  •  ".join(tokens)
-
-
-def preview_output_summary_display() -> str:
-    """Explain the boundary between metadata preview and produced media."""
-    return (
-        "Output status: Preview complete\n"
-        "Output file path: Not produced\n"
-        "Next action: Start download in Forge"
-    )
 
 
 @dataclass(frozen=True)
@@ -5135,25 +4826,6 @@ class _RunFinishDecision:
     suppressed: bool
     stopped_without_item_terminal: bool
     archive_completed: bool
-
-
-def _resolve_run_finish_decision(
-    finished_job: DownloadJob | None,
-    run_status: str,
-    *,
-    suppressed: bool,
-) -> _RunFinishDecision:
-    item_terminal_emitted = bool(
-        finished_job is not None and finished_job.item_terminal_emitted
-    )
-    return _RunFinishDecision(
-        finished_job=finished_job,
-        suppressed=suppressed,
-        stopped_without_item_terminal=(
-            not suppressed and run_status == "Stopped" and not item_terminal_emitted
-        ),
-        archive_completed=(not suppressed and run_status in {"Completed", "Partial"}),
-    )
 
 
 class DownloadWorkerCore:

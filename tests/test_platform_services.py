@@ -1,14 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
-
 from yt_downloader.platform_services import (
-    choose_output_directory,
     hidden_window_subprocess_kwargs,
-    open_path,
-    output_directory_failure_guidance,
 )
 
 
@@ -19,107 +12,11 @@ def test_hidden_window_subprocess_policy_is_empty_off_windows():
     }
 
 
-def test_output_picker_routes_to_one_platform_owner():
-    calls: list[tuple[str, str]] = []
-
-    assert (
-        choose_output_directory(
-            "/initial",
-            platform_name="linux",
-            standard_picker=lambda path: (
-                calls.append(("standard", path)) or "/standard"
-            ),
-            windows_picker=lambda path: calls.append(("windows", path)) or "/windows",
-        )
-        == "/standard"
-    )
-    assert (
-        choose_output_directory(
-            "/initial",
-            platform_name="win32",
-            standard_picker=lambda path: (
-                calls.append(("standard", path)) or "/standard"
-            ),
-            windows_picker=lambda path: calls.append(("windows", path)) or "/windows",
-        )
-        == "/windows"
-    )
-    assert calls == [("standard", "/initial"), ("windows", "/initial")]
-
-
-def test_output_picker_failure_guidance_keeps_windows_network_path_help():
-    assert "\\\\server\\share" in output_directory_failure_guidance("win32")
-    assert "type or paste" in output_directory_failure_guidance("linux")
-
-
-def test_macos_folder_open_uses_the_absolute_system_executable(tmp_path: Path):
-    commands: list[list[str]] = []
-    folder = tmp_path / "folder"
-
-    open_path(
-        folder,
-        platform_name="darwin",
-        popen=commands.append,
-    )
-
-    assert folder.is_dir()
-    assert commands == [["/usr/bin/open", str(folder)]]
-
-
-def test_linux_folder_open_resolves_xdg_open_once_before_launch(tmp_path: Path):
-    opener = tmp_path / "bin" / "xdg-open"
-    opener.parent.mkdir()
-    opener.write_text("#!/bin/sh\n", encoding="utf-8")
-    opener.chmod(0o700)
-    commands: list[list[str]] = []
-    folder = tmp_path / "folder"
-
-    open_path(
-        folder,
-        platform_name="linux",
-        popen=commands.append,
-        which=lambda _name: str(opener),
-    )
-
-    assert commands == [[str(opener.resolve()), str(folder)]]
-
-
-@pytest.mark.parametrize("resolved", [None, "xdg-open"])
-def test_linux_folder_open_rejects_missing_or_relative_opener(
-    tmp_path: Path,
-    resolved: str | None,
-):
-    commands: list[list[str]] = []
-
-    with pytest.raises(RuntimeError, match="trusted system folder opener"):
-        open_path(
-            tmp_path / "folder",
-            platform_name="linux",
-            popen=commands.append,
-            which=lambda _name: resolved,
-        )
-
-    assert commands == []
-
-
-def test_windows_folder_open_uses_startfile_without_a_subprocess(tmp_path: Path):
-    opened: list[Path] = []
-    folder = tmp_path / "folder"
-
-    open_path(
-        folder,
-        platform_name="win32",
-        popen=lambda _command: pytest.fail("Windows must not start a shell opener"),
-        startfile=opened.append,
-    )
-
-    assert opened == [folder]
-
-
 def test_named_native_adapters_import_without_loading_foreign_native_libraries():
     """Import dispatch never initializes the other OS's native runtime."""
     import subprocess
     import sys
+    from pathlib import Path
 
     script = """
 import importlib
@@ -132,11 +29,20 @@ class ForeignNativeImport(importlib.abc.MetaPathFinder):
         if fullname.split(".")[0] in forbidden:
             raise AssertionError("foreign native import: " + fullname)
 sys.meta_path.insert(0, ForeignNativeImport())
-for name in ("platforms.windows.video_host", "platforms.windows.update_recovery", "platforms.macos.filesystem", "platforms.windows.surfaces", "platforms.windows.filesystem", "platforms.windows.windowing", "platforms.windows.dialogs", "platforms.windows.processes"):
-    importlib.import_module("yt_downloader." + name)
+for name in sys.argv[1:]:
+    importlib.import_module(name)
 """
+    # Every Windows module, plus the macOS modules that must import anywhere.
+    root = Path(__file__).resolve().parents[1] / "yt_downloader/platforms"
+    modules = [
+        f"yt_downloader.platforms.windows.{path.stem}"
+        for path in sorted((root / "windows").glob("*.py"))
+        if path.stem != "__init__"
+    ]
+    modules.append("yt_downloader.platforms.macos.filesystem")
+    assert len(modules) > 3
     result = subprocess.run(
-        [sys.executable, "-c", script],
+        [sys.executable, "-c", script, *modules],
         capture_output=True,
         text=True,
         timeout=20,

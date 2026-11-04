@@ -14,13 +14,15 @@ creates new files and restarts testing.
 | --- | --- |
 | `VODForge-macOS-universal2-v<version>.dmg` | **The Mac download on the website and in the release notes.** Opens the single-icon installer window and installs one universal app that runs natively on Apple silicon and Intel Macs. |
 | `VODForge-macOS-universal2-v<version>.zip` | In-app updates for VODForge 0.2.6 and later, whose updater asks for this file first. |
-| `VODForge-macOS-arm64-v<version>.zip` | In-app updates for VODForge 0.2.5 and earlier on Apple silicon. **Legacy only**: see below. |
-| `VODForge-macOS-x64-v<version>.zip` | In-app updates for VODForge 0.2.5 and earlier on Intel. **Legacy only**: see below. |
+| `VODForge-macOS-arm64-v<version>.zip` | In-app updates for VODForge 0.2.5 and earlier on Apple silicon. Contains the universal app: see below. |
+| `VODForge-macOS-x64-v<version>.zip` | In-app updates for VODForge 0.2.5 and earlier on Intel. Contains the universal app: see below. |
 | `VODForge-Windows-Setup-v<version>.exe` | The Windows download, and Windows in-app updates. |
 | `VODForge-Windows-Portable-v<version>.zip` | Windows portable download. |
 | `SHA256SUMS.txt` | Checksums for every file above; in-app updates refuse files that don't match. |
 
-The website offers exactly one Mac download, the DMG. It never links the ZIP files.
+The website and the GitHub release notes offer one Mac download, the DMG. The ZIP
+files are attached to the release for in-app updates only; the notes mention them
+but don't link them.
 
 Mac minimums stay per architecture inside the universal app: macOS 26 or newer on
 Apple silicon, macOS 15 or newer on Intel (`src/lib/platform-requirements.ts` in the
@@ -102,32 +104,39 @@ waive it by rerunning until it passes.
 ## Performing the release
 
 1. **Draft.** With clean, pushed `main`, run the **Build Release Draft** workflow in
-   GitHub Actions with the version (for example `0.2.6`). It builds and signs the
-   Windows installer and portable ZIP with Azure Artifact Signing, builds unsigned
-   review Mac apps for arm64 and x64, and creates a **draft** release. Nothing is
-   public yet.
-2. **Mac signing.** On the signing Mac, from clean `main`:
+   GitHub Actions with the version (for example `0.2.6`). It:
+   - builds and signs the Windows installer and portable ZIP with Azure Artifact
+     Signing;
+   - builds and tests an Apple silicon app and an Intel app on matching runners,
+     and collects each one's FFmpeg, ffprobe and Deno with their libraries
+     (`scripts/collect_macos_helpers.py`). These per-architecture apps stay
+     workflow artifacts for QA and are not published;
+   - builds the universal app from those helpers and a universal Python
+     environment, smoke-tests it natively and under Rosetta, and attaches it as
+     `VODForge-macOS-universal2-v<version>-unsigned-review.zip`;
+   - creates a **draft** release. Nothing is public yet.
+2. **Mac signing.** On the signing Mac, from clean `main` with the development
+   environment installed (`./install_macos_dependencies.sh`):
 
    ```sh
    ./finalize_macos_release.sh <version>
    ```
 
-   This downloads the review builds, signs, notarizes, staples and Gatekeeper-checks
-   them, runs the packaged runtime smoke test, uploads the signed archives,
-   regenerates `SHA256SUMS.txt` and refreshes the release notes.
+   It downloads the unsigned universal app and runs
+   `scripts/finalize_universal_macos.py`, which:
+   - signs the app with Developer ID (no entitlements on either architecture),
+     notarizes and staples it, and smoke-tests it natively and under Rosetta;
+   - archives it as the universal update ZIP and copies that archive, byte for
+     byte, to the two legacy names;
+   - builds the **Install VODForge** app around the signed app, then signs,
+     notarizes and staples it;
+   - builds the DMG around the installer, then signs, notarizes and staples the
+     DMG and checks that Gatekeeper accepts it.
 
-   > **Not automated yet: the universal DMG.** `finalize_macos_release.sh` still
-   > produces separate arm64 and x64 apps. The universal app and DMG are built from
-   > existing scripts that have so far only been run by hand for private builds:
-   > `scripts/assemble_universal_helpers.py` (combine the two architectures' helper
-   > binaries), `scripts/build_universal_macos.py --build` (universal app from a
-   > universal Python environment), `scripts/sign_universal_macos.py` (sign,
-   > notarize, staple), `scripts/build_macos_installer.py` (single-icon installer
-   > app) and `scripts/build_macos_dmg.py` (the DMG). Folding these into
-   > `finalize_macos_release.sh` is required before the first DMG release. It must
-   > upload the DMG, the universal ZIP and the same universal app under both legacy
-   > names, with all of them in `SHA256SUMS.txt`. See
-   > [universal macOS packaging](../engineering-quality/UNIVERSAL_MACOS.md).
+   The script then uploads the DMG and the three update ZIPs, regenerates
+   `SHA256SUMS.txt`, removes the unsigned review file and refreshes the release
+   notes. Apple's notarization results are saved in
+   `build/macos-release-receipt-v<version>.json`.
 3. **Test the draft's files.** Run everything in "Before a release" against the files
    attached to the draft, not local rebuilds.
 4. **Publish.** Publish the draft in GitHub. It becomes the latest release, and

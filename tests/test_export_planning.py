@@ -117,29 +117,6 @@ def test_worker_uses_canonical_shared_planning_helpers() -> None:
 
 
 @pytest.mark.parametrize(
-    ("sample_rate", "expected"),
-    [
-        (None, "Preserve source"),
-        ("", "Preserve source"),
-        ("44100", "44.1 kHz"),
-        (48000, "48 kHz"),
-        ("automatic", "automatic"),
-    ],
-)
-def test_mp3_sample_rate_display_handles_preserved_numeric_and_unknown_values(
-    sample_rate: str | int | None,
-    expected: str,
-) -> None:
-    assert (
-        export_planning.mp3_sample_rate_display(
-            sample_rate,
-            source_label="Preserve source",
-        )
-        == expected
-    )
-
-
-@pytest.mark.parametrize(
     "nonfinite",
     [float("nan"), float("inf"), float("-inf")],
     ids=["nan", "positive-infinity", "negative-infinity"],

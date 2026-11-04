@@ -72,10 +72,3 @@ def begin_library_action(
     observation = LibraryActionObservation(bound, intent, subject)
     observation.emit("requested", boundary)
     return observation
-
-
-def observe_library_action(
-    observation: Any, action: str, boundary: str, *, error: BaseException | None = None
-) -> None:
-    if isinstance(observation, LibraryActionObservation):
-        observation.emit(action, boundary, error=error)

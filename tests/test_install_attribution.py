@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import json
-
-import pytest
-
 from pathlib import Path
 from typing import Any, Self
+
+import pytest
 
 from yt_downloader.cloud_funnel import (
     installation_state_path,

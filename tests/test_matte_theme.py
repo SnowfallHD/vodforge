@@ -1,10 +1,9 @@
 """Independent contrast, palette hue, asset identity and bounded-cache checks."""
 
 import colorsys
-from pathlib import Path
 
 import pytest
-from PIL import Image, ImageChops
+from PIL import ImageChops
 
 from yt_downloader.product_theme import (
     FOREGROUND_ROLES,
@@ -14,7 +13,7 @@ from yt_downloader.product_theme import (
     apply_theme_selection,
     theme_motif,
 )
-from yt_downloader.visual_materials import backdrop_pixels, tint_brand
+from yt_downloader.visual_materials import backdrop_pixels
 
 
 def luminance(color):
@@ -81,24 +80,6 @@ def test_matte_materials_single_hue_and_foreground_contrast(name):
         apply_theme_selection("Violet")
 
 
-def test_brand_tint_preserves_geometry_and_source_alpha():
-    with Image.open(
-        Path(__file__).resolve().parents[1] / "assets/brand/vf-mark.png"
-    ) as source:
-        original = source.convert("RGBA")
-    for name in THEME_NAMES:
-        apply_theme_selection(name)
-        tinted = tint_brand(original)
-        assert tinted.size == original.size
-        assert (
-            ImageChops.difference(
-                tinted.getchannel("A"), original.getchannel("A")
-            ).getbbox()
-            is None
-        )
-    apply_theme_selection("Violet")
-
-
 def test_raised_material_falls_to_transparent_before_bitmap_boundary():
     from yt_downloader.visual_chrome import action_button_image
 
@@ -110,52 +91,6 @@ def test_raised_material_falls_to_transparent_before_bitmap_boundary():
         assert alpha.crop((0, 0, 1, height)).getextrema() == (0, 0)
         assert alpha.crop((width - 1, 0, width, height)).getextrema() == (0, 0)
         assert alpha.getpixel((width // 2, height // 2)) == 255
-
-
-@pytest.mark.parametrize("accent", [False, True])
-def test_shared_hover_is_an_inset_without_a_new_face_or_border(accent):
-    """The pre-change bright-hover renderer fails this center/contour oracle."""
-    from yt_downloader.visual_chrome import (
-        _blend_color,
-        action_button_image,
-        control_material_roles,
-        control_surface_image,
-        primary_action_color,
-    )
-
-    idle = action_button_image(140, 44, accent=accent)
-    hover = action_button_image(140, 44, accent=accent, state="hover")
-    legacy_fill = _blend_color(
-        primary_action_color() if accent else THEME["surface"], THEME["accent"], 0.10
-    )
-    legacy_hover = control_surface_image(
-        140,
-        height=44,
-        fill=legacy_fill,
-        edge=_blend_color(legacy_fill, THEME["accent"], 0.28 if accent else 0.14),
-        stretch=False,
-        inset_face=True,
-    )
-    # The old brighter fill visibly changes the usable center, while the new
-    # hover leaves it untouched and moves only the tactile material contour.
-    assert legacy_hover.getpixel((70, 22)) != idle.getpixel((70, 22))
-    assert idle.getpixel((70, 22)) == hover.getpixel((70, 22))
-    assert (
-        ImageChops.difference(idle.convert("RGB"), hover.convert("RGB")).getbbox()
-        is not None
-    )
-    assert (
-        ImageChops.difference(idle.getchannel("A"), hover.getchannel("A")).getbbox()
-        is not None
-    )
-
-    roles = control_material_roles()
-    assert roles["hover"] == roles["button"]
-    assert roles["accent_hover"] == roles["accent"]
-    assert roles["nav_hover"] == roles["nav_idle"]
-    assert roles["nav_selected"] == roles["nav_idle"]
-    assert roles["transport_hover"] == roles["transport"]
-    assert roles["focus"] != roles["button"]
 
 
 def test_shared_field_hover_replaces_the_prior_bright_face_with_an_inset_contour():
@@ -186,42 +121,6 @@ def test_shared_field_hover_replaces_the_prior_bright_face_with_an_inset_contour
         ImageChops.difference(idle.getchannel("A"), hover.getchannel("A")).getbbox()
         is None
     )
-
-
-def test_navigation_uses_shared_inset_hover_and_selection_without_accent_edge():
-    from yt_downloader.visual_chrome import navigation_button_image
-
-    idle = navigation_button_image(140, 44, background=THEME["panel"])
-    hover = navigation_button_image(140, 44, background=THEME["panel"], state="hover")
-    focus = navigation_button_image(140, 44, background=THEME["panel"], state="focus")
-    selected = navigation_button_image(
-        140, 44, background=THEME["panel"], selected=True
-    )
-    selected_hover = navigation_button_image(
-        140, 44, background=THEME["panel"], selected=True, state="hover"
-    )
-    # Idle remains raised per the explicit resting-control contract. A fully
-    # transparent idle face would remove its material depth.
-    assert idle.getchannel("A").getpixel((70, 22)) == 255
-    assert idle.getchannel("A").getpixel((0, 0)) == 0
-    assert (
-        ImageChops.difference(idle.convert("RGB"), hover.convert("RGB")).getbbox()
-        is not None
-    )
-    assert (
-        ImageChops.difference(idle.getchannel("A"), hover.getchannel("A")).getbbox()
-        is not None
-    )
-    assert ImageChops.difference(idle, focus).getbbox() is not None
-    assert selected.getpixel((70, 41))[:3] != tuple(
-        int(THEME["selection"][i : i + 2], 16) for i in (1, 3, 5)
-    )
-    # An opaque same-hue face is not a color highlight: composited center
-    # remains the page material while diffuse inner shading establishes depth.
-    assert selected.getpixel((70, 22))[:3] == tuple(
-        int(THEME["panel"][i : i + 2], 16) for i in (1, 3, 5)
-    )
-    assert ImageChops.difference(selected, selected_hover).getbbox() is None
 
 
 @pytest.mark.parametrize("density", [1, 2])

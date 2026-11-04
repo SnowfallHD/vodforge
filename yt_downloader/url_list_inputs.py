@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 
 def parse_url_list_text(text: str) -> list[str]:
     urls: list[str] = []
@@ -20,7 +18,3 @@ def parse_url_list_text(text: str) -> list[str]:
         if line.startswith(("http://", "https://")):
             urls.append(line)
     return urls
-
-
-def read_url_list_file(path: Path) -> list[str]:
-    return parse_url_list_text(path.read_text(encoding="utf-8-sig"))

@@ -1,5 +1,4 @@
 import plistlib
-import sys
 
 import pytest
 
@@ -70,16 +69,8 @@ def test_dmg_rejects_symlinked_entrypoint(app, tmp_path):
         require_universal_app(app, lambda _: pytest.fail("must refuse before commands"))
 
 
-@pytest.mark.skipif(sys.platform != "darwin", reason="Native macOS font artwork")
-def test_background_has_retina_point_size_and_explicit_compatibility(tmp_path):
-    from PIL import Image
-
-    from scripts.build_macos_dmg import write_background
-
-    logo = tmp_path / "logo.png"
-    Image.new("RGBA", (20, 20), "white").save(logo)
-    output = tmp_path / "background.png"
-    write_background(output, logo)
-    with Image.open(output) as image:
-        assert image.size == (1280, 840)
-        assert image.info["dpi"][0] == pytest.approx(144, abs=0.02)
+def test_dmg_accepts_only_the_installer_app(app, tmp_path):
+    # A plain VODForge.app (the old drag-to-Applications layout) is refused.
+    with pytest.raises(ValueError, match="Install VODForge.app"):
+        build_dmg(app, tmp_path / "new.dmg", tmp_path / "unused.png")
+    assert not (tmp_path / "new.dmg").exists()

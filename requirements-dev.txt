@@ -1,3 +1,6 @@
 -r requirements.txt
+# FFmpeg fallback for running from source without Homebrew FFmpeg, and for test
+# fixtures. Packaged apps bundle their own FFmpeg and exclude this module.
+imageio-ffmpeg>=0.6.0
 pytest>=8.0
 pyinstaller>=6.0

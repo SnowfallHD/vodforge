@@ -1,9 +1,9 @@
 """Observe cache retirement through real child processes, including failure."""
 
 import os
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -26,9 +26,11 @@ def test_build_cache_is_private_and_retired_without_touching_outputs(
             str(runner),
             sys.executable,
             "-c",
-            "import os,pathlib,sys; p=pathlib.Path(os.environ['PYINSTALLER_CONFIG_DIR']); "
-            "(p/'transformed-binary').write_bytes(b'cache'); "
-            "pathlib.Path(sys.argv[1]).write_text(str(p)); sys.exit(int(sys.argv[2]))",
+            (
+                "import os,pathlib,sys; p=pathlib.Path(os.environ['PYINSTALLER_CONFIG_DIR']); "
+                "(p/'transformed-binary').write_bytes(b'cache'); "
+                "pathlib.Path(sys.argv[1]).write_text(str(p)); sys.exit(int(sys.argv[2]))"
+            ),
             str(output),
             str(exit_code),
         ],

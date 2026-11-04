@@ -45,17 +45,31 @@ def test_universal_package_refuses_dirty_source_without_output(tmp_path, monkeyp
     assert not output.exists()
 
 
+def _fake_library(path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"fixture")
+    return path
+
+
 def test_private_recipe_selects_universal_target_and_retains_per_arch_policy(
     tmp_path, monkeypatch
 ):
     import json
     import plistlib
 
+    from scripts.macos_package_contents import DATA, ICON, QML_DIR
+
     source = tmp_path / "source"
-    source.mkdir()
+    for relative in [item for item, _ in DATA] + [ICON, QML_DIR + "/Main.qml"]:
+        path = source / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not path.suffix and relative.count("/") > 0 and "." not in path.name:
+            path.mkdir(exist_ok=True)
+        else:
+            path.write_bytes(b"fixture")
     tools = tmp_path / "tools"
     tools.mkdir()
-    for name in ["ffmpeg", "ffprobe", "deno", "libsqlite3.dylib"]:
+    for name in ["ffmpeg", "ffprobe", "deno", "libx265.216.dylib"]:
         (tools / name).write_bytes(b"controlled input")
     output = tmp_path / "candidate"
     calls = []
@@ -72,6 +86,8 @@ def test_private_recipe_selects_universal_target_and_retains_per_arch_policy(
 
     def pyinstaller(args, **kwargs):
         calls.append(args)
+        if args[0] == "/usr/bin/codesign":
+            return
         path = output / "dist/VODForge.app/Contents/Info.plist"
         path.parent.mkdir(parents=True)
         path.write_bytes(
@@ -84,7 +100,7 @@ def test_private_recipe_selects_universal_target_and_retains_per_arch_policy(
     monkeypatch.setattr(
         "scripts.build_universal_macos.build_fullscreen",
         lambda source, output, arches: {
-            "library": str(output / "libvodforge_fullscreen.dylib"),
+            "library": str(_fake_library(output / "libvodforge_fullscreen.dylib")),
             "source_sha256": "b" * 64,
             "architectures": arches,
             "qualified": True,
@@ -95,7 +111,10 @@ def test_private_recipe_selects_universal_target_and_retains_per_arch_policy(
     monkeypatch.setattr(
         "scripts.build_universal_macos.audit_payload", lambda _: {"qualified": True}
     )
+    monkeypatch.delenv("VODFORGE_BUILD_TELEMETRY", raising=False)
     package(source, tmp_path / "venv/bin/python", tools, output, "0.2.6")
+    # Telemetry stays off unless the build explicitly asks for it.
+    assert (output / "version/VODFORGE_TELEMETRY_POLICY").read_text() == "disabled"
     assert calls[0][calls[0].index("--target-arch") + 1] == "universal2"
     assert (
         str(output / "native-fullscreen/libvodforge_fullscreen.dylib")
@@ -110,6 +129,14 @@ def test_private_recipe_selects_universal_target_and_retains_per_arch_policy(
         "x86_64": "15.0",
     }
     assert info["CFBundleVersion"] == "0.2.6"
+    # The plist edit is followed by an ad-hoc re-sign and a strict check.
+    assert calls[1][:3] == ["/usr/bin/codesign", "--force", "--deep"]
+    assert calls[2][:2] == ["/usr/bin/codesign", "--verify"]
+    # The universal app carries the same files as the regular build.
+    data = [calls[0][i + 1] for i, v in enumerate(calls[0]) if v == "--add-data"]
+    assert {item.split(":", 1)[1] for item in data} >= {d for _, d in DATA}
+    binaries = [calls[0][i + 1] for i, v in enumerate(calls[0]) if v == "--add-binary"]
+    assert str(tools / "libx265.216.dylib") + ":." in binaries
     assert json.loads((output / "build-receipt.json").read_text())["source"] == "a" * 40
 
 

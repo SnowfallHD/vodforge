@@ -169,10 +169,6 @@ class CueTimeline:
         )[:8000]
 
 
-def cue_text(cues: tuple[Cue, ...], position_ms: int) -> str:
-    return CueTimeline(cues).text_at(position_ms)
-
-
 def file_identity(path: Path) -> tuple[int, int, int, int]:
     stat = path.stat()
     return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns

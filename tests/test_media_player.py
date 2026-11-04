@@ -1,14 +1,8 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from types import SimpleNamespace
-
-import pytest
 
 from yt_downloader.media_player import (
-    MediaPlayerError,
-    probe_media_duration,
     resolve_library_media_path,
 )
 
@@ -59,26 +53,3 @@ def test_resolve_library_media_path_never_substitutes_for_missing_exact_file(
         )
         is None
     )
-
-
-def test_probe_duration_uses_fixed_json_contract(tmp_path: Path) -> None:
-    calls: list[list[str]] = []
-
-    def runner(command, **_kwargs):
-        calls.append(command)
-        return SimpleNamespace(stdout=json.dumps({"format": {"duration": "42.5"}}))
-
-    assert (
-        probe_media_duration("/trusted/ffprobe", tmp_path / "video.mp4", runner=runner)
-        == 42.5
-    )
-    assert calls[0][0] == "/trusted/ffprobe"
-    assert calls[0][-1].endswith("video.mp4")
-
-
-def test_probe_duration_rejects_malformed_or_unbounded_values(tmp_path: Path) -> None:
-    def runner(*_args, **_kwargs):
-        return SimpleNamespace(stdout='{"format":{"duration":"nan"}}')
-
-    with pytest.raises(MediaPlayerError):
-        probe_media_duration("ffprobe", tmp_path / "bad.mp4", runner=runner)

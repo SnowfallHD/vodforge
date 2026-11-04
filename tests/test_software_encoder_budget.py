@@ -5,7 +5,6 @@ import pytest
 from yt_downloader.download_service import build_vod_ffmpeg_command
 
 
-
 @pytest.mark.parametrize(
     ("cores", "budget"), [(None, 1), (1, 1), (2, 1), (4, 2), (8, 4), (64, 4)]
 )

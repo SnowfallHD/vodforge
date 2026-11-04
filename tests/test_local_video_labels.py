@@ -19,7 +19,6 @@ from yt_downloader.local_video_labels import (
 )
 from yt_downloader.run_identity import (
     metadata_output_profile,
-    metadata_output_profile_details,
 )
 
 
@@ -85,10 +84,6 @@ def test_old_saved_profile_projects_new_label_without_rewriting_raw_metadata(old
     }
     before = copy.deepcopy(info)
     assert metadata_output_profile(info) == f"MP4 • {new} • Static image"
-    assert (
-        metadata_output_profile_details(info)
-        == f"MP4 • {new} • Static image\nOutput video codec: H.264\nOutput file path: /private/Standard.mp4"
-    )
     assert info == before
 
 

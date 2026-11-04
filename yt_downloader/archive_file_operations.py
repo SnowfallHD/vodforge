@@ -529,7 +529,7 @@ def _prune_trash_source(
         return
     channel = _trash_channel_root(record, item.source)
     directories = _empty_channel_directories(channel) if channel is not None else None
-    if directories is None:
+    if channel is None or directories is None:
         _prune_empty_source(record, item, leaf_only=True)
         return
     proofs = {path: (device, inode) for path, device, inode in item.ancestors}

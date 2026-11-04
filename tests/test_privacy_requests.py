@@ -157,10 +157,11 @@ def test_ownership_request_explicitly_disables_redirects(tmp_path, monkeypatch):
 def test_fresh_rights_capability_is_independent_from_usage_choice(
     tmp_path, monkeypatch
 ):
-    from yt_downloader.qt_quick import analytics
-    from tests.test_attribution_permission import PolicyResponse
     import threading
     import time
+
+    from tests.test_attribution_permission import PolicyResponse
+    from yt_downloader.qt_quick import analytics
 
     monkeypatch.setattr(analytics, "telemetry_collection_allowed", lambda: True)
     session = QtAnalyticsSession(tmp_path, "0.2.6", Mock())
