@@ -20,7 +20,8 @@ def test_settle_liquid_rechecks_state_after_last_event_dispatch(monkeypatch, ter
     window = SimpleNamespace(findChildren=lambda _kind: [popup])
 
     def delayed_dispatch(_milliseconds):
-        clock[0] = 1.0
+        # One dispatch crosses the whole wait budget.
+        clock[0] = owner.LIQUID_SETTLE_BUDGET_S + 0.2
         if terminal == "opened":
             state["reveal"] = 1.0
         elif terminal == "closed":
