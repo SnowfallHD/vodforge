@@ -7,6 +7,13 @@ import pytest
 
 
 def pytest_configure():
+    # Qt picks its display platform once, when the first test creates the
+    # application. Scene tests ask for offscreen per test, but that only counts
+    # if no earlier test created the app first, so results depended on test
+    # order (on Windows, later tests ran in real desktop windows). Pin it for
+    # the run; native opt-in runs choose their own platform.
+    if os.environ.get("VODFORGE_NATIVE_UI_TESTS") != "1":
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     # Windows offscreen Qt does not discover the native font directory itself.
     # Use installed fonts so geometry checks measure Segoe UI, not fallback boxes.
     if sys.platform == "win32":
@@ -55,6 +62,26 @@ def offscreen_cursor_starts_outside_windows():
     app = QGuiApplication.instance()
     if app is not None and QGuiApplication.platformName() == "offscreen":
         QCursor.setPos(QPoint(-500, -500))
+    yield
+
+
+@pytest.fixture(autouse=True)
+def private_windows_user_folders(tmp_path_factory, monkeypatch):
+    """Keep every test out of the real user's Windows profile.
+
+    Tests isolate the app by setting HOME. On Windows the app's data folder
+    follows LOCALAPPDATA and Path.home() follows USERPROFILE, so those tests
+    read and wrote the real VODForge data of whoever ran them (on CI, one data
+    folder shared by every test in the run). Point all three at a throwaway
+    folder; a test that sets them itself still wins.
+    """
+    if sys.platform != "win32":
+        yield
+        return
+    root = tmp_path_factory.mktemp("user-profile")
+    monkeypatch.setenv("USERPROFILE", str(root))
+    monkeypatch.setenv("LOCALAPPDATA", str(root / "AppData" / "Local"))
+    monkeypatch.setenv("APPDATA", str(root / "AppData" / "Roaming"))
     yield
 
 

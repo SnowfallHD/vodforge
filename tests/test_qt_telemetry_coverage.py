@@ -594,6 +594,9 @@ def test_rendered_qt_menu_selection_search_and_help_use_real_callbacks(
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
     app = qt_app()
+    # Popup motion advances with the window's frames; an unshown window may
+    # never draw one (Windows), leaving the menu mid-animation.
+    window.show()
     try:
         bridge._runtime.history = [saved(tmp_path, "PRIVATE title", "MP4")]
         bridge.select("Library")

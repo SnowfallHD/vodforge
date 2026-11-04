@@ -2,6 +2,7 @@ import io
 import json
 import time
 from dataclasses import replace
+from pathlib import Path
 from threading import Event
 
 import pytest
@@ -687,7 +688,7 @@ def test_issue_location_matches_forge_selected_artifact_not_output_root(
         assert actions["locationLabel"] == "Show in folder"
         assert bridge.openInspectorLocation(actions["selectionKey"])
         assert bridge.openRunFolder(job.run_id)
-        assert opened == [str(nested), str(nested)]
+        assert [Path(path) for path in opened] == [nested, nested]
         assert bridge._runtime.recovered[0].output_dir == desktop
         assert not bridge.openInspectorLocation("stale-selection")
         media.unlink()  # controlled fixture only: explicit root fallback
@@ -695,6 +696,6 @@ def test_issue_location_matches_forge_selected_artifact_not_output_root(
         assert actions["location"] == str(desktop)
         assert actions["locationLabel"] == "Open output folder"
         assert bridge.openInspectorLocation(actions["selectionKey"])
-        assert opened[-1] == str(desktop)
+        assert Path(opened[-1]) == desktop
     finally:
         bridge.close()

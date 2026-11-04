@@ -19,9 +19,16 @@ from PySide6.QtTest import QTest
 from tests.test_qt_interaction_invariants import _close, _launch
 
 
-def _sample(app, menu, extras, ms=380):
-    rows, start = [], time.perf_counter()
-    while (time.perf_counter() - start) * 1000 < ms:
+def _sample(app, menu, extras, target, ms=380, budget_ms=3000):
+    """Sample for at least `ms`, and until the reveal has reached `target` and
+    stayed there for 100 ms, so slow software rendering still sees the end."""
+    rows, start, settled = [], time.perf_counter(), None
+    while True:
+        elapsed = (time.perf_counter() - start) * 1000
+        if elapsed >= budget_ms or (
+            elapsed >= ms and settled is not None and elapsed - settled >= 100
+        ):
+            break
         app.processEvents()
         point = extras.mapToScene(extras.boundingRect().topLeft())
         rows.append(
@@ -33,6 +40,10 @@ def _sample(app, menu, extras, ms=380):
                 "extras": (round(point.x(), 1), round(point.y(), 1)),
             }
         )
+        if rows[-1]["reveal"] == target:
+            settled = elapsed if settled is None else settled
+        else:
+            settled = None
         QTest.qWait(8)
     return rows
 
@@ -47,12 +58,12 @@ def _run(tmp_path, monkeypatch, size):
     QTest.qWait(400)
     start = (menu.property("width"), menu.property("height"))
     bridge.setExportMode("Manual Override")
-    grow = _sample(app, menu, extras)
+    grow = _sample(app, menu, extras, 1)
     everyday = next(
         o["value"] for o in bridge.exportModeOptions if o["label"] == "Everyday"
     )
     bridge.setExportMode(everyday)
-    shrink = _sample(app, menu, extras)
+    shrink = _sample(app, menu, extras, 0)
     return (app, bridge, engine, window), start, grow, shrink
 
 

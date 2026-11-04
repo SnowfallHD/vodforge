@@ -54,7 +54,7 @@ def test_completed_optional_actions_remain_reachable_across_breakpoints(
             assert point.x() >= 0 and point.x() + button.width() <= window.width()
             assert point.y() >= 0 and point.y() + button.height() <= window.height()
         assert window.grabWindow().save(
-            f"/tmp/vodforge-compact-{size[0]}x{size[1]}.png"
+            str(tmp_path / f"vodforge-compact-{size[0]}x{size[1]}.png")
         )
         if overflow:
             assert all(button.parentItem() is primary for button in buttons[:2])

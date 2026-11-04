@@ -8,6 +8,7 @@ import os
 import plistlib
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 from scripts.build_macos_fullscreen import build as build_fullscreen
@@ -212,6 +213,10 @@ def package(source: Path, python: Path, tools: Path, output: Path, version: str)
         json.dumps(closure, indent=2) + "\n"
     )
     if not closure["qualified"]:
+        problems = closure.get("errors", [])
+        print(f"{len(problems)} dependency closure problem(s):", file=sys.stderr)
+        for problem in problems[:40]:
+            print(f"  {json.dumps(problem, sort_keys=True)}", file=sys.stderr)
         raise ValueError(
             "Packaged universal dependency closure failed; output preserved"
         )

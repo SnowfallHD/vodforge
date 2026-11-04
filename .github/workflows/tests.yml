@@ -168,7 +168,7 @@ jobs:
           QT_QUICK_BACKEND: software
           QT_QUICK_CONTROLS_STYLE: Basic
         run: >-
-          python -m pytest -q --tb=short
+          python -m pytest -v --tb=short
           tests/test_qt_analytics_session.py
           tests/test_qt_automatic_attribution.py
           tests/test_qt_artwork_continuity.py

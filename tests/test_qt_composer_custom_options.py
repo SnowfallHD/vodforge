@@ -234,12 +234,15 @@ def test_quick_custom_surface_morphs_without_opening_settings(motion_scene):
     assert popup.property("width") > initial_width
     assert not window.findChild(QObject, "downloadSettingsPopup").property("visible")
     final_height = popup.property("height")
-    assert final_height > initial_height
+    # The panel grows taller only when the Custom column outgrows the others;
+    # with Windows font metrics the Settings column is already the tallest.
+    assert final_height >= initial_height
     if reduced_motion:
         assert values == [1.0]
     else:
         assert any(0 < value < 1 for value in values)
-        assert any(initial_height < height < final_height for height in heights)
+        if final_height > initial_height:
+            assert any(initial_height < height < final_height for height in heights)
     assert len(set(map(str, shadow_sources))) <= 2, shadow_sources
     bridge.setExportMode("Everyday")
     wait_for_reveal(popup, 0, "customReveal")

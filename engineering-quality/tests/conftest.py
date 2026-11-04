@@ -13,6 +13,26 @@ for path in (str(HARNESS_ROOT), str(REPO_ROOT)):
 
 
 @pytest.fixture(autouse=True)
+def private_windows_user_folders(tmp_path_factory, monkeypatch):
+    """Keep every test out of the real user's Windows profile.
+
+    Tests isolate the app by setting HOME. On Windows the app's data folder
+    follows LOCALAPPDATA and Path.home() follows USERPROFILE, so those tests
+    read and wrote the real VODForge data of whoever ran them (on CI, one data
+    folder shared by every test in the run). Point all three at a throwaway
+    folder; a test that sets them itself still wins.
+    """
+    if sys.platform != "win32":
+        yield
+        return
+    root = tmp_path_factory.mktemp("user-profile")
+    monkeypatch.setenv("USERPROFILE", str(root))
+    monkeypatch.setenv("LOCALAPPDATA", str(root / "AppData" / "Local"))
+    monkeypatch.setenv("APPDATA", str(root / "AppData" / "Roaming"))
+    yield
+
+
+@pytest.fixture(autouse=True)
 def no_leaked_child_process_observer():
     """A download sets a process-wide child-process observer and clears it when
     the run ends. A test that starts a run without finishing it would leave the

@@ -4130,3 +4130,27 @@ Each failure came from one test's leftovers deciding another test's outcome:
 Rule: a test that touches process-wide state (Qt application, cursor, child
 observer) resets it, and a fixture-borrowing module runs where its fixtures can.
 Local passes in one order don't show these; the CI partitions and slow runners do.
+
+### Tests must not reach the real user's profile — 2026-11-04
+
+Running the Qt component tests directly on the Windows test PC (to see why they
+failed on CI) overwrote that account's real VODForge `download-history.json`
+with a test fixture and added seven test records to its `active-run.json`.
+Tests isolate the app by setting `HOME`, but on Windows the data folder follows
+`LOCALAPPDATA` and `Path.home()` follows `USERPROFILE`. On CI the same gap gave
+every test in a run one shared data folder, so tests saw each other's records
+and failed. The PC was restored from a Windows shadow copy (nothing real was
+lost: its history already held only an Oct 22 test fixture, the same leak).
+
+A second order dependency hid behind it: Qt picks its display platform when the
+first test creates the application, so a test's own `QT_QPA_PLATFORM=offscreen`
+counts only if it runs first. Later tests ran in real desktop windows.
+
+Fixes: both conftest files give every Windows test throwaway `USERPROFILE`,
+`LOCALAPPDATA` and `APPDATA` folders, and `tests/conftest.py` pins the offscreen
+platform for the run (native opt-in runs choose their own).
+
+Rule: run tests on a machine someone uses only with the profile isolated, and
+check the real profile is byte-for-byte unchanged afterwards (the Windows
+diagnosis script now does). A test that sets only `HOME` is isolated on macOS
+and Linux, not Windows.

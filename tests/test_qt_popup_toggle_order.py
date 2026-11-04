@@ -24,8 +24,13 @@ def _moving_popups(window):
 
 
 def settle_liquid(window):
-    """Wait for the new app-owned popup lifecycle, not a fixed instant-close assumption."""
-    deadline = time.monotonic() + 0.8
+    """Wait for the new app-owned popup lifecycle, not a fixed instant-close assumption.
+
+    The motion lasts under 300 ms. The budget is wider because a popup's first
+    open in a process also builds its border and shadow, which can take over a
+    second with software rendering (Windows CI); a stuck popup still fails.
+    """
+    deadline = time.monotonic() + 3.0
     while time.monotonic() < deadline:
         if not _moving_popups(window):
             return
