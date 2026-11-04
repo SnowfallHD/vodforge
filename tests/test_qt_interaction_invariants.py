@@ -887,15 +887,30 @@ def test_floating_surfaces_cast_shadow_outside_unchanged_input_bounds(
         origin = background.mapToItem(window.contentItem(), 0, 0)
         x = round(origin.x() + background.width() + 6)
         y = round(origin.y() + background.height() / 2)
-        elevated = window.grabWindow()
-        assert 0 <= x < elevated.width() and 0 <= y < elevated.height()
-        shadow.setProperty("visible", False)
-        QTest.qWait(50)
-        flat = window.grabWindow()
-        assert popup.property("visible")
-        assert elevated.pixelColor(x, y).lightness() < flat.pixelColor(x, y).lightness()
+        # Compare a few shadow-on/off frame pairs: content behind the popup can
+        # still change between two grabs (seen once on Ubuntu, where the flat
+        # frame came out darker). A missing shadow can never darken the pixel,
+        # so requiring one darker pair keeps the check meaningful.
+        samples = []
+        for _ in range(4):
+            elevated = window.grabWindow()
+            assert 0 <= x < elevated.width() and 0 <= y < elevated.height()
+            shadow.setProperty("visible", False)
+            QTest.qWait(50)
+            flat = window.grabWindow()
+            assert popup.property("visible")
+            shadow.setProperty("visible", True)
+            samples.append(
+                (
+                    elevated.pixelColor(x, y).lightness(),
+                    flat.pixelColor(x, y).lightness(),
+                )
+            )
+            if samples[-1][0] < samples[-1][1]:
+                break
+            QTest.qWait(100)
+        assert any(on < off for on, off in samples), samples
         assert bounds == (popup.property("width"), popup.property("height"))
-        shadow.setProperty("visible", True)
         popup.close()
         app.processEvents()
         _assert_popup_closed(popup)
