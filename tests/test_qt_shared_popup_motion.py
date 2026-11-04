@@ -69,7 +69,11 @@ def test_trigger_reopens_during_liquid_exit_without_extra_click(
     from PySide6.QtCore import Qt
 
     from tests.test_qt_click_reliability import center
+    from yt_downloader.qt_quick import main as qt_main
 
+    # This test is about the animated exit; a runner with the system "Reduce
+    # motion" setting on would make the exit instant.
+    monkeypatch.setattr(qt_main, "_system_reduced_motion", lambda: False)
     _app, bridge, engine, window = _launch(tmp_path, monkeypatch, [])
     try:
         popup = window.findChild(QObject, "forgeFormatPopup")

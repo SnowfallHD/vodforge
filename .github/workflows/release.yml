@@ -180,6 +180,8 @@ jobs:
   macos:
     if: ${{ !(inputs.artifacts_only && inputs.qa_windows_only) }}
     strategy:
+      # One architecture failing shouldn't hide the other's result.
+      fail-fast: false
       matrix:
         include: ${{ fromJSON(inputs.artifacts_only && inputs.qa_macos_only && inputs.qa_intel_only && '[{"os":"macos-15-intel","architecture":"x64"}]' || '[{"os":"macos-15","architecture":"arm64"},{"os":"macos-15-intel","architecture":"x64"}]') }}
     runs-on: ${{ matrix.os }}
