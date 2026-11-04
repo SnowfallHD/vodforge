@@ -71,11 +71,20 @@ def test_custom_reveal_keeps_columns_in_place_where_four_fit(
             "Settings column restacked mid-motion"
         )
         # Settings moves only by the panel's own resize: never a large step.
-        steps = [
-            abs(b["extras"][0] - a["extras"][0]) + abs(b["extras"][1] - a["extras"][1])
-            for a, b in zip(grow + shrink, (grow + shrink)[1:])
-        ]
-        assert max(steps) < 140, max(steps)
+        # A step is judged against how far the animation advanced between the
+        # two samples, so slow (software-rendered) runners that sample fewer
+        # frames are held to the same rule as fast ones. The regression was a
+        # ~520pt jump on the first frame, with almost no animation progress.
+        for rows in (grow, shrink):
+            travel = abs(rows[-1]["extras"][0] - rows[0]["extras"][0]) + abs(
+                rows[-1]["extras"][1] - rows[0]["extras"][1]
+            )
+            for a, b in itertools.pairwise(rows):
+                step = abs(b["extras"][0] - a["extras"][0]) + abs(
+                    b["extras"][1] - a["extras"][1]
+                )
+                progress = abs(b["reveal"] - a["reveal"])
+                assert step <= 40 + 2 * travel * progress, (step, progress, travel)
         for rows, rising in ((grow, True), (shrink, False)):
             assert _monotonic([r["width"] for r in rows], rising)
             assert _monotonic([r["height"] for r in rows], rising)

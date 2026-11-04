@@ -134,7 +134,8 @@ def test_private_recipe_selects_universal_target_and_retains_per_arch_policy(
     assert calls[2][:2] == ["/usr/bin/codesign", "--verify"]
     # The universal app carries the same files as the regular build.
     data = [calls[0][i + 1] for i, v in enumerate(calls[0]) if v == "--add-data"]
-    assert {item.split(":", 1)[1] for item in data} >= {d for _, d in DATA}
+    # Split from the right: a Windows source path has a drive colon.
+    assert {item.rsplit(":", 1)[1] for item in data} >= {d for _, d in DATA}
     binaries = [calls[0][i + 1] for i, v in enumerate(calls[0]) if v == "--add-binary"]
     assert str(tools / "libx265.216.dylib") + ":." in binaries
     assert json.loads((output / "build-receipt.json").read_text())["source"] == "a" * 40

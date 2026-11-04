@@ -166,6 +166,21 @@ def test_macos_release_preflight_keeps_each_qt_module_out_of_backend_process():
     qt_modules = sorted((ROOT / "tests").glob("test_qt_*.py")) + sorted(
         (ROOT / "engineering-quality" / "tests").glob("test_qt_*.py")
     )
+    # A module that borrows Qt test fixtures loads Qt too, whatever its name;
+    # in the backend process it aborts on a display-less runner.
+    borrowers = [
+        path
+        for folder in (ROOT / "tests", ROOT / "engineering-quality" / "tests")
+        for path in sorted(folder.glob("test_*.py"))
+        if not path.name.startswith("test_qt_")
+        and re.search(
+            r"^\s*(?:from|import) tests\.test_qt_",
+            path.read_text(encoding="utf-8"),
+            re.MULTILINE,
+        )
+    ]
+    assert borrowers, "expected the known Qt-fixture borrowers"
+    qt_modules += borrowers
     assert qt_modules
     for module in qt_modules:
         name = module.relative_to(ROOT).as_posix()
@@ -279,7 +294,8 @@ def test_packaged_apps_and_windows_installer_use_vodforge_icon_assets(tmp_path):
     assert 'cmp -s "$icon_file" "$bundle_icon"' in macos_build
     assert '"--icon", $iconFile' in windows_build
     assert any(
-        value.endswith("assets/icons/lucide:assets/icons/lucide")
+        Path(value.rsplit(":", 1)[0]).as_posix().endswith("assets/icons/lucide")
+        and value.rsplit(":", 1)[1] == "assets/icons/lucide"
         for value in _option_values(macos_options, "--add-data")
     )
     assert "assets/icons/lucide" in windows_build

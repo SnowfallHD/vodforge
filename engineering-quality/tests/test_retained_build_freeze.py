@@ -36,6 +36,9 @@ def retained(tmp_path):
     root = tmp_path / "repo"
     root.mkdir()
     git(root, "init", "-q")
+    # Keep blobs byte-identical to the checkout on Windows runners too, where
+    # Git's default line-ending conversion would otherwise rewrite them.
+    git(root, "config", "core.autocrlf", "false")
     (root / "engineering-quality").mkdir()
     writer = root / "scripts/write_build_revision.py"
     writer.parent.mkdir()

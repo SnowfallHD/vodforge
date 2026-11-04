@@ -104,6 +104,10 @@ class MacDriver:
     def helper(self, app: Path, name: str) -> Path:
         if self.source is not None:
             return Path(shutil.which(name) or name)
+        for folder in ("Frameworks", "Resources", "MacOS"):
+            candidate = app / "Contents" / folder / name
+            if candidate.is_file():
+                return candidate
         return app / "Contents/Frameworks" / name
 
     def launch(self, app: Path, env: dict[str, str], log: Path) -> None:
@@ -228,7 +232,14 @@ class WindowsDriver:
 
     @staticmethod
     def helper(app: Path, name: str) -> Path:
+        for candidate in (app / "_internal" / f"{name}.exe", app / f"{name}.exe"):
+            if candidate.is_file():
+                return candidate
         return app / "_internal" / f"{name}.exe"
+
+    @staticmethod
+    def _label(element) -> str:
+        return element.window_text()
 
     def launch(self, app: Path, env: dict[str, str], log: Path) -> None:
         handle = log.open("ab")
@@ -389,11 +400,7 @@ class Journey:
             button = self.driver.find("AXButton", FIRST_RUN_DISMISS)
             if button is None:
                 break
-            dismissed.append(
-                self.driver._label(button)
-                if hasattr(self.driver, "_label")
-                else "button"
-            )
+            dismissed.append(self.driver._label(button))
             self.driver.press(button)
             time.sleep(1.0)
         return dismissed
@@ -422,9 +429,7 @@ class Journey:
         button = self.control(
             "AXButton", ("Download", "Queue"), 20, "the Download button"
         )
-        label = (
-            self.driver._label(button) if hasattr(self.driver, "_label") else "Download"
-        )
+        label = self.driver._label(button)
         self.driver.press(button)
         return label
 
