@@ -18,6 +18,14 @@ On an Apple silicon Mac, `--arch x86_64` runs a universal app as Intel code
 under Rosetta and fails unless macOS reports the process as translated
 (`P_TRANSLATED`); the result records `app_arch` and, at launch, `rosetta`.
 
+`mac-remote-journey.sh <tailscale-machine> <user> <app> <folder>` runs the
+journey on another Mac, such as the Intel test Mac (`julies-macbook-air`, user
+`julie`). It pins the host key Tailscale reports, keeps everything on the
+remote side in `~/VODForgeQA` (app copy, harness, a uv-managed Python 3.13 with
+pyobjc, the run), stops early if SSH sessions there lack Accessibility
+permission, and copies `journey-result.json` back. The remote Mac's own
+VODForge install is not touched.
+
 
 ## Reproducing a Windows test failure
 
