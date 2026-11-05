@@ -90,7 +90,11 @@ waive it by rerunning until it passes.
      `python engineering-quality/runners/release_journey.py --app /Applications/VODForge.app --output <folder>`
      (the terminal needs Accessibility permission; Screen Recording too for window
      images).
-   - **Intel Mac:** the same, from the same DMG. If no Intel Mac is available, add
+   - **Intel Mac:** the same, from the same DMG. Over Tailscale, from this Mac:
+     `engineering-quality/runners/mac-remote-journey.sh julies-macbook-air julie <VODForge.app> <folder>`
+     copies the app and harness to `~/VODForgeQA` there, runs the journey with a
+     private Python and copies the result back (the Intel Mac must be awake and
+     logged in; it already grants Accessibility to SSH sessions). If no Intel Mac is available, add
      `--arch x86_64` on an Apple silicon Mac to run the app's Intel code under
      Rosetta (the run fails unless macOS reports the app as translated). That
      exercises the Intel build but not Intel hardware or macOS 15 on Intel, so
