@@ -72,5 +72,6 @@ def extend_ytdlp_trust(platform: str = sys.platform) -> bool:
                 windows_store(context, store)
 
     ssl_load_certs.vodforge_windows_store = True  # type: ignore[attr-defined]
+    ssl_load_certs.vodforge_original = original  # type: ignore[attr-defined]
     _helper.ssl_load_certs = ssl_load_certs
     return True

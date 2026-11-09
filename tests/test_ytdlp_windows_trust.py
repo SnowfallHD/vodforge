@@ -49,16 +49,29 @@ def intercepted_server():
     server.server_close()
 
 
-@pytest.fixture
-def windows_store_with_intercepting_root(monkeypatch):
+def simulate_windows_store(monkeypatch):
+    """A Windows store holding the intercepting root, and yt-dlp's own loader.
+
+    On Windows, importing the channel-artwork worker (tests/test_channel_artwork.py
+    does at collection) already wraps yt-dlp's loader for the whole session, so
+    start from the original rather than whatever is installed. The wrapper is put
+    back after the test.
+    """
     root = (FIXTURES / "root.der").read_bytes()
 
     def enum_certificates(store):
         return [(root, "x509_asn", True)] if store == "ROOT" else []
 
     monkeypatch.setattr(ssl, "enum_certificates", enum_certificates, raising=False)
-    # Restore yt-dlp's own loader after the test.
-    monkeypatch.setattr(_helper, "ssl_load_certs", _helper.ssl_load_certs)
+    current = _helper.ssl_load_certs
+    monkeypatch.setattr(
+        _helper, "ssl_load_certs", getattr(current, "vodforge_original", current)
+    )
+
+
+@pytest.fixture
+def windows_store_with_intercepting_root(monkeypatch):
+    simulate_windows_store(monkeypatch)
 
 
 def fetch(url: str) -> bytes:
@@ -69,6 +82,23 @@ def fetch(url: str) -> bytes:
 def test_without_the_store_yt_dlp_rejects_an_intercepting_root(
     intercepted_server, windows_store_with_intercepting_root
 ):
+    with pytest.raises(CertificateVerifyError):
+        fetch(intercepted_server)
+
+
+def test_rejection_still_holds_when_the_app_wrapped_yt_dlp_earlier(
+    intercepted_server, monkeypatch
+):
+    """Windows CI ran this file after the artwork worker had wrapped yt-dlp, so the
+    check above saw the wrapper and passed the connection (Nov 9 tagged Tests)."""
+    root = (FIXTURES / "root.der").read_bytes()
+    monkeypatch.setattr(
+        ssl, "enum_certificates", lambda s: [(root, "x509_asn", True)], raising=False
+    )
+    monkeypatch.setattr(_helper, "ssl_load_certs", _helper.ssl_load_certs)
+    assert tls.extend_ytdlp_trust(platform="win32") is True  # as on Windows
+    assert fetch(intercepted_server) == b"intercepted ok"
+    simulate_windows_store(monkeypatch)
     with pytest.raises(CertificateVerifyError):
         fetch(intercepted_server)
 
