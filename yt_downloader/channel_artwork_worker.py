@@ -16,6 +16,10 @@ from .thumbnail_network import (
     download_bounded_url_bytes,
     validated_channel_url,
 )
+from .tls import extend_ytdlp_trust
+
+# Antivirus and company proxies add their root to the Windows store only.
+extend_ytdlp_trust()
 
 
 class QuietLogger:

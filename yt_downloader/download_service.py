@@ -206,6 +206,9 @@ def load_yt_dlp() -> Any | None:
         try:
             yt_dlp = importlib.import_module("yt_dlp")
             YTDLP_IMPORT_ERROR = None
+            from .tls import extend_ytdlp_trust
+
+            extend_ytdlp_trust()
         except Exception as exc:  # noqa: BLE001  # pragma: no cover - optional provider boundary
             YTDLP_IMPORT_ERROR = exc
             yt_dlp = None
