@@ -11,7 +11,7 @@ param(
   [string]$Python = 'E:\VODForgeQA\tools\journey-venv\Scripts\python.exe',
   [int]$TimeoutMinutes = 30,
   # Which runner to drive the app with: the release journey or the deletion one.
-  [ValidateSet('release_journey.py', 'deletion_journey.py')][string]$Journey = 'release_journey.py',
+  [ValidateSet('release_journey.py', 'deletion_journey.py', 'telemetry_delivery_journey.py')][string]$Journey = 'release_journey.py',
   # List the app's controls (types and names) instead of running the journey.
   [switch]$Inspect,
   [switch]$Worker

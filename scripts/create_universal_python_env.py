@@ -27,6 +27,7 @@ import json
 import re
 import subprocess
 import tempfile
+import time
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -74,8 +75,22 @@ def run(args, **kwargs):
 def install_python(download_dir: Path) -> Path:
     download_dir.mkdir(parents=True, exist_ok=True)
     pkg = download_dir / Path(PYTHON_PKG_URL).name
-    with urllib.request.urlopen(PYTHON_PKG_URL, timeout=300) as response:
-        pkg.write_bytes(response.read())
+    # A runner's DNS or the download host sometimes fails for a moment; retry
+    # with growing waits rather than failing the release build on one blip.
+    for attempt, wait in enumerate((10, 30, 60, 120, None), start=1):
+        try:
+            with urllib.request.urlopen(PYTHON_PKG_URL, timeout=300) as response:
+                pkg.write_bytes(response.read())
+            break
+        except OSError as error:
+            if wait is None:
+                raise
+            print(
+                f"Python download attempt {attempt} failed ({error}); "
+                f"retrying in {wait} s",
+                flush=True,
+            )
+            time.sleep(wait)
     digest = hashlib.sha256(pkg.read_bytes()).hexdigest()
     if digest != PYTHON_PKG_SHA256:
         raise ValueError(f"Python installer checksum mismatch: {digest}")
