@@ -522,11 +522,15 @@ def pipeline(repo: Path, site: Path, destination: Path, *, cases=None):
                     save(destination / "failed-readback.json", snapshot())
                 else:
                     errors.flush()
+                    try:  # Output can close just before Windows reports the exit.
+                        returncode = process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        returncode = None
                     save(
                         destination / "worker-startup-failure.json",
                         {
                             "worker_ready": False,
-                            "returncode": process.poll(),
+                            "returncode": returncode,
                             "stderr_path": str(destination / "worker.stderr.txt"),
                             "delivered_events": len(delivered),
                         },
