@@ -186,3 +186,46 @@ def test_registry_observes_process_before_and_after_confirmed_exit() -> None:
 
     assert events == [("started", 4321), ("exited", 4321)]
     assert registry.processes == set()
+
+
+def test_reused_pid_with_unreadable_command_is_skipped_by_creation_time() -> None:
+    """Production 0.2.5 Windows: after a restart the recorded child PID belonged
+    to a protected process. Reading its command line raised Access denied, which
+    blocked recovery and every new download on each launch. A different creation
+    time proves the PID was reused, so the command line must not be read."""
+
+    def denied(_pid):
+        raise ProcessOwnershipError("Access denied")
+
+    terminate_recorded_children(
+        [{"pid": 4, "birth_time": 123.5, "argv": ["/bundle/ffmpeg"]}],
+        [Path("/output/.vfstage/transaction")],
+        command_reader=denied,
+        pid_terminator=lambda _pid: pytest.fail("must not terminate"),
+        birth_reader=lambda _pid: 999.0,
+    )
+
+
+def test_same_creation_time_with_unreadable_command_is_still_preserved() -> None:
+    def denied(_pid):
+        raise ProcessOwnershipError("Access denied")
+
+    with pytest.raises(ProcessOwnershipError, match="Access denied"):
+        terminate_recorded_children(
+            [{"pid": 321, "birth_time": 123.5, "argv": ["/bundle/ffmpeg"]}],
+            [Path("/output/.vfstage/transaction")],
+            command_reader=denied,
+            pid_terminator=lambda _pid: pytest.fail("must not terminate"),
+            birth_reader=lambda _pid: 123.5,
+        )
+
+
+def test_live_legacy_child_without_creation_time_is_still_preserved() -> None:
+    with pytest.raises(ProcessOwnershipError, match="no verified creation identity"):
+        terminate_recorded_children(
+            [{"pid": 321, "argv": ["/bundle/ffmpeg"]}],
+            [Path("/output/.vfstage/transaction")],
+            command_reader=lambda _pid: "/bundle/ffmpeg",
+            pid_terminator=lambda _pid: pytest.fail("must not terminate"),
+            birth_reader=lambda _pid: pytest.fail("no recorded time to compare"),
+        )

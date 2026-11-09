@@ -265,23 +265,29 @@ def terminate_recorded_children(
         pid = child.get("pid")
         if type(pid) is not int or pid <= 1:
             raise ProcessOwnershipError("The active-run child record is invalid.")
+        birth = child.get("birth_time")
+        # Exactly int or float (not bool), finite and positive.
+        verified_birth = (
+            isinstance(birth, (int, float))
+            and not isinstance(birth, bool)
+            and math.isfinite(birth)
+            and birth > 0
+        )
+        if verified_birth:
+            # Compare the creation time first. After a restart the recorded PID
+            # often belongs to another process, sometimes a protected one whose
+            # command line Windows won't disclose (Access denied); a different
+            # creation time already proves it isn't ours, so never read it.
+            current_birth = birth_reader(pid)
+            if current_birth is None or current_birth != birth:
+                continue  # conclusively absent/reused; never signal the successor PID
         command = command_reader(pid)
         if command is None:
             continue
-        birth = child.get("birth_time")
-        # Exactly int or float (not bool), finite and positive.
-        if (
-            not isinstance(birth, (int, float))
-            or isinstance(birth, bool)
-            or not math.isfinite(birth)
-            or birth <= 0
-        ):
+        if not verified_birth:
             raise ProcessOwnershipError(
                 "The live legacy child has no verified creation identity; preserved without signalling."
             )
-        current_birth = birth_reader(pid)
-        if current_birth is None or current_birth != birth:
-            continue  # conclusively absent/reused; never signal the successor PID
         argv = child.get("argv")
         expected_executable = str(argv[0]) if isinstance(argv, list) and argv else ""
         executable_identities = {expected_executable}
