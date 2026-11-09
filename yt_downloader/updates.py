@@ -22,9 +22,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO
 
-import certifi
-
 from .platforms.windows.update_recovery import RECOVERY_FUNCTIONS
+from .tls import new_trusted_ssl_context
 
 GITHUB_REPOSITORY = "SnowfallHD/vodforge"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
@@ -127,9 +126,7 @@ class _NoQaUpdateRedirect(urllib.request.HTTPRedirectHandler):
 
 def update_ssl_context() -> ssl.SSLContext:
     """Always ship public roots; also retain platform/custom trust configuration."""
-    context = ssl.create_default_context(cafile=certifi.where())
-    context.load_default_certs()
-    return context
+    return new_trusted_ssl_context()
 
 
 def _open_update_request(request: urllib.request.Request, *, timeout: float):
@@ -141,7 +138,7 @@ def _open_update_request(request: urllib.request.Request, *, timeout: float):
     base = feed.removesuffix("release.json")
     if not request.full_url.startswith(base):
         raise ValueError("QA update request escaped its fixture.")
-    return urllib.request.build_opener(
+    return urllib.request.build_opener(  # loopback HTTP fixture, never HTTPS
         urllib.request.ProxyHandler({}), _NoQaUpdateRedirect()
     ).open(request, timeout=timeout)
 

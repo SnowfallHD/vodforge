@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from .private_json import create_private_json_once, read_private_json
+from .tls import https_handler
 
 ENDPOINT = "https://getvodforge.com/api/support/"
 _LOCK = threading.Lock()
@@ -79,7 +80,7 @@ class SupportTransport:
             method="POST",
         )
         try:
-            with urllib.request.build_opener(_NoRedirect()).open(
+            with urllib.request.build_opener(https_handler(), _NoRedirect()).open(
                 request, timeout=12
             ) as response:
                 result = json.loads(response.read(4097))

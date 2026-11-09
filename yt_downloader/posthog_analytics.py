@@ -23,6 +23,7 @@ from .telemetry_features import (
     system_dimensions,
 )
 from .telemetry_policy import qa_transport_requested
+from .tls import trusted_urlopen
 
 if TYPE_CHECKING:
     from .product_telemetry import ProductTelemetryEvent
@@ -248,7 +249,7 @@ class PosthogEventSink:
         self,
         config: PosthogConfig | None = None,
         *,
-        opener: Any = urllib.request.urlopen,
+        opener: Any = trusted_urlopen,
     ):
         self.config = config or PosthogConfig.from_environment()
         self.enabled = bool(

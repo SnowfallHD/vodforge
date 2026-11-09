@@ -7363,6 +7363,16 @@ def runtime_smoke(*, require_libvlc: bool = False) -> int:
         _runtime_smoke_output(f"update-tls=failed error={type(exc).__name__}")
         return 1
     _runtime_smoke_output("update-tls=verified-roots")
+    try:
+        # Analytics, region policy, registration, support and PostHog requests.
+        from .tls import trusted_ssl_context
+
+        if trusted_ssl_context().cert_store_stats()["x509_ca"] < 50:
+            raise RuntimeError("Bundled app certificate roots are incomplete")
+    except Exception as exc:  # noqa: BLE001 - packaged smoke reports dependency failure
+        _runtime_smoke_output(f"app-tls=failed error={type(exc).__name__}")
+        return 1
+    _runtime_smoke_output("app-tls=verified-roots")
     runtimes = {
         "ffmpeg": DownloadWorkerCore._find_ffmpeg(),
         "ffprobe": DownloadWorkerCore._find_ffprobe(),

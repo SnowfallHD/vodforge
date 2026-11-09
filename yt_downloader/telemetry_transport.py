@@ -9,6 +9,7 @@ import urllib.request
 from typing import Any
 
 from .telemetry_policy import PREVIEW_ORIGIN, preview_telemetry_allowed
+from .tls import https_handler, trusted_urlopen
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -27,8 +28,10 @@ def telemetry_urlopen(
         request.add_header("User-Agent", "VODForge")
     if not preview_telemetry_allowed():
         if not follow_redirects:
-            return urllib.request.build_opener(_NoRedirect()).open(request, **kwargs)
-        return urllib.request.urlopen(request, **kwargs)  # nosec B310 - fixed telemetry endpoints
+            return urllib.request.build_opener(https_handler(), _NoRedirect()).open(
+                request, **kwargs
+            )
+        return trusted_urlopen(request, **kwargs)
     url = urllib.parse.urlsplit(request.full_url)
     if (
         url.scheme != "https"
@@ -47,4 +50,6 @@ def telemetry_urlopen(
         headers=headers,
         method=request.get_method(),
     )
-    return urllib.request.build_opener(_NoRedirect()).open(routed, **kwargs)
+    return urllib.request.build_opener(https_handler(), _NoRedirect()).open(
+        routed, **kwargs
+    )
