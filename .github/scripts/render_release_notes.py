@@ -19,7 +19,11 @@ HIGHLIGHTS = {
 - Watch’s Recently Added rail and See All now share newest-first ordering. See All sits beside the rail heading as a text link.
 - Retry opens a choice of the same settings or the selected item’s expanded recovery settings. Recovery uses the shared folder control and keeps the inspector within its column.
 - Custom Options keeps selections open, hides the unused CRF or CBR field, and scrolls expanded selectors into view. All runs remains open when hovering over its action controls.
-- The packaged download runtime includes browser impersonation support. Additional bounded diagnostics and process-cleanup regressions cover provider failures and interrupted runs.
+- On Windows, downloads now work when antivirus software or a company network checks secure connections.
+- On Windows, fixed a rare case where every download was refused after a restart.
+- Updated the YouTube download component (yt-dlp 2026.10.26), with browser impersonation support, and the bundled certificate list, which includes a security fix.
+- Usage analytics are optional and can be turned off in Settings with **Share usage analytics**. In the European Economic Area, the UK and wherever the region can’t be determined, VODForge asks first and analytics stay off unless you agree. Analytics never include links, video titles, file names or paths. See [Privacy](https://getvodforge.com/privacy/) for details.
+- When analytics is on, failure reports say more about why a video couldn’t be downloaded (for example age-restricted, private, members-only, region-blocked or not yet live), so these problems can be fixed faster.
 """,
 }
 
