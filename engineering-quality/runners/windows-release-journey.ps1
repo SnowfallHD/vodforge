@@ -10,11 +10,14 @@ param(
   [Parameter(Mandatory=$true)][ValidatePattern('^[A-Za-z0-9-]{4,64}$')][string]$JobId,
   [string]$Python = 'E:\VODForgeQA\tools\journey-venv\Scripts\python.exe',
   [int]$TimeoutMinutes = 30,
+  # Which runner to drive the app with: the release journey or the deletion one.
+  [ValidateSet('release_journey.py', 'deletion_journey.py')][string]$Journey = 'release_journey.py',
   # List the app's controls (types and names) instead of running the journey.
   [switch]$Inspect,
   [switch]$Worker
 )
-# Runs engineering-quality/runners/release_journey.py against a Windows build.
+# Runs engineering-quality/runners/release_journey.py (or -Journey
+# deletion_journey.py) against a Windows build.
 #
 # UI Automation needs the logged-in desktop, so the work runs as a task in the
 # interactive session (never session 0). The task does everything, including
@@ -42,7 +45,7 @@ if (-not $Worker) {
   }
   New-Item -ItemType Directory -Path $run | Out-Null
   $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
-  $arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$PSCommandPath`" -App `"$App`" -Source `"$Source`" -JobId $JobId -Python `"$Python`" -TimeoutMinutes $TimeoutMinutes"
+  $arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$PSCommandPath`" -App `"$App`" -Source `"$Source`" -JobId $JobId -Python `"$Python`" -TimeoutMinutes $TimeoutMinutes -Journey $Journey"
   if ($Installer) { $arguments += " -Installer `"$Installer`"" }
   if ($Inspect) { $arguments += ' -Inspect' }
   $arguments += ' -Worker'
@@ -84,19 +87,19 @@ try {
   $output = Join-Path $run 'journey'
   # Start-Process, not &: Windows PowerShell 5 turns a native program's stderr
   # into terminating errors under 'Stop' when redirected with *>.
-  $arguments = @("`"$(Join-Path $Source 'engineering-quality\runners\release_journey.py')`"", '--app', "`"$App`"", '--output', "`"$output`"")
+  $arguments = @("`"$(Join-Path $Source "engineering-quality\runners\$Journey")`"", '--app', "`"$App`"", '--output', "`"$output`"")
   if ($Inspect) { $arguments += '--inspect' }
   # Wait for Python only, not for any app the journey launched.
-  $journey = Start-Process $Python -ArgumentList $arguments -PassThru -NoNewWindow `
+  $runner = Start-Process $Python -ArgumentList $arguments -PassThru -NoNewWindow `
     -RedirectStandardOutput (Join-Path $run 'journey.log') -RedirectStandardError (Join-Path $run 'journey-stderr.log')
-  $null = $journey.Handle  # Without this, ExitCode can read back empty.
-  if (-not $journey.WaitForExit($TimeoutMinutes * 60 * 1000)) {
-    Stop-Process -Id $journey.Id -Force
+  $null = $runner.Handle  # Without this, ExitCode can read back empty.
+  if (-not $runner.WaitForExit($TimeoutMinutes * 60 * 1000)) {
+    Stop-Process -Id $runner.Id -Force
     throw "The journey did not finish within $TimeoutMinutes minutes"
   }
-  $result.exit_code = $journey.ExitCode
-  $result.passed = $journey.ExitCode -eq 0
-  $result.result = Join-Path $output 'journey-result.json'
+  $result.exit_code = $runner.ExitCode
+  $result.passed = $runner.ExitCode -eq 0
+  $result.result = $output
 } catch {
   $result.error = $_.Exception.Message
 } finally {

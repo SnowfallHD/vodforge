@@ -6,6 +6,8 @@
 # Example (the Intel test Mac):
 #   engineering-quality/runners/mac-remote-journey.sh julies-macbook-air julie dist/VODForge.app /tmp/intel-journey
 #
+# JOURNEY=deletion_journey.py runs the deletion journey instead of the release one.
+#
 # - The remote host key is pinned from what Tailscale reports for that machine,
 #   kept in a file inside the result folder; your known_hosts is not changed.
 # - Everything on the remote Mac goes under ~/VODForgeQA: the app copy, the
@@ -16,6 +18,7 @@
 set -euo pipefail
 [[ $# -eq 4 ]] || { sed -n 2,6p "$0"; exit 64; }
 machine=$1 user=$2 app=${3%/} out=$4
+journey=${JOURNEY:-release_journey.py}
 here=${0:A:h}
 mkdir -p "$out"
 
@@ -64,10 +67,10 @@ rsync -a --delete -e "ssh -F $out/ssh_config" "$app" remote:VODForgeQA/journey/
   codesign --verify --deep --strict journey/${app:t}"
 
 set +e
-"${r[@]}" "cd ~/VODForgeQA/journey && rm -rf result && PYTHONPATH=eq ../venv/bin/python eq/runners/release_journey.py --app \$PWD/${app:t} --output \$PWD/result" | tee "$out/run.log"
+"${r[@]}" "cd ~/VODForgeQA/journey && rm -rf result && PYTHONPATH=eq ../venv/bin/python eq/runners/$journey --app \$PWD/${app:t} --output \$PWD/result" | tee "$out/run.log"
 code=${pipestatus[1]}
 set -e
 rsync -a -e "ssh -F $out/ssh_config" remote:VODForgeQA/journey/result/ "$out/result/" || true
 "${r[@]}" "pgrep -f 'VODForgeQA/journey/${app:t}' >/dev/null && echo 'WARNING: a test app is still running on $machine' || true"
-echo "result: $out/result/journey-result.json (exit $code)"
+echo "result: $out/result (exit $code)"
 exit $code

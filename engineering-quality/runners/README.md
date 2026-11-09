@@ -27,6 +27,20 @@ permission, and copies `journey-result.json` back. The remote Mac's own
 VODForge install is not touched.
 
 
+`deletion_journey.py` deletes saved media through the app's own Library
+buttons (Details, More actions, Move media to Trash) in the same isolated
+profile: one YouTube video saved as MP4, MP3 and Original audio under one
+channel. It checks that deleting one item keeps the channel, that an emptied
+sibling folder doesn't keep it, and that a user's own file does. Every moved
+file is found in the real Trash or Recycle Bin at the path the app recorded,
+compared with the original, and taken back out. Run it like the release journey;
+remotely with `JOURNEY=deletion_journey.py mac-remote-journey.sh ...` or
+`windows-release-journey.ps1 -Journey deletion_journey.py`.
+
+`VODFORGE_NATIVE_TRASH_RECEIPTS=<file.jsonl> pytest tests/test_archive_trash_hierarchy.py`
+runs the 56 deletion-hierarchy cases through the real system Trash on macOS or
+Windows instead of a stand-in folder, writing one receipt per file.
+
 ## Reproducing a Windows test failure
 
 `windows-dev-tests.ps1 -Source <checkout> -Tests <a,b,...>` runs pytest on the

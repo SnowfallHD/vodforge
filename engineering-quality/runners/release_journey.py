@@ -178,6 +178,16 @@ class MacDriver:
                     return element
         return None
 
+    def find_all(self, role: str, names: tuple[str, ...]) -> list:
+        return [
+            element
+            for window in self.windows()
+            for element in self._walk(window)
+            if self._attr(element, "AXRole") == role
+            and self._label(element) in names
+            and self._attr(element, "AXEnabled") is not False
+        ]
+
     def texts(self) -> list[str]:
         return [self._label(e) for window in self.windows() for e in self._walk(window)]
 
@@ -242,7 +252,11 @@ class WindowsDriver:
 
     # Controls whose macOS accessible name comes from a placeholder have no UIA
     # name; match them by the QML objectName at the end of their automation ID.
-    OBJECT_NAMES: ClassVar[dict[str, str]] = {"Paste a video URL": "forgeUrlInput"}
+    OBJECT_NAMES: ClassVar[dict[str, str]] = {
+        "Paste a video URL": "forgeUrlInput",
+        # Not "Close": that is also the window's own title-bar button.
+        "fileActionDismissButton": "fileActionDismissButton",
+    }
 
     def __init__(self) -> None:
         from pywinauto import Application, keyboard
@@ -290,6 +304,12 @@ class WindowsDriver:
     def window(self):
         try:
             windows = self.app.windows()
+            if not windows and self.process is not None:
+                # After a popup closes, the connected application can briefly
+                # list no windows; ask the desktop for this process's windows.
+                from pywinauto import Desktop
+
+                windows = Desktop(backend="uia").windows(process=self.process.pid)
             return windows[0] if windows else None
         except Exception:  # noqa: BLE001 - process exiting
             return None
@@ -308,6 +328,17 @@ class WindowsDriver:
             ) and element.is_enabled():
                 return element
         return None
+
+    def find_all(self, role: str, names: tuple[str, ...]) -> list:
+        window = self.window()
+        if window is None:
+            return []
+        control = {"AXButton": "Button", "AXTextField": "Edit"}[role]
+        return [
+            e
+            for e in window.descendants(control_type=control)
+            if e.window_text() in names and e.is_enabled()
+        ]
 
     def texts(self) -> list[str]:
         window = self.window()
@@ -480,15 +511,16 @@ class Journey:
         return label
 
     def choose_format(self, label: str) -> None:
+        formats = ("MP4", "MP3", "Original audio")
         current = next(
             (
-                t
+                t.removesuffix("▾").strip()
                 for t in self.driver.texts()
-                if t.endswith("▾") and t.split()[0] in {"MP4", "MP3", "Original"}
+                if t.endswith("▾") and t.removesuffix("▾").strip() in formats
             ),
             "",
         )
-        if current.split()[:1] == [label]:
+        if current == label:
             return
         selector = wait_for(
             lambda: next(
@@ -496,7 +528,7 @@ class Journey:
                     b
                     for b in [
                         self.driver.find("AXButton", (f"{name}  ▾",))
-                        for name in ("MP4", "MP3", "Original")
+                        for name in formats
                     ]
                     if b is not None
                 ),

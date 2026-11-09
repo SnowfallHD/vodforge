@@ -1,12 +1,25 @@
-"""Disposable real Trash transfers; never inspect or clean ordinary user media."""
+"""Disposable real Trash transfers; never inspect or clean ordinary user media.
 
+By default the system Trash is replaced with a folder. With
+VODFORGE_NATIVE_TRASH_RECEIPTS=<file.jsonl> (macOS or Windows), every case moves
+its fixture files through the real system Trash / Recycle Bin, checks they
+arrived intact, takes them back out and appends one receipt line per file.
+"""
+
+import hashlib
 import json
+import os
+import sys
 from pathlib import Path
 
 import pytest
 
 from yt_downloader import archive_file_operations as ops
 from yt_downloader.history import history_archive_owner
+from yt_downloader.platform_services import trash_file
+
+NATIVE_RECEIPTS = os.environ.get("VODFORGE_NATIVE_TRASH_RECEIPTS", "")
+NATIVE = bool(NATIVE_RECEIPTS) and sys.platform in {"darwin", "win32"}
 
 
 def fixture(tmp_path, *, root_kind="retry"):
@@ -43,6 +56,34 @@ def execute(tmp_path, record, *, boundary=lambda _: None, trash=None, peers=()):
 
     def move_to_trash(path):
         destination = rubbish / path.name
+        if NATIVE:
+            # Real system Trash / Recycle Bin. The file is then taken back out
+            # into the case's own folder, so assertions read it and the user's
+            # Trash keeps nothing from this run.
+            data = path.read_bytes()
+            trashed = Path(trash_file(path))
+            arrived = trashed.read_bytes() == data
+            trashed.rename(destination)
+            if sys.platform == "win32" and trashed.name.startswith("$R"):
+                info = trashed.with_name("$I" + trashed.name[2:])
+                info.unlink(missing_ok=True)  # This file's own Recycle Bin entry.
+            with open(NATIVE_RECEIPTS, "a", encoding="utf-8") as receipt:
+                receipt.write(
+                    json.dumps(
+                        {
+                            "test": os.environ.get("PYTEST_CURRENT_TEST", ""),
+                            "source": str(path),
+                            "trash": str(trashed),
+                            "bytes": len(data),
+                            "sha256": hashlib.sha256(data).hexdigest(),
+                            "intact_in_trash": arrived,
+                            "source_gone": not path.exists(),
+                        }
+                    )
+                    + "\n"
+                )
+            assert arrived and not path.exists()
+            return str(trashed)
         path.rename(destination)
         return str(destination)
 

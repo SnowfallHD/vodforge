@@ -105,6 +105,11 @@ waive it by rerunning until it passes.
      restores the PC's own VODForge uninstall entry and shortcuts. Runs use the
      QA folder `E:\VODForgeQA` (see `engineering-quality/runners/README.md`).
 
+   Then run `engineering-quality/runners/deletion_journey.py` the same way on each
+   machine (Library deletion through the app's buttons, checked against the real
+   Trash), and the 56 deletion-hierarchy cases against the real Trash:
+   `VODFORGE_NATIVE_TRASH_RECEIPTS=<file> pytest tests/test_archive_trash_hierarchy.py`.
+
    Then check by hand what the journey can't: Library, Watch playback, My Files and
    Issues & Recovery look right, full screen and the menu-bar reveal on the Macs, and
    window resizing.
