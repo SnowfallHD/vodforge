@@ -60,6 +60,22 @@ ERROR_TYPES = frozenset(
         "UnboundLocalError",
         "RecursionError",
         "ZeroDivisionError",
+        # Leaf causes that otherwise show as "other" in production chains.
+        "PostProcessingError",
+        "UnsupportedError",
+        "GeoRestrictedError",
+        "ContentTooShortError",
+        "TransportError",
+        "SSLError",
+        "SSLCertVerificationError",
+        "CertificateVerifyError",
+        "gaierror",
+        "ConnectionResetError",
+        "ConnectionRefusedError",
+        "ConnectionAbortedError",
+        "BrokenPipeError",
+        "RemoteDisconnected",
+        "IncompleteRead",
     }
 )
 
@@ -239,8 +255,71 @@ FAILURE_CODES = frozenset(
         "http_forbidden",
         "encoder_unavailable",
         "disk_full",
+        "age_restricted",
+        "private_video",
+        "members_only",
+        "geo_restricted",
+        "live_not_started",
+        "video_unavailable",
+        "unsupported_url",
     }
 )
+
+# yt-dlp warnings seen during a job, as a closed vocabulary (never the text).
+# Ordered by how much each explains a failure; the first match is reported.
+EXTRACTOR_WARNINGS = (
+    (
+        "challenge_solving_failed",
+        (
+            "signature solving failed",
+            "challenge solving failed",
+            "nsig extraction failed",
+            "sig extraction failed",
+            "n challenge",
+            "js challenge",
+        ),
+    ),
+    ("po_token_required", ("po token", "potoken", "po_token")),
+    ("sabr_only", ("sabr",)),
+    ("drm", ("drm",)),
+    ("bot_challenge", ("not a bot",)),
+    (
+        "rate_limited",
+        ("http error 429", "too many requests", "rate-limit", "rate limit"),
+    ),
+    (
+        "formats_missing",
+        (
+            "some formats may be missing",
+            "only images are available",
+            "no video formats",
+            "requested format is not available",
+        ),
+    ),
+)
+EXTRACTOR_WARNING_CODES = frozenset(code for code, _ in EXTRACTOR_WARNINGS)
+LIVE_STATUSES = frozenset(
+    {"is_live", "is_upcoming", "was_live", "not_live", "post_live"}
+)
+AVAILABILITIES = frozenset(
+    {"private", "premium_only", "subscriber_only", "needs_auth", "unlisted", "public"}
+)
+
+
+def extractor_warning_code(message: str) -> str | None:
+    text = message.lower()
+    for code, needles in EXTRACTOR_WARNINGS:
+        if any(needle in text for needle in needles):
+            return code
+    return None
+
+
+def most_telling_warning(codes) -> str | None:
+    """The warning that best explains a failure, from those a job observed."""
+    for code, _ in EXTRACTOR_WARNINGS:
+        if code in codes:
+            return code
+    return None
 
 
 def _typed_extractor_tls_code(error: BaseException) -> str | None:
@@ -283,6 +362,45 @@ def failure_code(error: BaseException) -> str | None:
     if "gaierror" in text:
         return "dns_lookup"
     for code, needles in (
+        (
+            "age_restricted",
+            (
+                "confirm your age",
+                "age-restricted",
+                "age restricted",
+                "inappropriate for some users",
+            ),
+        ),
+        (
+            "members_only",
+            (
+                "members-only",
+                "members only",
+                "join this channel",
+                "available to this channel's members",
+            ),
+        ),
+        ("private_video", ("private video", "video is private")),
+        (
+            "geo_restricted",
+            (
+                "not available in your country",
+                "geo restricted",
+                "geo-restricted",
+                "not made this video available in your country",
+            ),
+        ),
+        (
+            "live_not_started",
+            (
+                "premieres in",
+                "live event will begin",
+                "this live event",
+                "is upcoming",
+                "will begin in",
+            ),
+        ),
+        ("unsupported_url", ("unsupported url",)),
         ("no_video_stream", ("no usable video source", "no video formats")),
         ("no_audio_stream", ("no usable audio source",)),
         ("format_unavailable", ("requested format is not available",)),
@@ -320,6 +438,16 @@ def failure_code(error: BaseException) -> str | None:
             ),
         ),
         ("disk_full", ("no space left",)),
+        (
+            "video_unavailable",
+            (
+                "video unavailable",
+                "video is unavailable",
+                "no longer available",
+                "has been removed",
+                "this video is not available",
+            ),
+        ),
     ):
         if any(needle in text for needle in needles):
             return code
@@ -338,6 +466,9 @@ class SourceSelectionError(RuntimeError):
     ):
         super().__init__(message)
         self.selection_dimensions = dict(selection_dimensions or {})
+        # Set by the caller from the extractor's info (closed values only).
+        self.live_status: str | None = None
+        self.availability: str | None = None
         self.format_count = min(len(formats), 10000)
         self.video_format_count = min(
             sum(f.get("vcodec") not in (None, "none", "") for f in formats), 10000
@@ -372,6 +503,9 @@ class FailureDiagnostic:
     path_units: int | None = None
     path_component_count: int | None = None
     path_longest_component_bytes: int | None = None
+    extractor_warning: str | None = None
+    live_status: str | None = None
+    availability: str | None = None
 
     def payload(self) -> dict[str, str | int]:
         return {key: value for key, value in asdict(self).items() if value is not None}
@@ -402,8 +536,18 @@ def validate_failure_detail(value: dict) -> FailureDiagnostic:
         "path_units",
         "path_component_count",
         "path_longest_component_bytes",
+        "extractor_warning",
+        "live_status",
+        "availability",
     }:
         raise ValueError("unsupported failure detail")
+    for key, allowed in (
+        ("extractor_warning", EXTRACTOR_WARNING_CODES),
+        ("live_status", LIVE_STATUSES),
+        ("availability", AVAILABILITIES),
+    ):
+        if value.get(key) is not None and value[key] not in allowed:
+            raise ValueError("unsupported failure detail")
     if (
         value.get("reason", "unknown") not in FAILURE_REASONS
         or value.get("stage", "unknown") not in FAILURE_STAGES
@@ -495,12 +639,16 @@ def capture_failure(
     stage: str = "unknown",
     inspect_text: bool = True,
     context: Literal["media", "updater"] = "media",
+    extractor_warnings=(),
 ) -> FailureDiagnostic:
     """Extract scalar machine facts; never serialize args, commands or messages."""
     facts: dict = {
         "reason": "unknown",
         "stage": stage if stage in FAILURE_STAGES else "unknown",
     }
+    warning = most_telling_warning(extractor_warnings)
+    if warning is not None:
+        facts["extractor_warning"] = warning
     pending = [error]
     seen: set[int] = set()
     text_reason = "unknown"
@@ -526,6 +674,10 @@ def capture_failure(
         if isinstance(current, SourceSelectionError):
             for key in ("format_count", "video_format_count", "audio_format_count"):
                 facts[key] = getattr(current, key)
+            if getattr(current, "live_status", None) in LIVE_STATUSES:
+                facts["live_status"] = current.live_status
+            if getattr(current, "availability", None) in AVAILABILITIES:
+                facts["availability"] = current.availability
         if isinstance(current, ssl.SSLCertVerificationError):
             value = getattr(current, "verify_code", None)
             if type(value) is int and 0 <= value <= 65535:

@@ -58,6 +58,7 @@ from .failure_diagnostics import (
     FailureDiagnostic,
     SourceSelectionError,
     capture_failure,
+    extractor_warning_code,
 )
 from .history import (
     application_data_dir,
@@ -4472,9 +4473,18 @@ class QueueLogger:
         events: UiEventSink | None = None,
         *,
         diagnostic_prefix: str = "yt-dlp",
+        warnings: set[str] | None = None,
     ) -> None:
         self.events = events
         self.diagnostic_prefix = diagnostic_prefix
+        # Closed warning codes for failure reports (see extractor_warning_code).
+        self.warnings = warnings
+
+    def _observe(self, msg: str) -> None:
+        if self.warnings is not None:
+            code = extractor_warning_code(msg)
+            if code is not None:
+                self.warnings.add(code)
 
     def debug(self, msg: str) -> None:
         if msg:
@@ -4483,11 +4493,13 @@ class QueueLogger:
             self.events.put(("log", msg))
 
     def warning(self, msg: str) -> None:
+        self._observe(msg)
         write_diagnostic(f"{self.diagnostic_prefix} WARNING: {msg}")
         if self.events is not None:
             self.events.put(("log", f"WARNING: {msg}"))
 
     def error(self, msg: str) -> None:
+        self._observe(msg)
         write_diagnostic(f"{self.diagnostic_prefix} ERROR: {msg}")
         if self.events is not None:
             self.events.put(("log", f"ERROR: {msg}"))
@@ -4503,7 +4515,9 @@ def _build_playlist_detection_options(
         "skip_download": True,
         "noplaylist": False,
         "extract_flat": "in_playlist",
-        "logger": QueueLogger(None, diagnostic_prefix="playlist yt-dlp"),
+        "logger": QueueLogger(
+            None, diagnostic_prefix="playlist yt-dlp", warnings=job.extractor_warnings
+        ),
         "socket_timeout": 30,
         "ignore_no_formats_error": True,
     }
@@ -4712,12 +4726,16 @@ def _build_item_preflight_options(
     ffmpeg: str | None,
     deno_path: str | None,
 ) -> dict[str, Any]:
+    # Warnings belong to the item being analysed; earlier items don't explain it.
+    job.extractor_warnings.clear()
     options: dict[str, Any] = {
         "quiet": True,
         "skip_download": True,
         "noplaylist": True,
         "extract_flat": False,
-        "logger": QueueLogger(None, diagnostic_prefix="preflight yt-dlp"),
+        "logger": QueueLogger(
+            None, diagnostic_prefix="preflight yt-dlp", warnings=job.extractor_warnings
+        ),
         "socket_timeout": 30,
         "ignore_no_formats_error": True,
     }
@@ -4747,11 +4765,11 @@ def _build_download_item_plan(
     max_height: int,
 ) -> ExportPlan | AudioExportPlan:
     job.selection_dimensions = {}
-    if job.output_type == OutputType.ORIGINAL:
-        return build_original_audio_plan(preflight_info)
-    if job.output_type == OutputType.MP3:
-        return build_mp3_export_plan(preflight_info, job.mp3_settings)
     try:
+        if job.output_type == OutputType.ORIGINAL:
+            return build_original_audio_plan(preflight_info)
+        if job.output_type == OutputType.MP3:
+            return build_mp3_export_plan(preflight_info, job.mp3_settings)
         plan = build_auto_export_plan(
             preflight_info,
             mode=job.export_mode,
@@ -4759,9 +4777,13 @@ def _build_download_item_plan(
             use_nvenc=job.use_nvenc,
         )
     except SourceSelectionError as exc:
-        job.selection_dimensions = selection_observation(
-            exc.selection_dimensions, scope="item"
-        )
+        # Why a source can have no usable formats: live/upcoming or restricted.
+        exc.live_status = preflight_info.get("live_status")
+        exc.availability = preflight_info.get("availability")
+        if job.output_type not in (OutputType.ORIGINAL, OutputType.MP3):
+            job.selection_dimensions = selection_observation(
+                exc.selection_dimensions, scope="item"
+            )
         raise
     job.selection_dimensions = selection_observation(
         plan.selection_dimensions, scope="item"
@@ -6230,7 +6252,9 @@ class DownloadWorkerCore:
             self.skip_video_requested = False
             return replace(result, outcome=skipped_outcome)
 
-        job.failure_diagnostic = capture_failure(error, stage=job.failure_stage)
+        job.failure_diagnostic = capture_failure(
+            error, stage=job.failure_stage, extractor_warnings=job.extractor_warnings
+        )
         DownloadWorkerCore._observe_download_operation(
             self,
             job,
@@ -6809,7 +6833,9 @@ class DownloadWorkerCore:
     ) -> DownloadOutcome:
         self._active_progress_context = None
         user_error = format_ytdlp_user_error(error)
-        job.failure_diagnostic = capture_failure(error, stage=job.failure_stage)
+        job.failure_diagnostic = capture_failure(
+            error, stage=job.failure_stage, extractor_warnings=job.extractor_warnings
+        )
         self._emit_failed_download_item_metadata(job, result, user_error)
         write_diagnostic(f"download worker error: {type(error).__name__}: {error}")
         if re_raise:
@@ -7039,7 +7065,7 @@ class DownloadWorkerCore:
             # retains the per-job event queue after the download completes.
             "noprogress": True,
             "progress_hooks": [self._progress_hook],
-            "logger": QueueLogger(self.events),
+            "logger": QueueLogger(self.events, warnings=job.extractor_warnings),
             "embed_infojson": False,
             "postprocessor_args": postprocessor_args,
             "concurrent_fragment_downloads": 1,

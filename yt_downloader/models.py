@@ -195,6 +195,9 @@ class DownloadJob:
     telemetry_operation_id: str | None = None
     failure_stage: str = "preparation"
     selection_dimensions: dict[str, str] = field(default_factory=dict)
+    # Closed yt-dlp warning codes seen while analysing the current item; reported
+    # with a failure, never persisted or sent as text.
+    extractor_warnings: set[str] = field(default_factory=set, repr=False)
     # Display provenance only; never selects an encoder or restores authentication.
     nvenc_applicable: bool | None = None
     translated_subtitle_language: str | None = None
