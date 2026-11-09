@@ -216,7 +216,7 @@ def load_yt_dlp() -> Any | None:
 
 APP_NAME = "VODForge"
 
-PINNED_YTDLP_VERSION = "2026.8.19"
+PINNED_YTDLP_VERSION = "2026.10.26"
 
 PINNED_YTDLP_EJS_VERSION = "0.8.0"
 

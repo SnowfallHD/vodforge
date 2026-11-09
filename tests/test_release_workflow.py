@@ -202,9 +202,15 @@ def test_release_builds_pin_yt_dlp_with_matching_ejs_scripts():
         encoding="utf-8"
     )
 
-    assert "yt-dlp[default,curl-cffi]==2026.8.19" in requirements
+    pins = [
+        line.split("==", 1)[1]
+        for line in requirements
+        if line.startswith("yt-dlp[default,curl-cffi]==")
+    ]
+    assert len(pins) == 1, "yt-dlp must be pinned exactly once"
     assert not any(line.startswith("yt-dlp>=") for line in requirements)
-    assert 'PINNED_YTDLP_VERSION = "2026.8.19"' in app_source
+    # The packaged smoke check refuses any other yt-dlp than the pinned one.
+    assert f'PINNED_YTDLP_VERSION = "{pins[0]}"' in app_source
     assert 'PINNED_YTDLP_EJS_VERSION = "0.8.0"' in app_source
 
 
