@@ -10,6 +10,6 @@ Same new vertical/selection tests against baseline:23failed/19passed. Patched co
 
 Qt's generic QML WheelEvent documentation does not list phase, but the pinned runtime probe observes numeric phase values on this WheelHandler event; a missing QML phase is not a demonstrated cause. One immediate synthetic ScrollUpdate did not emit the probe callback. The fallback depends on neither phase exposure nor an inferred timeout.
 
-Private double-scroll work is retained separately at local branch codex/double-scroll-preview-baseline (fdec43f6). That branch preserves the prior mechanism, not a corrected native-qualified experiment. A later private prototype must observe real begin/update/end/momentum and distinguish phase-less mouse input without claiming idle is a reliable gesture delimiter. It does not block this simple release path.
+Private double-scroll work is retained separately at a local branch (fdec43f6). That branch preserves the prior mechanism, not a corrected native-qualified experiment. A later private prototype must observe real begin/update/end/momentum and distinguish phase-less mouse input without claiming idle is a reliable gesture delimiter. It does not block this simple release path.
 
 Native acceptance remains pending a coordinated GUI lease. Frozen candidate, installed app and public artifacts are untouched. This commit has no public publication approval.

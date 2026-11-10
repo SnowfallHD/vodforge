@@ -19,8 +19,8 @@ under Rosetta and fails unless macOS reports the process as translated
 (`P_TRANSLATED`); the result records `app_arch` and, at launch, `rosetta`.
 
 `mac-remote-journey.sh <tailscale-machine> <user> <app> <folder>` runs the
-journey on another Mac, such as the Intel test Mac (`julies-macbook-air`, user
-`julie`). It pins the host key Tailscale reports, keeps everything on the
+journey on another Mac, such as the Intel test Mac (its Tailscale machine name and
+login user). It pins the host key Tailscale reports, keeps everything on the
 remote side in `~/VODForgeQA` (app copy, harness, a uv-managed Python 3.13 with
 pyobjc, the run), stops early if SSH sessions there lack Accessibility
 permission, and copies `journey-result.json` back. The remote Mac's own
@@ -70,8 +70,7 @@ Browser matrix scripts need a freshly built site ZIP in
 intercept external/API traffic, and exercise the built claim-page JavaScript.
 The default-browser probe is separately loopback-only and never reads cookies
 or changes browser configuration. These receipts are **not** interchangeable
-with the strict full-app E2E recorder below. See `../history/ANALYTICS_JOURNEY_QA.md` for
-executed coverage and remaining combined-journey gaps.
+with the strict full-app E2E recorder below.
 
 ## Canonical full-app recorder
 

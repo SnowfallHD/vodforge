@@ -396,7 +396,5 @@ a generic failure count. Local verification and production deployment are separa
 
 ## Earlier qualification notes
 
-Qualification notes, probes and escaped-defect examples written while the app had
-its Tk interface (through October 2026) are in
-[harness guide: Tk era](history/harness-guide-tk-era.md). Many name tests and
-components that no longer exist; the evidence standard above still applies.
+The evidence standard above also applies to work done while the app had its Tk
+interface (through October 2026).

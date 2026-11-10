@@ -3,8 +3,7 @@
 How the desktop app is put together: who owns which state, how work flows from a
 pasted link to a saved file, and where the security boundaries are. For screens see
 [current design](current-design.md); for UI rules see the
-[component contract](ui-components.md). The Tk-era version of this document is kept
-in [history](history/architecture-tk-era.md).
+[component contract](ui-components.md).
 
 ## Entry point and composition
 
@@ -85,8 +84,7 @@ is the dispatch boundary (folders, pickers, runtime discovery, subprocess policy
 - **macOS:** `qt_quick/mac_windowing.py` owns the window. The header is native AppKit
   toolbar items (`platforms/macos/header_items.m`, bridged by
   `qt_quick/mac_toolbar_header.py`); full-screen lifecycle is in
-  `fullscreen_lifecycle.m`. Both compile into one helper dylib; see
-  [the header history](history/macos-header.md) for why.
+  `fullscreen_lifecycle.m`. Both compile into one helper dylib.
 - **Windows:** `qt_quick/windows_windowing.py` and `WindowsFrame.qml` draw the frame
   while Windows keeps resize, snap and system-menu behavior. Native helpers live in
   `platforms/windows/`.

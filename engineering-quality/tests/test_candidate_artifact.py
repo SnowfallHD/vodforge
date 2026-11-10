@@ -75,7 +75,7 @@ def clean_repository(monkeypatch: pytest.MonkeyPatch) -> None:
             {
                 "commit": "a" * 40,
                 "source_manifest_sha256": "e" * 64,
-                "branch": "codex/release-gate",
+                "branch": "feature/release-gate",
                 "status_porcelain": [],
             },
         ),
@@ -311,7 +311,7 @@ def test_candidate_requires_clean_source_and_reviewed_build_environment(
             {},
             {
                 "commit": "b" * 40,
-                "branch": "codex/release-gate",
+                "branch": "feature/release-gate",
                 "status_porcelain": [" M production.py"],
             },
         ),
@@ -336,7 +336,7 @@ def test_candidate_requires_clean_source_and_reviewed_build_environment(
             {},
             {
                 "commit": "b" * 40,
-                "branch": "codex/release-gate",
+                "branch": "feature/release-gate",
                 "status_porcelain": [],
             },
         ),

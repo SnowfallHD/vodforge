@@ -4,7 +4,7 @@
 #   engineering-quality/runners/mac-remote-journey.sh <tailscale-machine> <user> <VODForge.app> <local-result-folder>
 #
 # Example (the Intel test Mac):
-#   engineering-quality/runners/mac-remote-journey.sh julies-macbook-air julie dist/VODForge.app /tmp/intel-journey
+#   engineering-quality/runners/mac-remote-journey.sh intel-mac qa-user dist/VODForge.app /tmp/intel-journey
 #
 # JOURNEY=deletion_journey.py runs the deletion journey instead of the release one.
 #

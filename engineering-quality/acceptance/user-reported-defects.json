@@ -30,12 +30,12 @@
     {
       "id": "mac-header-disappears-on-resize",
       "status": "open",
-      "scope": "Reported on private 3c60d6b: the Qt-drawn header row disappeared on resize while the traffic lights and body remained. Since 2026-10-30 the macOS header is native AppKit toolbar items (header_items.m) and the Qt-drawn row has been deleted. Close after a packaged build is checked through resize and full-screen cycles. History: docs/history/macos-header.md."
+      "scope": "Reported on private 3c60d6b: the Qt-drawn header row disappeared on resize while the traffic lights and body remained. Since 2026-10-30 the macOS header is native AppKit toolbar items (header_items.m) and the Qt-drawn row has been deleted. Close after a packaged build is checked through resize and full-screen cycles."
     },
     {
       "id": "mac-header-motion-regression",
       "status": "open",
-      "scope": "Reported on private 3c60d6b: header motion less smooth. The AppKit toolbar header moves with the window and menu bar; the user confirmed entry/reveal/hide motion in a source-run recording on 2026-10-30. Close after a packaged build is recorded. History: docs/history/macos-header.md."
+      "scope": "Reported on private 3c60d6b: header motion less smooth. The AppKit toolbar header moves with the window and menu bar; entry/reveal/hide motion was confirmed in a source-run recording on 2026-10-30. Close after a packaged build is recorded."
     }
   ]
 }

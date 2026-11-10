@@ -1,6 +1,6 @@
 # Approved matte VF branding
 
-The user approved the extended-F matte artwork in
+The approved branding is the extended-F matte artwork in
 [the original reference](references/approved-vf-matte-logo.png).
 The rich mark must retain its original texture, sculpted shading, geometry and
 muted lavender material. The rejected polygon reconstruction is not a master.

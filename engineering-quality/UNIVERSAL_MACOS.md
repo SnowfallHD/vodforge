@@ -25,8 +25,6 @@ Intel needs macOS 15 or newer, until the older OS is actually tested.
   passed the packaged smoke test under Rosetta on Oct 19–20 after the Intel
   startup fix below; an Intel Mac ran the app normally.
 
-The evidence from the private builds (receipts, Apple submission IDs, hashes) is
-recorded in `change-and-test-log.md` entries from Oct 16–20, 2026.
 
 ## How the release builds it
 

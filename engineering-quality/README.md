@@ -16,9 +16,7 @@ never changes production behavior.
 | Universal Mac app and DMG | [UNIVERSAL_MACOS.md](UNIVERSAL_MACOS.md) |
 | Mandatory regression classes | [RECOVERY_REGRESSION_CLASSES.md](RECOVERY_REGRESSION_CLASSES.md), [SCENE_REGRESSION_CLASSES.md](SCENE_REGRESSION_CLASSES.md) |
 | Open user-reported defects | [acceptance/user-reported-defects.json](acceptance/user-reported-defects.json) |
-| What changed and what was tested | [change-and-test-log.md](change-and-test-log.md) |
 | Windows QA on the Windows PC | [runners/README.md](runners/README.md) (`E:\VODForgeQA`) |
-| Past investigations and checkpoints | [history/](history/) and the app's [docs/history/](../docs/history/) |
 
 The three profiles: `./engineering-quality/run fast` before committing,
 `./engineering-quality/run normal` before merging, and `./engineering-quality/run deep`
@@ -93,7 +91,7 @@ and retirement/modal guards. Prior NumberAnimation source fails the moving
 refinement and earlier-return regressions. The first unrestricted smoothing
 candidate also failed the continuity bound; bounded easing passes. These are
 representative animation/native-allocation/Qt-input handoffs, not physical
-paint-latency measurements or native Mac acceptance. Cooper's later Silicon
+paint-latency measurements or native Mac acceptance. Later Apple silicon
 visual feedback is separate from the earlier automated OS-reveal prerequisite
 failure; neither substitutes for observing this exact private successor.
 
@@ -123,9 +121,9 @@ and details scrolling remain. Only Forge's outer flicking/scrollbar is disabled.
 Twelve idle/active size cases at820–1280px widths and560–800px heights check
 visible root children, live-pane controls and the full Run Deck/footer. The old
 compact-notice test explicitly required whole-Forge scrolling; that expectation
-is superseded by Cooper's clarified fixed-dashboard requirement, rather than
-being retained as an unrelated failure. Library/sidebar sizing is unchanged;
-the initial sidebar-shrink report was explicitly retracted by the user.
+is superseded by the fixed-dashboard requirement, rather than being retained
+as an unrelated failure. Library/sidebar sizing is unchanged; the initial
+sidebar-shrink report was retracted.
 
 A toolkit-hidden window is not proof that an asynchronous native fullscreen
 transition has retired its on-screen window. Qt-only visibility regressions missed
@@ -147,8 +145,6 @@ request. Existing independent browser-handoff tests missed that earlier boundary
 The current invariant gates issue, persistence, browser dispatch, status and
 confirmation against fresh feature policy/current explicit permission, including
 Off/regrant and replaced policy. Blocked work must not consume a one-time attempt.
-See [the app contract and rights protocol](history/ATTRIBUTION_PERMISSION_AND_RIGHTS.md)
-for prior failures, representative cross-owner coverage and unqualified live gates.
 Rights requests use existing ownership only; page opening is not deletion proof.
 
 ## Rendered checks follow the intended owner — 2026-10-15
@@ -239,10 +235,7 @@ is required only by the legacy Tk player, not the Qt Multimedia build.
 ## Popup gesture and focus restoration — 2026-10-06
 
 A popup close must survive the remainder of the same held trigger gesture and
-must not become a fresh open request when Qt restores editor focus. The
-[popup reliability audit](history/POPUP_TOGGLE_RELIABILITY.md) documents reproduced
-category/hover defects, the narrow fixes, prior-failure evidence, a cross-surface
-pointer/keyboard matrix, and untested native acceptance. These changes do not
+must not become a fresh open request when Qt restores editor focus. These changes do not
 explain the separate persistent physical Done-click report.
 
 ## Inline Library notes report successful durable changes — 2026-09-30
@@ -1994,8 +1987,7 @@ case list is not a waiver for exact packaged-artifact or OS-input qualification.
 
 ## Archive, Watch and embedded-player boundaries
 
-See [the feature validation ledger](history/ARCHIVE_WATCH_QA.md) for the new required
-regression, class lifecycle, native and telemetry acceptance coverage. The native
+The native
 surface gate now enrolls test_archive_native.py and test_archive_actual_playback.py;
 skipped cases cannot count as
 source-native acceptance. Current WIP evidence and unexecuted tiers remain explicit.
@@ -3223,7 +3215,7 @@ footer. Hide closes only the popup; processing and pending idle installation
 continue. No cancellation control or percentage is invented. Check/download
 choices disappear during processing; recovery retains Repair VODForge and the
 manual download page. That historical scope did not introduce a settings auto-update
-checkbox; Cooper explicitly superseded it on 2026-10-16 with one default-on
+checkbox; it was superseded on 2026-10-16 by one default-on
 Update automatically control and normal-close installation. See
 `docs/update-handoff.md#successor-automatic-updates--2026-10-16-unpublished` for
 the successor contract and its separate qualification gates.
@@ -3284,9 +3276,7 @@ Mac artifacts while skipping the entire release-mutating job. A workflow contrac
 asserts that no release mutation lives in the artifact jobs and that the default
 draft behavior remains review-only. No existing release/tag/assets are altered.
 
-For the bounded 0.2.6 recovery, use
-`engineering-quality/history/release-026-recovery-checklist.md` as the single current
-decision list. Before scheduling a build or check, map the changed runtime,
+Before scheduling a build or check, map the changed runtime,
 dependency, configuration and observation method to the saved change-and-test
 receipts. Carry forward each unaffected bounded result under its original source
 and artifact identity. A wrapper failure, QA script, label, timing-only assertion
@@ -3996,8 +3986,8 @@ Latched selection and transient pointer press may intentionally share a material
 while keyboard focus remains an independent visible/accessibility state. Shared
 controls therefore opt in to selected pressed faces; Archive and top navigation
 share the existing selection token/Canvas rather than separate theme accents.
-Earlier header tests explicitly required flat selected faces; Cooper superseded
-that design. Replacement checks retain unselected rest/hover/press, selected
+Earlier header tests explicitly required flat selected faces; that design was
+superseded. Replacement checks retain unselected rest/hover/press, selected
 release, focus ring/Return/accessible selection and actual six-theme icon pixels.
 
 Window shortcuts require both platform and window ownership. Existing native

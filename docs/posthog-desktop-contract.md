@@ -42,7 +42,7 @@ Historical Qt source f37eb71 (September23) retained a non-opening attribution ad
 
 ## Later local attribution adapter successor
 
-The user explicitly superseded the non-opening restriction on October15. The current local successor automatically prepares a short-lived operational capability on a worker and opens the default browser on Qt's GUI owner, once per new eligible installation. Persisted attempt admission prevents repeat openings after failed dispatch or cold restart; Settings retains an explicit recovery action. Already-opened pending capabilities can poll on restart without reopening. Completed/migrated profiles do not automatically open another page. Cancellation, build-policy disablement and replacement capabilities remain guarded. No claimed flags are manufactured.
+The earlier non-opening restriction was superseded on October15. The current local successor automatically prepares a short-lived operational capability on a worker and opens the default browser on Qt's GUI owner, once per new eligible installation. Persisted attempt admission prevents repeat openings after failed dispatch or cold restart; Settings retains an explicit recovery action. Already-opened pending capabilities can poll on restart without reopening. Completed/migrated profiles do not automatically open another page. Cancellation, build-policy disablement and replacement capabilities remain guarded. No claimed flags are manufactured.
 
 Browser attribution and app usage are independent: app usage Off prevents first-launch usage enrollment/events/provider delivery but does not prohibit the browser-owned operational handshake. Claim confirmation cannot turn usage On. The website must require its applicable browser permission and a retained eligible referral before persisting attribution. A shared campaign label is nonunique source context, not a browser/visitor identifier; the app never reads browser cookies, raw referral context or campaign labels and creates no provider alias. No eligible context or browser refusal means no successful attribution. Operational ticket issue/status state must remain short-lived and must not create a canonical installation/acquisition record before eligibility. This requires the coordinated site staging/no-source correction; do not qualify or run new production automatic-flow QA before that backend is deployed and QA exclusions are registered. Existing custom D1 event names remain intact.
 
@@ -57,7 +57,7 @@ Local successor policy treats existing QUALITY_E2E, QA_PREVIEW_TELEMETRY, QA_PRO
 
 ## Unified app control — 2026-10-15
 
-Cooper's current app UI uses one **Share usage analytics** On/Off control for
+The current app UI uses one **Share usage analytics** On/Off control for
 first-party and provider analytics. There is no separate provider switch or
 installation-association status/control in Settings or onboarding. The privacy
 policy continues to disclose the processor; internal identifiers are unchanged.

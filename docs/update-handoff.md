@@ -117,8 +117,8 @@ executing it. This is not a newly packaged full repair-installation receipt.
 
 ## Successor automatic updates — 2026-10-16 (unpublished)
 
-Cooper explicitly requested a single default-on **Update automatically** setting,
-then clarified installation should happen on normal application close. This
+The app has a single default-on **Update automatically** setting, and
+installation happens on normal application close. This
 supersedes the earlier no-auto-update-setting scope; the old signed candidates
 and their native acceptance receipts do not qualify this new runtime.
 
@@ -126,7 +126,7 @@ The shipped 0.2.5 and predecessor Qt startup already scheduled the metadata chec
 at `QTimer.singleShot(0)`. There was no intentional one-minute initial delay.
 The check uses a 15-second network timeout; a busy updater retries scheduling in
 30 seconds. The header previously concealed the checking state. That is a proven
-presentation gap, not a measured explanation of Cooper's entire observed delay.
+presentation gap, not a measured explanation of the entire observed delay.
 The successor exposes an unobtrusive checking notice immediately and retains the
 existing discoverable availability notice without opening a modal. Existing
 local logs now record check start, elapsed completion and applied availability;

@@ -91,7 +91,7 @@ waive it by rerunning until it passes.
      (the terminal needs Accessibility permission; Screen Recording too for window
      images).
    - **Intel Mac:** the same, from the same DMG. Over Tailscale, from this Mac:
-     `engineering-quality/runners/mac-remote-journey.sh julies-macbook-air julie <VODForge.app> <folder>`
+     `engineering-quality/runners/mac-remote-journey.sh <intel-mac> <user> <VODForge.app> <folder>`
      copies the app and harness to `~/VODForgeQA` there, runs the journey with a
      private Python and copies the result back (the Intel Mac must be awake and
      logged in; it already grants Accessibility to SSH sessions). If no Intel Mac is available, add
@@ -180,7 +180,6 @@ waive it by rerunning until it passes.
 
 ## After the release
 
-- Record what shipped and what was tested in
-  `engineering-quality/change-and-test-log.md`.
+- Record what shipped and what was tested in the private change log.
 - Keep the legacy Mac ZIP names in every release until the retirement condition
   above is met.

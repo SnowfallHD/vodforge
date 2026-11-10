@@ -291,7 +291,7 @@ Use the actual approved VODForge mockups for whole-scene comparison:
 | Watch channel | [Channel page](references/watch-channel.png) |
 | Player | [Player reference](references/player.png) |
 
-[Reference identities](references/approved-mockups.json) retain original supplied
+[Reference identities](references/approved-mockups.json) retain supplied
 filenames and SHA-256 hashes. These are generated design references, not evidence
 that the running application has passed a usability review. Earlier application
 screenshots are regression observations, not replacement design specifications.
@@ -321,12 +321,3 @@ A cropped scene screenshot or a single polished button cannot establish parity.
 The header includes a quiet, accessible X link to `https://x.com/VODForge`, beside
 Settings. External social links open in the system browser without sending media
 or installation context. Keep utility width in the shared responsive budget.
-
-## Earlier interface notes
-
-Component notes, metrics and native qualification written for the Tk interface
-(through October 2026) are in [UI components: Tk era](history/ui-components-tk-era.md).
-Their product behavior rules (source/output facts layout, Back to the real origin,
-saved-version selection, selection and file actions) still describe intended
-behavior unless the Qt standard above says otherwise. Their class names and
-measurements describe code that no longer exists.
