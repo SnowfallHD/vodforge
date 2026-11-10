@@ -5464,3 +5464,14 @@ Test installs from this round still in production: Windows `dd9b74b5-fc58-4ce1-a
 
 - The Windows certificate negative control passed on all six jobs (332b10f).
 - Windows 3.11 failed a different, harness-only test: `test_worker_exit_before_ready_preserves_original_failure` saved `returncode: None`. The fake worker's output closed before Windows reported its exit, and the startup-failure record used `poll()`. It now waits up to 5 seconds for the exit code. App code is unchanged. The test passed 25 of 25 runs on the Windows PC and passes on the Mac together with the trust tests (13 passed).
+
+## 2026-11-10 — commit history rewritten to drop Claude co-author lines
+
+Cooper asked to remove the `Co-Authored-By: Claude …` line from past commits; it is now also off in Claude Code's settings. `git filter-branch --msg-filter` removed that line from 56 of the 60 commits on `main` from `2036f5f` (Oct 30) to `e3baddc`, then `main` and the `v0.2.6` tag were force-pushed. A check of all 60 rewritten commits found the code (tree), parents, author and committer names, emails and both dates identical to the originals, and each message identical apart from the removed line. Release 439519664 is unchanged (published, latest, same seven files, now on the moved tag).
+
+Commit IDs before Oct 30 are unchanged. Old to new IDs:
+
+- `v0.2.6`: `4cbf1bc51f1933dc009a7556e089dcef4783ee06` → `7120bb0141b767217dfd0e3de1838716ff3c0fd2`. The signed 0.2.6 builds still report `4cbf1bc` as their build revision; read it as `7120bb0`.
+- `main`: `e3baddc` → `30b500b`.
+
+Commit IDs from Oct 30 to Nov 9 in this log and in build receipts are the old IDs. The full old-to-new list and a git bundle of the original history are kept on Cooper's Mac in `~/Dev/vodforge-history-backup/` (not in the repo).
