@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -877,7 +878,20 @@ def test_floating_surfaces_cast_shadow_outside_unchanged_input_bounds(
             ).activated.emit()
         else:
             popup.open()
-        QTest.qWait(150)
+        # A popup's first open in a window also builds its border and shadow,
+        # which can take over a second with software rendering (Windows CI).
+        from tests.test_qt_popup_toggle_order import settle_liquid
+
+        settle_liquid(window)
+        # The Options menu also animates its height after opening.
+        size = None
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            current = (popup.property("width"), popup.property("height"))
+            if current == size:
+                break
+            size = current
+            QTest.qWait(60)
         assert popup.property("visible")
         background = popup.property("background")
         shadow = background.findChild(QObject, "popupElevationShadow")
