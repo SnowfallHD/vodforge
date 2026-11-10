@@ -539,9 +539,10 @@ def test_single_click_failure_clears_intent_but_repair_keeps_verified_latest_pat
     )
 
 
+@pytest.mark.parametrize("written_by_026", [False, True])
 @pytest.mark.parametrize("permitted", [True, False])
 def test_automatic_install_on_quit_is_reported_by_the_new_version(
-    tmp_path: Path, permitted: bool
+    tmp_path: Path, permitted: bool, written_by_026: bool
 ) -> None:
     """Install-on-close writes status "installed" (no reopen). The next launch
     used to accept only "relaunched"/"failed", so every automatic install went
@@ -559,7 +560,8 @@ def test_automatic_install_on_quit_is_reported_by_the_new_version(
                 "repair": False,
                 "executable": str(executable),
                 "executable_sha256": hashlib.sha256(b"new version").hexdigest(),
-                "telemetry_permitted": True,
+                # 0.2.6 always wrote false here for installs on quit.
+                "telemetry_permitted": not written_by_026,
             }
         )
     )

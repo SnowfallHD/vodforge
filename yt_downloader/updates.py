@@ -1115,12 +1115,13 @@ def confirmed_update_telemetry_receipt(
         stage = value.get("stage", "unknown")
         if not isinstance(stage, str) or stage not in DIMENSION_CHOICES["update_stage"]:
             stage = "unknown"
+        status = value.get("status")
+        if status not in {"relaunched", "installed", "failed"}:
+            return None
         # "installed" is an automatic update installed on quit, without reopening.
-        if value.get("telemetry_permitted") is not True or value.get("status") not in {
-            "relaunched",
-            "installed",
-            "failed",
-        }:
+        # 0.2.6 always wrote telemetry_permitted false for it, so the choice made
+        # on the new version (checked again before recording) decides instead.
+        if value.get("telemetry_permitted") is not True and status != "installed":
             return None
         if value["status"] == "failed":
             path_digest = hashlib.sha256(str(executable.resolve()).encode()).hexdigest()
