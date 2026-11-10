@@ -45,6 +45,34 @@ Each entry below records a defect class that was found, why the existing checks
 missed it, and what now covers it, newest first. Entries describe the code at
 their date; some name modules that have since been removed.
 
+## The launch update check is visible in telemetry — 2026-11-10
+
+Defect: 0.2.6 recorded no automatic update check at all (5 launches), while
+0.2.5 recorded 69 from 56 launches. The check did run. At every launch the
+analytics region is re-checked in the background, and while that request is out
+the saved region reads as unknown, so a user who never chose explicitly
+(default-on regions) counts as not sharing. The launch check starts at that
+moment and binds its whole run to that state, so it records nothing. 0.2.5 had
+the same race; its recorded checks came mostly from the 6-hour repeat and from
+users with an explicit choice. The cost: no production evidence that 0.2.6 checks
+for updates by itself, which install-on-close depends on.
+
+Why it was missed: update telemetry tests attach a recorder with consent already
+granted and call the check directly. None started the real analytics session or
+ran the check in the order the packaged app does.
+
+What covers it now:
+
+- The launch check waits for the analytics choice to settle, at most 4 seconds,
+  then runs either way. Checking for updates never depends on analytics.
+- `tests/test_qt_startup_update_check.py` starts the real session for a
+  default-on second launch, with the region answer instant or slow, schedules
+  the check as the packaged app does, and requires the check to run and record
+  `check_started` and its result. Both cases failed against the old code.
+
+Limits: a fresh install's first launch still has no choice yet, so its first
+check isn't recorded, as intended.
+
 ## A refusal is shown where the user is looking — 2026-11-10
 
 Defect: on 0.2.6 Windows, "Preview metadata" in Settings was pressed with an

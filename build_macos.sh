@@ -108,6 +108,7 @@ minimum_macos="$("$python_bin" -c 'import os,sys; from scripts.build_macos_fulls
     --ignore=tests/test_qt_artwork_image.py \
     --ignore=tests/test_qt_metadata_preview.py \
     --ignore=tests/test_qt_preview_refusal.py \
+    --ignore=tests/test_qt_startup_update_check.py \
     --ignore=tests/test_qt_presentation_diagnostics.py \
     --ignore=tests/test_qt_previews.py \
     --ignore=tests/test_qt_quality_e2e.py \
@@ -226,6 +227,7 @@ minimum_macos="$("$python_bin" -c 'import os,sys; from scripts.build_macos_fulls
     tests/test_qt_artwork_image.py \
     tests/test_qt_metadata_preview.py \
     tests/test_qt_preview_refusal.py \
+    tests/test_qt_startup_update_check.py \
     tests/test_qt_presentation_diagnostics.py \
     tests/test_qt_previews.py \
     tests/test_qt_quality_e2e.py \

@@ -679,6 +679,7 @@ class Bridge(QObject):
             and self._settings.get("automatic_updates", True) is True
         )
         self._automatic_download_requested = False
+        self._update_check_waits = 0
         self._automatic_updates_supported = True
         selection = apply_theme_selection(
             self._settings.get("appearance_theme", DEFAULT_THEME_NAME),
@@ -1625,6 +1626,13 @@ class Bridge(QObject):
     def _auto_check_updates(self) -> None:
         if self._updates.busy:
             QTimer.singleShot(30 * 1000, self._auto_check_updates)
+            return
+        # At launch the analytics choice is being re-checked (up to 2.5 s), and
+        # a check started meanwhile records nothing for its whole run. Wait for
+        # it, but never hold the check back for long.
+        if not self._analytics.settled and self._update_check_waits < 40:
+            self._update_check_waits += 1
+            QTimer.singleShot(100, self._auto_check_updates)
             return
         self._updates.telemetry = self._analytics.telemetry
         if self._updates.check(automatic=True):

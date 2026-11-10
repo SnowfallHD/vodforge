@@ -7281,7 +7281,11 @@ def test_forge_retry_chooses_settings_without_starting_download(tmp_path, monkey
     bridge._window = window
     try:
         window.findChild(QObject, "forgeFailedRetry").activated.emit()
-        QTest.qWait(300)
+        # The first popup opened in a process also builds its border and
+        # shadow, so its opening can outlast a fixed wait; wait for it to settle.
+        from tests.test_qt_popup_toggle_order import settle_liquid
+
+        settle_liquid(window)
         popup = window.findChild(QObject, "forgeRetryPopup")
         assert popup.property("opened")
         assert popup.property("preferAbove")
