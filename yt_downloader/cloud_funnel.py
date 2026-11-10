@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from .history import application_data_dir
+from .private_files import replace_file, retry_while_file_is_busy
 from .telemetry_policy import telemetry_collection_allowed, telemetry_site_origin
 from .telemetry_transport import telemetry_urlopen
 
@@ -84,10 +85,14 @@ def _parse_claim_token(value: Any) -> str | None:
 
 
 def _read_state(path: Path) -> InstallationState:
-    try:
+    def read() -> str:
         if path.stat().st_size > MAX_STATE_FILE_BYTES:
             raise InstallationIdentityError("installation state is unexpectedly large")
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        return path.read_text(encoding="utf-8")
+
+    try:
+        # Background threads read this file while another may be saving it.
+        payload = json.loads(retry_while_file_is_busy(read))
     except InstallationIdentityError:
         raise
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
@@ -189,7 +194,7 @@ def _replace_state(path: Path, state: InstallationState) -> None:
             handle.write(_encoded_state(state))
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, path)
+        replace_file(temporary, path)
     finally:
         try:
             temporary.unlink(missing_ok=True)

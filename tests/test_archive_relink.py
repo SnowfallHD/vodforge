@@ -348,14 +348,16 @@ def test_commit_rechecks_and_failed_commit_preserves_durable_history(
     elif fault == "file_change":
         target.write_bytes(b"replaced media changed its size")
     else:
-        original_replace = Path.replace
+        import os
 
-        def fail_replace(self, destination):
+        original_replace = os.replace
+
+        def fail_replace(source, destination):
             if Path(destination) == ledger:
-                raise PermissionError("private history destination")
-            return original_replace(self, destination)
+                raise OSError(28, "No space left on device")
+            return original_replace(source, destination)
 
-        monkeypatch.setattr(Path, "replace", fail_replace)
+        monkeypatch.setattr(os, "replace", fail_replace)
     with pytest.raises((RelinkConflict, HistoryError)):
         commit_relink(preview, rows, ledger, accepted=[0], cancelled=cancelled)
     assert ledger.read_bytes() == before

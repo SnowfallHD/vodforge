@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from .history import application_data_dir
-from .private_files import write_private_bytes
+from .private_files import read_text, write_private_bytes
 
 SETTINGS_SCHEMA_VERSION = 1
 MAX_SETTINGS_FILE_BYTES = 64 * 1024
@@ -42,7 +42,7 @@ def load_settings(path: Path) -> dict[str, Any]:
             return {}
         if path.stat().st_size > MAX_SETTINGS_FILE_BYTES:
             raise SettingsError("VODForge settings are unexpectedly large.")
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(read_text(path))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise SettingsError(f"VODForge settings could not be loaded: {exc}") from exc
     if not isinstance(payload, dict):

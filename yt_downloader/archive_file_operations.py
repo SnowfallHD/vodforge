@@ -35,6 +35,7 @@ from .archive_relink import (
 )
 from .history import MAX_HISTORY_ITEMS, HistoryError, history_archive_owner
 from .platform_services import file_change_time_ns
+from .private_files import replace_file
 from .safe_output import (
     cleanup_private_staging_directory,
     commit_file_beneath,
@@ -1332,7 +1333,7 @@ class OperationJournal:
                 stream.flush()
                 os.fsync(stream.fileno())
             self.assert_current()
-            os.replace(temporary, self.path)
+            replace_file(temporary, self.path)
             self._stamp = _regular_evidence(self.path).stamp
             _sync_directory(self.path.parent)
         finally:

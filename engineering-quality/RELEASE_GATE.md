@@ -17,6 +17,16 @@ entry point uses the same blockers. Detailed domain evaluator enrollment remains
 incomplete; record and enforce those remaining gaps explicitly.
 A known-rejected installed artifact remains failed acceptance evidence.
 
+## Every CI job is green, or its failure has a cause
+
+All six Tests jobs (macOS, Windows and Linux, Python 3.11 and 3.13) must pass
+on the release commit. A job that fails on code that passed elsewhere, or passes
+on a rerun, is a defect until its cause is found and written down: rerunning
+until green is not a disposition, and neither is "timing issue". Read the
+error, not just the test name, and check whether the same test or the same
+error appeared in earlier runs. When one known failure keeps a job red, look
+at every other failure in that job too; a known failure can hide a new one.
+
 ## Required telemetry journey
 
 Every public release additionally requires [the preview-D1 telemetry gate](TELEMETRY_RELEASE_GATE.md)

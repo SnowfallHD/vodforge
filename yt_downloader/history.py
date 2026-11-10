@@ -17,6 +17,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, cast
 
 from .archive_paths import ArchivePath
+from .private_files import read_text, replace_file
 
 APP_NAME = "VODForge"
 HISTORY_SCHEMA_VERSION = 1
@@ -757,7 +758,7 @@ def save_history(path: Path, records: list[dict[str, Any]]) -> None:
         )
         if os.name != "nt":
             temporary.chmod(0o600)
-        temporary.replace(path)
+        replace_file(temporary, path)
     except (OSError, TypeError, ValueError) as exc:
         try:
             temporary.unlink(missing_ok=True)
@@ -789,7 +790,7 @@ def _read_history_document(path: Path, *, document: str) -> Any:
                 phase="validate",
                 cause="limit_exceeded",
             )
-        raw = path.read_text(encoding="utf-8")
+        raw = read_text(path)
     except UnicodeError as exc:
         raise HistoryError(
             "History text could not be decoded.",
@@ -1144,7 +1145,7 @@ def _stage_history_mutation(path: Path, mutation: dict[str, Any]) -> None:
         temporary.write_text(payload, encoding="utf-8")
         if os.name != "nt":
             temporary.chmod(0o600)
-        temporary.replace(journal)
+        replace_file(temporary, journal)
     except OSError as exc:
         try:
             temporary.unlink(missing_ok=True)

@@ -109,7 +109,7 @@ from .platform_services import (
     is_windows,
     probe_runtime_version,
 )
-from .private_files import open_private_text_file, write_private_bytes
+from .private_files import open_private_text_file, replace_file, write_private_bytes
 from .process_lifecycle import ACTIVE_CHILD_PROCESS_REGISTRY
 from .product_telemetry import (
     product_output_kind,
@@ -464,7 +464,7 @@ def _compact_activity_log_locked(
         retained = retained[newline + 1 :]
     temporary = path.with_name(f".{path.name}.tmp")
     write_private_bytes(temporary, retained)
-    temporary.replace(path)
+    replace_file(temporary, path)
 
 
 def _sanitize_existing_activity_log_locked(path: Path) -> None:
@@ -478,7 +478,7 @@ def _sanitize_existing_activity_log_locked(path: Path) -> None:
         return
     temporary = path.with_name(f".{path.name}.sanitize.tmp")
     write_private_bytes(temporary, sanitized.encode("utf-8"))
-    temporary.replace(path)
+    replace_file(temporary, path)
 
 
 def prepare_activity_log(path: Path | None = None) -> None:
@@ -3621,7 +3621,7 @@ def transcode_to_vod_streaming_settings(
             progress_callback(1.0)
         # The downloaded source and temp live in the per-job staging directory.
         # Replacing in place is atomic and leaves the source intact if commit fails.
-        os.replace(temp_output, path)
+        replace_file(temp_output, path)
         backup.unlink(missing_ok=True)
         return path
     except Exception as exc:
@@ -3934,7 +3934,7 @@ def save_cached_thumbnail_image(
             if Image is not None:
                 cached_image = decode_bounded_thumbnail(saved.read_bytes())
                 cached_image.close()
-            os.replace(saved, path)
+            replace_file(saved, path)
             _report_sidecar_result(
                 on_result, "repaired" if before else _sidecar_write_result(before)
             )
@@ -3963,7 +3963,7 @@ def save_cached_thumbnail_bytes(
         temporary = path.with_name(f".{path.stem}.{uuid.uuid4().hex}.tmp")
         try:
             _save_jpeg_under_size(image, temporary)
-            os.replace(temporary, path)
+            replace_file(temporary, path)
             prune_thumbnail_cache(path.parent)
             return path
         finally:
@@ -4004,7 +4004,7 @@ def save_custom_cached_thumbnail_image(
                 _save_jpeg_under_size(normalized, temporary)
             cached_image = decode_bounded_thumbnail(temporary.read_bytes())
             cached_image.close()
-            os.replace(temporary, destination)
+            replace_file(temporary, destination)
             _report_sidecar_result(on_result, _sidecar_write_result(before))
             prune_thumbnail_cache(destination.parent)
             return destination
@@ -4111,7 +4111,7 @@ def embed_custom_mp3_cover_art(
                 "FFmpeg did not produce an output file",
             )
             raise RuntimeError(f"Custom cover art could not be embedded: {detail}")
-        os.replace(temporary, mp3_path)
+        replace_file(temporary, mp3_path)
         return mp3_path
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError(

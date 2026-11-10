@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, BinaryIO
 
 from .platforms.windows.update_recovery import RECOVERY_FUNCTIONS
+from .private_files import replace_file
 from .tls import new_trusted_ssl_context
 
 GITHUB_REPOSITORY = "SnowfallHD/vodforge"
@@ -452,7 +453,7 @@ def download_verified_update(
             raise RuntimeError(
                 "The release update failed SHA-256 verification and was not opened."
             )
-        temporary.replace(destination)
+        replace_file(temporary, destination)
         if os.name != "nt":
             destination.chmod(0o700)
         return destination

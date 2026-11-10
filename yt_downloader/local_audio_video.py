@@ -27,6 +27,7 @@ from .local_video_labels import (
 from .models import OutputType
 from .output_validation import validate_output_artifact
 from .platform_services import hidden_window_subprocess_kwargs
+from .private_files import replace_file
 from .process_lifecycle import (
     ActiveChildProcessRegistry,
     process_command,
@@ -552,7 +553,7 @@ class LocalConversionRecoveryOwner:
             )
             if os.name != "nt":
                 temporary.chmod(0o600)
-            os.replace(temporary, self.path)
+            replace_file(temporary, self.path)
         finally:
             temporary.unlink(missing_ok=True)
 

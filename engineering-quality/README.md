@@ -45,6 +45,51 @@ Each entry below records a defect class that was found, why the existing checks
 missed it, and what now covers it, newest first. Entries describe the code at
 their date; some name modules that have since been removed.
 
+## Saved files survive a reader on another thread on Windows — 2026-11-10
+
+Defect: on Windows, saving `installation.json` could fail with access denied
+while another thread read it, and a read could fail while a save replaced it.
+Writes held a lock in this process; reads didn't. macOS and Linux let a file be
+replaced while it is open, so it never failed there. In the app, a failed save
+or read could stop the installation link from opening ("could not be opened"),
+leave usage sharing off until the next try, or start a session with default
+settings. A real-thread trial on the Windows PC: 116 of 313 saves and 33 reads
+failed.
+
+Why it was missed:
+
+- Every save test ran one thread at a time, and the harness profiles run on the
+  Mac, where the behavior can't occur. Windows coverage was CI and native
+  journeys, both sequential. The private-file rules covered permissions and
+  redirects, not Windows sharing.
+- CI did catch it, six times from November 9: `test_qt_automatic_attribution`
+  and `test_qt_analytics_session` failed on Windows, four of them with
+  `PermissionError ... installation.json` in the log. Around the 0.2.6 release
+  the same Windows jobs were already failing on the certificate-trust test, so
+  the extra failures were read as that known problem. After that test was
+  fixed, the next failures were taken for timing noise because other runs of
+  the same code passed.
+
+What covers it now:
+
+- `private_files.retry_while_file_is_busy` retries a Windows `PermissionError`
+  for up to a second (`replace_file`, `read_text`). Settings, installation
+  state, history and its pending journal, the activity log, the file-move
+  journal, local conversion records, thumbnails, finished media and the update
+  download use it, along with everything already saved through
+  `write_private_bytes`.
+- `tests/test_busy_file_retry.py` saves installation state, settings and a
+  private document while a second thread reads it, on every CI platform. On the
+  Windows PC all three failed against the old code and pass now. It also fails
+  if app code calls `os.replace` or `Path.replace` directly (only
+  `private_files.py` and `safe_output.py` may).
+- [RELEASE_GATE.md](RELEASE_GATE.md) now requires a cause for any failing CI job
+  before a release, and a check of every failure in a job that is already red.
+
+Limits: a second app instance or a scanner holding a file open for longer than a
+second still fails the save, as before, with the old file kept. `safe_output`
+commits media with its own checks and isn't routed through the retry.
+
 ## Native visibility spans current displays — 2026-10-30
 
 A visible native view does not lose ownership or input readiness when it crosses

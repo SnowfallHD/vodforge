@@ -2,11 +2,53 @@ from __future__ import annotations
 
 import os
 import stat
+import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
-from typing import BinaryIO, TextIO
+from typing import BinaryIO, TextIO, TypeVar
 
 from .safe_output import is_symlink_or_reparse
+
+T = TypeVar("T")
+
+# How long to keep retrying a Windows file that another handle has open.
+BUSY_FILE_RETRY_SECONDS = 1.0
+_ON_WINDOWS = os.name == "nt"
+
+
+def retry_while_file_is_busy(operation: Callable[[], T]) -> T:
+    """Retry briefly when Windows refuses a file because it is open elsewhere.
+
+    Windows can't replace a file, or open one being replaced, while another
+    handle has it open: a reader thread in this app, an antivirus scanner or the
+    search indexer. Both raise PermissionError for a moment (in a test, over a
+    third of saves failed while another thread read the same file). macOS and
+    Linux allow it, so they don't retry, and a lasting denial still fails after
+    about a second.
+    """
+    if not _ON_WINDOWS:
+        return operation()
+    deadline = time.monotonic() + BUSY_FILE_RETRY_SECONDS
+    delay = 0.002
+    while True:
+        try:
+            return operation()
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+        time.sleep(delay)
+        delay = min(delay * 2, 0.05)
+
+
+def replace_file(source: Path, destination: Path) -> None:
+    """os.replace that tolerates a destination briefly open on Windows."""
+    retry_while_file_is_busy(lambda: os.replace(source, destination))
+
+
+def read_text(path: Path) -> str:
+    """UTF-8 text of a file another thread may be replacing at this moment."""
+    return retry_while_file_is_busy(lambda: path.read_text(encoding="utf-8"))
 
 
 def open_private_file_descriptor(
@@ -133,7 +175,7 @@ def write_private_bytes(path: Path, payload: bytes) -> None:
                 or not os.path.samestat(expected, current)
             ):
                 raise OSError("Private destination changed before replacement")
-        os.replace(temporary, path)
+        replace_file(temporary, path)
         if os.name != "nt":
             directory = os.open(
                 path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
