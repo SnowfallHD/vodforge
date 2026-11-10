@@ -65,6 +65,7 @@ jobs:
           --ignore=tests/test_qt_windows_frame_resize.py
           --ignore=tests/test_qt_artwork_image.py
           --ignore=tests/test_qt_metadata_preview.py
+          --ignore=tests/test_qt_preview_refusal.py
           --ignore=tests/test_qt_presentation_diagnostics.py
           --ignore=tests/test_qt_previews.py
           --ignore=tests/test_qt_quality_e2e.py
@@ -187,6 +188,7 @@ jobs:
           tests/test_qt_windows_frame_resize.py
           tests/test_qt_artwork_image.py
           tests/test_qt_metadata_preview.py
+          tests/test_qt_preview_refusal.py
           tests/test_qt_presentation_diagnostics.py
           tests/test_qt_previews.py
           tests/test_qt_quality_e2e.py

@@ -20,6 +20,10 @@ from yt_downloader.failure_diagnostics import FailureDiagnostic, capture_failure
 from yt_downloader.library_diagnostics import begin_library_action
 from yt_downloader.models import CookieSource, OutputType
 
+# The link in the box can't be previewed (empty, incomplete, or a playlist link
+# while playlists are ignored). The user is told why; this is not a fault.
+_INPUT_REFUSED = FailureDiagnostic(reason="invalid_input", stage="preparation")
+
 
 class QtMetadataPreview:
     """One current request; metadata is transient until a run is admitted."""
@@ -55,13 +59,15 @@ class QtMetadataPreview:
         )
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             self.message = "Paste a complete video URL first."
-            observation.emit("rejected", "validation")
+            observation.emit("rejected", "validation", failure_detail=_INPUT_REFUSED)
             return False
         if ignore_playlists:
             error = single_video_url_requires_video_id_error(source)
             if error:
                 self.message = error
-                observation.emit("rejected", "validation")
+                observation.emit(
+                    "rejected", "validation", failure_detail=_INPUT_REFUSED
+                )
                 return False
         try:
             cookies = cookie_inputs_for_source(

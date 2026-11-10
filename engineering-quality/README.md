@@ -45,6 +45,36 @@ Each entry below records a defect class that was found, why the existing checks
 missed it, and what now covers it, newest first. Entries describe the code at
 their date; some name modules that have since been removed.
 
+## A refusal is shown where the user is looking — 2026-11-10
+
+Defect: on 0.2.6 Windows, "Preview metadata" in Settings was pressed with an
+empty link box. The app refused correctly, but its message goes to the notice
+under the link box, and the open Settings window covers that spot, so the
+button seemed to do nothing. Telemetry recorded the refusal as an unknown
+failure because input checks sent no reason. The first-run analytics pop-up had
+the same flaw: if its choice couldn't be saved, the message went behind it and
+the pop-up stayed open.
+
+Why it was missed: the notice was tested from the main screen and the preview
+from its bridge call, never from the Settings button. Nothing checked that a
+refusal's message is visible from the pop-up that triggered it, or that an
+input refusal carries a reason.
+
+What covers it now:
+
+- Settings closes when "Preview metadata" is refused and focuses the link box,
+  so the notice is visible next to it. The analytics pop-up closes after either
+  choice; a failed save still applies the choice for the session.
+- Refused links (empty, incomplete, or a playlist link while playlists are
+  ignored) report `invalid_input` at the preparation stage instead of `unknown`.
+- `tests/test_qt_preview_refusal.py` presses the real buttons with the pop-ups
+  open and checks the pop-up closes and the notice shows the message. It also
+  checks the reason for each refused link. All of it failed against the old
+  code.
+
+Limits: a pop-up that keeps itself open on failure must show the message
+itself, as the private note editor does; this isn't checked automatically.
+
 ## Saved files survive a reader on another thread on Windows — 2026-11-10
 
 Defect: on Windows, saving `installation.json` could fail with access denied

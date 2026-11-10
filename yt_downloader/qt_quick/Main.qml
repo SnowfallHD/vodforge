@@ -870,8 +870,10 @@ Window {
                 Layout.fillWidth: true
                 StoneButton { label: "Privacy details"; Layout.preferredWidth: 160; Layout.preferredHeight: 38; onActivated: bridge.openPrivacy() }
                 Item { Layout.fillWidth: true }
-                StoneButton { label: "No thanks"; Layout.preferredWidth: 115; Layout.preferredHeight: 40; onActivated: { if (bridge.chooseAnalytics(false)) analyticsPopup.close() } }
-                StoneButton { label: "Share analytics"; Layout.preferredWidth: 150; Layout.preferredHeight: 40; onActivated: { if (bridge.chooseAnalytics(true)) analyticsPopup.close() } }
+                // A failed save still applies the choice for this session, and its
+                // message shows under the link box, which this pop-up covers.
+                StoneButton { objectName: "analyticsDecline"; label: "No thanks"; Layout.preferredWidth: 115; Layout.preferredHeight: 40; onActivated: { bridge.chooseAnalytics(false); analyticsPopup.close() } }
+                StoneButton { objectName: "analyticsAccept"; label: "Share analytics"; Layout.preferredWidth: 150; Layout.preferredHeight: 40; onActivated: { bridge.chooseAnalytics(true); analyticsPopup.close() } }
             }
         }
     }
@@ -3350,11 +3352,16 @@ Window {
             RowLayout {
                 Layout.fillWidth: true
                 StoneButton {
+                    objectName: "settingsPreviewMetadataButton"
                     label: "Preview metadata"
                     Layout.preferredWidth: 170
                     Layout.preferredHeight: 40
                     onActivated: {
-                        if (bridge.previewMetadata(urlInput.text, window.outputFormat)) window.closeDownloadSettings()
+                        // A refusal's message shows under the URL box, which
+                        // Settings covers, so close Settings either way.
+                        const started = bridge.previewMetadata(urlInput.text, window.outputFormat)
+                        window.closeDownloadSettings()
+                        if (!started) urlInput.forceActiveFocus()
                     }
                 }
                 StoneButton { label: "Support"; Layout.preferredWidth: 104; Layout.preferredHeight: 40; onActivated: { window.closeDownloadSettings(); bridge.openSupport("feedback") } }
