@@ -4,7 +4,8 @@ Production 0.2.6: 5 launches, no automatic update check recorded (0.2.5: 69
 checks from 56 launches). At every launch the analytics region is re-checked in
 the background, and until it answers a default-on user counts as not sharing.
 The launch check started in that window, ran, and recorded nothing, so there
-was no evidence that 0.2.6 checks for updates by itself.
+was no evidence that 0.2.6 checks for updates by itself. The check must still
+start at once, so only its telemetry waits for the answer.
 """
 
 from __future__ import annotations
@@ -57,7 +58,7 @@ def test_launch_check_is_recorded_while_region_is_rechecked(
     checks = []
 
     def fetch_latest_release():
-        checks.append(True)
+        checks.append(time.monotonic())
         raise RuntimeError("offline")
 
     monkeypatch.setattr(update_session, "fetch_latest_release", fetch_latest_release)
@@ -83,6 +84,7 @@ def test_launch_check_is_recorded_while_region_is_rechecked(
     try:
         telemetry = bridge._analytics.telemetry
         bridge.startSession()
+        started = time.monotonic()
         QTimer.singleShot(0, bridge._auto_check_updates)  # as the packaged app does
         deadline = time.monotonic() + 6
         rows: list[dict] = []
@@ -98,7 +100,10 @@ def test_launch_check_is_recorded_while_region_is_rechecked(
             ):
                 break
             time.sleep(0.02)
-        assert checks == [True]
+        assert len(checks) == 1
+        # The check itself never waits for the analytics answer: an available
+        # update has to show as soon as the app opens.
+        assert checks[0] - started < 0.3
         updater = [
             (row["action"], row["dimensions"]["update_trigger"])
             for row in rows
@@ -107,3 +112,33 @@ def test_launch_check_is_recorded_while_region_is_rechecked(
         assert updater[:2] == [("check_started", "automatic"), ("failed", "automatic")]
     finally:
         bridge.close()
+
+
+@pytest.mark.parametrize("outcome", ["settled", "never_settled"])
+def test_held_observations_are_recorded_in_order_or_dropped(tmp_path, outcome):
+    from tests.test_presentation_diagnostics import real_owner
+    from tests.test_qt_telemetry_coverage import rows
+
+    telemetry = real_owner(tmp_path / "telemetry")
+    session = update_session.QtUpdateSession("0.2.6")
+    session.telemetry = telemetry
+    settled = [False]
+    session.consent_settled = lambda: settled[0]
+    session._begin_observation("automatic")
+    session.observe("check_started")
+    session.observe("current")
+    session.release_held_observations()  # still unsettled: keep holding
+    if outcome == "settled":
+        settled[0] = True
+    else:
+        session._held_until = 0.0  # the hold window has passed
+    session.release_held_observations()
+    session.observe("shown")  # after release, recorded directly
+    actual = [
+        (row["action"], row["dimensions"]["operation_step"])
+        for row in rows(telemetry, tmp_path, "updater_operation")
+    ]
+    if outcome == "settled":
+        assert actual == [("check_started", "1"), ("current", "2"), ("shown", "3")]
+    else:
+        assert actual == []

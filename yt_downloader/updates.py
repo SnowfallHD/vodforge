@@ -1115,8 +1115,10 @@ def confirmed_update_telemetry_receipt(
         stage = value.get("stage", "unknown")
         if not isinstance(stage, str) or stage not in DIMENSION_CHOICES["update_stage"]:
             stage = "unknown"
+        # "installed" is an automatic update installed on quit, without reopening.
         if value.get("telemetry_permitted") is not True or value.get("status") not in {
             "relaunched",
+            "installed",
             "failed",
         }:
             return None
@@ -1137,7 +1139,7 @@ def confirmed_update_telemetry_receipt(
             digest = hashlib.file_digest(handle, "sha256").hexdigest()
         if str(value.get("executable_sha256", "")).lower() != digest:
             return None
-        return match.group(1), value.get("repair") is True, "relaunched", stage
+        return match.group(1), value.get("repair") is True, value["status"], stage
     except (OSError, ValueError, TypeError, AttributeError):
         return None
 

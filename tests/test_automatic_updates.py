@@ -654,6 +654,8 @@ def test_real_close_owner_ignores_only_relink_shutdown_sentinel(
         assert calls == [
             {
                 "downloads_busy": False,
+                # Telemetry is off in this fixture; with it on, the new version
+                # reports the install when it next opens.
                 "telemetry_permitted": False,
                 "relaunch_after_install": False,
             }

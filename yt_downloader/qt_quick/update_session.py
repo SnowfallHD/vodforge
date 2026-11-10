@@ -9,6 +9,7 @@ import re
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,9 @@ from yt_downloader.updates import (
     semantic_version_key,
     verify_windows_authenticode,
 )
+
+# How long launch observations wait for the analytics choice to settle.
+HELD_OBSERVATION_SECONDS = 10.0
 
 
 def _check_failure_status(detail: FailureDiagnostic | None) -> str:
@@ -101,9 +105,15 @@ class QtUpdateSession:
         self.pending_install = False
         self.automatic_download = False
         self._ready_digest: str | None = None
+        self._ready_version: str | None = None
         self._download_cancel = threading.Event()
         self.handoff_started = False
         self.observations: list[tuple[str, dict[str, str] | None]] = []
+        # At launch the analytics choice is re-checked for a moment. Until it
+        # settles, observations are held, then recorded or dropped by it.
+        self.consent_settled: Callable[[], bool] = lambda: True
+        self._held: list[tuple[str, dict[str, str], Any]] | None = None
+        self._held_until = 0.0
 
     @staticmethod
     def _version(value: str) -> str:
@@ -121,9 +131,37 @@ class QtUpdateSession:
         self._trigger = trigger
         self._shown = False
         self._started = time.monotonic()
+        if self.consent_settled():
+            self._held = None
+            self._operation = bind_operation(
+                self.telemetry, "updater_operation", operation_key=self._attempt
+            )
+        else:
+            self._operation = None
+            self._held = []
+            self._held_until = time.monotonic() + HELD_OBSERVATION_SECONDS
+
+    def release_held_observations(self) -> None:
+        """Record held observations once the analytics choice settles."""
+        if self._held is None:
+            return
+        if not self.consent_settled():
+            if time.monotonic() >= self._held_until:
+                self._held = None  # Never settled: record nothing.
+            return
+        held, self._held = self._held, None
         self._operation = bind_operation(
             self.telemetry, "updater_operation", operation_key=self._attempt
         )
+        for action, dimensions, detail in held:
+            operation(
+                self.telemetry,
+                "updater_operation",
+                action,
+                self._operation,
+                dimensions,
+                failure_detail=detail,
+            )
 
     def observe(
         self, action: str, *, error: BaseException | None = None, blocker: str = "none"
@@ -132,26 +170,19 @@ class QtUpdateSession:
             if self._shown:
                 return
             self._shown = True
-        # Never rebind delayed work after an analytics choice changes.
-        operation(
-            self.telemetry,
-            "updater_operation",
-            action,
-            self._operation,
-            {
-                "update_attempt": self._attempt,
-                "update_from": self._version(self.current_version),
-                "update_target": self._version(self.release.version)
-                if self.release
-                else "unknown",
-                "update_trigger": self._trigger,
-                "update_stage": self.stage,
-                "update_blocker": blocker,
-                "processing_bucket": time_bucket(
-                    max(0, time.monotonic() - self._started)
-                ),
-            },
-            failure_detail=capture_failure(
+        dimensions = {
+            "update_attempt": self._attempt,
+            "update_from": self._version(self.current_version),
+            "update_target": self._version(self.release.version)
+            if self.release
+            else "unknown",
+            "update_trigger": self._trigger,
+            "update_stage": self.stage,
+            "update_blocker": blocker,
+            "processing_bucket": time_bucket(max(0, time.monotonic() - self._started)),
+        }
+        detail = (
+            capture_failure(
                 error,
                 stage="download"
                 if self.stage in {"download", "downloading_repair"}
@@ -160,7 +191,24 @@ class QtUpdateSession:
                 context="updater",
             )
             if error
-            else None,
+            else None
+        )
+        self._record(action, dimensions, detail)
+
+    def _record(
+        self, action: str, dimensions: dict[str, str], detail: Any = None
+    ) -> None:
+        if self._held is not None:
+            self._held.append((action, dimensions, detail))
+            return
+        # Never rebind delayed work after an analytics choice changes.
+        operation(
+            self.telemetry,
+            "updater_operation",
+            action,
+            self._operation,
+            dimensions,
+            failure_detail=detail,
         )
 
     def _start(self, target: Any, name: str) -> bool:
@@ -199,8 +247,8 @@ class QtUpdateSession:
         logging.getLogger(__name__).info("Update check started (%s).", self._trigger)
         if not self._start(self._check_worker, "vodforge-qt-update-check"):
             return False
-        self.ready = None
-        self._ready_digest = None
+        # A verified download survives a check; the result decides whether it
+        # is still the latest release (see poll).
         self.release = None
         self.available = False
         self.manual = False
@@ -385,8 +433,21 @@ class QtUpdateSession:
                     newer and release_asset_for_platform(payload) is not None
                 )
                 self.manual = newer and not self.available
+                if self.ready is not None and not (
+                    newer and payload.version == self._ready_version
+                ):
+                    # A newer release (or a withdrawn one) replaces the download.
+                    self.ready = None
+                    self._ready_digest = None
+                    self._ready_version = None
                 self.status = (
-                    f"VODForge {payload.tag_name} is available."
+                    (
+                        "Update verified. It will install when you quit VODForge."
+                        if self.automatic_download
+                        else "Verified installer ready."
+                    )
+                    if self.ready is not None
+                    else f"VODForge {payload.tag_name} is available."
                     if self.available
                     else f"VODForge {payload.tag_name} is available on the download page."
                     if newer
@@ -406,6 +467,7 @@ class QtUpdateSession:
                 )
             elif kind == "ready" and isinstance(payload, (Path, MacUpdatePlan)):
                 self.ready = payload
+                self._ready_version = self.release.version if self.release else None
                 self.status = (
                     "Update verified. It will install when you quit VODForge."
                     if self.automatic_download
@@ -414,8 +476,11 @@ class QtUpdateSession:
                 self.observe("download_completed")
                 self.observations.append(("download_completed", None))
             else:
-                self.ready = None
-                self.pending_install = False
+                # A failed check says nothing about a download already verified.
+                if self.stage != "check":
+                    self.ready = None
+                    self._ready_version = None
+                    self.pending_install = False
                 detail = (
                     payload[1]
                     if isinstance(payload, tuple) and len(payload) == 2
@@ -430,11 +495,8 @@ class QtUpdateSession:
                     if self.check_failed
                     else _update_failure_status(detail, self.stage)
                 )
-                operation(
-                    self.telemetry,
-                    "updater_operation",
+                self._record(
                     "failed",
-                    self._operation,
                     {
                         "update_attempt": self._attempt,
                         "update_stage": self.stage,
@@ -447,7 +509,7 @@ class QtUpdateSession:
                             max(0, time.monotonic() - self._started)
                         ),
                     },
-                    failure_detail=detail,
+                    detail,
                 )
                 self.observations.append(("failed", {"update_stage": self.stage}))
         return changed

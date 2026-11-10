@@ -45,33 +45,53 @@ Each entry below records a defect class that was found, why the existing checks
 missed it, and what now covers it, newest first. Entries describe the code at
 their date; some name modules that have since been removed.
 
-## The launch update check is visible in telemetry — 2026-11-10
+## Update telemetry reaches the server, from launch to install — 2026-11-10
 
-Defect: 0.2.6 recorded no automatic update check at all (5 launches), while
-0.2.5 recorded 69 from 56 launches. The check did run. At every launch the
-analytics region is re-checked in the background, and while that request is out
-the saved region reads as unknown, so a user who never chose explicitly
-(default-on regions) counts as not sharing. The launch check starts at that
-moment and binds its whole run to that state, so it records nothing. 0.2.5 had
-the same race; its recorded checks came mostly from the 6-hour repeat and from
-users with an explicit choice. The cost: no production evidence that 0.2.6 checks
-for updates by itself, which install-on-close depends on.
+Defects, all in 0.2.6:
 
-Why it was missed: update telemetry tests attach a recorder with consent already
-granted and call the check directly. None started the real analytics session or
-ran the check in the order the packaged app does.
+- **Launch check unrecorded.** 0.2.6 recorded no automatic update check (5
+  launches; 0.2.5 recorded 69 from 56). The check ran. At every launch the
+  analytics region is re-checked, and while that request is out a user who never
+  chose explicitly (default-on regions) counts as not sharing. The launch check
+  starts then and bound its whole run to that state.
+- **Download discarded by any later check.** `QtUpdateSession.check()` cleared
+  the verified download, so after a manual check or the 6-hour repeat, quitting
+  installed nothing until it downloaded again.
+- **Install on quit unreported.** The quit path told the installer helper
+  telemetry was off, and the next launch only reported helper results
+  "relaunched" and "failed", not "installed".
+- **Recovery events rejected.** The run-state schema became 2, but the server
+  accepted `recovery_schema` "1" only, so the app discarded every recovery event
+  as permanently rejected.
+
+Why they were missed: update telemetry tests attached a recorder with consent
+already granted and called the check directly, never in the packaged launch
+order. Tests asserted the old clear-on-check behavior, and that the quit path
+sends `telemetry_permitted=False`. Nothing compared the app's vocabulary with
+the server's.
 
 What covers it now:
 
-- The launch check waits for the analytics choice to settle, at most 4 seconds,
-  then runs either way. Checking for updates never depends on analytics.
-- `tests/test_qt_startup_update_check.py` starts the real session for a
-  default-on second launch, with the region answer instant or slow, schedules
-  the check as the packaged app does, and requires the check to run and record
-  `check_started` and its result. Both cases failed against the old code.
+- The launch check still starts at once (an available update must show
+  immediately). Its telemetry is held until the analytics choice settles, then
+  recorded or dropped (`QtUpdateSession.release_held_observations`, at most 10
+  seconds). `tests/test_qt_startup_update_check.py` starts the real session for a
+  default-on second launch (instant and slow region answer), requires the check
+  within 0.3 s and its events recorded; it also covers the hold directly. Both
+  0.2.6 and a version that delayed the check fail it.
+- A check keeps a verified download unless it finds a newer (or withdrawn)
+  release; a failed check keeps it. Covered in
+  `engineering-quality/tests/test_qt_update_session.py`.
+- The quit path passes the real analytics choice; the new version reports
+  `updater`/`installed` when it next opens, after checking the choice again.
+- `engineering-quality/tests/test_vocabulary_parity.py` fails if the app can
+  send an action or value the server doesn't accept (runs where the website
+  repository is checked out next to this one). The server now accepts
+  `installed` and `recovery_schema` "2"; deploy it before the app release.
 
-Limits: a fresh install's first launch still has no choice yet, so its first
-check isn't recorded, as intended.
+Limits: a fresh install's first launch has no choice yet, so its first check
+isn't recorded, as intended. Events from 0.2.6 that were already discarded can't
+be recovered.
 
 ## A refusal is shown where the user is looking — 2026-11-10
 

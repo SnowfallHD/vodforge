@@ -146,6 +146,7 @@ FEATURE_ACTIONS: dict[str, frozenset[str]] = {
             "download_completed",
             "handoff",
             "relaunched",
+            "installed",
             "failed",
             "repair_started",
             "repair_completed",

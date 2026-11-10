@@ -556,6 +556,9 @@ class Bridge(QObject):
         self._analytics_allowed = self._analytics.allowed
         self._analytics_snapshot_sent = False
         self._updates = QtUpdateSession(__version__)
+        # The launch check runs at once; its telemetry waits for the analytics
+        # choice to settle (see QtUpdateSession.release_held_observations).
+        self._updates.consent_settled = lambda: self._analytics.settled
         self._files = QtLibraryFiles(self._runtime.history_path)
         self._last_library_file_running = self._files.busy
         self._import_work = ArchiveWorkOwner()
@@ -679,7 +682,6 @@ class Bridge(QObject):
             and self._settings.get("automatic_updates", True) is True
         )
         self._automatic_download_requested = False
-        self._update_check_waits = 0
         self._automatic_updates_supported = True
         selection = apply_theme_selection(
             self._settings.get("appearance_theme", DEFAULT_THEME_NAME),
@@ -1626,13 +1628,6 @@ class Bridge(QObject):
     def _auto_check_updates(self) -> None:
         if self._updates.busy:
             QTimer.singleShot(30 * 1000, self._auto_check_updates)
-            return
-        # At launch the analytics choice is being re-checked (up to 2.5 s), and
-        # a check started meanwhile records nothing for its whole run. Wait for
-        # it, but never hold the check back for long.
-        if not self._analytics.settled and self._update_check_waits < 40:
-            self._update_check_waits += 1
-            QTimer.singleShot(100, self._auto_check_updates)
             return
         self._updates.telemetry = self._analytics.telemetry
         if self._updates.check(automatic=True):
@@ -7561,6 +7556,7 @@ class Bridge(QObject):
             }:
                 self._finish_run_removal()
             self.fileActionChanged.emit()
+        self._updates.release_held_observations()
         if self._updates.poll():
             if (
                 self._automatic_updates
@@ -7850,9 +7846,13 @@ class Bridge(QObject):
             try:
                 saved = load_settings(self._settings_path)
                 if saved.get("automatic_updates", True) is True:
+                    telemetry = self._analytics.telemetry
+                    # The new version reports the result when it next opens,
+                    # and checks the analytics choice again before sending.
                     self._updates.install(
                         downloads_busy=False,
-                        telemetry_permitted=False,
+                        telemetry_permitted=telemetry is not None
+                        and telemetry.permitted(),
                         relaunch_after_install=False,
                     )
             except SettingsError:

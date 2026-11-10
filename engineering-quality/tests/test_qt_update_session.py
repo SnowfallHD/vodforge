@@ -9,6 +9,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from yt_downloader.qt_quick import update_session as qt_updates
 from yt_downloader.updates import (
     MacUpdatePlan,
@@ -150,17 +152,34 @@ def test_repair_refuses_downgrade_and_failed_helper_keeps_recovery(
     assert session.recovery and session.ready == installer
 
 
-def test_check_again_retires_previous_ready_installer(
-    monkeypatch: Any, tmp_path: Path
+@pytest.mark.parametrize("result", ["same", "newer", "current", "failed"])
+def test_check_keeps_a_verified_download_unless_a_newer_release_replaces_it(
+    monkeypatch: Any, tmp_path: Path, result: str
 ) -> None:
+    """A later check (manual or the 6-hour repeat) used to discard the verified
+    download, so quitting afterwards installed nothing (production 0.2.6)."""
     session = qt_updates.QtUpdateSession("0.2.2")
-    session.ready = tmp_path / "old.exe"
     session.release = _release("0.2.3")
-    session.available = True
+    session.automatic_download = True
+    session.events.put(("ready", tmp_path / "old.exe"))
+    session.poll()
+    assert session.ready == tmp_path / "old.exe"
     monkeypatch.setattr(session, "_start", lambda *_args: True)
     assert session.check()
-    assert session.ready is None
+    assert session.ready == tmp_path / "old.exe"  # kept while the check runs
     assert session.release is None and not session.available
+    if result == "failed":
+        session.events.put(("error", "offline"))
+    else:
+        version = {"same": "0.2.3", "newer": "0.2.4", "current": "0.2.2"}[result]
+        session.events.put(("checked", _release(version)))
+    session.poll()
+    if result in {"same", "failed"}:
+        assert session.ready == tmp_path / "old.exe"
+    else:
+        assert session.ready is None  # replaced by, or withdrawn in favor of, another
+    if result == "same":
+        assert "install when you quit" in session.status
 
 
 def test_update_outcomes_are_bounded_and_consumed_once() -> None:
@@ -518,3 +537,45 @@ def test_single_click_failure_clears_intent_but_repair_keeps_verified_latest_pat
             (plan.source_app / "Contents/MacOS/VODForge").read_bytes()
         ).hexdigest()
     )
+
+
+@pytest.mark.parametrize("permitted", [True, False])
+def test_automatic_install_on_quit_is_reported_by_the_new_version(
+    tmp_path: Path, permitted: bool
+) -> None:
+    """Install-on-close writes status "installed" (no reopen). The next launch
+    used to accept only "relaunched"/"failed", so every automatic install went
+    unreported; the quit path also told the helper telemetry was off."""
+    executable = tmp_path / "VODForge.exe"
+    executable.write_bytes(b"new version")
+    folder = tmp_path / "updates" / "v0.2.7"
+    folder.mkdir(parents=True)
+    token = uuid.uuid4().hex
+    (folder / f"handoff-{token}.json").write_text(
+        json.dumps(
+            {
+                "status": "installed",
+                "stage": "installing",
+                "repair": False,
+                "executable": str(executable),
+                "executable_sha256": hashlib.sha256(b"new version").hexdigest(),
+                "telemetry_permitted": True,
+            }
+        )
+    )
+
+    class Telemetry:
+        def __init__(self) -> None:
+            self.actions: list[str] = []
+
+        def permitted(self) -> bool:
+            return permitted  # the choice is checked again on the new version
+
+        def record(self, *_args: Any, **kwargs: Any) -> bool:
+            self.actions.append(kwargs["action"])
+            return True
+
+    owner = Telemetry()
+    record_update_telemetry_receipts(owner, folder.parent, executable)
+    record_update_telemetry_receipts(owner, folder.parent, executable)
+    assert owner.actions == (["installed"] if permitted else [])
