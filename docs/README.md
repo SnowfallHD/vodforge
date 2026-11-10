@@ -17,3 +17,24 @@
 
 Testing and release evidence live in the
 [engineering-quality harness](../engineering-quality/README.md).
+
+## History
+
+Past work, kept as a record. Each file starts with a note on what it covers and
+what replaced it.
+
+| Topic | Document |
+| --- | --- |
+| The macOS header and menu bar (Sept–Oct 2026): what was tried, why it failed, the fix and lessons | [macos-header.md](history/macos-header.md) |
+| Architecture while the app had its Tk interface | [architecture-tk-era.md](history/architecture-tk-era.md) |
+| UI component notes from the Tk interface | [ui-components-tk-era.md](history/ui-components-tk-era.md) |
+| How the Tk-era player chose libVLC | [playback-backend-evaluation.md](history/playback-backend-evaluation.md) |
+| macOS minimum-version evidence | [macos-runtime-support.md](history/macos-runtime-support.md) |
+| Quiet-AAC validation fix (Sept 2026) | [failure-details-aac-validation.md](history/failure-details-aac-validation.md) |
+| Telemetry metric audit (Sept 2026) | [telemetry-metric-audit.md](history/telemetry-metric-audit.md) |
+| Diagnostic telemetry plan (implemented Oct 2026) | [diagnostic-telemetry-plan.md](history/diagnostic-telemetry-plan.md) |
+| Output ownership and deferred Help commands | [export-variants-help-menu.md](history/export-variants-help-menu.md) |
+| Tk-era What's New previews | [whats-new-native-previews.md](history/whats-new-native-previews.md) |
+
+Engineering investigations and checkpoints are in
+[engineering-quality/history/](../engineering-quality/history/).

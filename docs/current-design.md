@@ -2,7 +2,8 @@
 
 This guide describes the current Qt Quick interface (the app has been Qt-only since
 October 2026). The [UI component contract](ui-components.md) is normative for
-new features; [architecture](architecture.md) identifies runtime owners.
+new features; [architecture](architecture.md) identifies runtime owners. Evidence
+recorded against the earlier Tk interface is kept in [history](history/).
 
 ## Workspaces and navigation
 

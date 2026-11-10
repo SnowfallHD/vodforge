@@ -17,6 +17,7 @@ never changes production behavior.
 | Mandatory regression classes | [RECOVERY_REGRESSION_CLASSES.md](RECOVERY_REGRESSION_CLASSES.md), [SCENE_REGRESSION_CLASSES.md](SCENE_REGRESSION_CLASSES.md) |
 | Open user-reported defects | [acceptance/user-reported-defects.json](acceptance/user-reported-defects.json) |
 | Windows QA on the Windows PC | [runners/README.md](runners/README.md) (`E:\VODForgeQA`) |
+| Past investigations and checkpoints | [history/](history/) and the app's [docs/history/](../docs/history/) |
 
 The three profiles: `./engineering-quality/run fast` before committing,
 `./engineering-quality/run normal` before merging, and `./engineering-quality/run deep`
@@ -145,6 +146,8 @@ request. Existing independent browser-handoff tests missed that earlier boundary
 The current invariant gates issue, persistence, browser dispatch, status and
 confirmation against fresh feature policy/current explicit permission, including
 Off/regrant and replaced policy. Blocked work must not consume a one-time attempt.
+See [the app contract and rights protocol](history/ATTRIBUTION_PERMISSION_AND_RIGHTS.md)
+for prior failures, representative cross-owner coverage and unqualified live gates.
 Rights requests use existing ownership only; page opening is not deletion proof.
 
 ## Rendered checks follow the intended owner — 2026-10-15
@@ -235,7 +238,10 @@ is required only by the legacy Tk player, not the Qt Multimedia build.
 ## Popup gesture and focus restoration — 2026-10-06
 
 A popup close must survive the remainder of the same held trigger gesture and
-must not become a fresh open request when Qt restores editor focus. These changes do not
+must not become a fresh open request when Qt restores editor focus. The
+[popup reliability audit](history/POPUP_TOGGLE_RELIABILITY.md) documents reproduced
+category/hover defects, the narrow fixes, prior-failure evidence, a cross-surface
+pointer/keyboard matrix, and untested native acceptance. These changes do not
 explain the separate persistent physical Done-click report.
 
 ## Inline Library notes report successful durable changes — 2026-09-30
