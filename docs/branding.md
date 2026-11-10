@@ -25,13 +25,16 @@ assets/brand/manifest.json records input/crop provenance and output hashes.
 The source tile is 588x588 pixels; the 1024 platform export is an upscale, not new
 detail. Original reference and extracted master pixels remain available.
 assets/VODForge.icns includes Retina sizes; VODForge.ico includes 16 through 256.
-The desktop header pairs vf-mark.png with vf-name.png and retains its compact mark-only behavior. The site uses the original combined vf-wordmark.png.
+The desktop header pairs vf-mark.png with typeset text: "VOD" in the theme accent and
+"Forge" in white (in QML, and in the native macOS toolbar). It keeps its compact
+mark-only behavior. vf-name.png is exported but not used by the app. The site uses
+the original combined vf-wordmark.png.
 Both build scripts include assets/brand. Website header, email mark, social card,
 favicon and webmanifest use these exports. Historical product screenshots are
 not edited to fake a newly installed app; refresh them from qualified builds.
 
-Verify with tests/test_brand_assets.py and native tests/test_brand_native.py,
-then inspect small-size sheets and the actual website at desktop/mobile widths.
+Verify with tests/test_brand_assets.py, then inspect small-size sheets and the
+actual website at desktop/mobile widths.
 Native, site-preview, packaged and installed icon acceptance remain distinct.
 Existing engineering gates and unresolved resize acceptance are not waived.
 
@@ -57,7 +60,7 @@ palette tint. This does not change canonical raster masters or platform icon exp
 
 Public imagery uses native captures from an isolated fictional nature library.
 See [current design](current-design.md) and the [UI contract](ui-components.md).
-ImageGen supplies composition references only; it cannot stand in for an app screen.
+Generated images supply composition references only; they cannot stand in for an app screen.
 The README's seven captures are in `assets/readme/current-design/`, with source
 identity and SHA-256 in its manifest. The website uses the same original captures
 and provides full-size editorial downloads at `/press/`. Do not use personal

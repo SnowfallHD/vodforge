@@ -73,15 +73,18 @@ Organization events compare the typed annotation's `note`, `tags`, and `category
 after a successful save. Adding or clearing a value counts as a change; saving
 unchanged values or a failed write does not. The save-callback regression covers
 each field independently, including refusal of private values in event arguments.
+`description_saved` is separate: the Library detail emits it after each successful
+personal-description save, without comparing the old and new text.
 
-Playback failures follow the provider's error event even when libVLC subsequently
-reports `Ended`. The existing playback backend retains that error until a new
-load or retry; the player reports failure rather than completion. Provider
-callbacks do not wait on the lock used by native playback operations.
-Replay after failure or completion reloads the same local media through the
-existing native-safe load path, because VLC 3 can accept `play()` while leaving
-its ended input idle. Release evidence must show advancing playback after retry
-and normal replay; an `Ended` label at zero seconds is not successful recovery.
+The Qt player plays media with QMediaPlayer. The Qt `Bridge` owns playback
+observation: its `playback_operation` reports the player's closed error value as
+`qt_media_error` (see "Qt update decisions, repeated navigation and native errors"
+below). A provider error is reported as failure, never as completion. Release
+evidence must show advancing playback after retry and normal replay; an `Ended`
+label at zero seconds is not successful recovery.
+
+Historical: the retired widget player used libVLC, which could report `Ended`
+after an error. libVLC is now used only by the packaged runtime smoke check.
 
 Updater actions are individual observations. Download, handoff, failure stage,
 relaunch and repair are distinct. A successful relaunch requires a helper receipt
@@ -107,9 +110,33 @@ D1. See [the release gate](../engineering-quality/TELEMETRY_RELEASE_GATE.md).
 A direct serializer probe is deliberately labeled source/transport proof and
 cannot satisfy the packaged release gate.
 
-## Diagnostic richness (next client release)
+## Diagnostic richness
 
 Existing failure_detail now carries closed failure_code values, bounded format/video/audio counts and TLS verification codes. No raw exception messages, URL, media identifiers, cookie/profile identity or commands are uploaded. The source-selection exception owns format counts; the diagnostic owner traverses wrapped causes. Existing attempt events include cookie access, provider category and encoder preference/architecture.
+
+The closed `failure_code` values, as defined in `yt_downloader/failure_diagnostics.py`:
+
+- History: `history_malformed_json`, `history_unsupported_schema`,
+  `history_invalid_structure`, `history_limit_exceeded`, `history_invalid_encoding`.
+- Formats: `no_video_stream`, `no_audio_stream`, `format_unavailable`, `selector_invalid`.
+- Access: `login_required`, `bot_challenge`, `cookies_unavailable`, `drm_protected`.
+- Network: `tls_certificate`, `tls_handshake`, `dns_lookup`, `timeout`,
+  `connection_refused`, `connection_reset`, `http_error`, `http_forbidden`.
+- Local: `encoder_unavailable`, `disk_full`.
+- Source availability (added in 0.2.6): `age_restricted`, `private_video`,
+  `members_only`, `geo_restricted`, `live_not_started`, `video_unavailable`,
+  `unsupported_url`.
+
+0.2.6 also adds three optional `failure_detail` fields, each with a closed list:
+
+- `extractor_warning`: the first matching yt-dlp warning seen during the job, as a
+  code, never its text: `challenge_solving_failed`, `po_token_required`,
+  `sabr_only`, `drm`, `bot_challenge`, `rate_limited`, `formats_missing`.
+- `live_status`: `is_live`, `is_upcoming`, `was_live`, `not_live`, `post_live`.
+- `availability`: `private`, `premium_only`, `subscriber_only`, `needs_auth`,
+  `unlisted`, `public`.
+
+Values outside these lists are rejected by the client validator and the server.
 
 Settings snapshots use the existing consent-gated feature event pipeline on app open, successful debounced saves and cookie-source changes. Every persisted preference has a tested explicit privacy decision: output directory, custom color and announcement state are excluded; processing choices, local output profile and appearance choice are allowlisted. Bitrate values are bucketed; CRF is bounded. Snapshots deduplicate only unchanged states, retaining A-B-A transitions. Browser names, profiles, cookie files/contents, tags and input content never leave the device. Existing per-session engagement counts remain such; they are not click-by-click traces.
 
@@ -221,8 +248,8 @@ the preceding operation's delay.
 
 A regression reproduced a 320 ms pending audit reported as under_50ms because
 each update replaced the due time. The corrected queued-clock oracle preserves
-the delay and includes a fresh-owner positive control. A real Tk controlled-pump
-test exercises the production probe and local outbox; its public payload is
+the delay and includes a fresh-owner positive control. The original
+controlled-pump test ran against the retired widget interface; its public payload was
 exported through the production parser/serializer to the backend fixture
 test/fixtures/presentation-audit-wait.json. The enrolled backend suite verifies
 authenticated acceptance, exact stored dimensions, duplicate delivery, and this
@@ -249,12 +276,13 @@ and missing delivery exclude populations. Pending audit delay is distinct from
 audit execution cost (presentation_audit). Historical clients that reset due
 times cannot support the corrected interpretation retroactively.
 
-Reproduce the native fixture with VODFORGE_NATIVE_UI_TESTS=1 and a fresh
-VODFORGE_NATIVE_EVIDENCE_DIR while running the coalesced_audit test in
-tests/test_presentation_native.py. Review and copy its generated
-presentation-audit-wait.json to the backend fixture path, then run
-test/enrolled-telemetry.spec.ts. Keep the earlier raw fixture and receipt alongside
-the new source binding. This is local source/transport evidence; packaged and
+Historical: that fixture came from tests/test_presentation_native.py, which was
+removed with the widget interface. The Qt producer in
+`yt_downloader/qt_quick/presentation.py` emits the same `ui_pump_delay`
+measurement; tests/test_presentation_diagnostics.py and
+tests/test_qt_presentation_diagnostics.py cover its vocabulary, consent and
+recovery. The backend still replays test/fixtures/presentation-audit-wait.json
+with test/enrolled-telemetry.spec.ts. This is local source/transport evidence; packaged and
 deployed ingestion still require their own journeys.
 
 ## Run-menu command admission
@@ -328,7 +356,8 @@ complete temporal evaluator enrollment.
 ### Player callbacks after close
 
 Seek, chapter, preview, timeline and volume callbacks are admitted only while
-their MediaPlayerWindow owner is open. Retired callbacks must not emit successful
+their player owner is open. In the Qt app that owner is the `Bridge` playback
+binding for the loaded media. Retired callbacks must not emit successful
 feature usage or send provider commands. Closing remains on the existing closed
 operation path; this repair adds no passive-focus or late-input event.
 
@@ -396,9 +425,8 @@ fixture failures caused by an omitted stable recorded-at field are retained as
 test errors; the corrected prior-source matrix exposed nine consent/binding
 failures. No real user files or system Trash are involved in these fixtures.
 
-The emitted allowed payloads are exported with VODFORGE_FILE_ACTION_FIXTURE_DIR
-from tests/test_library_file_actions.py and replayed by the existing enrolled
-backend suite from test/fixtures/file-action-producer-events.json. Authentication,
+The existing enrolled backend suite replays the allowed producer payloads from
+test/fixtures/file-action-producer-events.json. Authentication,
 exact stored dimensions, private-field rejection and duplicate delivery are
 checked independently.
 
@@ -499,11 +527,14 @@ cancellation and commit callbacks. Regrant cannot attach later observations to a
 review created under a different consent/session, and binding failure suppresses
 observations without changing review or file authority.
 
-The maintained native regression currently qualifies cancellation while verification
-is held pending: it opens the real review, presses and releases its Back to Library
+Historical: the original native regression qualified cancellation while verification
+was held pending: it opens the real review, presses and releases its Back to Library
 button, and checks callback retirement and unchanged temporary history. Before,
 pressed and returned-view captures are retained for each consent/observer context.
-Input is generated through Tk, not a physical device or OS-injected pointer.
+Its input came from the retired widget toolkit, not a physical device or
+OS-injected pointer. In the Qt app,
+tests/test_qt_telemetry_coverage.py::test_relink_cancellation_observes_request_once_and_actual_cancelled_outcome
+covers cancellation.
 Three genuine prior-source consent failures are retained. Preview fixture mistakes
 are identified separately from those failures.
 
@@ -532,7 +563,8 @@ timed_out from that acknowledged result. Executed work still owns its existing
 terminal observation; the callback must not duplicate it. Cancel_requested alone
 does not establish cancellation or rule out an already completed save.
 
-tests/test_relink_admission_native.py checks all three boundaries across allowed,
+Historical: tests/test_relink_admission_native.py, removed with the widget
+interface, checked all three boundaries across allowed,
 denied, late-granted, regranted, unavailable and failing observation. It uses the
 real closed/queued worker and temporary offline ProductTelemetryOwner, retains
 before/during/after captures and compares unchanged history bytes and UI records.
@@ -565,8 +597,8 @@ separately qualified by the telemetry journey gate.
 
 Qt's actual Bridge now records engagement for My Files, All media and Issues &
 Recovery, folder entry and path navigation through the existing `archive` family.
-The additive `issues` action and `archive_mode=issues` require the compatible
-server vocabulary before client publication. No schema or D1 migration is needed.
+The additive `issues` action and `archive_mode=issues` needed the compatible
+server vocabulary before client publication. The server vocabulary includes them. No schema or D1 migration is needed.
 Missing-media recovery offered/accepted and issue retry selection reuse existing
 feature actions. These are session engagement observations, not counts of every
 click or visits to distinct private folders; no path, name or source identity is
@@ -597,8 +629,8 @@ Seven cases fail on the previous implementation. The maintained Qt diagnostic ga
 now includes four additional producers: file navigation, actual async preview
 failure, observed resume success and timeout. Their 24 emitted events passed
 loopback authenticated HTTP, the real Worker, migrated local D1, exact readback,
-replay deduplication, private/unknown-field rejection and consent controls at
-`build/qt-telemetry-gap-proof/local-d1-final/receipt.json`. The player callbacks are
+replay deduplication, private/unknown-field rejection and consent controls in a
+local verification run (its receipt is not part of the repository). The player callbacks are
 controlled fixtures; this is not native decoding, packaged Mac/Windows or deployed
 client evidence. The full application inventory remains unproven where named.
 

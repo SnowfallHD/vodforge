@@ -79,12 +79,12 @@ Paths in this table are under `yt_downloader/qt_quick/` unless otherwise shown.
 
 | Responsibility | Existing owner | Consumer supplies |
 | --- | --- | --- |
-| Palette and foreground meaning | `../ui_theme.py` | Semantic role, never a local palette copy |
-| Button sizes/type/padding | `../ui_button_contract.py`, `../ui_styles.py`, `main.py` context `buttonMetrics` | Named variant and content width |
+| Palette and foreground meaning | `../product_theme.py` | Semantic role, never a local palette copy |
+| Button sizes/type/padding | `../button_metrics.py`, `main.py` context `buttonMetrics` | Named variant and content width |
 | Action/navigation material and activation | `StoneButton.qml` | Label, icon, selected state and scoped action |
 | Boolean consent/preference | `StoneCheckBox.qml` | Plain label, checked/enabled state and scoped toggle |
-| Recessed field/panel paint | `StoneField.qml`, `main.py:Materials`, `../ui_chrome.py` | Geometry; native editing stays in its existing control |
-| Floating surface elevation and trigger intent | `StonePopup.qml`, `../ui_chrome.py` | Content, modality, dismissal policy and trigger |
+| Recessed field/panel paint | `StoneField.qml`, `main.py:Materials`, `../visual_chrome.py`, `../visual_materials.py` | Geometry; native editing stays in its existing control |
+| Floating surface elevation and trigger intent | `StonePopup.qml`, `../visual_chrome.py` | Content, modality, dismissal policy and trigger |
 | Anchor/viewport tracking | `AnchoredPopup.qml` | Trigger and enclosing scrolling viewport |
 | Persistent inline choices | `InlineSelector.qml`, `ManualMp4Settings.qml` | Options/current value; reuse Custom controls |
 | Symbols | `SceneIcon.qml` and approved high-resolution assets | Semantic name/tone and logical bounds |
@@ -230,12 +230,10 @@ known content and geometry, defers brief transient messages, and shows truthful
 feedback when a wait persists. Verified empty/error results replace stale content.
 
 Run Deck represents all retained runs with their actual state, including stopped,
-canceled, failed and skipped. Issues & Recovery represents unresolved problems;
-normal downloads do not become issues. A retry stays visible there with its live
-state until success. Removed queued items are removed, not mislabeled as stopped.
-The header includes a quiet, accessible X link to `https://x.com/VODForge`, beside
-Settings. It opens in the system browser without media or installation context;
-include its utility width in the shared responsive budget.
+canceled, failed, skipped, partial and paused. A Paused run (interrupted when
+VODForge closed) offers Resume; other unfinished runs offer Retry. Issues & Recovery
+represents unresolved problems; normal downloads do not become issues. A retry
+stays visible there with its live state until success. Removed queued items are removed, not mislabeled as stopped.
 
 My Files uses recognizable filled vector folder icons in its list. The current
 folder inspector shows a larger unframed folder emblem with its name below; actual
@@ -292,7 +290,9 @@ Use the actual approved VODForge mockups for whole-scene comparison:
 | Player | [Player reference](references/player.png) |
 
 [Reference identities](references/approved-mockups.json) retain supplied
-filenames and SHA-256 hashes. These are generated design references, not evidence
+filenames and SHA-256 hashes for these scene mockups. The brand source,
+`references/approved-vf-matte-logo.png`, is covered separately in
+[branding.md](branding.md). These are generated design references, not evidence
 that the running application has passed a usability review. Earlier application
 screenshots are regression observations, not replacement design specifications.
 
@@ -302,8 +302,9 @@ Restraint means coherent hierarchy and contextual actions within this design;
 it is not permission to remove approved structure based on a generic preference.
 
 Later explicit user instructions supersede conflicting reference details:
-the earlier Library texture omission is superseded by the September 19 matte
-material contract below; use one item overflow with vertical dots,
+the earlier Library texture omission is superseded by the matte material contract
+in [Material, icons, artwork and text](#material-icons-artwork-and-text); use one
+item overflow with vertical dots,
 retaining inline edit/copy; show full bounded descriptions and editable tags;
 restore complete truthful source/output facts including separate audio/video
 bitrates. Player uses a larger 16:9 Fit viewport preserving the entire source,

@@ -35,6 +35,7 @@ what replaced it.
 | Diagnostic telemetry plan (implemented Oct 2026) | [diagnostic-telemetry-plan.md](history/diagnostic-telemetry-plan.md) |
 | Output ownership and deferred Help commands | [export-variants-help-menu.md](history/export-variants-help-menu.md) |
 | Tk-era What's New previews | [whats-new-native-previews.md](history/whats-new-native-previews.md) |
+| Remote preview journey for Support and reviews (0.2.0, removed with Tk) | [support-preview-journey.md](history/support-preview-journey.md) |
 
 Engineering investigations and checkpoints are in
 [engineering-quality/history/](../engineering-quality/history/).

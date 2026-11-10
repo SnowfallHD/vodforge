@@ -119,7 +119,8 @@ waive it by rerunning until it passes.
    (`python -m quality_harness.update_fixture` with `VODFORGE_QA_UPDATE_FEED` on the
    Macs; `engineering-quality/runners/windows-update-qa.ps1` on Windows). Nothing is
    published for this test. Confirm the update installs and relaunches, then run
-   **Repair**, and confirm saved history and media are untouched. On the Macs this
+   **Repair**, and confirm saved history and media are untouched. The Windows script
+   covers only the update; run Repair by hand afterwards. On the Macs this
    is the test that a 0.2.5 install accepts the universal app under its legacy name.
 7. **Known defects.** `engineering-quality/acceptance/user-reported-defects.json` has
    no open item that this release claims to fix without packaged evidence.

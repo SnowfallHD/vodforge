@@ -1,6 +1,15 @@
 # Telemetry readiness and practical limits
 
-## Current status — 2026-09-29
+## Current status — 0.2.6
+
+0.2.6 ships the Qt app with optional usage analytics: one **Share usage
+analytics** On/Off control in Settings governs first-party and PostHog delivery.
+Where the server's regional policy is opt-in or unresolved, analytics stay off
+until the user agrees. Failure reports carry the closed reasons listed in
+[telemetry features](telemetry-features.md). PostHog delivery follows the
+[desktop analytics contract](posthog-desktop-contract.md).
+
+## Status as of 2026-09-29 (historical)
 
 The Qt wiring gaps found in the latest audit are repaired: file-management usage,
 metadata-preview outcomes with structured failures, and player resume/progress
@@ -12,10 +21,10 @@ receipts are correlated. Failures retain bounded machine facts before friendly
 copy replaces local error text. These are separate from exact packaged client
 qualification. See the maintained coverage inventory for receipts and their tiers.
 
-The installed Qt development preview is compiled with telemetry disabled. Source
-instrumentation cannot make that artifact collect. Do not call the full new Qt
-release qualified until a telemetry-enabled candidate has completed its Mac and
-Windows consent, feature, failure, restart and deployed-ingestion journeys.
+At that time the installed Qt development preview was compiled with telemetry
+disabled, and the new Qt release was not yet qualified. A telemetry-enabled
+candidate still had to complete its Mac and Windows consent, feature, failure,
+restart and deployed-ingestion journeys.
 Existing successful historical release receipts apply to their named artifacts.
 
 ## What remains, and what would solve it
@@ -32,7 +41,7 @@ Existing successful historical release receipts apply to their named artifacts.
 | Installation identity is not a cross-device person identity | Deliberate measurement scope | Current counts describe consenting installations/sessions. Account-based user analytics would require an explicit identity/privacy decision. |
 | Exact source/path context is optional; credentials and media stay excluded | Explicit support evidence | Separate unchecked choices can attach a canonical YouTube link and output folder (with diagnostics). Visibility is unknown; review shows selected content. Automatic events retain structural path facts and cookie failure categories, never credentials or path/source contents. |
 | A visual defect emits no error; a source changes; a device-specific codec/GPU race differs locally | Reproduction limit | Structured context narrows candidates. Screenshots, native reproduction or optional deeper support logs may still be required. More logs cannot guarantee determinism. |
-| Crash before persistence, full/offline outbox, no later launch, or consent off | Measurement limit | Durable retries and bounded drop observations help, but absence is unknown. The current outbox is capped at 256 events, 512 KiB and 30 days; operation observations are capped at 64. No client telemetry is a complete census. |
+| Crash before persistence, full/offline outbox, no later launch, or consent off | Measurement limit | Durable retries and bounded drop observations help, but absence is unknown. The current outbox is capped at 256 events, 512 KiB and 30 days. Each operation records at most 64 ordered steps, and at most 256 operations are tracked at once (the oldest is dropped first). No client telemetry is a complete census. |
 
 These categories overlap, so a percentage of “solvable by more data” would be
 misleading. The concrete wiring/context gaps above are solved in source. Missing GPU facts, provider warnings absent from exceptions and faults before persistence remain unknown; optional support evidence can narrow them. Package/native
@@ -41,9 +50,11 @@ and guaranteed private-source/device reproduction are explicitly excluded from
 this pass. Consent, private-content boundaries and unknown observations remain
 intentional limits, rather than missing instrumentation.
 
-## PostHog comparison
+## PostHog
 
-PostHog provides product analysis, error grouping and investigation tooling. Its
+PostHog is integrated alongside the first-party pipeline; see the
+[desktop analytics contract](posthog-desktop-contract.md). It provides product
+analysis, error grouping and investigation tooling. Its
 Python error SDK can capture exceptions; its documented replay integrations
 primarily target web and mobile frameworks. The documentation reviewed here does
 not establish native Qt autocapture/replay support. VODForge would still need
@@ -77,7 +88,7 @@ Attempts started without permission, or revoked before settlement, cannot adopt 
 later grant. Automatic private sources, raw messages, paths and credentials remain
 excluded.
 
-The maintained [D1 reports](../../vodforge-site/docs/telemetry-update-analysis.sql)
-are exercised against actual producer fixtures and exact stored rows. They
+The maintained D1 reports (`docs/telemetry-update-analysis.sql` in the separate
+website repository) are exercised against actual producer fixtures and exact stored rows. They
 classify missing later observations as unknown; they cannot infer that a user
 chose not to update from silence. Old clients cannot emit this new funnel.

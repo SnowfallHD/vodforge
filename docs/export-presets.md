@@ -72,13 +72,14 @@ The baseline 5 Mbps CTV candidate scored 87.65; the final 6 Mbps target scored 9
 
 ```sh
 PYTHONPATH=. .venv/bin/python fine-tuning/benchmark_export_presets.py --production \
-  --ffmpeg dist/VODForge.app/Contents/Frameworks/ffmpeg \
-  --ffprobe dist/VODForge.app/Contents/Frameworks/ffprobe \
-  --ocean build/aac-failure-repro/full-source.mp4 \
+  --ffmpeg <path to a built VODForge.app>/Contents/Frameworks/ffmpeg \
+  --ffprobe <path to a built VODForge.app>/Contents/Frameworks/ffprobe \
+  --ocean <your own source clip>.mp4 \
   --output build/task-presets/recheck
 ```
 
-Omit `--production` to run the frozen pre-tuning candidates. `--fixtures` can reuse the generated lossless fixture directory. Receipts include actual commands, size, encode time, VMAF, measured bitrate and keyframe gaps. The initial misaligned VMAF attempt was superseded by the corrected frame-aligned calibration; no decisions use those scores.
+The original ocean source clip is not kept in the repository; pass your own
+clip to `--ocean`. Omit `--production` to run the frozen pre-tuning candidates. `--fixtures` can reuse the generated lossless fixture directory. Receipts include actual commands, size, encode time, VMAF, measured bitrate and keyframe gaps. The initial misaligned VMAF attempt was superseded by the corrected frame-aligned calibration; no decisions use those scores.
 
 ## Compatibility evidence and limits
 
@@ -93,13 +94,15 @@ CTV is an **upload master for the user's network to transcode**. It is not an HL
 
 Old durable `Auto CBR` / `Manual Override` enum values are deliberately retained beneath the CTV / Custom labels to preserve retry records and identities. Removed Strict Compliance settings migrate to Custom with the former 10 Mbps / 320 kbps AAC / 48 kHz stereo / medium CBR settings. Existing queued legacy Strict jobs remain interpretable. No history rewrite, network mutation or automatic telemetry change occurs.
 
-Existing owners remain authoritative: export_planning selects policy and sources; ExportPlan carries the contract; the existing FFmpeg builder executes it; output_validation verifies it; settings/run_state/run_identity retain preferences, retries and equivalence. app.py adds composition and command parameters in its existing encoding boundary, not a new subsystem. FocusSettingsDialog owns the new controls and removes its variable trace on destruction. Shared failure presentation adds the HDR-specific recommendation; Technical still receives the original bounded cause. No new durable source of truth or architectural family is introduced.
+Existing owners remain authoritative: export_planning selects policy and sources; ExportPlan carries the contract; `build_vod_ffmpeg_command` in `download_service.py` builds the FFmpeg command from it; output_validation verifies it; settings/run_state/run_identity retain preferences, retries and equivalence. The Custom controls live in `qt_quick/ManualMp4Settings.qml`. Shared failure presentation adds the HDR-specific recommendation; Technical still receives the original bounded cause. No new durable source of truth or architectural family is introduced.
 
-Required native tests cover all six selections, Custom control enablement and dialog close/reopen. Real AAC tests span all six presets with float-PCM silence, quiet tone and ordinary tone, checking both export contracts and decoded signal energy. The new offline-provider worker test exercises real transcode, validation, atomic commit and successful reuse for all six plus Custom quality. Planner tests cover every preset across 360p through 4K, legacy preferences, CRF versus CBR validation, source bitrate independence, HDR rejection, and Custom restart/duplicate identity. Tests are included in the existing repository and harness discovery paths.
+Qt tests cover the six Output mode choices and their labels (`test_qt_output_mode_menu_uses_tk_shared_display_contract` in `tests/test_qt_scene_port.py`), Custom controls (`tests/test_qt_composer_custom_options.py`) and legacy preference migration (`tests/test_qt_legacy_preset_preferences.py`); `tests/test_export_presets.py` covers planner and encoder contracts. Real AAC tests span all six presets with float-PCM silence, quiet tone and ordinary tone, checking both export contracts and decoded signal energy. The new offline-provider worker test exercises real transcode, validation, atomic commit and successful reuse for all six plus Custom quality. Planner tests cover every preset across 360p through 4K, legacy preferences, CRF versus CBR validation, source bitrate independence, HDR rejection, and Custom restart/duplicate identity. Tests are included in the existing repository and harness discovery paths.
 
-Evidence: `build/task-presets/`, `build/task-presets-*.log`. Source/native/media evidence is distinct from a new installed or publicly released package.
+The original evidence (`build/task-presets/`, `build/task-presets-*.log`) was local build output and is not kept in the repository. Source/native/media evidence is distinct from a new installed or publicly released package.
 
-## Final verification — 2026-09-10
+## Final verification — 2026-09-10 (historical checkpoint)
+
+These numbers were recorded on 2026-09-10, before the Tk interface was removed. They are not current suite counts, and the evidence files they name are not kept.
 
 - Full repository and harness suite: **1,131 passed, 100 skipped** in the permitted environment. The first sandboxed pass had one local-loopback PermissionError; the full permitted run resolved it. Skips are not claimed as execution proof.
 - Required native gate: **92 passed**, no skips, `build/task-presets-native-final.xml`.

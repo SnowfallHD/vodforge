@@ -24,7 +24,7 @@ a second download pipeline, history writer or settings store.
 | State | Owner |
 | --- | --- |
 | Download execution, queue, cancel/skip | `download_service.py`, adapted for Qt by `qt_quick/runtime.py` (`DownloadRuntime`) |
-| Interrupted-run recovery journal | `run_state.py`; Qt run controls in `qt_quick/run_controls.py` |
+| Interrupted-run recovery journal, including Paused runs and their Resume | `run_state.py`; Qt run controls in `qt_quick/run_controls.py` |
 | Completed-output history (the only writer) | `history.py`, with recovery and deferred publication in `library_history.py` |
 | Library rows | `library_state.py` derives them from history, active/queued runs and annotations; `qt_quick/scene_projection.py` and `library_window_model.py` present them |
 | Notes, tags, categories | `library_annotations.py` |
@@ -33,8 +33,8 @@ a second download pipeline, history writer or settings store.
 | Playback | Qt Multimedia in `PlayerScene.qml`; progress in `playback_progress.py` |
 | Settings | `settings_store.py` (`settings.json`) |
 | Installation identity and onboarding | `cloud_funnel.py` (`installation.json`) |
-| Analytics permission | `analytics_consent.py`; telemetry delivery in `product_telemetry.py` and `telemetry_*.py` |
-| Updates and Repair | `updates.py`, `update_recovery.py`; Qt handoff in `qt_quick/update_session.py` |
+| Analytics permission, including the region check that decides whether consent is asked | `analytics_consent.py`; telemetry delivery in `product_telemetry.py` and `telemetry_*.py`; the optional consent-gated PostHog mirror in `posthog_analytics.py` |
+| Updates and Repair | `updates.py`, `platforms/windows/update_recovery.py`; Qt handoff in `qt_quick/update_session.py` |
 | Feedback and reviews | `support_payload.py`, `support_transport.py`; Qt session in `qt_quick/support.py` |
 | Theme and materials | `product_theme.py`, `visual_materials.py`, `visual_chrome.py` |
 
@@ -68,7 +68,8 @@ Rules that keep this working:
 
 yt-dlp and FFmpeg child processes are tracked and must be stopped and reaped before
 shutdown counts as clean (`process_lifecycle.py`). A hard crash is recovered on the
-next launch from the run journal.
+next launch from the run journal. A run or URL batch interrupted by closing VODForge
+is recorded as Paused (`run_state.py`); Resume continues the remaining URLs.
 
 ## Worker-to-UI events
 
@@ -99,6 +100,9 @@ Importing one platform's code must not load the other's native libraries.
   publisher identity check out (Authenticode on Windows; Developer ID, notarization
   and Gatekeeper on macOS). macOS re-verifies before swapping. These checks stay in
   `updates.py` and the release tooling; see [Releasing VODForge](release.md).
+- **HTTPS trust:** `tls.py` builds connections on the bundled certifi roots plus
+  whatever the platform provides. On Windows, yt-dlp also trusts the Windows
+  certificate store.
 - **Telemetry:** needs both a production build policy (`telemetry_policy.py`) and
   the user's permission. Source and private builds never send. No URLs, titles,
   file names or paths are collected; see [telemetry features](telemetry-features.md).

@@ -9,17 +9,18 @@ recorded against the earlier Tk interface is kept in [history](history/).
 
 | Place | What belongs here | Primary actions |
 | --- | --- | --- |
-| Forge | Composer, current/selected run, full friendly activity or technical log, output facts, Run Deck | Download/Queue, Options, Create video, run actions |
+| Forge | Composer, current/selected run, full friendly activity or technical log, output facts, Run Deck | Download/Queue (Resume for a paused run), Options, Create video, run actions |
 | Library | Saved video/audio, channels, playlists, collections, search and item details | Open item, organize, play, inspect files |
 | Watch | Continue watching and saved-media discovery | Resume/Play, See All for a nonempty section |
 | Activity | Recorded technical activity | Inspect, copy where offered |
 | My Files | Physical folders and files at their real location | Browse, Back, Open this folder, select file |
 | All media | Saved media independent of directory hierarchy | Select item, open details, play |
-| Issues & Recovery | Interrupted attempts without an export and missing saved media | Locate, recover, retry with saved configuration |
+| Issues & Recovery | Interrupted attempts without an export (including Paused and Partial runs) and missing saved media | Locate, recover, Resume, Retry |
 
 Top navigation returns to its main screen. Back follows the recorded route that
 opened details or the player. My Files Back returns through folder navigation.
 Long breadcrumbs remain one line, with hidden ancestors in the shared popup.
+On macOS the header is built from native AppKit toolbar items.
 Opening a folder replaces its listing; neighboring pane widths remain stable.
 Catalogs scroll vertically without unused Previous/Next controls.
 
@@ -39,6 +40,10 @@ metadata uses a file emblem inside the recessed preview well. Open this folder
 lives in the right inspector. A missing-media route opens the specific issue in
 Issues & Recovery rather than duplicating recovery controls in My Files.
 
+Retry offers a choice: **Same settings** retries with the run's saved
+configuration; **Change settings** opens the run in Issues & Recovery with its
+retry settings. A Paused run, interrupted when VODForge closed, offers **Resume**,
+which continues the remaining URLs.
 In recovery, group identity/status, source, retry settings and actions. Reuse Forge's
 output choices and Custom component. Expanded choices stay directly under their
 trigger. Retry remains in recovery with live preparing/downloading/conversion
@@ -67,16 +72,17 @@ fixed public account URL, without media or installation context.
 
 Seven unmodified native app captures live in `assets/readme/current-design/`:
 Forge, Library, Watch, player, Library details, My Files and Issues & Recovery.
-The JSON manifest records source identity and hashes. Nature artwork is fictional
+They were captured in late September 2026, before the native macOS toolbar
+header, so they don't show the current header. The JSON manifest records source
+identity and hashes. Nature artwork is fictional
 sample media; interface pixels are from the actual packaged Qt application.
-ImageGen references guide website composition and are not public product captures.
+Generated reference images guide website composition and are not public product captures.
 
 `scripts/seed_public_design_profile.py` creates an isolated sample HOME using the
 existing history/metadata formats. It refuses the normal HOME and existing targets.
 It creates local playable nature fixtures and a fictional stopped run; it never
 copies personal Library data. Launch the qualified Qt candidate with that HOME and
-telemetry disabled, navigate the real app, and capture its window. Keep development
-preview captions visible on the website and in the press kit until this design ships.
+telemetry disabled, navigate the real app, and capture its window.
 
 ## Qualification
 

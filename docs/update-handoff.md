@@ -35,8 +35,11 @@ process stays alive for three seconds. It does not forcibly terminate media work
 
 ## Tests and release gate
 
-`tests/test_update_ui.py` verifies status transitions, safe-close scheduling,
-blocked media work and launch failure. `tests/test_updates.py` covers readiness,
+`engineering-quality/tests/test_qt_update_session.py` verifies the Qt update
+session: the handoff waits for idle media work, a failed helper is not treated as
+success and keeps recovery available, and Repair refuses a downgrade.
+`tests/test_qt_update_check_guidance.py` covers the update popup states, retry
+after a failed check and the Settings check action. `tests/test_updates.py` covers readiness,
 fixed hidden argv, path quoting, signature verification and failure to start.
 
 `engineering-quality/tests/test_update_handoff_runtime.py` executes the generated
@@ -62,9 +65,9 @@ evidence is uploaded even when the job fails. Windows CI also runs fault tests.
 Missing Windows execution must remain unproven, never be reported as passed
 because the tests were skipped on a Mac.
 
-## Deployment boundary
+## Deployment boundary (0.2.1 history)
 
-These changes ship in 0.2.1 after signed-artifact and running-upgrade gates.
+This section describes the 0.2.1 release. These changes shipped in 0.2.1 after signed-artifact and running-upgrade gates.
 They do not retrofit an installer already downloaded by users. Genesis was diagnosed separately: earlier QA registration directed its successful
 update into the other installed copy. The new helper was then observed updating
 the actual running directory, correcting registration and reopening the app
@@ -103,19 +106,19 @@ details. Manual fallback names the correct installation folder and tells the
 user to open the Windows setup file and click Install without uninstalling first.
 
 Recovery regressions execute successful retry, offline repair, data-change
-refusal, original-backup preservation, and text/byte checksum responses. The
-required native gate includes hidden/revealed cause, visible actions, callback,
-and in-app centering. A Windows Forms check verifies owned chrome, bounded
-buttons, and app-relative placement on Windows.
+refusal, original-backup preservation, and text/byte checksum responses.
+`test_windows_recovery_surface_owns_frame_and_centers_on_app` in
+`engineering-quality/tests/test_update_handoff_runtime.py` runs a Windows Forms
+check of owned chrome, bounded buttons, and placement centered on the app.
 
 Genesis visible demonstrations use real recovery code with explicit OS/download
-doubles and disposable files. The user observed successful test repairs in
-cases 1–4; their layout feedback drove the owned chrome and app-relative placement.
+doubles and disposable files. Test repairs succeeded in cases 1–4; layout
+feedback from those runs drove the owned chrome and app-relative placement.
 A separate real download check fetched signed public 0.2.0, SHA-256
 `bf7117a864c34cf2ed45d603572c390c9d5919b217278cab2629442f40b09ded`, without
 executing it. This is not a newly packaged full repair-installation receipt.
 
-## Successor automatic updates — 2026-10-16 (unpublished)
+## Automatic updates (shipped in 0.2.6)
 
 The app has a single default-on **Update automatically** setting, and
 installation happens on normal application close. This
@@ -206,13 +209,14 @@ They are locking evidence, not a signed helper installation or native update UI
 transaction. Local helper-runtime tests execute Mac temporary-folder swaps with
 signing/launch tools doubled; they do not confer Apple or Windows package trust.
 
-Before public release, rebuild/freeze this exact runtime on each supported
-architecture, repeat affected signed native close-install/no-relaunch and next
-launch checks, exercise Off while staged and canceled-close with actual active
-work, and retain data/profile hashes. Windows additionally needs real signed
-installer acceptance in the maintained isolated installer fixture. Physical Intel
-GUI acceptance and the old Windows startup diagnostic gap stay separate. No prior
-44 artifact or headless portable smoke may be relabeled as these new guarantees.
+The release requirements set for this feature before 0.2.6 were: rebuild and
+freeze the exact runtime on each supported architecture, repeat the affected
+signed native close-install/no-relaunch and next-launch checks, exercise Off
+while staged and canceled-close with actual active work, and retain data/profile
+hashes. Windows additionally needed real signed installer acceptance in the
+maintained isolated installer fixture. Physical Intel GUI acceptance and the old
+Windows startup diagnostic gap were tracked separately. Earlier artifacts and
+headless portable smokes were not counted as evidence for these guarantees.
 
 The first actual Mac helper/lease fixture exposed an implementation mistake:
 `lockf -n` means existing-file-only and waits indefinitely by default; the utility
@@ -222,15 +226,14 @@ exclusion in both directions and the generated temporary-bundle no-relaunch swap
 No owned helper survived the original timeout. This source-level fixture doubles
 signature commands and is still distinct from a signed native update transaction.
 
-Final source qualification receipts are under
-`build/automatic-updates-20261016/`: `final-source-matrix.log` has 109 passed / 19
-platform skips, with additional retained 39-case explicit-manual owner coverage.
-`windows-semantic/transport-result.json` has 12 actual Windows helper control-flow
-passes with OS/installer/signature doubles, including close-installed/no PID and
-manual relaunch. The Windows helper function is byte-identical to that executed
-fixture (`windows-semantic/final-function-binding.json`). Actual Windows locking
-probes in both directions are adjacent to the root's Windows private qualification
-receipts. The corrected actual Mac helper/reopen/lock checks pass three cases.
+Final source qualification (receipts were local build output and are not kept in
+the repository): the source matrix had 109 passed / 19 platform skips, with
+additional 39-case explicit-manual owner coverage. Twelve actual Windows helper
+control-flow cases passed with OS/installer/signature doubles, including
+close-installed/no PID and manual relaunch, and the source Windows helper
+function was byte-identical to that executed fixture. Actual Windows locking
+probes passed in both directions. The corrected actual Mac helper/reopen/lock
+checks passed three cases.
 Scoped updater/settings/session mypy passes; Qt main still reports 81 existing
 Qt-stub/decorator errors, exactly matching the same-module HEAD shadow baseline
 with no added or removed errors. This is not a blanket typecheck pass.

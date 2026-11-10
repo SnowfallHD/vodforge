@@ -1,6 +1,6 @@
 # Desktop analytics contract, schema 2
 
-This is the desktop analytics contract on `main`; it first ships with the next public release (0.2.6). Released 0.2.5 clients send the older events described in [telemetry features](telemetry-features.md).
+This is the desktop analytics contract. Shipped in 0.2.6; 0.2.5 and earlier send the older events described in [telemetry features](telemetry-features.md).
 
 ## Identity and traffic classification
 
@@ -30,7 +30,7 @@ Actual app is PySide6 Qt Quick/QML, with no browser DOM. Live documentation also
 
 The existing durable first-party queue remains authoritative. Independent provider delivery reuses that outbox with stable top-level UUIDs and persisted exponential retry (30seconds up to1hour), capped by the existing30-day event lifetime and256-event capacity. Custom acknowledgements are retained and never resent merely because the provider failed; provider backlog does not block later custom delivery. Capacity may retire the oldest already-custom-acknowledged provider item with an explicit local diagnostic so a provider outage cannot prevent custom admission. Newly acknowledged first launches also retain a provider-only durable mirror; they never repost the canonical first-launch acknowledgement. Withdrawal/changed provider epochs discard pending old-provider events. Older already-settled mirrors are not backfilled. Canonical acknowledgement does not mean provider ingestion; actual labeled packaged-app readback is required. Network/blocked-policy/withdrawal/offline sessions can be absent. No full raw logging or replay SDK is enabled. Survey/feature-flag/experiment rollouts require a concrete product purpose and do not justify arbitrary remote settings. Separate dashboard reviewer owns saved analytics; this lane writes no dashboards.
 
-First-party additive validator must be deployed before the candidate sends lifecycle feature actions. Website contract: `/Users/coop/Dev/vodforge-site/docs/posthog-comprehensive-contract.md`. Regional provider defaults use only a fresh resolved=true response with both mode=default-on and posthog_mode=default-on from the parent-reviewed US/CH/AU policy. Policy metadata version2 refreshes old generic cache without clearing choices. Missing/unknown provider policy stays opt-in; all explicit refusals override defaults. No desktop replay default is relevant because no native replay is supported.
+First-party additive validator must be deployed before the candidate sends lifecycle feature actions. Website contract: `docs/posthog-comprehensive-contract.md` in the separate website repository. Regional provider defaults use only a fresh resolved=true response with both mode=default-on and posthog_mode=default-on from the parent-reviewed US/CH/AU policy. Policy metadata version2 refreshes old generic cache without clearing choices. Missing/unknown provider policy stays opt-in; all explicit refusals override defaults. No desktop replay default is relevant because no native replay is supported.
 
 ## Bounded replay investigation and actual production proof
 
@@ -38,7 +38,7 @@ The ignored synthetic investigation at `build/posthog-comprehensive-20261015/rep
 
 The signed/notarized dc4c610 ARM candidate ran offscreen with a fictional explicitly consented profile. Exact QA label `62f703a9-a27f-42b7-ba9e-be2f7dbe929e` produced15 canonical D1 events matching15 provider UUIDs exactly once, plus three provider-only rows (first-run mirror, screen, exception), all18 in one session. Provider exception has an issue ID and empty stack frames. The denied fixture refused delivery and an independent exact-label provider query returned zero rows. Receipts are under `build/posthog-comprehensive-20261015/dc4c610/arm64/`. These prove bounded production transport for this real frozen app, not adoption, media activation, physical native consent or all event vocabulary.
 
-Historical Qt source f37eb71 (September23) retained a non-opening attribution adapter and omitted the Tk automatic welcome/ticket handoff. September3 source74ec786 automatically opened a claim URL; September7 source3cd7aa6 moved automatic opening into AnalyticsStartup's ticket welcome while delaying ticket authorization for app consent. Public0.2.5 source850e19e still contains that Tk code, but the maintained Qt entry does not use it. These are inspected source facts, not a verified historical production automatic-completion journey. The later manual914 fixture proved actual canonical browser/app confirmation, but introduced a manual prerequisite the user did not want.
+Historical (widget-era, pre-0.2.6): Qt source f37eb71 (September23) retained a non-opening attribution adapter and omitted the Tk automatic welcome/ticket handoff. September3 source74ec786 automatically opened a claim URL; September7 source3cd7aa6 moved automatic opening into AnalyticsStartup's ticket welcome while delaying ticket authorization for app consent. Public0.2.5 source850e19e still contains that Tk code, but the maintained Qt entry does not use it. These are inspected source facts, not a verified historical production automatic-completion journey. The later manual914 fixture proved actual canonical browser/app confirmation, but introduced an unwanted manual prerequisite.
 
 ## Later local attribution adapter successor
 
@@ -51,7 +51,7 @@ Actual914 manual-journey acceptance and its denied cold-label failure remain imm
 
 ### Ordinary QA transport default — October15 correction
 
-The earlier three explicitly authorized comprehensive/live fixtures exercised production D1 and PostHog; provider labels did not route or classify first-party events. This was an intentional endpoint choice for the requested deployed dual-pipeline proof, not a preview-key bypass. Missing preregistered D1 exclusions for the first two was a classification error; external health mappings were also insufficient for the central CRM owner. Site owner now owns exact central exclusions; Cooper personally deleted three QA installation rows, so this lane must not repeat deletion or launch more production QA.
+The earlier three explicitly authorized comprehensive/live fixtures exercised production D1 and PostHog; provider labels did not route or classify first-party events. This was an intentional endpoint choice for the requested deployed dual-pipeline proof, not a preview-key bypass. Missing preregistered D1 exclusions for the first two was a classification error; external health mappings were also insufficient for the central CRM owner. Site owner now owns exact central exclusions; three QA installation rows were deleted by hand, so this deletion must not be repeated and no further production QA should be launched.
 
 Local successor policy treats existing QUALITY_E2E, QA_PREVIEW_TELEMETRY, QA_PROFILE and POSTHOG_QA_RUN/HOME markers as QA. They cannot fall through to production even in a production-marked frozen app. Existing explicit preview routing still requires its bounded key/profile and mode flags; missing prerequisites mean OFF. Ordinary marked QA/preview also disables production PostHog ingestion; labels alone are not transport approval. No new production override or provider project/settings change is introduced. Production release behavior without QA markers is unchanged. Disabled transport still presents existing local link facts without creating a fresh identity or sending a request. Prior production receipts remain historical, not instructions to repeat their environment.
 
@@ -95,13 +95,12 @@ POST /api/telemetry/baseline contains exactly schema_version, platform,
 app_version, metric, count(1..100). No credentials, installation/browser/session
 IDs, individual event timestamp, source, media data, failure content, operation
 ID or extra dimensions. Individual client reports are not mirrored to PostHog.
-The server owner is separately implementing scheduled closed UTC-day aggregate
-exports to PostHog: vf_baseline_daily, fixed distinct_id vf_baseline_aggregate
+The server runs scheduled closed UTC-day aggregate exports to PostHog: vf_baseline_daily, fixed distinct_id vf_baseline_aggregate
 (a dataset label, never a user), UUIDv5 per day/dimension cell, count for SUM,
 and closed surface/metric/route/platform/app_version/status_class/duration_bucket.
 No country, source, individual IDs/IP/client timing/raw rows; profiles/GeoIP off,
-no aliases/replay. Preview never exports. That exporter remains pending its own
-deployment receipt; client transport stays first-party-only. D1 keeps30UTCdays;
+no aliases/replay. Preview never exports. The exporter is deployed (see the
+activation receipt below); client transport stays first-party-only. D1 keeps30UTCdays;
 actual provider event retention is unverified, not a30day deletion guarantee. Counts are bounded in
 memory, sent once, never persisted or automatically retried after an ambiguous
 result; loss/repeated process launches/producer callbacks prevent unique-user,
@@ -139,8 +138,8 @@ Bounded8159164 Mac acceptance subsequently passed two corrected native launches:
 one control, both choices saved together, cold Off/settings/UUID persistence and
 normal exits. Independent preview counters observed app_started0→1→2; a separate
 five-POST HTTP contract probe then produced3/1/1/1/1 totals. Those extra requests
-are not native download/conversion coverage. Explicit user approval also cleared
-the previously rejected fictional-ID handoff. Scoped preview readback at
+are not native download/conversion coverage. The previously rejected fictional-ID handoff was
+later approved. Scoped preview readback at
 2026-10-16T04:20:04Z returned12 unique optional events(1app_opened,11feature_used),
 one client and one first-launch acknowledgment. No event occurred or was received
 at/after the durable Off cutoff03:28:27.546067Z or cold birth03:29:18.262601Z
