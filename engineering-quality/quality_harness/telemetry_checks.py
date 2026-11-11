@@ -600,7 +600,20 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                     for feature, actions in FEATURE_ACTIONS.items()
                     for action in sorted(actions)
                 )
+                # Lifecycle actions that require closed context (since Oct 15).
+                lifecycle_context = {
+                    "screen_viewed": {"view": "forge"},
+                    "unhandled_exception": {
+                        "exception_kind": "runtime_error",
+                        "exception_origin": "main_thread",
+                    },
+                }
                 for index, (name, fields) in enumerate(dimensions):
+                    if (
+                        fields.get("feature") == "application_lifecycle"
+                        and fields.get("action") in lifecycle_context
+                    ):
+                        fields["dimensions"] = dict(lifecycle_context[fields["action"]])
                     if str(fields.get("feature", "")).endswith("_operation"):
                         fields["dimensions"] = {
                             **diagnostic_context(fields["feature"], fields["action"]),
@@ -698,13 +711,17 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                     "vodforge_user_note": "PRIVATE note",
                     "thumbnail": "https://example.invalid/PRIVATE.jpg",
                     "webpage_url": "https://www.youtube.com/watch?v=abcdefghijk",
+                    "vodforge_archive_id": "a" * 64,
                 }
+                fixture_owner = "archive:" + "a" * 64
                 copy_app = SimpleNamespace(
-                    _library_detail_owner="fixture",
+                    _library_detail_owner=fixture_owner,
                     _folder_inspector_owner="",
                     _playback_record=None,
+                    # Copy actions read the projected Library (since Oct).
+                    _projected_library=lambda: [row],
                     _saved_item_for_owner=lambda requested: (
-                        row if requested == "fixture" else None
+                        row if requested == fixture_owner else None
                     ),
                     statusChanged=SimpleNamespace(emit=lambda: None),
                     _analytics=SimpleNamespace(telemetry=usage),
@@ -724,7 +741,12 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                         "source_description_copied",
                         "PRIVATE description",
                     ),
-                    ("tags", "personal_tags_copied", "PRIVATE personal"),
+                    # Tags copy source and personal tags together (since Oct 12).
+                    (
+                        "tags",
+                        "personal_tags_copied",
+                        "PRIVATE source, PRIVATE personal",
+                    ),
                     ("note", "personal_note_copied", "PRIVATE note"),
                     (
                         "thumbnail_url",
@@ -742,9 +764,9 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                         QGuiApplication, "clipboard", return_value=clipboard
                     ):
                         copied_successfully = (
-                            Bridge.copySavedYoutubeUrl(copy_app, "fixture")
+                            Bridge.copySavedYoutubeUrl(copy_app, fixture_owner)
                             if method == "youtube_url"
-                            else Bridge.copyLibraryText(copy_app, "fixture", method)
+                            else Bridge.copyLibraryText(copy_app, fixture_owner, method)
                         )
                     assert copied_successfully and copied == [expected]
                     assert usage.shutdown(10), "Copy producer did not drain"
@@ -862,15 +884,16 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                 assert all(
                     "http_status" in json.loads(e["failure_detail"]) for e in stored
                 )
-                # HTTP 500 is deliberately not guessed into a narrower reason;
-                # its real status/type/stage must survive even with 'unknown'.
+                # HTTP 500 is not guessed into a narrower reason: a failure seen
+                # by the extractor is reported as provider_extraction (since
+                # Sep 27), and its real status/type/stage must survive.
                 assert sorted(
                     (
                         e["failure_reason"],
                         json.loads(e["failure_detail"])["http_status"],
                     )
                     for e in stored
-                ) == [("source_unavailable", 404), ("unknown", 500)]
+                ) == [("provider_extraction", 500), ("source_unavailable", 404)]
                 assert all(
                     json.loads(e["failure_detail"])["error_type"] == "HTTPError"
                     and json.loads(e["failure_detail"])["stage"] == "analysis"

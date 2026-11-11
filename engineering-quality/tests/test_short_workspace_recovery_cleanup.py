@@ -222,7 +222,9 @@ def setup_orphan(monkeypatch, tmp_path):
     stage.mkdir()
     partial = stage / "part"
     partial.write_bytes(b"partial")
-    store = SimpleNamespace(child_started=lambda *_args: None, load=dict)
+    # The fixture records the orphan's creation time, as the app does.
+    monkeypatch.setattr(process_lifecycle, "process_birth_time", lambda _pid: 1.0)
+    store = SimpleNamespace(child_started=lambda *_args, **_kwargs: None, load=dict)
     return store, stage, partial, process_lifecycle, run_state
 
 

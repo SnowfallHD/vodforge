@@ -275,7 +275,9 @@ def qt_coverage_case(
                             side_effect=TimeoutError("PRIVATE provider"),
                         ):
                             session._check_worker()
-                        assert session.poll() and session.recovery
+                        # A failed check is not a repair case (since Oct 13).
+                        assert session.poll() and session.check_failed
+                        assert not session.recovery
                         outcome = "failed"
                     else:
                         session.events.put(("checked", release))

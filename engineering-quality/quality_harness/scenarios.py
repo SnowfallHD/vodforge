@@ -959,7 +959,11 @@ def _recover_with_orphan_child(
     store: Any, child_command: list[str], stage: Path, partial: Path
 ) -> tuple[list[Any], str | None, bool, list[dict[str, Any]]]:
     """Keep the original orphan contract; unreadable identity remains blocked."""
-    from yt_downloader.process_lifecycle import process_command, terminate_pid
+    from yt_downloader.process_lifecycle import (
+        process_birth_time,
+        process_command,
+        terminate_pid,
+    )
     from yt_downloader.run_state import recover_interrupted_run
 
     clock = time.monotonic()
@@ -994,7 +998,9 @@ def _recover_with_orphan_child(
     recovery_reaped_child = False
     fixture_reaped_child = False
     try:
-        store.child_started(pid, child_command)
+        # Record the creation time as the app does; recovery never signals a
+        # child without one (since 0.2.6).
+        store.child_started(pid, child_command, birth_time=process_birth_time(pid))
         trace.append(
             {
                 "phase": "active_before_restart_recovery",
