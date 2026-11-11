@@ -219,10 +219,60 @@ class UpdateJourney(rj.Journey):
             raise rj.JourneyError(f"Quit exit code {code}")
         return code
 
+    def _windows_elements(self) -> list[Any]:
+        """Every element of every window this process owns.
+
+        On Windows the update window is its own top-level window, so the main
+        window's descendants don't include it.
+        """
+        from pywinauto import Desktop
+
+        if self.driver.process is None:
+            return []
+        elements = []
+        try:
+            for window in Desktop(backend="uia").windows(
+                process=self.driver.process.pid
+            ):
+                elements.append(window)
+                elements.extend(window.descendants())
+        except Exception:  # noqa: BLE001 - windows come and go while starting
+            return []
+        return elements
+
+    def offer_control(self, object_name: str, labels: tuple[str, ...]):
+        if sys.platform != "win32":
+            return self.driver.find("AXButton", labels)
+        for element in self._windows_elements():
+            try:
+                automation_id = element.element_info.automation_id or ""
+                if (
+                    automation_id.rsplit(".", 1)[-1] == object_name
+                    or (
+                        element.element_info.control_type == "Button"
+                        and element.window_text() in labels
+                    )
+                ) and element.is_enabled():
+                    return element
+            except Exception:  # noqa: BLE001, S112 - element went away
+                continue
+        return None
+
+    def all_texts(self) -> list[str]:
+        if sys.platform != "win32":
+            return self.driver.texts()
+        texts = []
+        for element in self._windows_elements():
+            try:
+                texts.append(element.window_text())
+            except Exception:  # noqa: BLE001, S112 - element went away
+                continue
+        return texts
+
     def offer_visible(self) -> bool:
-        if self.driver.find("AXButton", OFFER_BUTTONS) is None:
+        if self.offer_control("updatePrimary", OFFER_BUTTONS) is None:
             return False
-        texts = self.driver.texts()
+        texts = self.all_texts()
         return any(heading in texts for heading in OFFER_HEADINGS)
 
     # Journey ---------------------------------------------------------------
@@ -304,13 +354,15 @@ class UpdateJourney(rj.Journey):
             try:
                 rj.wait_for(offer_shown, 90, "the update window")
             except rj.JourneyError as exc:
-                seen = [t for t in self.driver.texts() if t][:40]
+                seen = [t for t in self.all_texts() if t][-40:]
                 raise rj.JourneyError(f"{exc}; dismissed {dismissed}; shown {seen}")
             offer_seconds = round(time.monotonic() - started, 1)
             shot = self.output / "update-window.png"
             self.driver.screenshot(shot)
-            texts = [t for t in self.driver.texts() if t]
-            later = self.control("AXButton", ("Later",), 10, "Later")
+            texts = [t for t in self.all_texts() if t]
+            later = rj.wait_for(
+                lambda: self.offer_control("updateDismiss", ("Later",)), 10, "Later"
+            )
             self.driver.press(later)
             rj.wait_for(lambda: not self.offer_visible(), 10, "the window to close")
             time.sleep(20)  # Let the shown/later observations deliver.
@@ -324,7 +376,10 @@ class UpdateJourney(rj.Journey):
                 "window_seconds": window_seconds,
                 "offer_seconds_after_launch": offer_seconds,
                 "offer_seconds_after_window": round(offer_seconds - window_seconds, 1),
-                "texts": texts[:12],
+                "offer_texts": [t for t in texts if t in OFFER_HEADINGS + OFFER_BUTTONS]
+                + [t for t in texts if t.startswith(("It installs", "VODForge 0."))][
+                    :4
+                ],
                 "receipts_after_quit": self.receipts(),
                 "feed_requests": self.requests(feed),
             }
