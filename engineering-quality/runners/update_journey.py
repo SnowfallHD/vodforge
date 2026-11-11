@@ -60,8 +60,9 @@ class UpdateJourney(rj.Journey):
         candidate: Path,
         candidate_version: str,
         qa_key: str,
+        output: Path | None = None,
     ) -> None:
-        super().__init__(app, root / "journey", rj.DEFAULT_YOUTUBE_URL)
+        super().__init__(app, output or root / "journey", rj.DEFAULT_YOUTUBE_URL)
         self.root = root.resolve()
         self.home = self.root / "home"
         self.downloads = self.home / "Downloads"
@@ -342,12 +343,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--candidate", type=Path, required=True)
     parser.add_argument("--candidate-version", required=True)
     parser.add_argument("--qa-key-file", type=Path, required=True)
+    # The Windows journey script passes --output to every runner.
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
     key = args.qa_key_file.read_text("utf-8").strip()
     if re.fullmatch(r"[0-9a-f]{64}", key) is None:
         raise SystemExit("The QA key file does not hold a preview key")
     result = UpdateJourney(
-        args.root, args.app, args.candidate, args.candidate_version, key
+        args.root, args.app, args.candidate, args.candidate_version, key, args.output
     ).run()
     print(json.dumps({k: result[k] for k in ("passed", "installation_id")}))
     return 0 if result["passed"] else 1
