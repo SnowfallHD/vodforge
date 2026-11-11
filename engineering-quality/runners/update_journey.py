@@ -251,7 +251,15 @@ class UpdateJourney(rj.Journey):
                 600,
                 f"version {self.candidate_version} to be installed on quit",
             )
-            time.sleep(5)
+            # The update helper holds the update lock until it has written its
+            # receipt; opening the app before then is refused ("finishing an
+            # update"), as it is for a person who reopens straight away.
+            rj.wait_for(
+                lambda: any(r["status"] == "installed" for r in self.receipts()),
+                180,
+                "the update helper's installed receipt",
+            )
+            time.sleep(15)
             return {
                 "dismissed": dismissed,
                 "installed": bool(installed),
