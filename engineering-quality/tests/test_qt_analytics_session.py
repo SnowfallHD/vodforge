@@ -286,7 +286,7 @@ def test_qt_first_play_denied_attempt_is_not_replayed_after_consent_change() -> 
         _analytics=SimpleNamespace(telemetry=Telemetry()),
         _playback_snapshot=lambda: object(),
         _previews=SimpleNamespace(request=lambda _duration: False),
-        _watch_queue=SimpleNamespace(present=lambda _bridge, _status: None),
+        _watch_queue=SimpleNamespace(present=lambda _bridge, _status, **_detail: None),
     )
     Bridge.observePlayback(fake, 0.1, 4.0, "Playing")
     Bridge.observePlayback(fake, 0.2, 4.0, "Playing")

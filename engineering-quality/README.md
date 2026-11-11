@@ -45,6 +45,52 @@ Each entry below records a defect class that was found, why the existing checks
 missed it, and what now covers it, newest first. Entries describe the code at
 their date; some name modules that have since been removed.
 
+## Locked files, slow catch-up and the remaining unknowns — 2026-11-11
+
+Defects left open by the earlier passes:
+
+- **Antivirus held files past the retry.** Windows CI reported 120 to 180
+  busy-file retries per run, with the longest at about 1 s, the whole retry
+  budget. A save from any thread gave up after 1 s. A settings save that failed
+  even once turned automatic updates off for the session.
+- **Catch-up was slow.** Replaying a full outbox took about 15 s on a fast
+  Windows PC. Each event triggered about four consent checks, each reading
+  three files, plus a rewrite of the whole outbox. It exceeded 30 s once on CI.
+- **Causes were missing.** Watch queue, Library import, relink and
+  startup-history failures sent no cause, and an import with a failed file
+  sent no detail.
+- **Outcome lost.** A download still running after the 10 s wait at quit never
+  recorded its outcome.
+
+Why they were missed: retry tests used short locks on one thread. Catch-up was
+tested for correctness, not cost. Failure-event tests checked that the event
+exists, not its reason. Quit tests used workers that stop promptly.
+
+What covers it now:
+
+- Background threads retry a locked file for up to 5 s; the UI thread keeps
+  1 s. The test report names retried files and any that were still locked. A
+  failed settings save is retried four times before automatic updates are
+  turned off. `tests/test_busy_file_retry.py` and
+  `tests/test_automatic_updates.py`.
+- Within one delivery pass the consent choice is re-read only when its files'
+  identity, size or time changes, so a revocation is still seen before the next
+  send. The outbox is saved every 16 events; a crash resends at most a batch,
+  which the server ignores by event ID. A full catch-up checks consent under 40
+  times (was 1,025) and takes under 2 s on the Windows PC.
+  `tests/test_product_telemetry.py` also revokes mid-catch-up and checks
+  delivery stops at once.
+- Queue failures map their cause to a closed reason, and the queue passes the
+  player's own cause. Import failures keep their closed facts. Relink records a
+  closed cause at each failure point. Startup history keeps the OS error as
+  the cause.
+- A download still running at quit records `run_stopped`, as a normal quit
+  does. `tests/test_runtime_slow_quit.py`.
+
+Limits: a file locked for more than 5 s still fails its save, as before. A UI
+thread save waits at most 1 s. Settings retries happen only while the app is
+open.
+
 ## Quit-time results and failure labels — 2026-11-10
 
 Further defects from the same review:

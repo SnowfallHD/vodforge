@@ -43,6 +43,8 @@ PRODUCT_TELEMETRY_ENDPOINT = "https://getvodforge.com/api/telemetry/events"
 PRODUCT_TELEMETRY_SCHEMA_VERSION = 2
 PRODUCT_TELEMETRY_STATE_VERSION = 1
 PRODUCT_TELEMETRY_STATE_FILENAME = "product-telemetry.json"
+# Outbox saves during delivery happen every this many events (see _flush_pass).
+OUTBOX_SAVE_BATCH = 16
 MAX_OUTBOX_EVENTS = 256
 MAX_STATE_BYTES = 512 * 1024
 NETWORK_TIMEOUT_SECONDS = 4.0
@@ -447,6 +449,8 @@ class ProductTelemetryOwner:
         self._lock = threading.RLock()
         self._worker: threading.Thread | None = None
         self._flush_requested = False
+        self._consent_cache: dict[str, tuple[Any, Any]] = {}
+        self._consent_cache_thread: int | None = None
 
     def _send_baseline(self, payload: dict[str, Any]) -> bool:
         if not telemetry_collection_allowed() or not self._baseline_permitted():
@@ -530,9 +534,54 @@ class ProductTelemetryOwner:
                     "Basic app count not confirmed; discarded without retry"
                 )
 
+    def _consent_files_signature(self) -> tuple[Any, ...] | None:
+        """Identity, size and time of the files the analytics choice is read from.
+
+        Every save replaces a file (a new identity), so any change to the choice
+        changes this signature.
+        """
+        directory = self._installation_state_path.parent
+        signature: list[Any] = []
+        for name in ("settings.json", "installation.json", "analytics-consent.json"):
+            try:
+                status = (directory / name).stat()
+            except FileNotFoundError:
+                signature.append(None)
+            except OSError:
+                return None
+            else:
+                signature.append((status.st_ino, status.st_size, status.st_mtime_ns))
+        return tuple(signature)
+
+    def _consent_cached(self, name: str, compute: Callable[[], Any]) -> Any:
+        """Within one delivery pass, re-read the choice only when its files change.
+
+        A pass checks the choice several times per event, and each check read
+        three files; replaying a full outbox took about 15 s on Windows.
+        """
+        cache = (
+            self._consent_cache
+            if self._consent_cache_thread == threading.get_ident()
+            else None
+        )
+        if cache is None:
+            return compute()
+        signature = self._consent_files_signature()
+        if signature is not None:
+            hit = cache.get(name)
+            if hit is not None and hit[0] == signature:
+                return hit[1]
+        value = compute()
+        if signature is not None:
+            cache[name] = (signature, value)
+        return value
+
     def _permitted(self) -> tuple[bool, str | None]:
         if not telemetry_collection_allowed() or not self._enabled:
             return False, None
+        return self._consent_cached("permitted", self._read_permitted)
+
+    def _read_permitted(self) -> tuple[bool, str | None]:
         try:
             state = load_or_create_installation_state(self._installation_state_path)
         except (InstallationIdentityError, OSError):
@@ -540,6 +589,9 @@ class ProductTelemetryOwner:
         return analytics_allowed(self._installation_state_path.parent), state.install_id
 
     def _consent_epoch(self) -> str | None:
+        return self._consent_cached("epoch", self._read_consent_epoch)
+
+    def _read_consent_epoch(self) -> str | None:
         value = (
             AnalyticsConsentOwner(self._installation_state_path.parent)
             .snapshot()
@@ -550,6 +602,9 @@ class ProductTelemetryOwner:
     def _posthog_epoch(self) -> str | None:
         if not getattr(self._posthog_recorder, "enabled", False):
             return None
+        return self._consent_cached("posthog_epoch", self._read_posthog_epoch)
+
+    def _read_posthog_epoch(self) -> str | None:
         try:
             owner = AnalyticsConsentOwner(self._installation_state_path.parent)
             value = owner.snapshot().get("posthog_epoch")
@@ -1132,117 +1187,159 @@ class ProductTelemetryOwner:
     def _flush(self) -> None:
         if self._policy_pending():
             return  # Durable events wait in the outbox for the policy answer.
+        self._consent_cache = {}
+        self._consent_cache_thread = threading.get_ident()
+        try:
+            self._flush_pass()
+        finally:
+            self._consent_cache_thread = None
+            self._consent_cache = {}
+
+    def _flush_pass(self) -> None:
+        """Deliver queued events, saving the outbox every few events.
+
+        Saving after each one rewrote the whole outbox per event. A crash between
+        saves resends at most a batch, and the server ignores repeated event IDs.
+        """
         visited: set[str] = set()
-        while True:
-            permitted, _install_id = self._permitted()
-            if not permitted:
+        # event_id -> updated event, or None once it is to be removed.
+        pending: dict[str, ProductTelemetryEvent | None] = {}
+        events: list[ProductTelemetryEvent] | None = None
+
+        def commit() -> None:
+            if not pending:
                 return
-            with self._lock:
-                try:
-                    events = _load_outbox(self._state_path)
-                except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
-                    self._diagnostic(
-                        f"product telemetry outbox could not be loaded: {type(exc).__name__}"
-                    )
-                    return
-                if not events:
-                    return
-                provider_epoch = self._posthog_epoch()
-                event = next(
-                    (
-                        item
-                        for item in events
-                        if item.event_id not in visited
-                        and (
-                            not item.d1_delivered
-                            or item.posthog_attempted
-                            or item.posthog_epoch != provider_epoch
-                            or item.posthog_retry_at <= time.time()
-                        )
-                    ),
-                    None,
-                )
-                if event is None:
-                    return
-                visited.add(event.event_id)
-                generation = self._consent_generation
-                try:
-                    epoch = self._consent_epoch()
-                    if event.consent_epoch != epoch:
-                        _save_outbox(
-                            self._state_path,
-                            [
-                                item
-                                for item in events
-                                if item.event_id != event.event_id
-                            ],
-                        )
-                        self._diagnostic(
-                            "pre-revocation telemetry discarded; not delivered"
-                        )
-                        continue
-                except (ValueError, OSError):
-                    self._diagnostic(
-                        "telemetry consent epoch unavailable; delivery paused"
-                    )
-                    return
-                # Privacy retention matches server acceptance. Expiration is a
-                # local discard, never a fabricated delivery acknowledgement.
-                if (
-                    datetime.now(timezone.utc)
-                    - datetime.fromisoformat(event.occurred_at.replace("Z", "+00:00"))
-                ).total_seconds() > 30 * 86400:
-                    _save_outbox(
-                        self._state_path,
-                        [item for item in events if item.event_id != event.event_id],
-                    )
-                    self._diagnostic("expired telemetry event discarded after 30 days")
-                    continue
-            if not self._delivery_permitted(event, generation):
-                return
-            try:
-                d1_delivered = event.d1_delivered or self._d1_recorder(event)
-            except RejectedTelemetryEvent:
-                with self._lock:
-                    latest = _load_outbox(self._state_path)
-                    _save_outbox(
-                        self._state_path,
-                        [item for item in latest if item.event_id != event.event_id],
-                    )
-                self._diagnostic(
-                    "permanently rejected telemetry event discarded; not delivered"
-                )
-                continue
-            if not self._delivery_permitted(event, generation):
-                return
-            posthog_attempted = self._mirror_posthog(event, generation)
-            if not self._delivery_permitted(event, generation):
-                return
-            failures = event.posthog_failures
-            retry_at = event.posthog_retry_at
-            if not posthog_attempted and retry_at <= time.time():
-                failures = min(30, failures + 1)
-                retry_at = time.time() + min(3600, 30 * (2 ** min(7, failures - 1)))
-            updated = replace(
-                event,
-                d1_delivered=d1_delivered,
-                posthog_attempted=posthog_attempted,
-                posthog_failures=failures,
-                posthog_retry_at=retry_at,
-            )
             with self._lock:
                 latest = _load_outbox(self._state_path)
-                if not any(item.event_id == event.event_id for item in latest):
+                _save_outbox(
+                    self._state_path,
+                    [
+                        pending[item.event_id] or item
+                        if item.event_id in pending
+                        else item
+                        for item in latest
+                        if not (
+                            item.event_id in pending and pending[item.event_id] is None
+                        )
+                    ],
+                )
+            pending.clear()
+
+        try:
+            while True:
+                if len(pending) >= OUTBOX_SAVE_BATCH:
+                    commit()
+                    events = None
+                permitted, _install_id = self._permitted()
+                if not permitted:
+                    return
+                with self._lock:
+                    if events is None:
+                        try:
+                            events = _load_outbox(self._state_path)
+                        except (
+                            OSError,
+                            UnicodeError,
+                            ValueError,
+                            json.JSONDecodeError,
+                        ) as exc:
+                            self._diagnostic(
+                                "product telemetry outbox could not be loaded: "
+                                f"{type(exc).__name__}"
+                            )
+                            return
+                    current = [
+                        pending.get(item.event_id) or item
+                        for item in events
+                        if not (
+                            item.event_id in pending and pending[item.event_id] is None
+                        )
+                    ]
+                    if not current:
+                        return
+                    provider_epoch = self._posthog_epoch()
+                    event = next(
+                        (
+                            item
+                            for item in current
+                            if item.event_id not in visited
+                            and (
+                                not item.d1_delivered
+                                or item.posthog_attempted
+                                or item.posthog_epoch != provider_epoch
+                                or item.posthog_retry_at <= time.time()
+                            )
+                        ),
+                        None,
+                    )
+                    if event is None:
+                        return
+                    visited.add(event.event_id)
+                    generation = self._consent_generation
+                    try:
+                        epoch = self._consent_epoch()
+                        if event.consent_epoch != epoch:
+                            pending[event.event_id] = None
+                            self._diagnostic(
+                                "pre-revocation telemetry discarded; not delivered"
+                            )
+                            continue
+                    except (ValueError, OSError):
+                        self._diagnostic(
+                            "telemetry consent epoch unavailable; delivery paused"
+                        )
+                        return
+                    # Privacy retention matches server acceptance. Expiration is a
+                    # local discard, never a fabricated delivery acknowledgement.
+                    if (
+                        datetime.now(timezone.utc)
+                        - datetime.fromisoformat(
+                            event.occurred_at.replace("Z", "+00:00")
+                        )
+                    ).total_seconds() > 30 * 86400:
+                        pending[event.event_id] = None
+                        self._diagnostic(
+                            "expired telemetry event discarded after 30 days"
+                        )
+                        continue
+                if not self._delivery_permitted(event, generation):
+                    return
+                try:
+                    d1_delivered = event.d1_delivered or self._d1_recorder(event)
+                except RejectedTelemetryEvent:
+                    pending[event.event_id] = None
+                    self._diagnostic(
+                        "permanently rejected telemetry event discarded; not delivered"
+                    )
                     continue
+                if not self._delivery_permitted(event, generation):
+                    return
+                posthog_attempted = self._mirror_posthog(event, generation)
+                if not self._delivery_permitted(event, generation):
+                    return
+                failures = event.posthog_failures
+                retry_at = event.posthog_retry_at
+                if not posthog_attempted and retry_at <= time.time():
+                    failures = min(30, failures + 1)
+                    retry_at = time.time() + min(3600, 30 * (2 ** min(7, failures - 1)))
                 delivery_complete = d1_delivered and posthog_attempted
-                remaining = [
-                    updated if item.event_id == event.event_id else item
-                    for item in latest
-                    if not (delivery_complete and item.event_id == event.event_id)
-                ]
-                _save_outbox(self._state_path, remaining)
-            if not d1_delivered:
-                return
+                pending[event.event_id] = (
+                    None
+                    if delivery_complete
+                    else replace(
+                        event,
+                        d1_delivered=d1_delivered,
+                        posthog_attempted=posthog_attempted,
+                        posthog_failures=failures,
+                        posthog_retry_at=retry_at,
+                    )
+                )
+                if not d1_delivered:
+                    return
+        finally:
+            # A revocation that cleared the outbox (set_enabled(False)) cannot
+            # be undone here: commit only touches events still present.
+            commit()
 
     def shutdown(self, timeout_seconds: float = 1.0) -> bool:
         worker = self._worker

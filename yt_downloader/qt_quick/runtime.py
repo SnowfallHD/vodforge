@@ -1094,3 +1094,8 @@ class DownloadRuntime:
         if not self.busy:
             self.poll()
             set_active_child_process_observer(None)
+        elif self.active_job is not None:
+            # The download didn't stop within the wait, so its end is never
+            # handled here. Record it as a quit would, so the run isn't left
+            # open in telemetry; recovery at the next launch is unchanged.
+            self._observe_run("run_stopped", self.active_job, status="Paused")

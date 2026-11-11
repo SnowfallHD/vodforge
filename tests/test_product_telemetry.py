@@ -656,3 +656,77 @@ def test_legacy_secondary_acknowledgement_cannot_replace_first_party_delivery(
     assert successor.shutdown(2)
     assert delivered == [pending[0].event_id]
     assert not path.exists()
+
+
+def _full_outbox(tmp_path, count):
+    from yt_downloader.product_telemetry import _load_outbox, _save_outbox
+
+    installation = tmp_path / "installation.json"
+    _permitted_installation(installation)
+    state_path = tmp_path / "product-telemetry.json"
+    blocked = ProductTelemetryOwner(
+        state_path=state_path,
+        installation_state_path=installation,
+        app_version="0.2.3",
+        d1_recorder=lambda _event: False,
+    )
+    assert blocked.record_app_opened()
+    assert blocked.shutdown(2)
+    first = _load_outbox(state_path)[0]
+    queued = [replace(first, event_id=str(uuid4())) for _ in range(count)]
+    _save_outbox(state_path, queued)
+    return installation, state_path, queued
+
+
+def test_catch_up_reads_the_analytics_choice_only_when_it_changes(
+    tmp_path, monkeypatch
+):
+    """Each event re-read the choice files about four times (three files each),
+    so replaying a full outbox took about 15 s on Windows."""
+    from yt_downloader import product_telemetry
+
+    installation, state_path, queued = _full_outbox(tmp_path, 256)
+    reads = []
+    real = product_telemetry.analytics_allowed
+    monkeypatch.setattr(
+        product_telemetry,
+        "analytics_allowed",
+        lambda directory=None: reads.append(1) or real(directory),
+    )
+    delivered = []
+    owner = ProductTelemetryOwner(
+        state_path=state_path,
+        installation_state_path=installation,
+        app_version="0.2.3",
+        d1_recorder=lambda event: delivered.append(event.event_id) is None,
+    )
+    owner.flush_async()
+    assert owner.shutdown(30)
+    assert delivered == [event.event_id for event in queued]
+    assert not state_path.exists()
+    assert len(reads) < 40  # was about four per event
+
+
+def test_revoking_mid_catch_up_stops_delivery_at_once(tmp_path):
+    """The choice is cached within a pass, but a change to its files (here a
+    revocation) is seen before the next event is sent."""
+    from yt_downloader.analytics_consent import AnalyticsConsentOwner
+
+    installation, state_path, _queued = _full_outbox(tmp_path, 40)
+    delivered = []
+
+    def deliver(event):
+        delivered.append(event.event_id)
+        if len(delivered) == 3:
+            AnalyticsConsentOwner(tmp_path).choose(False)
+        return True
+
+    owner = ProductTelemetryOwner(
+        state_path=state_path,
+        installation_state_path=installation,
+        app_version="0.2.3",
+        d1_recorder=deliver,
+    )
+    owner.flush_async()
+    assert owner.shutdown(10)
+    assert len(delivered) == 3
