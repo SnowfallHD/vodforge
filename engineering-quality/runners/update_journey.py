@@ -270,8 +270,12 @@ class UpdateJourney(rj.Journey):
         return texts
 
     def offer_visible(self) -> bool:
+        # Both of the update window's buttons; Windows doesn't expose its
+        # heading text, so the heading is only a fallback for the Later button.
         if self.offer_control("updatePrimary", OFFER_BUTTONS) is None:
             return False
+        if self.offer_control("updateDismiss", ("Later",)) is not None:
+            return True
         texts = self.all_texts()
         return any(heading in texts for heading in OFFER_HEADINGS)
 
