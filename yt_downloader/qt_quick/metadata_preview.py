@@ -140,7 +140,9 @@ class QtMetadataPreview:
                     failure_detail=detail
                     if isinstance(detail, FailureDiagnostic)
                     # The provider answered but nothing in it can be previewed.
-                    else FailureDiagnostic(reason="source_unavailable", stage="analysis"),
+                    else FailureDiagnostic(
+                        reason="source_unavailable", stage="analysis"
+                    ),
                 )
         return True
 

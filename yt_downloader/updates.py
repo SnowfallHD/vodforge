@@ -62,6 +62,8 @@ def _lock_shared_windows(handle: BinaryIO) -> None:
     a second VODForge was refused while the first ran. The update helper's
     exclusive .NET FileStream.Lock(0, 1) still excludes this lock both ways.
     """
+    if sys.platform != "win32":
+        raise OSError("A shared update lease lock is Windows-only.")
     import ctypes
     import msvcrt
     from ctypes import wintypes

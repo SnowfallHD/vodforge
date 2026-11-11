@@ -8,7 +8,7 @@ import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import psutil
 
@@ -311,7 +311,7 @@ def terminate_recorded_children(
                 "recorded VODForge staging transaction."
             )
         stopped = (
-            terminate_pid(pid, expected_create_time=float(birth))
+            terminate_pid(pid, expected_create_time=float(cast(float, birth)))
             if pid_terminator is terminate_pid
             else pid_terminator(pid)
         )

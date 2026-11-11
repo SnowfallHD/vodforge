@@ -33,7 +33,9 @@ def _pytest_commands(
                 "tests",
                 *(f"--ignore={path}" for path in relative),
             ),
-            300,
+            # About 150 s alone on the signing Mac (Nov 11); it exceeded 300 s
+            # once while a website build shared the CPU.
+            600,
         ),
         (
             "pytest_qt_components",
@@ -46,7 +48,8 @@ def _pytest_commands(
             # This aggregate has hundreds of rendering/timer cases. The prior
             # 300-second run reached 44% while other qualification work ran;
             # retain a bounded suite deadline without weakening case assertions.
-            900,
+            # 1,033 cases took 1,124 s alone on the signing Mac (Nov 11).
+            1800,
         ),
         (
             "pytest_qt_scene",

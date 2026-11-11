@@ -11,7 +11,10 @@ param(
   [string]$Python = 'E:\VODForgeQA\tools\journey-venv\Scripts\python.exe',
   [int]$TimeoutMinutes = 30,
   # Which runner to drive the app with: the release journey or the deletion one.
-  [ValidateSet('release_journey.py', 'deletion_journey.py', 'telemetry_delivery_journey.py')][string]$Journey = 'release_journey.py',
+  [ValidateSet('release_journey.py', 'deletion_journey.py', 'telemetry_delivery_journey.py', 'update_journey.py')][string]$Journey = 'release_journey.py',
+  # Extra arguments for the runner, for example update_journey.py's --root,
+  # --candidate, --candidate-version and --qa-key-file.
+  [string]$JourneyArgs = '',
   # List the app's controls (types and names) instead of running the journey.
   [switch]$Inspect,
   [switch]$Worker
@@ -46,6 +49,7 @@ if (-not $Worker) {
   New-Item -ItemType Directory -Path $run | Out-Null
   $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
   $arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$PSCommandPath`" -App `"$App`" -Source `"$Source`" -JobId $JobId -Python `"$Python`" -TimeoutMinutes $TimeoutMinutes -Journey $Journey"
+  if ($JourneyArgs) { $arguments += " -JourneyArgs `"$($JourneyArgs.Replace('"', '\"'))`"" }
   if ($Installer) { $arguments += " -Installer `"$Installer`"" }
   if ($Inspect) { $arguments += ' -Inspect' }
   $arguments += ' -Worker'
@@ -89,6 +93,7 @@ try {
   # into terminating errors under 'Stop' when redirected with *>.
   $arguments = @("`"$(Join-Path $Source "engineering-quality\runners\$Journey")`"", '--app', "`"$App`"", '--output', "`"$output`"")
   if ($Inspect) { $arguments += '--inspect' }
+  if ($JourneyArgs) { $arguments += $JourneyArgs }
   # Wait for Python only, not for any app the journey launched.
   $runner = Start-Process $Python -ArgumentList $arguments -PassThru -NoNewWindow `
     -RedirectStandardOutput (Join-Path $run 'journey.log') -RedirectStandardError (Join-Path $run 'journey-stderr.log')
