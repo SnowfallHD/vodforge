@@ -32,6 +32,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -73,6 +74,7 @@ class UpdateJourney(rj.Journey):
         self.qa_key = qa_key
         self.feed_url = ""
         self.feeds: list[Path] = []
+        self.launches = 0
         if not self.app.is_relative_to(self.root):
             raise rj.JourneyError("The app must be inside --root for the QA feed")
 
@@ -89,7 +91,7 @@ class UpdateJourney(rj.Journey):
             TMPDIR=str(self.tmp),
             TMP=str(self.tmp),
             TEMP=str(self.tmp),
-            XDG_DATA_HOME=str(self.home / ".local/share"),
+            XDG_DATA_HOME=str(self.home / ".local" / "share"),
             VODFORGE_QUALITY_E2E="1",
             VODFORGE_QA_PREVIEW_TELEMETRY="1",
             VODFORGE_QA_ACCESS_KEY=self.qa_key,
@@ -97,12 +99,21 @@ class UpdateJourney(rj.Journey):
             VODFORGE_QA_COUNTRY="US",
             VODFORGE_QUALITY_E2E_ISOLATION_ROOT=str(self.root),
             VODFORGE_QA_UPDATE_FEED=self.feed_url,
+            # Test-mode startup requires these on every platform.
+            LOCALAPPDATA=str(self.home / "AppData" / "Local"),
+        )
+        # Each launch is attested once, so each gets its own session nonce.
+        self.launches += 1
+        nonce = uuid.uuid4().hex
+        env.update(
+            VODFORGE_QUALITY_E2E_SESSION_NONCE=nonce,
+            VODFORGE_QUALITY_E2E_WINDOW_TOKEN=f"VFQ-{nonce[:12]}-L{self.launches}",
+            VODFORGE_QUALITY_E2E_LAUNCH_ID=uuid.uuid4().hex,
         )
         if sys.platform == "win32":
             env.update(
                 USERPROFILE=str(self.home),
-                LOCALAPPDATA=str(self.home / "AppData/Local"),
-                APPDATA=str(self.home / "AppData/Roaming"),
+                APPDATA=str(self.home / "AppData" / "Roaming"),
             )
         return env
 
