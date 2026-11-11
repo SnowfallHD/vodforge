@@ -60,6 +60,9 @@ def bridge(tmp_path: Path, monkeypatch: Any) -> qt_main.Bridge:
         def close(self) -> None:
             pass
 
+        def poll(self) -> list:
+            return []
+
     monkeypatch.setattr(qt_main, "DownloadRuntime", Runtime)
     monkeypatch.setattr(qt_main, "LocalConversionRuntime", LocalRuntime)
     monkeypatch.setattr(

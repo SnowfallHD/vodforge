@@ -129,8 +129,10 @@ def test_full_outbox_replays_on_new_session_after_delivery_recovers(tmp_path):
     )
     assert not resumed.record_app_opened()  # The bounded outbox rejects this new event.
     # Replaying a full durable outbox rewrites its remaining events after each
-    # acknowledgement; Intel CI can take longer than five seconds for 256 writes.
-    assert resumed.shutdown(30)
+    # acknowledgement and re-reads the consent files several times per event:
+    # about 15 s on a fast Windows PC (Nov 10), and it exceeded 30 s once on
+    # Windows CI. The wait is a bound, not a target.
+    assert resumed.shutdown(90)
     assert delivered == [event.event_id for event in queued]
     assert not state_path.exists()
 

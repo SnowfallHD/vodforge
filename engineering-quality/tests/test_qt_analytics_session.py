@@ -59,6 +59,13 @@ class _Telemetry:
     def mirror_first_run_confirmed(self, install_id: str, epoch: object) -> None:
         self.first_run_mirrors.append((install_id, epoch))
 
+    def flush_async(self) -> None:
+        pass  # Sent after the launch policy refresh; nothing to deliver here.
+
+    def flush_counts(self, timeout_seconds: float = 1.0) -> bool:
+        del timeout_seconds
+        return True
+
 
 def _await_resolution(session: analytics.QtAnalyticsSession) -> None:
     deadline = time.monotonic() + 2

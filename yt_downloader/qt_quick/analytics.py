@@ -496,9 +496,9 @@ class QtAnalyticsSession:
             self.lifecycle.close()
         if self.telemetry is not None:
             # Anonymous counts live only in memory, and closing stops them, so
-            # send what is pending first (bounded).
-            self.telemetry.flush_async()
-            self.telemetry.shutdown(timeout_seconds=1.0)
+            # send what is pending first (bounded). Saved events wait in the
+            # outbox for the next launch, as before.
+            self.telemetry.flush_counts(timeout_seconds=1.0)
         self._closed = True
         self._privacy_opener = None
         if self._privacy_work is not None:

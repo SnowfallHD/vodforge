@@ -488,6 +488,25 @@ class ProductTelemetryOwner:
         self.flush_async()
         return True
 
+    def flush_counts(self, timeout_seconds: float = 1.0) -> bool:
+        """Send pending anonymous counts now, waiting at most the timeout.
+
+        A send already running may hold counts it took from the queue, so wait
+        for it too; it starts no new retries of saved events.
+        """
+        deadline = time.monotonic() + max(0.0, timeout_seconds)
+        running = self._worker
+        if running is not None and running.is_alive():
+            running.join(timeout=max(0.0, deadline - time.monotonic()))
+        if not self._baseline_pending:
+            return running is None or not running.is_alive()
+        worker = threading.Thread(
+            target=self._flush_baseline, name="vodforge-counts", daemon=True
+        )
+        worker.start()
+        worker.join(timeout=max(0.0, deadline - time.monotonic()))
+        return not worker.is_alive()
+
     def _flush_baseline(self) -> None:
         if self._policy_pending():
             return  # Held until the policy answer decides.

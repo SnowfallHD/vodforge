@@ -29,7 +29,9 @@ def test_qt_local_conversion_completion_waits_for_library_commit(
         def recover_interrupted(self) -> None:
             pass
 
-        def convert(self, request: Any, *, on_progress: Any) -> LocalAudioVideoResult:
+        def convert(
+            self, request: Any, *, on_progress: Any, on_failure: Any = None
+        ) -> LocalAudioVideoResult:
             del on_progress
             return LocalAudioVideoResult(
                 output_path=tmp_path / "result.mp4",
@@ -106,7 +108,9 @@ def test_qt_local_failure_keeps_encoder_text_private_and_sends_bounded_reason(
         def recover_interrupted(self) -> None:
             pass
 
-        def convert(self, _request: Any, *, on_progress: Any) -> None:
+        def convert(
+            self, _request: Any, *, on_progress: Any, on_failure: Any = None
+        ) -> None:
             del on_progress
             raise LocalAudioVideoError(private_cause)
 
