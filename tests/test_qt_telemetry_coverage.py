@@ -34,7 +34,8 @@ def bridge_fixture(tmp_path, monkeypatch, *, permitted=True):
 
 
 def rows(telemetry, tmp_path, feature):
-    assert telemetry.shutdown(2)
+    # A bound, not a target: Windows CI file work can take seconds (Nov 10).
+    assert telemetry.shutdown(10)
     payloads = [
         event.public_payload()
         for event in _load_outbox(tmp_path / "telemetry/events.json")

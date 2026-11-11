@@ -115,3 +115,14 @@ def production_telemetry_contract(monkeypatch):
         product_telemetry,
     ):
         monkeypatch.setattr(module, "telemetry_collection_allowed", lambda: True)
+
+
+def pytest_terminal_summary(terminalreporter):
+    """Report Windows busy-file retries, to explain slow file work on CI."""
+    from yt_downloader.private_files import BUSY_RETRY_STATS
+
+    if BUSY_RETRY_STATS["operations"]:
+        terminalreporter.write_line(
+            "busy-file retries: {operations:.0f} operations waited {seconds:.2f} s "
+            "in total, longest {longest:.2f} s".format(**BUSY_RETRY_STATS)
+        )

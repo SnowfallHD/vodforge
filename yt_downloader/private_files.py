@@ -15,6 +15,9 @@ T = TypeVar("T")
 # How long to keep retrying a Windows file that another handle has open.
 BUSY_FILE_RETRY_SECONDS = 1.0
 _ON_WINDOWS = os.name == "nt"
+# How often a busy file was retried in this process, and for how long (the test
+# suite prints it, so a slow Windows CI run shows whether retries were why).
+BUSY_RETRY_STATS: dict[str, float] = {"operations": 0, "seconds": 0.0, "longest": 0.0}
 
 
 def retry_while_file_is_busy(operation: Callable[[], T]) -> T:
@@ -29,16 +32,26 @@ def retry_while_file_is_busy(operation: Callable[[], T]) -> T:
     """
     if not _ON_WINDOWS:
         return operation()
-    deadline = time.monotonic() + BUSY_FILE_RETRY_SECONDS
+    started = time.monotonic()
+    deadline = started + BUSY_FILE_RETRY_SECONDS
     delay = 0.002
-    while True:
-        try:
-            return operation()
-        except PermissionError:
-            if time.monotonic() >= deadline:
-                raise
-        time.sleep(delay)
-        delay = min(delay * 2, 0.05)
+    retried = False
+    try:
+        while True:
+            try:
+                return operation()
+            except PermissionError:
+                if time.monotonic() >= deadline:
+                    raise
+            retried = True
+            time.sleep(delay)
+            delay = min(delay * 2, 0.05)
+    finally:
+        if retried:
+            waited = time.monotonic() - started
+            BUSY_RETRY_STATS["operations"] += 1
+            BUSY_RETRY_STATS["seconds"] += waited
+            BUSY_RETRY_STATS["longest"] = max(BUSY_RETRY_STATS["longest"], waited)
 
 
 def replace_file(source: Path, destination: Path) -> None:
