@@ -45,6 +45,55 @@ Each entry below records a defect class that was found, why the existing checks
 missed it, and what now covers it, newest first. Entries describe the code at
 their date; some name modules that have since been removed.
 
+## Policy refresh, update window, failure reasons, Windows lock — 2026-11-10
+
+Defects found in a whole-app review after the 0.2.6 release:
+
+- **Policy refresh raced a timer.** At every launch the app erased the saved
+  analytics region answer, then waited up to 2.5 s for a new one. Events from
+  users who never chose explicitly were dropped meanwhile. If the network was
+  slow, the app wiped unsent events, asked a default-on user for consent, and
+  recorded nothing for the rest of the session.
+- **No update window.** The "Update available" entry was lost in the Oct 18
+  header rebuild, and a test was then changed to require it stays hidden. An
+  update showed only via Settings → Check for updates.
+- **Failure reasons contradicted their codes.** Age-restricted videos were
+  reported as authentication_required; members-only and geo-blocked videos as
+  provider_extraction. Any "429" or "404" in a message, including inside a
+  video ID, counted as rate limiting or not found.
+- **Second window refused on Windows.** `msvcrt.locking` has no shared mode, so
+  with VODForge open, launching it again failed with an error printed to a
+  console the app doesn't have.
+
+Why they were missed: consent tests set the region and then recorded, never
+while a refresh was running. The update window's removal was enforced by a
+test. Failure tests checked codes and reasons separately. The lock test skips
+Windows, where the semantics differ.
+
+What covers it now:
+
+- The saved answer stays in effect until the server gives a new one (a stricter
+  late answer still applies). Events are recorded as usual, but nothing is sent
+  until the refresh finishes. If the answer turns analytics off, what was held
+  is deleted before it leaves the computer. Anonymous counts are held the same
+  way. A late timer uses the saved answer, so no consent question appears for
+  a default-on user. `tests/test_qt_policy_refresh.py` holds the server's answer
+  and checks each case; the old code fails three of four.
+- A newly found release opens the update window once per version, after the
+  analytics choice settles and once any open dialog closes. Automatic updates
+  still install on quit; the window says so and offers Install now.
+  `tests/test_qt_update_offer.py`.
+- A specific failure code now sets the reason, unless a more specific
+  OS/HTTP/typed reason already did, and status codes count only as "HTTP Error
+  NNN". `tests/test_failure_reason_codes.py`.
+- Windows uses a shared `LockFileEx` lock. On the Windows PC two app windows now
+  run, the installer can't install while one is open, and a launch during an
+  install is refused. The Windows-only lease test fails on the old lock.
+
+Limits: the update window doesn't open while a modal dialog is open, and shows
+after it closes. A late opt-in answer applies to sending, but events already
+recorded in that session are cleared only at the next launch.
+
 ## Update telemetry reaches the server, from launch to install — 2026-11-10
 
 Defects, all in 0.2.6:

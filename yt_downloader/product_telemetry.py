@@ -405,6 +405,7 @@ class ProductTelemetryOwner:
         posthog_recorder: Callable[[ProductTelemetryEvent], bool] | None = None,
         baseline_permitted: Callable[[], bool] = lambda: False,
         baseline_recorder: Callable[[dict[str, Any]], bool] | None = None,
+        policy_pending: Callable[[], bool] = lambda: False,
     ) -> None:
         from .posthog_analytics import PosthogEventSink
 
@@ -415,6 +416,10 @@ class ProductTelemetryOwner:
         self._platform = installation_platform(platform_name)
         self._release_channel = release_channel(app_version)
         self._baseline_permitted = baseline_permitted
+        # True while this launch's analytics policy refresh is still running:
+        # record as usual, but send nothing until the answer is known. If it
+        # turns analytics off, set_enabled(False) clears what was held.
+        self._policy_pending = policy_pending
         self._baseline_recorder = baseline_recorder or self._send_baseline
         self._baseline_pending: dict[str, int] = {}
         self._enabled = bool(enabled)
@@ -472,7 +477,9 @@ class ProductTelemetryOwner:
             "local_conversion_failed",
         }:
             return False
-        if not telemetry_collection_allowed() or not self._baseline_permitted():
+        if not telemetry_collection_allowed() or not (
+            self._baseline_permitted() or self._policy_pending()
+        ):
             return False
         with self._lock:
             self._baseline_pending[metric] = min(
@@ -482,6 +489,8 @@ class ProductTelemetryOwner:
         return True
 
     def _flush_baseline(self) -> None:
+        if self._policy_pending():
+            return  # Held until the policy answer decides.
         with self._lock:
             pending, self._baseline_pending = self._baseline_pending, {}
         for metric, count in pending.items():
@@ -1102,6 +1111,8 @@ class ProductTelemetryOwner:
                 return False
 
     def _flush(self) -> None:
+        if self._policy_pending():
+            return  # Durable events wait in the outbox for the policy answer.
         visited: set[str] = set()
         while True:
             permitted, _install_id = self._permitted()

@@ -486,6 +486,8 @@ class Bridge(QObject):
     analyticsChanged = Signal()
     analyticsPromptRequested = Signal()
     updateChanged = Signal()
+    # A newer release was found: show the update window once per version.
+    updateOfferRequested = Signal()
     fileActionChanged = Signal()
     fileActionRequested = Signal()
     supportChanged = Signal()
@@ -556,9 +558,6 @@ class Bridge(QObject):
         self._analytics_allowed = self._analytics.allowed
         self._analytics_snapshot_sent = False
         self._updates = QtUpdateSession(__version__)
-        # The launch check runs at once; its telemetry waits for the analytics
-        # choice to settle (see QtUpdateSession.release_held_observations).
-        self._updates.consent_settled = lambda: self._analytics.settled
         self._files = QtLibraryFiles(self._runtime.history_path)
         self._last_library_file_running = self._files.busy
         self._import_work = ArchiveWorkOwner()
@@ -682,6 +681,7 @@ class Bridge(QObject):
             and self._settings.get("automatic_updates", True) is True
         )
         self._automatic_download_requested = False
+        self._update_offer_requested: str | None = None
         self._automatic_updates_supported = True
         selection = apply_theme_selection(
             self._settings.get("appearance_theme", DEFAULT_THEME_NAME),
@@ -1624,6 +1624,25 @@ class Bridge(QObject):
                 )
         except (OSError, ValueError):
             pass
+
+    def _offer_update_once(self) -> None:
+        """Ask the window to show a newly found release, once per version.
+
+        Waits for the analytics choice to settle, so a first-launch consent
+        question comes first. The window itself defers while another dialog is
+        open. Closing it with Later leaves the update to install on quit.
+        """
+        release = self._updates.release
+        if (
+            release is None
+            or not (self._updates.available or self._updates.manual)
+            or self._updates.recovery
+            or release.version == self._update_offer_requested
+            or not self._analytics.settled
+        ):
+            return
+        self._update_offer_requested = release.version
+        self.updateOfferRequested.emit()
 
     def _auto_check_updates(self) -> None:
         if self._updates.busy:
@@ -7556,7 +7575,6 @@ class Bridge(QObject):
             }:
                 self._finish_run_removal()
             self.fileActionChanged.emit()
-        self._updates.release_held_observations()
         if self._updates.poll():
             if (
                 self._automatic_updates
@@ -7574,6 +7592,7 @@ class Bridge(QObject):
             self.updateChanged.emit()
         for action, dimensions in self._updates.take_observations():
             self._record_update_feature("updater", action, dimensions)
+        self._offer_update_once()
         if not self._analytics.settled:
             if self._analytics.poll():
                 self.analyticsPromptRequested.emit()

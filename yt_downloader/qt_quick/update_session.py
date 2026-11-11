@@ -9,7 +9,6 @@ import re
 import threading
 import time
 import uuid
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -34,9 +33,6 @@ from yt_downloader.updates import (
     semantic_version_key,
     verify_windows_authenticode,
 )
-
-# How long launch observations wait for the analytics choice to settle.
-HELD_OBSERVATION_SECONDS = 10.0
 
 
 def _check_failure_status(detail: FailureDiagnostic | None) -> str:
@@ -109,11 +105,6 @@ class QtUpdateSession:
         self._download_cancel = threading.Event()
         self.handoff_started = False
         self.observations: list[tuple[str, dict[str, str] | None]] = []
-        # At launch the analytics choice is re-checked for a moment. Until it
-        # settles, observations are held, then recorded or dropped by it.
-        self.consent_settled: Callable[[], bool] = lambda: True
-        self._held: list[tuple[str, dict[str, str], Any]] | None = None
-        self._held_until = 0.0
 
     @staticmethod
     def _version(value: str) -> str:
@@ -131,37 +122,9 @@ class QtUpdateSession:
         self._trigger = trigger
         self._shown = False
         self._started = time.monotonic()
-        if self.consent_settled():
-            self._held = None
-            self._operation = bind_operation(
-                self.telemetry, "updater_operation", operation_key=self._attempt
-            )
-        else:
-            self._operation = None
-            self._held = []
-            self._held_until = time.monotonic() + HELD_OBSERVATION_SECONDS
-
-    def release_held_observations(self) -> None:
-        """Record held observations once the analytics choice settles."""
-        if self._held is None:
-            return
-        if not self.consent_settled():
-            if time.monotonic() >= self._held_until:
-                self._held = None  # Never settled: record nothing.
-            return
-        held, self._held = self._held, None
         self._operation = bind_operation(
             self.telemetry, "updater_operation", operation_key=self._attempt
         )
-        for action, dimensions, detail in held:
-            operation(
-                self.telemetry,
-                "updater_operation",
-                action,
-                self._operation,
-                dimensions,
-                failure_detail=detail,
-            )
 
     def observe(
         self, action: str, *, error: BaseException | None = None, blocker: str = "none"
@@ -198,9 +161,6 @@ class QtUpdateSession:
     def _record(
         self, action: str, dimensions: dict[str, str], detail: Any = None
     ) -> None:
-        if self._held is not None:
-            self._held.append((action, dimensions, detail))
-            return
         # Never rebind delayed work after an analytics choice changes.
         operation(
             self.telemetry,

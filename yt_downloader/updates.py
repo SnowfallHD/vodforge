@@ -43,6 +43,44 @@ WINDOWS_POWERSHELL_MODULE_PATH = "$env:PSModulePath = $PSHOME + '/Modules';"
 MACOS_STAGING_PREFIX = "staged-"
 
 
+def _lock_shared_windows(handle: BinaryIO) -> None:
+    """Shared lock on byte 0, so several app windows can run at once.
+
+    msvcrt.locking has no shared mode (LK_NBRLCK is the exclusive LK_NBLCK), so
+    a second VODForge was refused while the first ran. The update helper's
+    exclusive .NET FileStream.Lock(0, 1) still excludes this lock both ways.
+    """
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    class Overlapped(ctypes.Structure):
+        _fields_ = [
+            ("Internal", ctypes.c_void_p),
+            ("InternalHigh", ctypes.c_void_p),
+            ("Offset", wintypes.DWORD),
+            ("OffsetHigh", wintypes.DWORD),
+            ("hEvent", wintypes.HANDLE),
+        ]
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    lock_file_ex = kernel32.LockFileEx
+    lock_file_ex.argtypes = [
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.POINTER(Overlapped),
+    ]
+    lock_file_ex.restype = wintypes.BOOL
+    fail_immediately = 0x1  # LOCKFILE_FAIL_IMMEDIATELY; no exclusive flag
+    overlapped = Overlapped()
+    native = wintypes.HANDLE(msvcrt.get_osfhandle(handle.fileno()))
+    if not lock_file_ex(native, fail_immediately, 0, 1, 0, ctypes.byref(overlapped)):
+        raise OSError(ctypes.get_last_error(), "update lease is held")
+
+
 def acquire_update_lease(executable: Path) -> BinaryIO | None:
     """Keep the running binary intact while a detached updater owns its lock.
 
@@ -61,13 +99,11 @@ def acquire_update_lease(executable: Path) -> BinaryIO | None:
         return None  # allow ordinary app use, without automatic replacement
     try:
         if sys.platform == "win32":
-            import msvcrt
-
             if lock.stat().st_size == 0:
                 handle.write(b"0")
                 handle.flush()
             handle.seek(0)
-            msvcrt.locking(handle.fileno(), msvcrt.LK_NBRLCK, 1)
+            _lock_shared_windows(handle)
         else:
             import fcntl
 

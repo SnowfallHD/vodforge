@@ -95,6 +95,7 @@ class QtAnalyticsSession:
             baseline_permitted=lambda: (
                 not self._closed and owner.native_baseline_allowed
             ),
+            policy_pending=lambda: self._started and not self._resolved.is_set(),
         )
         self.owner = owner
         self._attribution.consent = owner
@@ -160,6 +161,10 @@ class QtAnalyticsSession:
                 self._mode = "unknown"
             finally:
                 self._resolved.set()
+                # Send what was held during the refresh (or nothing, if the
+                # answer turned analytics off: delivery re-reads the choice).
+                if self.telemetry is not None:
+                    self.telemetry.flush_async()
 
         threading.Thread(
             target=resolve, name="vodforge-qt-consent", daemon=True
@@ -185,8 +190,15 @@ class QtAnalyticsSession:
             self._baseline_started = True
             telemetry.record_baseline("app_started")
         state = owner.snapshot()
+        # If the refresh hasn't answered yet, the saved answer decides, so a
+        # slow network doesn't ask a default-on user for consent.
+        mode = (
+            self._mode
+            if self._resolved.is_set()
+            else owner.saved_region_mode or "unknown"
+        )
         if (
-            self._mode in {"opt-in", "unknown"}
+            mode in {"opt-in", "unknown"}
             and not state.get("choice")
             and not state.get("prompted")
         ):

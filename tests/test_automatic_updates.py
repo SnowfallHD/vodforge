@@ -472,6 +472,37 @@ def test_install_exclusive_lease_refuses_new_app_until_release(tmp_path):
     lease.close()
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows lock semantics")
+def test_windows_lease_is_shared_between_app_windows_and_excludes_installer(
+    tmp_path,
+):
+    """msvcrt has no shared lock, so a second VODForge was refused on Windows
+    with a message nobody saw (the app has no console)."""
+    exe = tmp_path / "app" / "VODForge.exe"
+    exe.parent.mkdir()
+    exe.write_bytes(b"fixture")
+    first = updates.acquire_update_lease(exe)
+    second = updates.acquire_update_lease(exe)  # another window of the same app
+    lock = str(exe.parent) + ".vodforge-update-lock"
+    installer = [
+        "powershell",
+        "-NoProfile",
+        "-Command",
+        (
+            f"$f=[System.IO.File]::Open('{lock}','OpenOrCreate','ReadWrite','ReadWrite');"
+            "try { $f.Lock(0,1); exit 0 } catch { exit 3 } finally { $f.Dispose() }"
+        ),
+    ]
+    try:
+        assert first is not None and second is not None
+        # The update helper's exclusive lock waits while any window runs.
+        assert subprocess.run(installer, check=False).returncode == 3
+    finally:
+        first.close()
+        second.close()
+    assert subprocess.run(installer, check=False).returncode == 0
+
+
 def test_stale_ordinary_settings_save_cannot_undo_latest_explicit_off(tmp_path):
     path = tmp_path / "settings.json"
     save_settings(path, {"automatic_updates": True, "quality": "old"})
@@ -527,7 +558,9 @@ def test_startup_check_result_is_independent_of_automatic_preference(
         assert bridge._updates.ready is None
         assert bridge._updates.available
         assert window.findChild(QObject, "updateNoticeButton") is None
-        assert not window.findChild(QObject, "updatePopup").property("visible")
+    # Whatever the preference, the found update is shown at once (the window
+    # was found missing in 0.2.6); see tests/test_qt_update_offer.py.
+    assert window.findChild(QObject, "updatePopup").property("visible")
 
 
 def test_general_preferences_write_failure_updates_visible_auto_choice(

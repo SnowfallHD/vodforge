@@ -167,6 +167,28 @@ Window {
         outputFolderDialog.open()
         tracePickerPhase(4) // native open returned
     }
+    // Another dialog keeps the screen until it closes; the update waits for it.
+    readonly property var updateOfferBlockers: [editorialPopup, outputDetailsPopup,
+        socialInvitationPopup, supportPopup, supportDiagnostics, analyticsPopup,
+        outputFolderRecoveryPopup, missingMediaPopup, relinkPopup, fileActionPopup,
+        libraryRemovalPopup, collectionPopup, collectionTargetPopup, annotationPopup,
+        settingsPopup, accessPopup, localConversionPopup]
+    property bool updateOfferPending: false
+    function offerUpdate() {
+        if (updatePopup.visible) { updateOfferPending = false; return }
+        if (!(bridge.updateAvailable || bridge.updateManualAvailable)) { updateOfferPending = false; return }
+        for (const blocker of updateOfferBlockers) {
+            if (blocker && blocker.visible) { updateOfferPending = true; return }
+        }
+        updateOfferPending = false
+        updatePopup.open()
+    }
+    Timer {
+        // Re-check after a blocking dialog closes; stops once the offer is shown.
+        interval: 400; repeat: true
+        running: window.updateOfferPending
+        onTriggered: window.offerUpdate()
+    }
     function closeDownloadSettings() {
         optionsMenu.close()
         settingsPopup.close()
@@ -329,6 +351,7 @@ Window {
             outputFolderRecoveryPopup.open()
         }
         function onAnalyticsPromptRequested() { analyticsPopup.open() }
+        function onUpdateOfferRequested() { window.offerUpdate() }
         function onSupportRequested() {
             supportPopup.reason = "Select one…"
             supportPopup.stars = 0
@@ -3471,7 +3494,9 @@ Window {
                     }
                     Text {
                         visible: bridge.updateBusy && bridge.updateStage !== "check"
-                        text: "VODForge will restart after verification, once active work is idle."
+                        text: bridge.updateAutomaticDownload ?
+                            "It installs when you quit VODForge. Choose Install now to restart sooner." :
+                            "VODForge will restart after verification, once active work is idle."
                         color: theme.muted
                         font.pixelSize: 13
                         wrapMode: Text.WordWrap

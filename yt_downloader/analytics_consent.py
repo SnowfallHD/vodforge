@@ -301,9 +301,8 @@ class AnalyticsConsentOwner:
         self._privacy_requests_until = 0.0
         if not telemetry_collection_allowed():
             return "unknown"
-        self.update(
-            mode="unknown", posthog_mode="opt-in", posthog_region_resolved=False
-        )
+        # The saved answer stays in effect until the server gives a new one;
+        # delivery waits for this refresh (ProductTelemetryOwner policy_pending).
         remaining = 1.5 if deadline is None else deadline - time.monotonic()
         if remaining <= 0:
             return "unknown"
@@ -322,8 +321,11 @@ class AnalyticsConsentOwner:
             if mode not in {"default-on", "opt-in"}:
                 return "unknown"
             # Socket timeouts do not bound DNS or a slowly streaming response.
-            # A late response must not enable analytics after the fallback prompt.
+            # A late response must not enable analytics after the fallback
+            # prompt, but a stricter late answer still applies.
             if deadline is not None and time.monotonic() >= deadline:
+                if mode == "opt-in":
+                    self.update(mode="opt-in", posthog_mode="opt-in")
                 return "unknown"
             self.update(
                 mode=mode,

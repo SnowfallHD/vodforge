@@ -81,7 +81,8 @@ def test_region_request_has_no_identity_and_is_bounded(tmp_path, monkeypatch):
         raise OSError()
 
     assert owner.resolve(opener=offline) == "unknown"
-    assert not owner.allowed
+    # An outage keeps the saved answer; only a real answer replaces it.
+    assert owner.allowed
 
 
 def test_welcome_opportunity_is_once_and_builds_fail_closed(tmp_path, monkeypatch):

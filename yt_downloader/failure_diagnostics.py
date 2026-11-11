@@ -780,12 +780,45 @@ def capture_failure(
     )
     if facts["reason"] == "unknown" and extractor_seen:
         facts["reason"] = "provider_extraction"
+    # A specific failure code says more than a generic reason, or one guessed
+    # from other words in the message (age-restricted read as sign-in needed).
+    coded = CODE_REASONS.get(facts.get("failure_code", ""))
+    if coded is not None and facts["reason"] in GENERIC_REASONS:
+        facts["reason"] = coded
     if not inspect_text and facts.get("os_error") == errno.ENOSPC:
         facts["failure_code"] = "disk_full"
     if len(error_chain) > 1 or "ExtractorError" in error_chain:
         facts["error_chain"] = ">".join(error_chain)
     return FailureDiagnostic(**facts)
 
+
+GENERIC_REASONS = frozenset(
+    {"unknown", "provider_extraction", "authentication_required"}
+)
+CODE_REASONS = {
+    "age_restricted": "source_restricted",
+    "members_only": "source_restricted",
+    "geo_restricted": "source_restricted",
+    "private_video": "source_restricted",
+    "drm_protected": "source_restricted",
+    "login_required": "authentication_required",
+    "bot_challenge": "authentication_required",
+    "cookies_unavailable": "authentication_required",
+    "video_unavailable": "source_unavailable",
+    "live_not_started": "source_unavailable",
+    "format_unavailable": "unsupported_format",
+    "no_video_stream": "unsupported_format",
+    "no_audio_stream": "unsupported_format",
+    "tls_certificate": "network",
+    "tls_handshake": "network",
+    "dns_lookup": "network",
+    "timeout": "network",
+    "connection_refused": "network",
+    "connection_reset": "network",
+    "encoder_unavailable": "dependency_missing",
+    "unsupported_url": "invalid_input",
+    "disk_full": "disk_full",
+}
 
 FAILURE_REASONS = frozenset(
     {
@@ -847,7 +880,8 @@ def classify_failure(message: str) -> str:
             "resource_exhausted",
             ("out of memory", "cannot allocate memory", "too many open files"),
         ),
-        ("rate_limited", ("429", "too many requests", "rate limit")),
+        # Status codes only as HTTP errors: a bare "429" can be part of a video ID.
+        ("rate_limited", ("http error 429", "too many requests", "rate limit")),
         (
             "source_restricted",
             (
@@ -867,7 +901,7 @@ def classify_failure(message: str) -> str:
                 "video unavailable",
                 "video has been removed",
                 "video is not available",
-                "404",
+                "http error 404",
                 "copyright",
             ),
         ),
