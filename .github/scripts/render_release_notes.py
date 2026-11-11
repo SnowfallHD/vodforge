@@ -12,6 +12,14 @@ VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$
 # Highlights per public version. Add an entry before rendering a new release so
 # published notes never fall back to another version's text.
 HIGHLIGHTS = {
+    "0.2.7": """- When a new version is available, VODForge now shows it in a window as soon as you open the app. With automatic updates on, the update still installs when you quit.
+- A downloaded update is now kept until you quit. Before, a later update check could discard it, so quitting installed nothing.
+- On Windows, opening VODForge while it’s already running now works.
+- On Windows, saving settings and the Library no longer fails when another program, such as antivirus software, briefly holds the file open.
+- Pressing **Preview metadata** with an empty link box now closes Settings and shows why, instead of seeming to do nothing.
+- A local conversion that finishes just as you quit is now saved to the Library.
+- When analytics is on, failure reports name the cause more often (for example age-restricted, members-only, region-blocked or a browser cookie problem), and a slow connection at launch no longer loses analytics or asks for your choice again.
+""",
     "0.2.6": """- One Mac download: a single installer for every Mac. It installs a universal app that runs natively on Apple silicon and Intel.
 - The Mac toolbar is now drawn by macOS, so in full screen it keeps its size and slides with the menu bar.
 - Interrupted single downloads and URL batches return as Paused, with Resume in Forge and Run Deck. Resume keeps the run’s saved settings and destination; batches continue with the remaining URLs and retain earlier results and issues.
