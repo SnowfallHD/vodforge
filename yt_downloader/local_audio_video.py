@@ -54,7 +54,15 @@ _WINDOWS_UNSAFE_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 
 class LocalAudioVideoError(RuntimeError):
-    """Raised when a local audio-to-video transaction cannot finish safely."""
+    """Raised when a local audio-to-video transaction cannot finish safely.
+
+    `reason` is a closed failure reason when the raiser knows it; otherwise the
+    stage decides (a file refused while preparing is the user's input).
+    """
+
+    def __init__(self, message: str, *, reason: str | None = None) -> None:
+        super().__init__(message)
+        self.reason = reason
 
 
 class LocalAudioVideoCancelled(LocalAudioVideoError):
@@ -774,7 +782,10 @@ class LocalAudioVideoConversionOwner:
 
     def _probe(self, path: Path) -> dict[str, Any]:
         if not self.ffprobe:
-            raise LocalAudioVideoError("VODForge's FFprobe runtime is unavailable.")
+            raise LocalAudioVideoError(
+                "VODForge's FFprobe runtime is unavailable.",
+                reason="dependency_missing",
+            )
         try:
             return self._probe_reader(self.ffprobe, path)
         except LocalAudioVideoError:
@@ -989,7 +1000,8 @@ class LocalAudioVideoConversionOwner:
             except FileExistsError:
                 continue
         raise LocalAudioVideoError(
-            "VODForge could not allocate a distinct output filename."
+            "VODForge could not allocate a distinct output filename.",
+            reason="output_conflict",
         )
 
     def _prepare_request(
@@ -998,7 +1010,9 @@ class LocalAudioVideoConversionOwner:
         on_progress: Callable[[LocalAudioVideoProgress], None],
     ) -> _PreparedLocalAudioVideo:
         if not self.ffmpeg:
-            raise LocalAudioVideoError("VODForge's FFmpeg runtime is unavailable.")
+            raise LocalAudioVideoError(
+                "VODForge's FFmpeg runtime is unavailable.", reason="dependency_missing"
+            )
         audio_path = self._validate_input_path(request.audio_path, ".mp3", "audio file")
         image_path = self._validate_image_path(request.image_path)
         output_root = Path(request.output_dir).expanduser().resolve(strict=False)

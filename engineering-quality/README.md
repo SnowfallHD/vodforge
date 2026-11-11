@@ -45,6 +45,51 @@ Each entry below records a defect class that was found, why the existing checks
 missed it, and what now covers it, newest first. Entries describe the code at
 their date; some name modules that have since been removed.
 
+## Quit-time results and failure labels — 2026-11-10
+
+Further defects from the same review:
+
+- **Lost at quit.**
+  - Anonymous counts lived only in memory and were dropped once the analytics
+    session closed.
+  - A local conversion that finished just before quit had saved its video but
+    never reached the Library.
+- **Wrong or unknown labels.**
+  - A batch where every item failed reported its summary error (reason unknown,
+    stage batch) instead of the items' cause.
+  - Local conversions always said stage "processing", and a refused input file
+    said "unknown".
+  - Nearly every update failure was "unknown", because update errors are
+    captured without their text.
+  - Re-download mismatches were "unknown", and an empty preview result was
+    "unknown".
+  - The playback "requested" step carried the previous video's origin.
+
+Why they were missed: quit tests checked that work stops, not that finished
+results are kept. Telemetry tests checked that a failure event exists, not that
+its reason and stage match what happened.
+
+What covers it now:
+
+- The session sends pending counts before closing. Quit handles a finished
+  conversion (`tests/test_qt_local_conversion_quit.py`).
+- A batch keeps the first failed item's own diagnostic.
+- Local conversions report the owner's stage, and its `LocalAudioVideoError`
+  can carry a reason (missing runtime, output conflict). A refused input file
+  while preparing is `invalid_input`.
+- First-party errors can carry `failure_reason`, which `capture_failure` reads
+  without the message. `UpdateError` uses it for verification, missing-release
+  and permission failures. Wrapped connection errors still classify from their
+  cause, so an unrecognized one stays unknown.
+- Reuse mismatches are `validation`, and an empty preview is
+  `source_unavailable`.
+- `tests/test_failure_reason_codes.py` covers each label. The playback origin
+  test is in `tests/test_qt_telemetry_coverage.py`.
+
+Not yet covered: Watch queue, Library import, relink and startup-history
+failures still send no detail, and a download worker that takes over 10 s to
+stop at quit still loses its run_stopped event.
+
 ## Policy refresh, update window, failure reasons, Windows lock — 2026-11-10
 
 Defects found in a whole-app review after the 0.2.6 release:

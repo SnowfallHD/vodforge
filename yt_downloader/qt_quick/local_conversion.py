@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import queue
 import threading
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +13,11 @@ from yt_downloader.download_error_presentation import (
     technical_download_error,
 )
 from yt_downloader.download_service import DownloadWorkerCore, write_diagnostic
-from yt_downloader.failure_diagnostics import FailureDiagnostic, capture_failure
+from yt_downloader.failure_diagnostics import (
+    GENERIC_REASONS,
+    FailureDiagnostic,
+    capture_failure,
+)
 from yt_downloader.local_audio_video import (
     LocalAudioVideoCancelled,
     LocalAudioVideoConversionOwner,
@@ -114,6 +119,8 @@ class LocalConversionRuntime:
             audio, image, output_dir, profile=LocalVideoProfile(profile)
         )
 
+        staged: list[FailureDiagnostic] = []
+
         def run() -> None:
             try:
                 result = self._owner.convert(
@@ -121,15 +128,17 @@ class LocalConversionRuntime:
                     on_progress=lambda progress: self.events.put(
                         ("progress", progress)
                     ),
+                    # The owner knows the exact stage (image, transcode, commit…).
+                    on_failure=staged.append,
                 )
             except LocalAudioVideoCancelled as exc:
                 self._observe("local_conversion_stopped", request.run_id)
                 write_diagnostic(technical_download_error(exc))
                 self.events.put(("error", "Conversion stopped."))
             except LocalAudioVideoError as exc:
-                self._report_failure(request.run_id, exc)
+                self._report_failure(request.run_id, exc, staged)
             except Exception as exc:  # noqa: BLE001 - worker must report its terminal result
-                self._report_failure(request.run_id, exc)
+                self._report_failure(request.run_id, exc, staged)
             else:
                 self.events.put(("done", result))
 
@@ -139,8 +148,20 @@ class LocalConversionRuntime:
         self._observe("local_conversion_started", request.run_id)
         self._thread.start()
 
-    def _report_failure(self, run_id: str, error: Exception) -> None:
-        detail = capture_failure(error, stage="processing")
+    def _report_failure(
+        self,
+        run_id: str,
+        error: Exception,
+        staged: list[FailureDiagnostic] | None = None,
+    ) -> None:
+        detail = staged[-1] if staged else capture_failure(error, stage="processing")
+        if isinstance(error, LocalAudioVideoError):
+            # A reason set where the error was raised beats one guessed from
+            # its wording; a refused file while preparing is the user's input.
+            if error.reason is not None:
+                detail = replace(detail, reason=error.reason)
+            elif detail.reason in GENERIC_REASONS and detail.stage == "preparation":
+                detail = replace(detail, reason="invalid_input")
         self._observe("local_conversion_failed", run_id, failure_detail=detail)
         write_diagnostic(technical_download_error(error))
         self.events.put(("error", download_error_message(error)))

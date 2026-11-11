@@ -139,6 +139,7 @@ def test_preview_reports_actual_settlement_with_bounded_cause(
             assert actual[-1]["failure_detail"]["stage"] == "analysis"
         elif result in {"empty", "empty_dict"}:
             assert actual[-1]["failure_detail"]["stage"] == "analysis"
+            assert actual[-1]["failure_reason"] == "source_unavailable"
     finally:
         preview.close()
         telemetry.shutdown(2)
@@ -931,3 +932,26 @@ Item {
         app.processEvents()
         bridge.close()
         telemetry.shutdown(2)
+
+
+def test_playback_request_reports_where_this_playback_started(tmp_path, monkeypatch):
+    """The "requested" step carried the previous playback's origin (the first
+    one in a session always said watch)."""
+    bridge, telemetry = bridge_fixture(tmp_path, monkeypatch)
+    try:
+        record = saved(tmp_path, "PRIVATE title", "MP4")
+        path = tmp_path / "PRIVATE media.mp4"
+        path.write_bytes(b"controlled provider input")
+        record["vodforge_output_path"] = str(path)
+        bridge._runtime.history = [record]
+        bridge.select("Library")
+        assert bridge.openLibraryItem(0)
+        bridge.closePlayback()
+        requested = [
+            row["dimensions"]["playback_origin"]
+            for row in rows(telemetry, tmp_path, "playback_operation")
+            if row["action"] == "requested"
+        ]
+        assert requested == ["library"]
+    finally:
+        bridge.close()

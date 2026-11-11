@@ -2124,8 +2124,15 @@ def _report_reuse_rejection(
 ) -> None:
     if callback is None:
         return
+    # Without an exception the existing file simply didn't match (e.g. other
+    # settings): a validation outcome, not an unknown failure.
+    detail = (
+        capture_failure(error, stage="reuse")
+        if error
+        else FailureDiagnostic(reason="validation", stage="reuse")
+    )
     try:
-        callback(reason, capture_failure(error, stage="reuse") if error else None)
+        callback(reason, detail)
     except Exception:  # noqa: BLE001, S110  # nosec B110 - diagnostic callbacks cannot control reuse
         pass
 
@@ -4279,6 +4286,10 @@ def _download_source_failure_context(
     return fallback_result, error
 
 
+class BatchProducedNoOutputError(RuntimeError):
+    """Every item in a batch failed; the items' own diagnostics hold the cause."""
+
+
 def _download_batch_terminal_event(
     result: _DownloadBatchResult,
     url_count: int,
@@ -4302,7 +4313,7 @@ def _download_batch_terminal_event(
         return ("stopped", "Batch stopped without producing an output.")
     if outcome.success_count == 0:
         if outcome.failure_count:
-            raise RuntimeError(
+            raise BatchProducedNoOutputError(
                 f"Batch produced no valid output — {outcome.failure_count} item(s) failed. "
                 f"Failure report: {BATCH_FAILURE_REPORT_PATH}"
             )
@@ -4948,8 +4959,10 @@ class DownloadWorkerCore:
                     provider_error = exc.error
                 issue = format_ytdlp_user_error(provider_error)
                 if job.failure_diagnostic is None:
-                    job.failure_diagnostic = capture_failure(
-                        provider_error, stage="batch"
+                    # The item's own diagnostic knows its stage and warnings.
+                    job.failure_diagnostic = (
+                        child.failure_diagnostic
+                        or capture_failure(provider_error, stage="batch")
                     )
                 failures.append((item_url, issue))
                 outcome = outcome.combined_with(DownloadOutcome(failure_count=1))
@@ -5007,7 +5020,13 @@ class DownloadWorkerCore:
                 )
             self.events.put(_download_batch_terminal_event(batch_result, len(urls)))
         except Exception as exc:  # noqa: BLE001 - worker converts terminal failures into UI outcomes
-            job.failure_diagnostic = capture_failure(exc, stage="batch")
+            # When every item failed, the first item's cause is the run's cause;
+            # the summary error itself says nothing about why.
+            if not (
+                isinstance(exc, BatchProducedNoOutputError)
+                and job.failure_diagnostic is not None
+            ):
+                job.failure_diagnostic = capture_failure(exc, stage="batch")
             self._active_progress_context = None
             write_diagnostic(
                 f"batch download worker error: {type(exc).__name__}: {exc}"

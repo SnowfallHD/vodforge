@@ -69,8 +69,12 @@ def start_session(tmp_path, monkeypatch, answer):
     return session, sent, counts, release
 
 
-def settle(session):
+def settle(session, until=lambda: True):
+    """Wait for the refresh, then for the app's own send after it."""
     assert session._resolved.wait(5)
+    deadline = time.monotonic() + 5
+    while not until() and time.monotonic() < deadline:
+        time.sleep(0.01)
     assert session.telemetry.shutdown(2)
 
 
@@ -96,7 +100,7 @@ def test_slow_answer_keeps_the_saved_choice_and_sends_held_events(
     assert telemetry.permitted()
     assert len(_load_outbox(tmp_path / "product-telemetry.json")) >= 1
     release.set()
-    settle(session)
+    settle(session, until=lambda: "feature_used" in sent and counts)
     assert "feature_used" in sent
     assert counts == ["app_started"]
     session.close()
@@ -131,3 +135,17 @@ def test_saved_choice_stays_in_effect_while_and_after_the_refresh(
     settle(session)
     assert owner.allowed  # a confirming or inconclusive answer keeps it
     session.close()
+
+
+def test_counts_pending_at_quit_are_sent_before_the_session_closes(
+    tmp_path, monkeypatch
+):
+    """Closing the session stops anonymous counts, and they live only in memory,
+    so a count queued by the last download was lost at quit."""
+    session, _sent, counts, release = start_session(tmp_path, monkeypatch, DEFAULT_ON)
+    release.set()
+    settle(session)
+    with session.telemetry._lock:
+        session.telemetry._baseline_pending["run_completed"] = 1  # not yet sent
+    session.close()
+    assert counts == ["run_completed"]

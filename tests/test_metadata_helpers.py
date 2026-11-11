@@ -5284,6 +5284,53 @@ def test_batch_worker_never_reports_completion_when_every_url_fails(
     assert not any(kind in {"done", "partial"} for kind, _payload in events)
 
 
+def test_batch_where_every_url_fails_keeps_the_items_cause(monkeypatch, tmp_path: Path):
+    """The run used to report the summary error (reason unknown, stage batch),
+    dropping the item's own reason, code and stage."""
+    from yt_downloader.failure_diagnostics import FailureDiagnostic
+
+    monkeypatch.setattr(
+        app_module, "BATCH_FAILURE_REPORT_PATH", tmp_path / "batch-url-failures.txt"
+    )
+    app = DownloadWorkerCore.__new__(DownloadWorkerCore)
+    app.events = queue.Queue()
+    app.cancel_requested = False
+    app._active_progress_context = None
+    cause = FailureDiagnostic(
+        reason="source_restricted", stage="analysis", failure_code="age_restricted"
+    )
+
+    def fail(child, **_kwargs):
+        child.failure_diagnostic = cause
+        raise RuntimeError("ERROR: Sign in to confirm your age")
+
+    app._download_worker_single = fail
+    job = DownloadJob(
+        url="https://www.youtube.com/watch?v=bad1",
+        urls=[
+            "https://www.youtube.com/watch?v=bad1",
+            "https://www.youtube.com/watch?v=bad2",
+        ],
+        output_dir=tmp_path,
+        output_type=OutputType.MP4,
+        quality_label="1080p Full HD",
+        export_mode=ExportMode.AUTO_CBR,
+        manual_settings=ManualExportSettings(),
+        mp3_settings=Mp3ExportSettings(),
+        single_video_only=False,
+        use_nvenc=False,
+        embed_thumbnail=False,
+        write_thumbnail=False,
+        embed_metadata=False,
+        write_info_json=False,
+        tags=[],
+    )
+
+    app._download_worker(job)
+
+    assert job.failure_diagnostic == cause
+
+
 @pytest.mark.parametrize("successes_before_cancel", [0, 1])
 def test_batch_cancellation_reports_stopped_or_partial_truthfully(
     monkeypatch, tmp_path: Path, successes_before_cancel: int

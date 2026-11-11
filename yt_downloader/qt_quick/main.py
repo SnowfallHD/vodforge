@@ -6232,6 +6232,9 @@ class Bridge(QObject):
             "playback_operation",
             operation_key=str(uuid.uuid4()),
         )
+        # Before "requested", which reports where playback started; it used to
+        # carry the previous video's origin.
+        self._playback_origin_selection = self._selection
         self._observe_playback_phase("requested")
         self._playback_output_type = str(
             self._runtime.history[index].get("vodforge_output_type") or ""
@@ -6252,7 +6255,6 @@ class Bridge(QObject):
             ),
         )
         self._playback_url = QUrl.fromLocalFile(str(path))
-        self._playback_origin_selection = self._selection
         self._playback_generation += 1
         self._playback_retained_frame = QVideoFrame()
         self._playback_frame_owner = ""
@@ -7850,6 +7852,16 @@ class Bridge(QObject):
             self._observe_playback_phase("closed")
             self._playback_operation = None
         self._local.close()
+        # A conversion that finished just before quit already saved its video;
+        # put it in the Library instead of leaving the result unhandled.
+        for kind, payload in self._local.poll():
+            if kind == "done" and isinstance(payload, LocalAudioVideoResult):
+                try:
+                    self._runtime.record_local_conversion(payload)
+                except (HistoryError, OSError, ValueError) as exc:
+                    self._local.observe_history_failed(payload, exc)
+                else:
+                    self._local.observe_committed(payload)
         self._runtime.close()
         self._analytics.close()
         if self._analytics.telemetry is not None:

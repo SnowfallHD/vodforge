@@ -43,6 +43,18 @@ WINDOWS_POWERSHELL_MODULE_PATH = "$env:PSModulePath = $PSHOME + '/Modules';"
 MACOS_STAGING_PREFIX = "staged-"
 
 
+class UpdateError(RuntimeError):
+    """An update step failed for a known reason (a closed failure reason).
+
+    Update errors are reported without their text, so the reason travels as an
+    attribute that capture_failure reads.
+    """
+
+    def __init__(self, message: str, *, reason: str) -> None:
+        super().__init__(message)
+        self.failure_reason = reason
+
+
 def _lock_shared_windows(handle: BinaryIO) -> None:
     """Shared lock on byte 0, so several app windows can run at once.
 
@@ -308,8 +320,9 @@ def fetch_latest_release(*, timeout: float = 15) -> ReleaseInfo:
             raw = response.read(MAX_RELEASE_RESPONSE_BYTES + 1)
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
-            raise RuntimeError(
-                "No packaged VODForge release is available yet."
+            raise UpdateError(
+                "No packaged VODForge release is available yet.",
+                reason="source_unavailable",
             ) from exc
         raise RuntimeError(
             f"GitHub could not check for updates (HTTP {exc.code})."
@@ -321,14 +334,19 @@ def fetch_latest_release(*, timeout: float = 15) -> ReleaseInfo:
             "You can also download VODForge from getvodforge.com."
         ) from exc
     if len(raw) > MAX_RELEASE_RESPONSE_BYTES:
-        raise RuntimeError("GitHub returned an unexpectedly large release response.")
+        raise UpdateError(
+            "GitHub returned an unexpectedly large release response.",
+            reason="validation",
+        )
     try:
         payload = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise RuntimeError("GitHub returned an unreadable release response.") from exc
+        raise UpdateError(
+            "GitHub returned an unreadable release response.", reason="validation"
+        ) from exc
     if not isinstance(payload, dict):
-        raise RuntimeError(  # noqa: TRY004 - remote protocol failures use RuntimeError
-            "GitHub returned an invalid release response."
+        raise UpdateError(
+            "GitHub returned an invalid release response.", reason="validation"
         )
     return parse_release_payload(payload)
 
@@ -381,11 +399,15 @@ def _fetch_small_text(url: str, *, timeout: float) -> str:
             "VODForge could not download the release checksums."
         ) from exc
     if len(raw) > MAX_RELEASE_RESPONSE_BYTES:
-        raise RuntimeError("The release checksum file is unexpectedly large.")
+        raise UpdateError(
+            "The release checksum file is unexpectedly large.", reason="validation"
+        )
     try:
         return raw.decode("utf-8")
     except UnicodeDecodeError as exc:
-        raise RuntimeError("The release checksum file is unreadable.") from exc
+        raise UpdateError(
+            "The release checksum file is unreadable.", reason="validation"
+        ) from exc
 
 
 def download_verified_update(
@@ -406,19 +428,29 @@ def download_verified_update(
         else None
     )
     if normalized_tag_version != release.version:
-        raise RuntimeError("This release contains invalid version metadata.")
+        raise UpdateError(
+            "This release contains invalid version metadata.", reason="validation"
+        )
     asset = release_asset_for_platform(
         release, platform_name=platform_name, machine=machine
     )
     if asset is None:
-        raise RuntimeError("This release does not include an update for this computer.")
+        raise UpdateError(
+            "This release does not include an update for this computer.",
+            reason="source_unavailable",
+        )
     if asset.size <= 0 or asset.size > MAX_UPDATE_ASSET_BYTES:
-        raise RuntimeError("The release update has an invalid file size.")
+        raise UpdateError(
+            "The release update has an invalid file size.", reason="validation"
+        )
     checksum_asset = next(
         (item for item in release.assets if item.name == "SHA256SUMS.txt"), None
     )
     if checksum_asset is None:
-        raise RuntimeError("This release is missing its SHA-256 checksum manifest.")
+        raise UpdateError(
+            "This release is missing its SHA-256 checksum manifest.",
+            reason="validation",
+        )
     try:
         checksum_url = _trusted_github_download(
             checksum_asset.download_url,
@@ -431,13 +463,16 @@ def download_verified_update(
             asset_name=asset.name,
         )
     except ValueError as exc:
-        raise RuntimeError("This release contains an invalid download URL.") from exc
+        raise UpdateError(
+            "This release contains an invalid download URL.", reason="validation"
+        ) from exc
     expected_hash = parse_sha256sums(
         _fetch_small_text(checksum_url, timeout=timeout)
     ).get(asset.name)
     if not expected_hash:
-        raise RuntimeError(
-            "This release is missing the update file's SHA-256 checksum."
+        raise UpdateError(
+            "This release is missing the update file's SHA-256 checksum.",
+            reason="validation",
         )
 
     destination_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -449,7 +484,7 @@ def download_verified_update(
         or destination_dir.is_symlink()
         or destination_dir.parent.is_symlink()
     ):
-        raise RuntimeError("The update cache path is unsafe.")
+        raise UpdateError("The update cache path is unsafe.", reason="filesystem")
     if destination.is_file() and destination.stat().st_size == asset.size:
         with destination.open("rb") as cached:
             if hashlib.file_digest(cached, "sha256").hexdigest() == expected_hash:
@@ -476,18 +511,21 @@ def download_verified_update(
                     break
                 downloaded += len(chunk)
                 if downloaded > asset.size or downloaded > MAX_UPDATE_ASSET_BYTES:
-                    raise RuntimeError(
-                        "The release update exceeded its declared file size."
+                    raise UpdateError(
+                        "The release update exceeded its declared file size.",
+                        reason="validation",
                     )
                 digest.update(chunk)
                 output.write(chunk)
         if downloaded != asset.size:
-            raise RuntimeError(
-                "The release update did not match its declared file size."
+            raise UpdateError(
+                "The release update did not match its declared file size.",
+                reason="validation",
             )
         if digest.hexdigest().lower() != expected_hash:
-            raise RuntimeError(
-                "The release update failed SHA-256 verification and was not opened."
+            raise UpdateError(
+                "The release update failed SHA-256 verification and was not opened.",
+                reason="validation",
             )
         replace_file(temporary, destination)
         if os.name != "nt":
@@ -539,19 +577,24 @@ def verify_macos_app(
     """Require the exact signed, notarized VODForge application identity."""
     app_path = Path(app_path)
     if not app_path.is_dir() or app_path.is_symlink():
-        raise RuntimeError(
-            "The macOS update did not contain a regular VODForge.app bundle."
+        raise UpdateError(
+            "The macOS update did not contain a regular VODForge.app bundle.",
+            reason="validation",
         )
     plist_path = app_path / "Contents" / "Info.plist"
     try:
         with plist_path.open("rb") as handle:
             bundle_id = str(plistlib.load(handle).get("CFBundleIdentifier") or "")
     except (OSError, plistlib.InvalidFileException, TypeError, ValueError) as exc:
-        raise RuntimeError(
-            "The macOS update has an unreadable application identity."
+        raise UpdateError(
+            "The macOS update has an unreadable application identity.",
+            reason="validation",
         ) from exc
     if bundle_id != MACOS_BUNDLE_ID:
-        raise RuntimeError("The macOS update has the wrong application identifier.")
+        raise UpdateError(
+            "The macOS update has the wrong application identifier.",
+            reason="validation",
+        )
 
     _run_checked(
         ["/usr/bin/codesign", "--verify", "--deep", "--strict", str(app_path)],
@@ -570,8 +613,9 @@ def verify_macos_app(
         fields.get("Identifier") != MACOS_BUNDLE_ID
         or fields.get("TeamIdentifier") != MACOS_TEAM_ID
     ):
-        raise RuntimeError(
-            "The macOS update is not signed for VODForge by Kryden Ventures."
+        raise UpdateError(
+            "The macOS update is not signed for VODForge by Kryden Ventures.",
+            reason="validation",
         )
     _run_checked(
         ["/usr/bin/xcrun", "stapler", "validate", str(app_path)], runner=runner
@@ -600,7 +644,7 @@ def prepare_macos_update(
     archive_path = Path(archive_path)
     target_app = Path(target_app)
     if archive_path.suffix.lower() != ".zip":
-        raise RuntimeError("The macOS update is not a ZIP archive.")
+        raise UpdateError("The macOS update is not a ZIP archive.", reason="validation")
     if (
         target_app.suffix.lower() != ".app"
         or not target_app.is_dir()
@@ -610,8 +654,9 @@ def prepare_macos_update(
             "VODForge must be running from an installed application bundle to update itself."
         )
     if not os.access(target_app.parent, os.W_OK):
-        raise RuntimeError(
-            "VODForge cannot replace the installed app at its current location."
+        raise UpdateError(
+            "VODForge cannot replace the installed app at its current location.",
+            reason="permission_denied",
         )
 
     staging_root = archive_path.parent / f"{MACOS_STAGING_PREFIX}{uuid.uuid4().hex}"
@@ -627,8 +672,9 @@ def prepare_macos_update(
             with (source_app / "Contents/Info.plist").open("rb") as handle:
                 actual_version = plistlib.load(handle).get("CFBundleShortVersionString")
             if actual_version != expected_version:
-                raise RuntimeError(
-                    "The signed update version does not match the release."
+                raise UpdateError(
+                    "The signed update version does not match the release.",
+                    reason="validation",
                 )
     except Exception:
         shutil.rmtree(staging_root, ignore_errors=True)
@@ -842,7 +888,9 @@ def verify_windows_authenticode(
     """Require VODForge's exact valid, timestamped Windows publisher signature."""
     installer_path = Path(installer_path)
     if installer_path.suffix.lower() != ".exe" or not installer_path.is_file():
-        raise RuntimeError("The Windows update is not an installer executable.")
+        raise UpdateError(
+            "The Windows update is not an installer executable.", reason="validation"
+        )
     literal_path = str(installer_path).replace("'", "''")
     command = (
         WINDOWS_POWERSHELL_MODULE_PATH
@@ -859,21 +907,27 @@ def verify_windows_authenticode(
     try:
         payload = json.loads(result.stdout)
     except (TypeError, json.JSONDecodeError) as exc:
-        raise RuntimeError(
-            "Windows could not read the update's publisher signature."
+        raise UpdateError(
+            "Windows could not read the update's publisher signature.",
+            reason="validation",
         ) from exc
     subject = str(payload.get("Subject") or "")
     if str(payload.get("Status") or "") != "Valid":
-        raise RuntimeError("Windows rejected the update's Authenticode signature.")
+        raise UpdateError(
+            "Windows rejected the update's Authenticode signature.", reason="validation"
+        )
     if (
         f'CN="{WINDOWS_PUBLISHER}"' not in subject
         or f'O="{WINDOWS_PUBLISHER}"' not in subject
     ):
-        raise RuntimeError(
-            "The Windows update was not published by Kryden Ventures, LLC."
+        raise UpdateError(
+            "The Windows update was not published by Kryden Ventures, LLC.",
+            reason="validation",
         )
     if not str(payload.get("Timestamp") or "").strip():
-        raise RuntimeError("The Windows update is missing its trusted timestamp.")
+        raise UpdateError(
+            "The Windows update is missing its trusted timestamp.", reason="validation"
+        )
 
 
 def windows_update_script(
@@ -1058,12 +1112,14 @@ def launch_windows_update(
     if target.name.lower() != "vodforge.exe" or not target.is_file():
         raise RuntimeError("Run the installed VODForge app before updating.")
     if installer.suffix.lower() != ".exe" or not installer.is_file():
-        raise RuntimeError(
-            "The verified installer is missing. Download the update again."
+        raise UpdateError(
+            "The verified installer is missing. Download the update again.",
+            reason="filesystem",
         )
     if not os.access(target.parent, os.W_OK):
-        raise RuntimeError(
-            "The app folder is not writable. Close VODForge and run the installer manually."
+        raise UpdateError(
+            "The app folder is not writable. Close VODForge and run the installer manually.",
+            reason="permission_denied",
         )
     with installer.open("rb") as handle:
         expected_digest = (
@@ -1073,7 +1129,9 @@ def launch_windows_update(
         expected_version is not None
         and installer.name != f"VODForge-Windows-Setup-v{expected_version}.exe"
     ):
-        raise RuntimeError("Staged installer does not match the release.")
+        raise UpdateError(
+            "Staged installer does not match the release.", reason="validation"
+        )
     token = uuid.UUID(telemetry_token).hex if telemetry_token else uuid.uuid4().hex
     receipt = installer.parent / f"handoff-{token}.json"
     ready = installer.parent / f"handoff-{token}.ready"

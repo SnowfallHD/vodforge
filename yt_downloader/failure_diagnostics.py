@@ -705,6 +705,11 @@ def capture_failure(
         elif name in ERROR_TYPES and name != "UnsafeOutputPathError":
             facts["error_type"] = name
             extractor_seen |= name == "ExtractorError"
+        # First-party errors can carry a closed reason (e.g. UpdateError), so
+        # the cause is known without reading the message.
+        typed_reason = getattr(current, "failure_reason", None)
+        if typed_reason in FAILURE_REASONS and facts["reason"] == "unknown":
+            facts["reason"] = typed_reason
         if isinstance(current, TimeoutError):
             facts["reason"] = "network"
         elif isinstance(current, PermissionError):
