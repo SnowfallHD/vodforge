@@ -292,7 +292,20 @@ class UpdateJourney(rj.Journey):
             self.driver.launch(self.app, self.environment(), log)
             rj.wait_for(self.driver.window, 90, "the VODForge window")
             window_seconds = round(time.monotonic() - started, 1)
-            rj.wait_for(self.offer_visible, 60, "the update window")
+            dismissed: list[str] = []
+
+            def offer_shown() -> bool:
+                # The update window waits for any other open prompt to close.
+                if self.offer_visible():
+                    return True
+                dismissed.extend(self.dismiss_first_run())
+                return False
+
+            try:
+                rj.wait_for(offer_shown, 90, "the update window")
+            except rj.JourneyError as exc:
+                seen = [t for t in self.driver.texts() if t][:40]
+                raise rj.JourneyError(f"{exc}; dismissed {dismissed}; shown {seen}")
             offer_seconds = round(time.monotonic() - started, 1)
             shot = self.output / "update-window.png"
             self.driver.screenshot(shot)
@@ -307,6 +320,7 @@ class UpdateJourney(rj.Journey):
             time.sleep(60)
             return {
                 "offered_version": newer,
+                "dismissed_before_offer": dismissed,
                 "window_seconds": window_seconds,
                 "offer_seconds_after_launch": offer_seconds,
                 "offer_seconds_after_window": round(offer_seconds - window_seconds, 1),
