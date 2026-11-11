@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import os
 import stat
+import threading
 import time
 import uuid
+from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
 from typing import BinaryIO, TextIO, TypeVar
@@ -12,28 +14,44 @@ from .safe_output import is_symlink_or_reparse
 
 T = TypeVar("T")
 
-# How long to keep retrying a Windows file that another handle has open.
+# How long to keep retrying a Windows file that another handle has open. The
+# app's own readers let go within milliseconds, but antivirus can hold a newly
+# written file for over a second (seen on Windows CI). A background thread can
+# afford to wait longer; the UI thread can't freeze the window for long.
 BUSY_FILE_RETRY_SECONDS = 1.0
+BACKGROUND_BUSY_FILE_RETRY_SECONDS = 5.0
 _ON_WINDOWS = os.name == "nt"
-# How often a busy file was retried in this process, and for how long (the test
-# suite prints it, so a slow Windows CI run shows whether retries were why).
-BUSY_RETRY_STATS: dict[str, float] = {"operations": 0, "seconds": 0.0, "longest": 0.0}
+# How often a busy file was retried in this process, for how long, and which
+# files were still locked when the retry gave up (the test suite prints it).
+BUSY_RETRY_STATS: dict[str, float] = {
+    "operations": 0,
+    "seconds": 0.0,
+    "longest": 0.0,
+    "gave_up": 0,
+}
+BUSY_RETRY_GAVE_UP: Counter[str] = Counter()
+BUSY_RETRY_FILES: Counter[str] = Counter()
 
 
-def retry_while_file_is_busy(operation: Callable[[], T]) -> T:
-    """Retry briefly when Windows refuses a file because it is open elsewhere.
+def retry_while_file_is_busy(operation: Callable[[], T], label: str = "") -> T:
+    """Retry while Windows refuses a file because it is open elsewhere.
 
     Windows can't replace a file, or open one being replaced, while another
     handle has it open: a reader thread in this app, an antivirus scanner or the
-    search indexer. Both raise PermissionError for a moment (in a test, over a
-    third of saves failed while another thread read the same file). macOS and
-    Linux allow it, so they don't retry, and a lasting denial still fails after
-    about a second.
+    search indexer. Each raises PermissionError until it lets go (in a test,
+    over a third of saves failed while another thread read the same file).
+    macOS and Linux allow it, so they don't retry. A lasting denial still fails,
+    after about a second on the UI thread or five seconds on any other.
     """
     if not _ON_WINDOWS:
         return operation()
     started = time.monotonic()
-    deadline = started + BUSY_FILE_RETRY_SECONDS
+    budget = (
+        BUSY_FILE_RETRY_SECONDS
+        if threading.current_thread() is threading.main_thread()
+        else BACKGROUND_BUSY_FILE_RETRY_SECONDS
+    )
+    deadline = started + budget
     delay = 0.002
     retried = False
     try:
@@ -42,6 +60,8 @@ def retry_while_file_is_busy(operation: Callable[[], T]) -> T:
                 return operation()
             except PermissionError:
                 if time.monotonic() >= deadline:
+                    BUSY_RETRY_STATS["gave_up"] += 1
+                    BUSY_RETRY_GAVE_UP[label or "unnamed"] += 1
                     raise
             retried = True
             time.sleep(delay)
@@ -52,16 +72,17 @@ def retry_while_file_is_busy(operation: Callable[[], T]) -> T:
             BUSY_RETRY_STATS["operations"] += 1
             BUSY_RETRY_STATS["seconds"] += waited
             BUSY_RETRY_STATS["longest"] = max(BUSY_RETRY_STATS["longest"], waited)
+            BUSY_RETRY_FILES[label or "unnamed"] += 1
 
 
 def replace_file(source: Path, destination: Path) -> None:
     """os.replace that tolerates a destination briefly open on Windows."""
-    retry_while_file_is_busy(lambda: os.replace(source, destination))
+    retry_while_file_is_busy(lambda: os.replace(source, destination), destination.name)
 
 
 def read_text(path: Path) -> str:
     """UTF-8 text of a file another thread may be replacing at this moment."""
-    return retry_while_file_is_busy(lambda: path.read_text(encoding="utf-8"))
+    return retry_while_file_is_busy(lambda: path.read_text(encoding="utf-8"), path.name)
 
 
 def open_private_file_descriptor(

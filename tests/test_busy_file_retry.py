@@ -171,3 +171,36 @@ def test_app_code_replaces_files_only_through_the_retry_helper():
                 relative = source.relative_to(package.parent)
                 direct.append(f"{relative}:{node.lineno}: {ast.unparse(node)}")
     assert not direct, "use private_files.replace_file:\n" + "\n".join(direct)
+
+
+def test_background_threads_wait_longer_than_the_ui_thread(monkeypatch):
+    """Antivirus held a new file for over a second on Windows CI, past the 1 s
+    retry; a background save can wait longer, the UI thread can't."""
+    monkeypatch.setattr(private_files, "_ON_WINDOWS", True)
+    monkeypatch.setattr(private_files, "BUSY_FILE_RETRY_SECONDS", 0.05)
+    monkeypatch.setattr(private_files, "BACKGROUND_BUSY_FILE_RETRY_SECONDS", 1.0)
+    gave_up_before = private_files.BUSY_RETRY_GAVE_UP["held.json"]
+
+    def locked_for(seconds):
+        until = time.monotonic() + seconds
+
+        def operation():
+            if time.monotonic() < until:
+                raise PermissionError(13, "Access is denied")
+            return "saved"
+
+        return operation
+
+    with pytest.raises(PermissionError):
+        private_files.retry_while_file_is_busy(locked_for(0.3), "held.json")
+    assert private_files.BUSY_RETRY_GAVE_UP["held.json"] == gave_up_before + 1
+
+    result = []
+    worker = threading.Thread(
+        target=lambda: result.append(
+            private_files.retry_while_file_is_busy(locked_for(0.3), "held.json")
+        )
+    )
+    worker.start()
+    worker.join(5)
+    assert result == ["saved"]

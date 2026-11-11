@@ -119,10 +119,30 @@ def production_telemetry_contract(monkeypatch):
 
 def pytest_terminal_summary(terminalreporter):
     """Report Windows busy-file retries, to explain slow file work on CI."""
-    from yt_downloader.private_files import BUSY_RETRY_STATS
+    from yt_downloader.private_files import (
+        BUSY_RETRY_FILES,
+        BUSY_RETRY_GAVE_UP,
+        BUSY_RETRY_STATS,
+    )
 
     if BUSY_RETRY_STATS["operations"]:
         terminalreporter.write_line(
             "busy-file retries: {operations:.0f} operations waited {seconds:.2f} s "
-            "in total, longest {longest:.2f} s".format(**BUSY_RETRY_STATS)
+            "in total, longest {longest:.2f} s, gave up {gave_up:.0f}".format(
+                **BUSY_RETRY_STATS
+            )
         )
+        terminalreporter.write_line(
+            "  retried files: "
+            + ", ".join(
+                f"{name} {count}" for name, count in BUSY_RETRY_FILES.most_common(12)
+            )
+        )
+        if BUSY_RETRY_GAVE_UP:
+            terminalreporter.write_line(
+                "  still locked: "
+                + ", ".join(
+                    f"{name} {count}"
+                    for name, count in BUSY_RETRY_GAVE_UP.most_common()
+                )
+            )

@@ -833,6 +833,7 @@ class Bridge(QObject):
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._pump)
         self._timer.start(50)
+        self._settings_save_retries = 0
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
         self._save_timer.timeout.connect(self._save_preferences)
@@ -6145,6 +6146,14 @@ class Bridge(QObject):
         try:
             save_settings(self._settings_path, updated)
         except SettingsError:
+            # A file briefly locked (antivirus, the search indexer) shouldn't
+            # turn automatic updates off for the session: try again a few
+            # times first. Closing saves once and can't wait.
+            if self._settings_save_retries < 4 and not self._closed:
+                self._settings_save_retries += 1
+                self._save_timer.start(1000)
+                return
+            self._settings_save_retries = 0
             self._automatic_updates = False
             self._automatic_download_requested = False
             self._updates.cancel_automatic_download()
@@ -6152,6 +6161,7 @@ class Bridge(QObject):
             self._status = "Settings could not be saved. Check the app data folder."
             self.statusChanged.emit()
             return
+        self._settings_save_retries = 0
         self._settings = updated
         self._record_settings_snapshot()
 
@@ -6542,19 +6552,19 @@ class Bridge(QObject):
             self._observe_playback_phase("ready")
         if status == "Playing":
             self._observe_playback_phase("started")
-        elif status == "Failed":
+        playback_failure: FailureDiagnostic | None = None
+        if status == "Failed":
+            playback_failure = FailureDiagnostic(
+                stage="playback",
+                reason={
+                    1: "unknown",
+                    2: "unsupported_format",
+                    3: "network",
+                    4: "permission_denied",
+                }.get(native_error, "unknown"),
+            )
             self._observe_playback_phase(
-                "failed",
-                failure_detail=FailureDiagnostic(
-                    stage="playback",
-                    reason={
-                        1: "unknown",
-                        2: "unsupported_format",
-                        3: "network",
-                        4: "permission_denied",
-                    }.get(native_error, "unknown"),
-                ),
-                native_error=native_error,
+                "failed", failure_detail=playback_failure, native_error=native_error
             )
         elif status == "Ended" and "failed" not in self._playback_phases:
             self._observe_playback_phase("completed")
@@ -6580,7 +6590,8 @@ class Bridge(QObject):
             self.watchProgressChanged.emit(history_archive_owner(record))
         if self._previews.request(duration):
             self.playbackPreviewsChanged.emit()
-        self._watch_queue.present(self, status)
+        # The queue reports the player's own cause for a failed item.
+        self._watch_queue.present(self, status, failure_detail=playback_failure)
 
     def _observe_playback_phase(
         self,
@@ -7393,8 +7404,13 @@ class Bridge(QObject):
                     {
                         "archive_result": "changed"
                         if phase == "stale"
-                        else "unavailable"
+                        else "unavailable",
+                        # What was found, when the check got that far.
+                        **(relink_dimensions(preview) if preview is not None else {}),
                     },
+                    failure_detail=self._relink.failure_detail
+                    if phase in {"error", "stale"}
+                    else None,
                 )
                 self._relink_operation = None
             elif phase == "done" and preview is not None:
@@ -7501,6 +7517,12 @@ class Bridge(QObject):
                         time.monotonic() - self._import_started_at
                     ),
                 },
+                failure_detail=next(
+                    (f.detail for f in import_failures if f.detail is not None),
+                    None,
+                )
+                if saved != self._import_request_count
+                else None,
             )
             self._import_operation = None
             self.statusChanged.emit()

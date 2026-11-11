@@ -339,6 +339,32 @@ def test_failures_preserve_distinct_bounded_reasons_and_actual_progress(cause):
     )
 
 
+@pytest.mark.parametrize(
+    ("cause", "reason"),
+    [
+        ("removed", "source_unavailable"),
+        ("unsaved", "filesystem"),
+        ("unexpected_end", "unsupported_format"),
+    ],
+)
+def test_queue_failures_carry_a_reason_not_unknown(cause, reason):
+    """Queue failures sent no failure detail, so their reason read "unknown"."""
+    q = Queue()
+    q.start()
+    if cause == "removed":
+        q.rows[:] = [q.rows[0], q.rows[2]]
+        q.finish()
+    elif cause == "unsaved":
+        q.rows[1] = dict(q.rows[1], vodforge_output_dir="")
+        q.finish()
+    else:
+        q.owner.present(q.attach(), "Ended")
+    action, _operation, _dimensions, extra = q.events[-1]
+    assert action == "failed"
+    detail = extra["failure_detail"]
+    assert (detail.reason, detail.stage) == (reason, "playback")
+
+
 def test_jump_does_not_falsely_count_skipped_items_as_completed():
     q = Queue()
     q.start()

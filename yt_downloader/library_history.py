@@ -45,14 +45,13 @@ class LibraryHistory:
             self.blocked = True
             self.download_history = []
             self.notice = "Library data needs attention before new work. The existing files were left untouched."
-            self._observe(
-                "failed",
-                operation,
-                "startup",
-                error=error
-                if isinstance(error, HistoryError)
-                else HistoryError("Library recovery needs attention."),
-            )
+            if not isinstance(error, HistoryError):
+                # Keep the original as the cause, so its reason (access denied,
+                # disk full) reaches telemetry instead of an empty wrapper.
+                wrapped = HistoryError("Library recovery needs attention.")
+                wrapped.__cause__ = error
+                error = wrapped
+            self._observe("failed", operation, "startup", error=error)
             return False
         self.blocked = False
         self.notice = ""

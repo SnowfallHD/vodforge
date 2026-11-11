@@ -168,3 +168,46 @@ def test_update_failures_carry_their_reason_without_reading_the_message(
         error, stage="download", inspect_text=False, context="updater"
     )
     assert detail.reason == reason
+
+
+@pytest.mark.parametrize(
+    ("error", "reason"),
+    [
+        (PermissionError(13, "Access is denied"), "permission_denied"),
+        (FileNotFoundError(2, "No such file"), "filesystem"),
+    ],
+)
+def test_library_import_failure_keeps_its_cause_for_telemetry(error, reason):
+    """Import failures kept only a file name and a message, so the event had no
+    cause."""
+    from pathlib import Path
+
+    from yt_downloader.library_import import import_failure
+
+    failure = import_failure(Path("PRIVATE name.mp4"), error)
+    assert failure.detail is not None
+    assert (failure.detail.reason, failure.detail.stage) == (reason, "preparation")
+    assert "PRIVATE" not in str(failure.detail.payload())
+
+
+def test_startup_history_failure_keeps_the_os_cause(monkeypatch, tmp_path):
+    """An OS error loading history was replaced by a new HistoryError with no
+    cause, so access-denied and disk errors arrived as unknown."""
+    from yt_downloader import library_history
+
+    def denied(*_args, **_kwargs):
+        raise PermissionError(13, "Access is denied", str(tmp_path / "history.json"))
+
+    monkeypatch.setattr(library_history, "load_history", denied)
+    recorded = []
+
+    class Telemetry:
+        def record_operation(self, feature, action, **fields):
+            recorded.append((action, fields.get("failure_detail")))
+            return True
+
+    owner = library_history.LibraryHistory(tmp_path / "history.json", Telemetry())
+    assert owner.load() is False
+    action, detail = recorded[-1]
+    assert action == "failed"
+    assert detail.reason == "permission_denied"

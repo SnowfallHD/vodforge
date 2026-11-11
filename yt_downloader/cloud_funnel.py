@@ -92,7 +92,7 @@ def _read_state(path: Path) -> InstallationState:
 
     try:
         # Background threads read this file while another may be saving it.
-        payload = json.loads(retry_while_file_is_busy(read))
+        payload = json.loads(retry_while_file_is_busy(read, path.name))
     except InstallationIdentityError:
         raise
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:

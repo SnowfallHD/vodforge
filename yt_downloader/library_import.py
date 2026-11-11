@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .failure_diagnostics import FailureDiagnostic, capture_failure
 from .platform_services import find_runtime_executable, hidden_window_subprocess_kwargs
 
 SUPPORTED_IMPORTS = frozenset(
@@ -32,6 +33,8 @@ class MediaInspectionUnavailable(RuntimeError):
 class ImportFailure:
     name: str
     message: str
+    # Closed facts about the cause, for telemetry (no file name or message).
+    detail: FailureDiagnostic | None = None
 
 
 def import_failure(
@@ -54,7 +57,11 @@ def import_failure(
         message = "Library changes could not be saved safely. Check app data folder access and available space, then import again. The media files were left unchanged."
     else:
         message = "Media inspection did not complete. Check that the file is supported and playable, then import again."
-    return ImportFailure(name, message)
+    return ImportFailure(
+        name,
+        message,
+        capture_failure(error, stage="history" if publication else "preparation"),
+    )
 
 
 def import_failure_summary(failures: list[ImportFailure]) -> str:

@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from .archive_browser import media_source_identity
-from .failure_diagnostics import FailureDiagnostic
+from .failure_diagnostics import FAILURE_REASONS, FailureDiagnostic
 from .watch_library import watch_variant_indices
 
 
@@ -51,6 +51,15 @@ def queue_count_bucket(count: int) -> str:
         if count <= 100
         else "101_plus"
     )
+
+
+# Queue causes as closed failure reasons (the queue dimension keeps the detail).
+_QUEUE_REASONS = {
+    "source_removed": "source_unavailable",
+    "saved_output_missing": "filesystem",
+    "storage_wait_expired": "filesystem",
+    "ended_before_playing": "unsupported_format",
+}
 
 
 class QueueObserver(Protocol):
@@ -300,6 +309,17 @@ class WatchQueueOwner:
                 queue_failure_boundary=failure_boundary,
                 queue_failure_reason=failure_reason,
             )
+            if failure_detail is None:
+                # The queue knows why; without detail the event read "unknown".
+                failure_detail = FailureDiagnostic(
+                    stage="playback",
+                    reason=_QUEUE_REASONS.get(
+                        failure_reason,
+                        failure_reason
+                        if failure_reason in FAILURE_REASONS
+                        else "unknown",
+                    ),
+                )
         try:
             if failure_detail is None:
                 self._observe(action, self._operation, dimensions)

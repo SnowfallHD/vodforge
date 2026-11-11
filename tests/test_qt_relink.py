@@ -58,6 +58,11 @@ def test_qt_relink_requires_review_and_preserves_failed_or_stale_history(tmp_pat
         assert session.eligible
         assert not session.accept([{**rows[0], "title": "Changed"}])
         assert session.phase == "stale"
+        # Telemetry gets the cause; relink failures used to read "unknown".
+        assert (session.failure_detail.reason, session.failure_detail.stage) == (
+            "validation",
+            "commit",
+        )
         assert load_history(history_path)[0]["vodforge_output_path"] == str(original)
 
         assert session.begin(owner, candidate, rows)
@@ -95,6 +100,8 @@ def test_qt_relink_rejects_wrong_file_and_never_writes(tmp_path):
         assert session.begin(history_archive_owner(rows[0]), candidate, rows)
         _settle(session)
         assert session.phase == "error"
+        assert session.failure_detail is not None
+        assert session.failure_detail.reason == "invalid_input"  # nothing matched
         assert not session.eligible
         assert not session.accept(rows)
         assert load_history(history_path)[0]["vodforge_output_path"] == str(original)

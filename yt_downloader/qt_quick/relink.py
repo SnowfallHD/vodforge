@@ -16,6 +16,7 @@ from yt_downloader.archive_relink import (
     verify_relink,
 )
 from yt_downloader.archive_work import ArchiveWorkOwner
+from yt_downloader.failure_diagnostics import FailureDiagnostic
 from yt_downloader.history import history_archive_owner, load_history
 
 
@@ -45,6 +46,8 @@ class QtRelinkSession:
         self.mode = "file"
         self.selected: tuple[int, ...] = ()
         self.preview: RelinkPreview | None = None
+        # Closed cause of the last failure, for telemetry.
+        self.failure_detail: FailureDiagnostic | None = None
         self.records: list[dict[str, Any]] = []
         self.updated_history: list[dict[str, Any]] | None = None
         self._document_hash: bytes | None = None
@@ -158,6 +161,7 @@ class QtRelinkSession:
         self.updated_history = None
         self._document_hash = None
         self._cancel_requested = False
+        self.failure_detail = None
         self.phase = "checking"
         self.status = "Checking the selected files and saved details…"
         self._started = time.monotonic()
@@ -169,6 +173,7 @@ class QtRelinkSession:
         if tuple(record_fingerprint(row) for row in current) != self.preview.snapshot:
             self.phase = "stale"
             self.status = "Library changed. Choose and verify the file again."
+            self.failure_detail = FailureDiagnostic(reason="validation", stage="commit")
             return False
         preview = self.preview
         snapshot = self.records
@@ -216,6 +221,7 @@ class QtRelinkSession:
             ):
                 self.phase = "error"
                 self.status = "The selected file could not be checked."
+                self.failure_detail = FailureDiagnostic(stage="validation")
                 return True
             self.preview, self._document_hash = result.value
             if self.ready_indices:
@@ -226,6 +232,10 @@ class QtRelinkSession:
                 )
             else:
                 self.phase = "error"
+                # Nothing in the chosen place matched the saved files.
+                self.failure_detail = FailureDiagnostic(
+                    reason="invalid_input", stage="validation"
+                )
                 state = (
                     self.preview.entries[0].state
                     if self.preview.entries
@@ -243,6 +253,7 @@ class QtRelinkSession:
         if result.kind == "commit" and self.phase == "working":
             if result.error or not isinstance(result.value, list):
                 self.phase = "cancelled" if self._cancel_requested else "error"
+                self.failure_detail = FailureDiagnostic(stage="commit")
                 self.status = (
                     "Update cancelled. Your saved location was not changed."
                     if self._cancel_requested

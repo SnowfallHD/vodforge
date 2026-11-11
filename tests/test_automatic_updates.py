@@ -575,10 +575,35 @@ def test_general_preferences_write_failure_updates_visible_auto_choice(
         raise SettingsError("fixture general preferences failure")
 
     monkeypatch.setattr(qt_main, "save_settings", refuse)
+    # A brief lock (antivirus, the indexer) is retried and changes nothing.
     bridge._save_preferences()
+    assert bridge.automaticUpdates and bridge._save_timer.isActive()
+    assert bridge._updates.automatic_download
+    # A lasting failure still turns automatic updates off, as before.
+    for _ in range(4):
+        bridge._save_preferences()
     assert not bridge.automaticUpdates
     assert button.property("label") == "Off"
     assert not bridge._updates.automatic_download
+
+
+def test_settings_save_that_succeeds_on_retry_keeps_automatic_updates(
+    update_notice_scene, monkeypatch
+):
+    _, bridge, _window = update_notice_scene
+    attempts = []
+
+    def locked_once(*_args):
+        attempts.append(True)
+        if len(attempts) == 1:
+            raise SettingsError("settings.json is open in another program")
+
+    monkeypatch.setattr(qt_main, "save_settings", locked_once)
+    bridge._save_preferences()
+    bridge._save_preferences()  # the retry
+    assert len(attempts) == 2
+    assert bridge.automaticUpdates
+    assert bridge._settings_save_retries == 0
 
 
 @pytest.mark.parametrize("ready", [False, True])
