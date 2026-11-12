@@ -110,6 +110,10 @@ class UpdateJourney(rj.Journey):
             VODFORGE_QUALITY_E2E_WINDOW_TOKEN=f"VFQ-{nonce[:12]}-L{self.launches}",
             VODFORGE_QUALITY_E2E_LAUNCH_ID=uuid.uuid4().hex,
         )
+        if sys.platform != "win32":
+            # The first launch opens a welcome page; keep it out of the
+            # person's own browser.
+            env["BROWSER"] = "/usr/bin/true"
         if sys.platform == "win32":
             env.update(
                 USERPROFILE=str(self.home),
