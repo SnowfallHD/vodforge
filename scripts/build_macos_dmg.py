@@ -94,6 +94,20 @@ def require_installer_app(app: Path, run=command):
     }
 
 
+def owned_mounts(entities: list[dict], mount: Path) -> list[dict]:
+    """The attached volumes mounted at this folder.
+
+    hdiutil reports the resolved path (/private/var/...), while a temporary
+    folder under /var/folders reaches it through the /var link.
+    """
+    target = mount.resolve()
+    return [
+        row
+        for row in entities
+        if row.get("mount-point") and Path(row["mount-point"]).resolve() == target
+    ]
+
+
 def build_dmg(app: Path, output: Path, logo: Path):
     if output.exists() or output.suffix != ".dmg":
         raise ValueError("Require fresh .dmg output; refusing overwrite")
@@ -145,11 +159,7 @@ def build_dmg(app: Path, output: Path, logo: Path):
                 ]
             )
         )
-        matching = [
-            row
-            for row in attach["system-entities"]
-            if row.get("mount-point") == str(mount)
-        ]
+        matching = owned_mounts(attach["system-entities"], mount)
         if len(matching) != 1:
             raise RuntimeError("Owned mountpoint not established")
         device = matching[0]["dev-entry"]

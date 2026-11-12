@@ -2,7 +2,7 @@ import plistlib
 
 import pytest
 
-from scripts.build_macos_dmg import build_dmg, require_universal_app
+from scripts.build_macos_dmg import build_dmg, owned_mounts, require_universal_app
 
 
 @pytest.fixture
@@ -74,3 +74,17 @@ def test_dmg_accepts_only_the_installer_app(app, tmp_path):
     with pytest.raises(ValueError, match="Install VODForge.app"):
         build_dmg(app, tmp_path / "new.dmg", tmp_path / "unused.png")
     assert not (tmp_path / "new.dmg").exists()
+
+
+def test_owned_mount_matches_through_a_linked_folder(tmp_path):
+    # hdiutil reports /private/var/... for a mount made under /var/folders.
+    real = tmp_path / "real"
+    (real / "mounted").mkdir(parents=True)
+    linked = tmp_path / "linked"
+    linked.symlink_to(real)
+    entities = [
+        {"dev-entry": "/dev/disk9"},
+        {"dev-entry": "/dev/disk9s1", "mount-point": str(real / "mounted")},
+    ]
+    assert owned_mounts(entities, linked / "mounted") == [entities[1]]
+    assert owned_mounts(entities, tmp_path / "other") == []
