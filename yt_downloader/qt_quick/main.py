@@ -7050,10 +7050,16 @@ class Bridge(QObject):
             self._files.plan = None
             self._files.action = "remove_run"
             self._files.phase = "preview"
+            partial = (
+                "Its unfinished partial download, kept so it could resume, "
+                "will be deleted. "
+                if self._runtime.recovery.store.holds_settled_partial(run_id)
+                else "Unindexed partial files cannot be verified and will be kept. "
+            )
             self._files.status = (
                 "Remove this run? No owned Library files are recorded. "
-                "Unindexed partial files cannot be verified and will be kept. "
-                "The output folder and unrelated files will not be removed.\n\n"
+                + partial
+                + "The output folder and unrelated files will not be removed.\n\n"
                 + str(job.output_dir)
             )
         self._remove_run_request = (job, owners)

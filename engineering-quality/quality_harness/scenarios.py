@@ -1224,10 +1224,11 @@ def lifecycle_quit_restart_recovery(
     sequential_stop_ids = [
         str(item.get("vodforge_terminal_run_id") or "") for item in stopped_rows
     ]
-    sequential_stops_retained = sequential_stop_ids == [
-        second_queued.run_id,
-        first_queued.run_id,
-    ] and all(
+    # The projection keeps the journal's finish order; the Run Deck sorts it
+    # for display, so only distinctness is checked here.
+    sequential_stops_retained = sorted(sequential_stop_ids) == sorted(
+        [first_queued.run_id, second_queued.run_id]
+    ) and all(
         str(item.get("vodforge_terminal_status") or "") == "Stopped"
         for item in stopped_rows
     )

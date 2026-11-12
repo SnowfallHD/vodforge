@@ -1,5 +1,6 @@
 """Independent durable ownership boundaries: preserved resources are not an active slot."""
 
+import json
 from dataclasses import replace
 
 import pytest
@@ -154,3 +155,64 @@ def test_current_item_metadata_survives_restart_without_previous_video_artwork(
     assert preview["playlist_title"] == "Collection"
     assert preview["uploader"] == "Actual creator"
     assert not preview.get("thumbnail") and not preview.get("best_thumbnail")
+
+
+def settled(tmp_path, *, child: bool):
+    """A paused attempt whose startup recovery finished ("ready")."""
+    store, job, stage = interrupted(tmp_path)
+    if child:
+        store.child_started(999992, ["ffmpeg", str(stage)], birth_time=123)
+    store.prepare_recovery()
+    token = store.claim_recovery(job.run_id)
+    assert store.finish_recovery(job.run_id, "ready", "Settled", token=token)
+    return store, job, stage
+
+
+@pytest.mark.parametrize("child", [True, False])
+def test_settled_recovery_lists_no_processes_and_resume_frees_its_files(
+    tmp_path, child
+):
+    # Recovery reaching "ready" proved every recorded child gone; a crash during
+    # conversion must not leave the old card stuck after Resume.
+    store, job, stage = settled(tmp_path, child=child)
+    assert store.recovery_records()[0]["ownership"]["children"] == []
+    store.begin(replace(job, run_id="resumed"), superseded_run_id=job.run_id)
+    assert [j.run_id for j in store.load_terminal_jobs()] == []
+    assert (stage / "video.part").exists()  # kept while the resumed run is live
+    store.clear("resumed")
+    store.release_superseded()
+    assert not stage.exists()
+    assert not store.path.exists()
+
+
+@pytest.mark.parametrize("child", [True, False])
+def test_removing_a_settled_paused_run_deletes_its_partial_files(tmp_path, child):
+    store, job, stage = settled(tmp_path, child=child)
+    assert store.holds_settled_partial(job.run_id)
+    assert store.clear(job.run_id, terminal_only=True)
+    assert not stage.exists()
+    assert store.load_terminal_jobs() == []
+
+
+def test_unsettled_recoveries_stay_protected_from_removal(tmp_path):
+    store, job, stage = interrupted(tmp_path)
+    store.prepare_recovery()
+    assert not store.holds_settled_partial(job.run_id)  # pending
+    assert not store.clear(job.run_id, terminal_only=True)
+    token = store.claim_recovery(job.run_id)
+    assert not store.clear(job.run_id, terminal_only=True)  # in flight
+    store.finish_recovery(job.run_id, "failed", "Preserved", token=token)
+    assert not store.holds_settled_partial(job.run_id)
+    assert not store.clear(job.run_id, terminal_only=True)
+    assert (stage / "video.part").read_bytes() == b"private partial"
+
+
+def test_settled_removal_refuses_staging_outside_its_output(tmp_path):
+    store, job, _stage = settled(tmp_path, child=False)
+    payload = store.load()
+    outside = tmp_path / "elsewhere" / ".vfstage" / "owned"
+    outside.mkdir(parents=True)
+    payload["recovered_failures"][0]["ownership"]["staging_dirs"] = [str(outside)]
+    store.path.write_text(json.dumps(payload))
+    assert not store.clear(job.run_id, terminal_only=True)
+    assert outside.exists()

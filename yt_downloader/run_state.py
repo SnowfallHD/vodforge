@@ -628,6 +628,7 @@ class ActiveRunStore:
         *,
         expected: str | None = None,
         token: str | None = None,
+        children_settled: bool = False,
     ) -> bool:
         with self._lock:
             payload = self._read_unlocked()
@@ -647,6 +648,8 @@ class ActiveRunStore:
             if token is not None and row.get("recovery_token") != token:
                 return False
             row.update(update)
+            if children_settled:
+                row["ownership"] = {**row["ownership"], "children": []}
             payload["recovered_failures"] = rows
             self._write_unlocked(payload)
             return True
@@ -683,6 +686,9 @@ class ActiveRunStore:
             },
             expected="attempting",
             token=token,
+            # "ready" follows a recovery that stopped or proved gone every
+            # recorded child; keeping them listed would block Resume and Remove.
+            children_settled=state == "ready",
         )
 
     def release_recovery_claim(self, run_id: str, token: str) -> bool:
@@ -901,26 +907,52 @@ class ActiveRunStore:
             if not successor or successor in live:
                 kept.append(record)
                 continue
-            staging = [Path(v) for v in record["ownership"].get("staging_dirs", [])]
-            root = (
-                Path(
-                    os.path.abspath(str(record["job"].get("output_dir") or ""))
-                ).resolve(strict=False)
-                / ".vfstage"
-            )
-            try:
-                if any(path.parent != root for path in staging):
-                    raise UnsafeOutputPathError(
-                        "Held staging is outside its output root."
-                    )
-                cleanup_abandoned_staging_transactions(staging)
-            except (UnsafeOutputPathError, OSError):
+            if not self._cleanup_held_staging(record):
                 kept.append(record)
                 continue
             changed = True
         if changed:
             payload["recovered_failures"] = kept
         return changed
+
+    @staticmethod
+    def _cleanup_held_staging(record: Mapping[str, Any]) -> bool:
+        """Remove a record's held partial files through the safe staging owner."""
+        staging = [Path(v) for v in record["ownership"].get("staging_dirs", [])]
+        root = (
+            Path(os.path.abspath(str(record["job"].get("output_dir") or ""))).resolve(
+                strict=False
+            )
+            / ".vfstage"
+        )
+        try:
+            if any(path.parent != root for path in staging):
+                raise UnsafeOutputPathError("Held staging is outside its output root.")
+            cleanup_abandoned_staging_transactions(staging)
+        except (UnsafeOutputPathError, OSError):
+            return False
+        return True
+
+    @staticmethod
+    def _settled_partial(record: Mapping[str, Any]) -> bool:
+        """A paused attempt whose recovery finished and whose processes are gone."""
+        ownership = record.get("ownership") or {}
+        return bool(
+            record.get("recovery_state") == "ready"
+            and not record.get("recovery_inflight")
+            and not record.get("superseded_by")
+            and not ownership.get("children")
+        )
+
+    def holds_settled_partial(self, run_id: str) -> bool:
+        """Whether removing this paused run also deletes its kept partial files."""
+        return any(
+            record["job"].get("run_id") == run_id
+            and record.get("ownership")
+            and record["ownership"].get("staging_dirs")
+            and self._settled_partial(record)
+            for record in self._failure_records(self.load())
+        )
 
     def release_superseded(self) -> bool:
         with self._lock:
@@ -1120,7 +1152,12 @@ class ActiveRunStore:
             self._write_unlocked(payload)
 
     def mark_terminal(
-        self, status: str, message: str, *, activity_lines: list[str] | None = None
+        self,
+        status: str,
+        message: str,
+        *,
+        activity_lines: list[str] | None = None,
+        children_settled: bool = False,
     ) -> DownloadJob:
         if status not in PERSISTED_TERMINAL_STATUSES:
             raise RunStateError(f"Unsupported durable terminal status: {status}")
@@ -1145,7 +1182,9 @@ class ActiveRunStore:
                 "failure_message": message,
                 "activity_lines": _terminal_activity(job.activity_lines, message),
             }
-            ownership = self._remaining_ownership(payload)
+            ownership = self._remaining_ownership(
+                {**payload, "children": []} if children_settled else payload
+            )
             if ownership is not None:
                 terminal.update(
                     ownership=ownership,
@@ -1298,11 +1337,19 @@ class ActiveRunStore:
                 for record in existing_queue
                 if str(record.get("run_id") or "") != run_id
             ]
-            if any(
-                r["job"].get("run_id") == run_id and r.get("ownership")
+            held = [
+                r
                 for r in existing_failures
+                if r["job"].get("run_id") == run_id and r.get("ownership")
+            ]
+            # Dismissing a card must not discard protected resources. A settled
+            # paused attempt only holds its own partial files, which go with it.
+            if held and not (
+                len(held) == 1
+                and self._settled_partial(held[0])
+                and self._cleanup_held_staging(held[0])
             ):
-                return False  # Dismissing a card must not discard protected resources.
+                return False
             if terminal_only and (
                 active_matches
                 or len(queued) != len(existing_queue)
@@ -1447,7 +1494,8 @@ def recover_interrupted_run(
             stage="staging_cleanup",
             attempt_key=job.run_id,
         ) from exc
-    store.mark_terminal("Paused", INTERRUPTED_PAUSE_MESSAGE)
+    # Every recorded child was stopped or proved gone above.
+    store.mark_terminal("Paused", INTERRUPTED_PAUSE_MESSAGE, children_settled=True)
     return store.load_terminal_jobs()
 
 
