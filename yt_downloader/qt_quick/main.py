@@ -1857,9 +1857,17 @@ class Bridge(QObject):
                 "No data has been deleted by opening this page."
             )
 
-    @Slot()
-    def openSocialAccount(self) -> None:
+    @Slot(str)
+    def openSocialAccount(self, source: str = "header") -> None:
+        """Open the X account; ``source`` is header, welcome or invitation."""
         QDesktopServices.openUrl(QUrl("https://x.com/VODForge"))
+        action = {
+            "header": "header_opened",
+            "welcome": "welcome_opened",
+            "invitation": "invitation_followed",
+        }.get(source)
+        if action is not None:
+            self._record_update_feature("social", action)
 
     @Property(str, notify=outputPathChanged)
     def outputPath(self) -> str:
@@ -5260,6 +5268,7 @@ class Bridge(QObject):
         ):
             self._social_invitation_open = True
             self.socialInvitationRequested.emit()
+            self._record_update_feature("social", "invitation_shown")
             return
         self._offer_notice()
 
@@ -5337,7 +5346,9 @@ class Bridge(QObject):
         self._settings["social_invitation_dismissed"] = True
         self._schedule_preferences_save()
         if follow:
-            self.openSocialAccount()
+            self.openSocialAccount("invitation")
+        else:
+            self._record_update_feature("social", "invitation_dismissed")
 
     @Slot(bool)
     def dismissEditorial(self, try_it: bool) -> None:

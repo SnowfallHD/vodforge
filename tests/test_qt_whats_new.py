@@ -218,7 +218,9 @@ def test_social_invitation_persists_dismissal_and_only_opens_x_on_explicit_actio
     bridge._social_idle_since = qt_main.time.monotonic() - 9
     requested = QSignalSpy(bridge.socialInvitationRequested)
     opened = []
-    monkeypatch.setattr(bridge, "openSocialAccount", lambda: opened.append(True))
+    monkeypatch.setattr(
+        bridge, "openSocialAccount", lambda *_source: opened.append(True)
+    )
     bridge.checkEditorial(True)
     bridge.checkEditorial(True)
     assert requested.count() == 1 and not opened
@@ -281,7 +283,9 @@ def test_welcome_includes_optional_social_link_and_suppresses_upgrade_invitation
 ):
     bridge._settings["social_invitation_dismissed"] = False
     opened = []
-    monkeypatch.setattr(bridge, "openSocialAccount", lambda: opened.append(True))
+    monkeypatch.setattr(
+        bridge, "openSocialAccount", lambda *_source: opened.append(True)
+    )
     requested = QSignalSpy(bridge.socialInvitationRequested)
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
@@ -417,3 +421,43 @@ def test_settings_tip_records_only_its_explicit_try_it_action(bridge, monkeypatc
         encoding="utf-8"
     )
     assert "if (tryIt) settingsPopup.open()" in qml
+
+
+def test_x_links_and_invitation_are_recorded(bridge, monkeypatch):
+    events = []
+    monkeypatch.setattr(
+        bridge,
+        "_record_update_feature",
+        lambda feature, action, dimensions=None: events.append((feature, action)),
+    )
+    opened = []
+    monkeypatch.setattr(
+        qt_main.QDesktopServices, "openUrl", lambda url: opened.append(url.toString())
+    )
+    bridge.openSocialAccount("header")
+    bridge.openSocialAccount("welcome")
+    bridge._settings["social_invitation_dismissed"] = False
+    bridge._settings["whats_new_seen"] = qt_main.SHOWCASE_ID
+    bridge._social_idle_since = qt_main.time.monotonic() - 9
+    bridge.checkEditorial(True)
+    bridge.dismissSocialInvitation(True)
+    bridge._settings["social_invitation_dismissed"] = False
+    bridge._social_idle_since = qt_main.time.monotonic() - 9
+    bridge.checkEditorial(True)
+    bridge.dismissSocialInvitation(False)
+    assert opened == ["https://x.com/VODForge"] * 3
+    assert events == [
+        ("social", "header_opened"),
+        ("social", "welcome_opened"),
+        ("social", "invitation_shown"),
+        ("social", "invitation_followed"),
+        ("social", "invitation_shown"),
+        ("social", "invitation_dismissed"),
+    ]
+    qml = (qt_main.Path(qt_main.__file__).parent / "Main.qml").read_text(
+        encoding="utf-8"
+    )
+    # Every X entry point names its source.
+    assert "bridge.openSocialAccount()" not in qml
+    assert qml.count('bridge.openSocialAccount("header")') == 2
+    assert qml.count('bridge.openSocialAccount("welcome")') == 1

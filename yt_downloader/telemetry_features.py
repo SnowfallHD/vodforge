@@ -140,6 +140,16 @@ FEATURE_ACTIONS: dict[str, frozenset[str]] = {
     "announcement": frozenset({"shown", "try_it"}),
     # A message published on getvodforge.com (app_notices); no notice ID is sent.
     "notice": frozenset({"shown", "opened", "closed"}),
+    # The X (Twitter) account: header button, welcome screen, one-time invitation.
+    "social": frozenset(
+        {
+            "header_opened",
+            "welcome_opened",
+            "invitation_shown",
+            "invitation_followed",
+            "invitation_dismissed",
+        }
+    ),
     "guidance": frozenset({"technical_opened", "recovery_selected"}),
     "appearance": frozenset({"changed", "transition_shown", "transition_skipped"}),
     "updater": frozenset(

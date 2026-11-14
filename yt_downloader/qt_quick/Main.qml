@@ -420,7 +420,7 @@ Window {
         heading: bridge.editorialHeading
         finishLabel: bridge.editorialFinishLabel
         showSocialInvitation: bridge.compactWelcome
-        onSocialFollowRequested: bridge.openSocialAccount()
+        onSocialFollowRequested: bridge.openSocialAccount("welcome")
         onAcknowledged: function(tryIt) {
             bridge.dismissEditorial(tryIt)
             if (tryIt) settingsPopup.open()
@@ -1418,7 +1418,7 @@ Window {
         }
         function onXActivated() {
             if (settingsPopup.visible) { settingsPopup.close(); return }
-            if (window.menuNavigationAllowed) bridge.openSocialAccount()
+            if (window.menuNavigationAllowed) bridge.openSocialAccount("header")
         }
         function onSettingsActivated() {
             if (settingsPopup.visible || window.menuNavigationAllowed)
@@ -1596,7 +1596,7 @@ Window {
                     quiet: true
                     accessibilityLabel: "VODForge on X"
                     width: 28; height: 40
-                    onActivated: bridge.openSocialAccount()
+                    onActivated: bridge.openSocialAccount("header")
                     LiquidToolTip {
                         x: (headerXButton.width - width) / 2
                         y: headerXButton.height + 6
