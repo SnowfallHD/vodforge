@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from quality_harness.interaction_coverage import interaction_coverage
 from quality_harness.observation_fixtures import relocate_observation
+from quality_harness.telemetry_interaction import SIGNATURE_COUNT
 
 FIXTURES = json.loads(
     Path(__file__).with_name("telemetry_observations.json").read_text()
@@ -70,7 +71,7 @@ LOCAL = [
     "legacy_write",
     "worker_survived",
     "changed_receipt",
-] + [f"stored_dimensions:{i}" for i in range(395)]
+] + [f"stored_dimensions:{i}" for i in range(SIGNATURE_COUNT)]
 ISOLATION = [
     "guard_missing",
     "enabled_parent",

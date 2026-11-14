@@ -8,7 +8,7 @@ Window {
     id: window
     RunStatusTone { id: runStatusTone }
     readonly property bool menuNavigationAllowed: !analyticsPopup.visible && !editorialPopup.visible &&
-            !socialInvitationPopup.visible && !helpMenu.visible && !supportPopup.visible && !supportReasonMenu.visible &&
+            !socialInvitationPopup.visible && !noticePopup.visible && !helpMenu.visible && !supportPopup.visible && !supportReasonMenu.visible &&
             !supportDiagnostics.visible && !libraryItemPopup.visible &&
             !fileActionPopup.visible && !libraryRemovalPopup.visible &&
             !collectionPopup.visible && !collectionTargetPopup.visible &&
@@ -169,7 +169,7 @@ Window {
     }
     // Another dialog keeps the screen until it closes; the update waits for it.
     readonly property var updateOfferBlockers: [editorialPopup, outputDetailsPopup,
-        socialInvitationPopup, supportPopup, supportDiagnostics, analyticsPopup,
+        socialInvitationPopup, noticePopup, supportPopup, supportDiagnostics, analyticsPopup,
         outputFolderRecoveryPopup, missingMediaPopup, relinkPopup, fileActionPopup,
         libraryRemovalPopup, collectionPopup, collectionTargetPopup, annotationPopup,
         settingsPopup, accessPopup, localConversionPopup]
@@ -371,6 +371,7 @@ Window {
             Qt.callLater(function() { if (editorialPopup.visible) bridge.helpPanelShown("editorial") })
         }
         function onSocialInvitationRequested() { socialInvitationPopup.open() }
+        function onNoticeRequested() { if (!updatePopup.visible) noticePopup.open(); else bridge.dismissNotice(false) }
         function onFileActionRequested() { fileActionPopup.open() }
         function onLibraryRemovalRequested() { libraryRemovalPopup.open() }
         function onSourceAccepted() {
@@ -463,7 +464,7 @@ Window {
         repeat: true
         onTriggered: bridge.checkEditorial(
             window.active && !window.editingText && !analyticsPopup.visible && !editorialPopup.visible &&
-            !socialInvitationPopup.visible && !helpMenu.visible && !supportPopup.visible && !supportReasonMenu.visible &&
+            !socialInvitationPopup.visible && !noticePopup.visible && !helpMenu.visible && !supportPopup.visible && !supportReasonMenu.visible &&
             !supportDiagnostics.visible && !libraryItemPopup.visible &&
             !fileActionPopup.visible && !libraryRemovalPopup.visible &&
             !collectionPopup.visible && !collectionTargetPopup.visible &&
@@ -583,6 +584,73 @@ Window {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 42
                     onActivated: { bridge.dismissSocialInvitation(true); socialInvitationPopup.close() }
+                }
+            }
+        }
+    }
+    StonePopup {
+        // A short message published on getvodforge.com; shown once.
+        id: noticePopup
+        objectName: "noticePopup"
+        parent: window.contentItem
+        property bool linkChosen: false
+        width: Math.min(430, window.width - 36)
+        height: noticeLayout.implicitHeight + 2 * padding
+        x: Math.max(0, (window.width - width) / 2)
+        y: Math.max(0, (window.height - height) / 2)
+        padding: 22
+        modal: true
+        closePolicy: Popup.CloseOnEscape
+        onOpened: linkChosen = false
+        onClosed: bridge.dismissNotice(linkChosen)
+        ColumnLayout {
+            id: noticeLayout
+            anchors.fill: parent
+            spacing: 14
+            Text {
+                objectName: "noticeTitle"
+                text: bridge.noticeTitle
+                textFormat: Text.PlainText
+                color: theme.text
+                font.pixelSize: 20
+                font.bold: true
+                wrapMode: Text.WordWrap
+                horizontalAlignment: Text.AlignHCenter
+                Layout.fillWidth: true
+                Accessible.role: Accessible.Heading
+                Accessible.name: text
+            }
+            Text {
+                objectName: "noticeBody"
+                text: bridge.noticeBody
+                textFormat: Text.PlainText
+                color: theme.muted
+                font.pixelSize: 14
+                wrapMode: Text.WordWrap
+                horizontalAlignment: Text.AlignHCenter
+                Layout.fillWidth: true
+                Accessible.role: Accessible.StaticText
+                Accessible.name: text
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: 4
+                spacing: 10
+                StoneButton {
+                    objectName: "noticeClose"
+                    label: "Close"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 42
+                    onActivated: noticePopup.close()
+                }
+                StoneButton {
+                    objectName: "noticeLink"
+                    visible: bridge.noticeLinkLabel !== ""
+                    label: bridge.noticeLinkLabel
+                    emphasized: true
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 42
+                    onActivated: { noticePopup.linkChosen = true; noticePopup.close() }
                 }
             }
         }

@@ -138,6 +138,8 @@ FEATURE_ACTIONS: dict[str, frozenset[str]] = {
     ),
     "missing_media": frozenset({"offered", "accepted", "completed", "preset_migrated"}),
     "announcement": frozenset({"shown", "try_it"}),
+    # A message published on getvodforge.com (app_notices); no notice ID is sent.
+    "notice": frozenset({"shown", "opened", "closed"}),
     "guidance": frozenset({"technical_opened", "recovery_selected"}),
     "appearance": frozenset({"changed", "transition_shown", "transition_skipped"}),
     "updater": frozenset(

@@ -16,6 +16,8 @@ from .source_suite_interaction import _read
 from .transaction_interaction import _trace
 
 CATALOG = json.loads(Path(__file__).with_name("telemetry_catalog.json").read_text())
+# One stored event per reviewed producer signature (the catalog is the roster).
+SIGNATURE_COUNT = len(CATALOG["event_signatures"])
 TELEMETRY_CONTRACTS = {
     "unit_static.telemetry_backend_suite": "clean-backend-per-case-suite-v1",
     "unit_static.telemetry_local_contract": "loopback-worker-d1-lifetime-v1",
@@ -307,13 +309,13 @@ def _local(raw, root, check):
             for v in emitted
         )
         == CATALOG["event_signatures"]
-        and len(emitted) == 395
-        and len(snap["events"]) == 396
-        and len({v.get("event_id") for v in emitted}) == 395
-        and len({v.get("event_id") for v in snap["events"]}) == 396
+        and len(emitted) == SIGNATURE_COUNT
+        and len(snap["events"]) == SIGNATURE_COUNT + 1
+        and len({v.get("event_id") for v in emitted}) == SIGNATURE_COUNT
+        and len({v.get("event_id") for v in snap["events"]}) == SIGNATURE_COUNT + 1
         and "PRIVATE" not in json.dumps(emitted)
         and "PRIVATE" not in json.dumps(snap),
-        "All 395 reviewed producer signatures and one update are uniquely stored; controlled private canaries are absent",
+        f"All {SIGNATURE_COUNT} reviewed producer signatures and one update are uniquely stored; controlled private canaries are absent",
     )
     if typed:
         stored = {v["event_id"]: v for v in snap["events"]}

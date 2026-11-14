@@ -50,6 +50,13 @@ from PySide6.QtQuick import QQuickImageProvider, QQuickItem
 from PySide6.QtQuickControls2 import QQuickStyle
 
 from yt_downloader.analytics_consent import ANALYTICS_BENEFITS, ANALYTICS_DESCRIPTION
+from yt_downloader.app_notices import (
+    AppNotice,
+    current_platform,
+    fetch_notices,
+    next_notice,
+    remember_seen,
+)
 from yt_downloader.archive_browser import (
     PAGE_SIZE,
     ArchiveBrowserModel,
@@ -495,6 +502,8 @@ class Bridge(QObject):
     editorialChanged = Signal()
     editorialRequested = Signal()
     socialInvitationRequested = Signal()
+    noticeChanged = Signal()
+    noticeRequested = Signal()
 
     def __init__(self, event_log: Path | None) -> None:
         super().__init__()
@@ -536,6 +545,10 @@ class Bridge(QObject):
         self._cloud_seen_install_id = ""
         self._social_invitation_open = False
         self._social_idle_since = time.monotonic()
+        self._notices: list[AppNotice] = []
+        self._notice: AppNotice | None = None
+        self._notice_open = False
+        self._notice_fetching = False
         self._editorial_kind = ""
         self._editorial_slides: tuple[FeatureHighlight, ...] = ()
         self._activity_log_path = diagnostics_dir() / "activity.log"
@@ -5205,6 +5218,7 @@ class Bridge(QObject):
             or not self._analytics.settled
             or self._editorial_kind
             or self._social_invitation_open
+            or self._notice_open
             or self._support.kind
             or self._runtime.active_job is not None
             or self._runtime.busy
@@ -5246,6 +5260,74 @@ class Bridge(QObject):
         ):
             self._social_invitation_open = True
             self.socialInvitationRequested.emit()
+            return
+        self._offer_notice()
+
+    # Server notices ------------------------------------------------------
+    def _refresh_notices(self) -> None:
+        """Read the published notices off the UI thread, then every 6 hours."""
+        QTimer.singleShot(6 * 60 * 60 * 1000, self._refresh_notices)
+        if self._notice_fetching:
+            return
+        self._notice_fetching = True
+
+        def fetch() -> None:
+            try:
+                self._notices = fetch_notices()
+            finally:
+                self._notice_fetching = False
+
+        threading.Thread(target=fetch, name="vodforge-notices", daemon=True).start()
+
+    def _offer_notice(self) -> None:
+        if (
+            self._notice_open
+            or time.monotonic() - self._social_idle_since < 8
+            or self.isPointerPressed()
+        ):
+            return
+        notice = next_notice(
+            self._notices,
+            version=__version__,
+            platform=current_platform(),
+            seen=self._settings.get("notices_seen") or [],
+        )
+        if notice is None:
+            return
+        # Shown once: remembered before it opens, so it can't repeat.
+        self._settings["notices_seen"] = remember_seen(
+            self._settings.get("notices_seen"), notice.id
+        )
+        self._schedule_preferences_save()
+        self._notice = notice
+        self._notice_open = True
+        self.noticeChanged.emit()
+        self.noticeRequested.emit()
+        self._record_update_feature("notice", "shown")
+
+    @Property(str, notify=noticeChanged)
+    def noticeTitle(self) -> str:
+        return self._notice.title if self._notice else ""
+
+    @Property(str, notify=noticeChanged)
+    def noticeBody(self) -> str:
+        return self._notice.body if self._notice else ""
+
+    @Property(str, notify=noticeChanged)
+    def noticeLinkLabel(self) -> str:
+        return self._notice.link_label if self._notice else ""
+
+    @Slot(bool)
+    def dismissNotice(self, open_link: bool) -> None:
+        if not self._notice_open:
+            return
+        self._notice_open = False
+        notice = self._notice
+        if open_link and notice is not None and notice.link_url:
+            QDesktopServices.openUrl(QUrl(notice.link_url))
+            self._record_update_feature("notice", "opened")
+        else:
+            self._record_update_feature("notice", "closed")
 
     @Slot(bool)
     def dismissSocialInvitation(self, follow: bool) -> None:
@@ -8334,6 +8416,7 @@ def main() -> int:
         QTimer.singleShot(0, bridge.fileActionRequested.emit)
     if bool(getattr(sys, "frozen", False)) and not args.runtime_smoke:
         QTimer.singleShot(0, bridge._auto_check_updates)
+        QTimer.singleShot(15 * 1000, bridge._refresh_notices)
     if args.runtime_smoke:
         if sys.platform == "darwin":
             from yt_downloader.qt_quick.mac_toolbar_header import (

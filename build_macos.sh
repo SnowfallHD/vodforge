@@ -121,6 +121,7 @@ minimum_macos="$("$python_bin" -c 'import os,sys; from scripts.build_macos_fulls
     --ignore=tests/test_qt_scene_port.py \
     --ignore=tests/test_qt_telemetry_coverage.py \
     --ignore=tests/test_qt_fullscreen_native.py \
+    --ignore=tests/test_qt_app_notices.py \
     --ignore=tests/test_qt_whats_new.py \
     --ignore=tests/test_qt_recorded_feature_preview.py \
     --ignore=tests/test_qt_output_config.py \
@@ -242,6 +243,7 @@ minimum_macos="$("$python_bin" -c 'import os,sys; from scripts.build_macos_fulls
     tests/test_qt_terminal_item_events.py \
     tests/test_qt_telemetry_coverage.py \
     tests/test_qt_fullscreen_native.py \
+    tests/test_qt_app_notices.py \
     tests/test_qt_whats_new.py \
     tests/test_qt_recorded_feature_preview.py \
     tests/test_qt_output_config.py \
