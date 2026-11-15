@@ -12,6 +12,10 @@ VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$
 # Highlights per public version. Add an entry before rendering a new release so
 # published notes never fall back to another version's text.
 HIGHLIGHTS = {
+    "0.2.8": """- When YouTube asks VODForge to confirm you’re not a bot, a window now explains what happened and how to fix it, with a button that opens **YouTube access** in Settings. A playlist stops after three videos in a row are blocked instead of trying every remaining video.
+- After a crash, a paused download can now be resumed or removed. Before, **Remove** failed and the paused item could stay after **Resume**.
+- VODForge can now show short notices from getvodforge.com, such as news about updates. Each one appears once, and only when nothing is downloading.
+""",
     "0.2.7": """- When a new version is available, VODForge now shows it in a window as soon as you open the app. With automatic updates on, the update still installs when you quit.
 - A downloaded update is now kept until you quit. Before, a later update check could discard it, so quitting installed nothing.
 - On Windows, opening VODForge while it’s already running now works.

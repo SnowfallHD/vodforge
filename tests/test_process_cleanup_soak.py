@@ -23,17 +23,41 @@ def _handles(process: psutil.Process) -> int:
     return process.num_handles() if sys.platform == "win32" else process.num_fds()
 
 
+def _identity(pid: int) -> tuple[int, float | None]:
+    """A child's PID with its start time, read while it can still be read."""
+    try:
+        return pid, psutil.Process(pid).create_time()
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return pid, None
+
+
+def _still_running(identity: tuple[int, float | None]) -> bool:
+    """Whether this exact child, not a later process given its PID, is alive.
+
+    Windows reuses PIDs quickly, so a bare PID check can match an unrelated
+    process started after the child was reaped.
+    """
+    pid, started = identity
+    try:
+        process = psutil.Process(pid)
+        if started is not None and process.create_time() != started:
+            return False
+        return process.status() != psutil.STATUS_ZOMBIE
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return False
+
+
 @pytest.mark.parametrize("outcome", ["complete", "cancel", "timeout"])
 def test_repeated_capture_reaps_children_and_releases_resources(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, outcome: str
 ) -> None:
     original = subprocess.Popen
-    pids: list[int] = []
+    children: list[tuple[int, float | None]] = []
     references: list[weakref.ReferenceType] = []
 
     def observed(*args, **kwargs):
         child = original(*args, **kwargs)
-        pids.append(child.pid)
+        children.append(_identity(child.pid))
         references.append(weakref.ref(child))
         return child
 
@@ -69,7 +93,7 @@ def test_repeated_capture_reaps_children_and_releases_resources(
                     timeout_seconds=0.03 if outcome == "timeout" else 10,
                     control_check=cancelled if outcome == "cancel" else None,
                 )
-        assert all(not psutil.pid_exists(pid) for pid in pids)
+        assert not any(_still_running(child) for child in children)
         # Windows communicate() uses pipe-reader threads; OS exit precedes
         # their final reference release. Require bounded settling, not zero
         # scheduler latency, and do not permit live children during it.
@@ -90,7 +114,11 @@ def test_repeated_capture_reaps_children_and_releases_resources(
     assert samples[-1]["rss"] <= before_rss + 32 * 1024 * 1024, (
         f"RSS growth per cycle (KiB): {growth}"
     )
-    receipt = {"outcome": outcome, "children_reaped": len(pids), "samples": samples}
+    receipt = {
+        "outcome": outcome,
+        "children_reaped": len(children),
+        "samples": samples,
+    }
     (tmp_path / "process-cleanup.json").write_text(
         json.dumps(receipt), encoding="utf-8"
     )
