@@ -6366,6 +6366,46 @@ def test_qt_path_budget_recovery_uses_existing_output_folder_choice(
         app.processEvents()
 
 
+def test_qt_bot_check_offers_youtube_access_settings(tmp_path, monkeypatch):
+    from yt_downloader.download_error_presentation import youtube_access_message
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    bridge = qt_main.Bridge(None)
+    engine = qt_main.create_engine(bridge)
+    requested = []
+    bridge.youtubeAccessRecoveryRequested.connect(requested.append)
+    try:
+        message = youtube_access_message(stopped_after=3)
+        bridge._runtime.events.put(("error", message))
+        bridge._pump()
+        assert requested == [str(message)]
+        app.processEvents()
+        window = engine.rootObjects()[0]
+        popup = window.findChild(QObject, "youtubeAccessRecoveryPopup")
+        assert popup.property("visible")
+        assert "3 videos in a row" in popup.property("message")
+        button = window.findChild(QObject, "youtubeAccessRecoveryOpen")
+        assert button.property("label") == "Open YouTube access"
+        button.activated.emit()
+        app.processEvents()
+        settle_popups(window)
+        assert not popup.property("visible")
+        assert window.findChild(QObject, "youtubeAccessPopup").property("visible")
+        # A partial playlist that kept some videos offers the same shortcut.
+        bridge._runtime.events.put(("partial", message))
+        bridge._pump()
+        bridge._runtime.events.put(("error", "ordinary failure"))
+        bridge._pump()
+        assert len(requested) == 2
+    finally:
+        bridge.close()
+        engine.deleteLater()
+        app.processEvents()
+
+
 def test_qt_everyday_default_and_saved_preset_survive_restart(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))

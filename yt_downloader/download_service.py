@@ -40,7 +40,12 @@ from .cookie_inputs import (
     browser_cookie_value,
     windows_chromium_cookie_warning,
 )
-from .download_error_presentation import technical_download_error
+from .download_error_presentation import (
+    YouTubeAccessMessage,
+    is_youtube_access_challenge,
+    technical_download_error,
+    youtube_access_message,
+)
 from .export_inputs import (
     validate_custom_cover_art,
 )
@@ -1870,6 +1875,14 @@ def legacy_shallow_video_output_dir(output_dir: Path, info: dict[str, Any]) -> P
     """Locate the v0.1.5 ID-only fallback without creating new opaque paths."""
     video_id = _windows_safe_component(info.get("id"), "video", max_len=32)
     return output_dir / channel_folder_name(info) / "path-safe videos" / video_id
+
+
+class YouTubeAccessRequiredError(RuntimeError):
+    """A playlist stopped because YouTube's bot check blocked item after item."""
+
+    def __init__(self, message: YouTubeAccessMessage) -> None:
+        super().__init__(str(message))
+        self.message = message
 
 
 class OutputPathBudgetError(ValueError):
@@ -4247,6 +4260,14 @@ class _DownloadItemResult:
     metadata: dict[str, Any] | None = None
     plan: ExportPlan | AudioExportPlan | None = None
     stop_source: bool = False
+    # Consecutive items YouTube blocked with its bot check, and the last one.
+    access_block_streak: int = 0
+    access_block_index: int = 0
+
+
+# Stop a playlist after this many videos in a row hit YouTube's bot check:
+# later items almost always fail the same way until YouTube access changes.
+ACCESS_BLOCK_STOP_STREAK = 3
 
 
 @dataclass(frozen=True)
@@ -5690,8 +5711,18 @@ class DownloadWorkerCore:
         outcome: DownloadOutcome,
         *,
         emit_done: bool,
+        access_stopped_after: int | None = None,
     ) -> DownloadOutcome:
+        access_message = (
+            youtube_access_message(
+                cookies_on=job.use_cookies, stopped_after=access_stopped_after
+            )
+            if access_stopped_after
+            else None
+        )
         if outcome.success_count == 0:
+            if outcome.failure_count and access_message is not None:
+                raise YouTubeAccessRequiredError(access_message)
             if outcome.failure_count:
                 raise RuntimeError(
                     f"No valid {job.output_type.value} output was produced; "
@@ -5707,7 +5738,17 @@ class DownloadWorkerCore:
                 )
             return outcome
         if emit_done:
-            if (
+            if access_message is not None:
+                self.events.put(
+                    (
+                        "partial",
+                        YouTubeAccessMessage(
+                            f"{outcome.success_count} valid output(s) kept. "
+                            + access_message
+                        ),
+                    )
+                )
+            elif (
                 outcome.failure_count
                 or outcome.skipped_count
                 or outcome.sidecar_failure_count
@@ -6287,6 +6328,17 @@ class DownloadWorkerCore:
         issue = format_ytdlp_user_error(error)
         if item.total <= 1:
             raise _DownloadItemExecutionError(error, result) from error
+        access_blocked = is_youtube_access_challenge(job.failure_diagnostic)
+        if access_blocked:
+            issue = youtube_access_message(cookies_on=job.use_cookies)
+            streak = (
+                result.access_block_streak + 1
+                if result.access_block_index == item.index - 1
+                else 1
+            )
+            result = replace(
+                result, access_block_streak=streak, access_block_index=item.index
+            )
         self._emit_failed_download_item_metadata(job, result, issue)
         write_diagnostic(
             f"{item.label} failed but playlist will continue: "
@@ -6303,11 +6355,23 @@ class DownloadWorkerCore:
             failure_details=technical_download_error(error),
         )
         append_batch_failure_report(BATCH_FAILURE_REPORT_PATH, item.video_url, error)
+        self.skip_video_requested = False
+        if (
+            access_blocked
+            and result.access_block_streak >= ACCESS_BLOCK_STOP_STREAK
+            and item.index < item.total
+        ):
+            self._emit_job_log(
+                job,
+                f"WARNING: YouTube's bot check blocked {result.access_block_streak} "
+                f"videos in a row; stopped before the remaining "
+                f"{item.total - item.index} video(s). Change YouTube access, then retry.",
+            )
+            return replace(result, outcome=failed_outcome, stop_source=True)
         self._emit_job_log(
             job,
             f"WARNING: {item.label} failed; continuing to next video. Failure report: {BATCH_FAILURE_REPORT_PATH}",
         )
-        self.skip_video_requested = False
         return replace(result, outcome=failed_outcome)
 
     def _complete_staged_download_item(
@@ -6858,6 +6922,15 @@ class DownloadWorkerCore:
         job.failure_diagnostic = capture_failure(
             error, stage=job.failure_stage, extractor_warnings=job.extractor_warnings
         )
+        if isinstance(error, YouTubeAccessRequiredError):
+            user_error = error.message
+        elif (
+            not isinstance(user_error, YouTubeAccessMessage)
+            and not result.outcome.failure_count
+            and is_youtube_access_challenge(job.failure_diagnostic)
+        ):
+            # One video YouTube blocked; a playlist's summary error is not one.
+            user_error = youtube_access_message(cookies_on=job.use_cookies)
         self._emit_failed_download_item_metadata(job, result, user_error)
         write_diagnostic(f"download worker error: {type(error).__name__}: {error}")
         if re_raise:
@@ -6957,10 +7030,17 @@ class DownloadWorkerCore:
                 if result.stop_source:
                     break
 
+            access_stopped = (
+                result.stop_source
+                and result.access_block_streak >= ACCESS_BLOCK_STOP_STREAK
+            )
             return self._finish_download_run_outcome(
                 job,
                 result.outcome,
                 emit_done=emit_done,
+                access_stopped_after=result.access_block_streak
+                if access_stopped
+                else None,
             )
         except _DownloadControlRequestError as control_request:
             self._active_progress_context = None

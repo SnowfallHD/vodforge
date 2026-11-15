@@ -442,6 +442,7 @@ class Bridge(QObject):
     pointerGestureEnded = Signal()
     pointerMoved = Signal(int)
     outputFolderRecoveryRequested = Signal(str)
+    youtubeAccessRecoveryRequested = Signal(str)
     statusChanged = Signal()
     operationFeedback = Signal(str)
     libraryRemovalRequested = Signal()
@@ -7778,6 +7779,11 @@ class Bridge(QObject):
                 and getattr(payload, "action", "") == "choose_output_folder"
             ):
                 self.outputFolderRecoveryRequested.emit(str(payload))
+            if (
+                kind in {"error", "partial"}
+                and getattr(payload, "action", "") == "open_youtube_access"
+            ):
+                self.youtubeAccessRecoveryRequested.emit(str(payload))
             if kind in {"progress", "progress_determinate"} and payload is not None:
                 self._progress = max(0.0, min(100.0, float(payload)))
                 self.progressChanged.emit()

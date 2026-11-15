@@ -37,6 +37,55 @@ class DownloadErrorMessage(str):
     code = "output_path_too_long"
 
 
+class YouTubeAccessMessage(str):
+    """Terminal text that offers to open Settings → YouTube access."""
+
+    action = "open_youtube_access"
+    action_label = "YouTube access"
+    code = "youtube_access_required"
+
+
+# Failure codes and yt-dlp warnings meaning YouTube wants a signed-in browser.
+ACCESS_CHALLENGE_CODES = frozenset({"bot_challenge", "login_required"})
+
+
+def is_youtube_access_challenge(diagnostic: object) -> bool:
+    """Whether a captured failure shows YouTube's sign-in or bot check."""
+    if diagnostic is None:
+        return False
+    return (
+        getattr(diagnostic, "failure_code", None) in ACCESS_CHALLENGE_CODES
+        or getattr(diagnostic, "extractor_warning", None) == "bot_challenge"
+    )
+
+
+def youtube_access_message(
+    *, cookies_on: bool = False, stopped_after: int | None = None
+) -> YouTubeAccessMessage:
+    """Explain YouTube's bot check and the setting that usually clears it."""
+    if stopped_after:
+        lead = (
+            f"YouTube asked VODForge to confirm you're not a bot on "
+            f"{stopped_after} videos in a row, so VODForge stopped this playlist."
+        )
+    else:
+        lead = (
+            "YouTube asked VODForge to confirm you're not a bot, so it could "
+            "not read this video."
+        )
+    if cookies_on:
+        step = (
+            "In Settings → YouTube access, choose a browser where you're signed "
+            "in to YouTube and can play the video, or use cookies.txt, then retry."
+        )
+    else:
+        step = (
+            "In Settings → YouTube access, choose Browser and pick a browser "
+            "where you're signed in to YouTube, then retry."
+        )
+    return YouTubeAccessMessage(f"{lead} {step}")
+
+
 def _output_path_budget_error(error: object) -> object | None:
     # Import lazily: app composes this presenter and owns the typed path error.
     from .download_service import OutputPathBudgetError
@@ -124,7 +173,7 @@ def download_error_message(error: object) -> str:
     ):
         return f"YouTube requires age verification for this video. {BROWSER_GUIDANCE}"
     if "sign in to confirm" in text or "confirm you're not a bot" in text:
-        return f"YouTube is asking you to confirm your sign-in. {BROWSER_GUIDANCE}"
+        return youtube_access_message()
     if "no usable audio source" in text:
         return f"No downloadable audio was available for this link. {BROWSER_GUIDANCE}"
     if "no video formats" in text or "no usable video source" in text:

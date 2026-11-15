@@ -170,7 +170,7 @@ Window {
     // Another dialog keeps the screen until it closes; the update waits for it.
     readonly property var updateOfferBlockers: [editorialPopup, outputDetailsPopup,
         socialInvitationPopup, noticePopup, supportPopup, supportDiagnostics, analyticsPopup,
-        outputFolderRecoveryPopup, missingMediaPopup, relinkPopup, fileActionPopup,
+        outputFolderRecoveryPopup, youtubeAccessRecoveryPopup, missingMediaPopup, relinkPopup, fileActionPopup,
         libraryRemovalPopup, collectionPopup, collectionTargetPopup, annotationPopup,
         settingsPopup, accessPopup, localConversionPopup]
     property bool updateOfferPending: false
@@ -349,6 +349,10 @@ Window {
         function onOutputFolderRecoveryRequested(message) {
             outputFolderRecoveryPopup.message = message
             outputFolderRecoveryPopup.open()
+        }
+        function onYoutubeAccessRecoveryRequested(message) {
+            youtubeAccessRecoveryPopup.message = message
+            youtubeAccessRecoveryPopup.open()
         }
         function onAnalyticsPromptRequested() { analyticsPopup.open() }
         function onUpdateOfferRequested() { window.offerUpdate() }
@@ -1007,6 +1011,51 @@ Window {
                 Layout.preferredWidth: 84
                 Layout.preferredHeight: 40
                 onActivated: outputFolderRecoveryPopup.close()
+            }
+        }
+    }
+    StonePopup {
+        id: youtubeAccessRecoveryPopup
+        objectName: "youtubeAccessRecoveryPopup"
+        property string message: ""
+        x: Math.max(0, (window.width - width) / 2)
+        y: Math.max(0, (window.height - height) / 2)
+        width: Math.min(520, window.width - 30)
+        height: 210
+        padding: 18
+        modal: true
+        Text {
+            anchors.top: parent.top
+            width: parent.width
+            height: parent.height - 58
+            text: youtubeAccessRecoveryPopup.message
+            color: theme.text
+            font.pixelSize: 16
+            wrapMode: Text.WordWrap
+        }
+        RowLayout {
+            anchors.bottom: parent.bottom
+            width: parent.width
+            StoneButton {
+                id: youtubeAccessRecoveryOpen
+                objectName: "youtubeAccessRecoveryOpen"
+                label: "Open YouTube access"
+                emphasized: true
+                Layout.preferredWidth: 190
+                Layout.preferredHeight: 40
+                onActivated: {
+                    youtubeAccessRecoveryPopup.close()
+                    accessPopup.returnToSettings = false
+                    accessPopup.returnToOptions = false
+                    accessPopup.open()
+                }
+            }
+            Item { Layout.fillWidth: true }
+            StoneButton {
+                label: "Later"
+                Layout.preferredWidth: 84
+                Layout.preferredHeight: 40
+                onActivated: youtubeAccessRecoveryPopup.close()
             }
         }
     }

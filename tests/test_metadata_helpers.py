@@ -6907,8 +6907,9 @@ def test_format_ytdlp_user_error_catches_sign_in_to_confirm():
     """Bot detection errors should guide users to use cookies."""
     error = RuntimeError("Sign in to confirm you're not a bot")
     result = format_ytdlp_user_error(error)
-    assert "confirm your sign-in" in result
-    assert "select your browser" in result
+    assert "confirm you're not a bot" in result
+    assert "choose Browser" in result
+    assert getattr(result, "action", "") == "open_youtube_access"
 
 
 def test_worker_failure_keeps_cause_private_and_terminal_friendly(
