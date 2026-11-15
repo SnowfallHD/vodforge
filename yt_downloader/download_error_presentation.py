@@ -1,5 +1,7 @@
 """Bounded failure explanations and next steps for the existing download surfaces."""
 
+from typing import Self
+
 from .failure_diagnostics import capture_failure, classify_failure
 
 BROWSER_GUIDANCE = (
@@ -38,11 +40,59 @@ class DownloadErrorMessage(str):
 
 
 class YouTubeAccessMessage(str):
-    """Terminal text that offers to open Settings → YouTube access."""
+    """Terminal text that offers to open Settings → YouTube access.
+
+    The string is the full sentence form for logs and run details; the
+    attributes hold the same content split up for the recovery pop-up.
+    """
 
     action = "open_youtube_access"
     action_label = "YouTube access"
     code = "youtube_access_required"
+
+    def __new__(
+        cls,
+        text: str,
+        *,
+        title: str = "",
+        summary: str = "",
+        steps: tuple[str, ...] = (),
+        tip: str = "",
+        kept: str = "",
+    ) -> Self:
+        message = super().__new__(cls, text)
+        message.title = title
+        message.summary = summary or (text if not title else "")
+        message.steps = tuple(steps)
+        message.tip = tip
+        message.kept = kept
+        return message
+
+    def with_kept(self, count: int) -> "YouTubeAccessMessage":
+        """The same message after a playlist kept some finished videos."""
+        kept = (
+            "1 finished video was kept."
+            if count == 1
+            else f"{count} finished videos were kept."
+        )
+        return YouTubeAccessMessage(
+            f"{kept} {self}",
+            title=self.title,
+            summary=self.summary,
+            steps=self.steps,
+            tip=self.tip,
+            kept=kept,
+        )
+
+    def presentation(self) -> dict[str, object]:
+        """Fields for the pop-up, in display order."""
+        return {
+            "title": self.title or "YouTube needs a signed-in browser",
+            "summary": self.summary,
+            "kept": self.kept,
+            "steps": list(self.steps),
+            "tip": self.tip,
+        }
 
 
 # Failure codes and yt-dlp warnings meaning YouTube wants a signed-in browser.
@@ -59,31 +109,41 @@ def is_youtube_access_challenge(diagnostic: object) -> bool:
     )
 
 
+VPN_TIP = "Using a VPN? Turning it off for this download often helps too."
+
+
 def youtube_access_message(
     *, cookies_on: bool = False, stopped_after: int | None = None
 ) -> YouTubeAccessMessage:
     """Explain YouTube's bot check and the setting that usually clears it."""
+    title = "YouTube wants to confirm you're not a bot"
     if stopped_after:
-        lead = (
-            f"YouTube asked VODForge to confirm you're not a bot on "
-            f"{stopped_after} videos in a row, so VODForge stopped this playlist."
+        summary = (
+            f"This happened on {stopped_after} videos in a row, so VODForge "
+            "stopped the playlist."
         )
     else:
-        lead = (
-            "YouTube asked VODForge to confirm you're not a bot, so it could "
-            "not read this video."
-        )
+        summary = "VODForge couldn't read this video."
     if cookies_on:
-        step = (
-            "In Settings → YouTube access, choose a browser where you're signed "
-            "in to YouTube and can play the video, or use cookies.txt, then retry."
+        steps: tuple[str, ...] = (
+            (
+                "Open YouTube access and pick a browser where you're signed in "
+                "to YouTube and can play the video, or use cookies.txt."
+            ),
+            "Retry the download.",
         )
     else:
-        step = (
-            "In Settings → YouTube access, choose Browser and pick a browser "
-            "where you're signed in to YouTube, then retry."
+        steps = (
+            "Open YouTube access and choose Browser.",
+            "Pick a browser where you're signed in to YouTube.",
+            "Retry the download.",
         )
-    return YouTubeAccessMessage(f"{lead} {step}")
+    text = " ".join(
+        (f"{title}.", summary, "In Settings → YouTube access:", *steps, VPN_TIP)
+    )
+    return YouTubeAccessMessage(
+        text, title=title, summary=summary, steps=steps, tip=VPN_TIP
+    )
 
 
 def _output_path_budget_error(error: object) -> object | None:

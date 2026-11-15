@@ -6381,13 +6381,26 @@ def test_qt_bot_check_offers_youtube_access_settings(tmp_path, monkeypatch):
         message = youtube_access_message(stopped_after=3)
         bridge._runtime.events.put(("error", message))
         bridge._pump()
-        assert requested == [str(message)]
+        assert requested == [message.presentation()]
         app.processEvents()
         window = engine.rootObjects()[0]
         popup = window.findChild(QObject, "youtubeAccessRecoveryPopup")
         assert popup.property("visible")
-        assert "3 videos in a row" in popup.property("message")
+        title = window.findChild(QObject, "youtubeAccessRecoveryTitle")
+        assert title.property("text") == "YouTube wants to confirm you're not a bot"
+        summary = window.findChild(QObject, "youtubeAccessRecoverySummary")
+        assert "3 videos in a row" in summary.property("text")
+        steps = window.findChild(QObject, "youtubeAccessRecoverySteps")
+        assert steps.property("count") == 3
+        tip = window.findChild(QObject, "youtubeAccessRecoveryTip")
+        assert tip.property("visible")
+        # Every part of the pop-up fits inside it, buttons included.
+        content_bottom = popup.property("height") - popup.property("bottomPadding")
         button = window.findChild(QObject, "youtubeAccessRecoveryOpen")
+        bottom = button.mapToItem(
+            popup.property("contentItem"), 0, 0
+        ).y() + button.property("height")
+        assert bottom <= content_bottom - popup.property("topPadding") + 1
         assert button.property("label") == "Open YouTube access"
         button.activated.emit()
         app.processEvents()
@@ -6395,11 +6408,12 @@ def test_qt_bot_check_offers_youtube_access_settings(tmp_path, monkeypatch):
         assert not popup.property("visible")
         assert window.findChild(QObject, "youtubeAccessPopup").property("visible")
         # A partial playlist that kept some videos offers the same shortcut.
-        bridge._runtime.events.put(("partial", message))
+        bridge._runtime.events.put(("partial", message.with_kept(2)))
         bridge._pump()
         bridge._runtime.events.put(("error", "ordinary failure"))
         bridge._pump()
         assert len(requested) == 2
+        assert requested[1]["kept"] == "2 finished videos were kept."
     finally:
         bridge.close()
         engine.deleteLater()

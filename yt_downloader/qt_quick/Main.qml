@@ -350,8 +350,8 @@ Window {
             outputFolderRecoveryPopup.message = message
             outputFolderRecoveryPopup.open()
         }
-        function onYoutubeAccessRecoveryRequested(message) {
-            youtubeAccessRecoveryPopup.message = message
+        function onYoutubeAccessRecoveryRequested(details) {
+            youtubeAccessRecoveryPopup.details = details
             youtubeAccessRecoveryPopup.open()
         }
         function onAnalyticsPromptRequested() { analyticsPopup.open() }
@@ -1017,45 +1017,156 @@ Window {
     StonePopup {
         id: youtubeAccessRecoveryPopup
         objectName: "youtubeAccessRecoveryPopup"
-        property string message: ""
+        property var details: ({})
+        // Opaque enough that the Forge details behind it don't show through.
+        surfaceOpacity: 0.97
+        readonly property var steps: details.steps || []
         x: Math.max(0, (window.width - width) / 2)
         y: Math.max(0, (window.height - height) / 2)
-        width: Math.min(520, window.width - 30)
-        height: 210
-        padding: 18
+        width: Math.min(500, window.width - 30)
+        height: Math.min(window.height - 30, accessRecoveryContent.implicitHeight + topPadding + bottomPadding)
+        padding: 22
         modal: true
-        Text {
-            anchors.top: parent.top
-            width: parent.width
-            height: parent.height - 58
-            text: youtubeAccessRecoveryPopup.message
-            color: theme.text
-            font.pixelSize: 16
-            wrapMode: Text.WordWrap
-        }
-        RowLayout {
-            anchors.bottom: parent.bottom
-            width: parent.width
-            StoneButton {
-                id: youtubeAccessRecoveryOpen
-                objectName: "youtubeAccessRecoveryOpen"
-                label: "Open YouTube access"
-                emphasized: true
-                Layout.preferredWidth: 190
-                Layout.preferredHeight: 40
-                onActivated: {
-                    youtubeAccessRecoveryPopup.close()
-                    accessPopup.returnToSettings = false
-                    accessPopup.returnToOptions = false
-                    accessPopup.open()
+        ColumnLayout {
+            id: accessRecoveryContent
+            anchors.fill: parent
+            spacing: 0
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 12
+                Rectangle {
+                    Layout.preferredWidth: 34
+                    Layout.preferredHeight: 34
+                    Layout.alignment: Qt.AlignTop
+                    radius: 17
+                    color: Qt.rgba(theme.warning.r, theme.warning.g, theme.warning.b, 0.16)
+                    border.color: Qt.rgba(theme.warning.r, theme.warning.g, theme.warning.b, 0.55)
+                    Text { anchors.centerIn: parent; text: "!"; color: theme.warning; font.pixelSize: 18; font.bold: true }
+                }
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 4
+                    Text {
+                        objectName: "youtubeAccessRecoveryTitle"
+                        text: youtubeAccessRecoveryPopup.details.title || ""
+                        color: theme.text
+                        font.pixelSize: 18
+                        font.bold: true
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                    }
+                    Text {
+                        objectName: "youtubeAccessRecoverySummary"
+                        text: youtubeAccessRecoveryPopup.details.summary || ""
+                        visible: text.length > 0
+                        color: theme.muted
+                        font.pixelSize: 14
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                    }
+                    Text {
+                        objectName: "youtubeAccessRecoveryKept"
+                        text: youtubeAccessRecoveryPopup.details.kept || ""
+                        visible: text.length > 0
+                        color: theme.muted
+                        font.pixelSize: 14
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                    }
                 }
             }
-            Item { Layout.fillWidth: true }
-            StoneButton {
-                label: "Later"
-                Layout.preferredWidth: 84
-                Layout.preferredHeight: 40
-                onActivated: youtubeAccessRecoveryPopup.close()
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.topMargin: 18
+                Layout.bottomMargin: 14
+                Layout.preferredHeight: 1
+                color: theme.border
+                visible: youtubeAccessRecoveryPopup.steps.length > 0
+            }
+            Text {
+                text: "To fix it"
+                visible: youtubeAccessRecoveryPopup.steps.length > 0
+                color: theme.muted
+                font.pixelSize: 12
+                font.bold: true
+                font.capitalization: Font.AllUppercase
+                font.letterSpacing: 0.6
+                Layout.bottomMargin: 10
+            }
+            Repeater {
+                objectName: "youtubeAccessRecoverySteps"
+                model: youtubeAccessRecoveryPopup.steps
+                delegate: RowLayout {
+                    required property string modelData
+                    required property int index
+                    Layout.fillWidth: true
+                    Layout.bottomMargin: 10
+                    spacing: 12
+                    Rectangle {
+                        Layout.preferredWidth: 22
+                        Layout.preferredHeight: 22
+                        Layout.alignment: Qt.AlignTop
+                        radius: 11
+                        color: "transparent"
+                        border.color: theme.accent
+                        Text { anchors.centerIn: parent; text: index + 1; color: theme.accent; font.pixelSize: 12; font.bold: true }
+                    }
+                    Text {
+                        text: modelData
+                        color: theme.text
+                        font.pixelSize: 15
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                        Layout.topMargin: 1
+                    }
+                }
+            }
+            Rectangle {
+                objectName: "youtubeAccessRecoveryTip"
+                visible: (youtubeAccessRecoveryPopup.details.tip || "").length > 0
+                Layout.fillWidth: true
+                Layout.topMargin: 4
+                Layout.preferredHeight: tipText.implicitHeight + 20
+                radius: 8
+                color: Qt.rgba(theme.text.r, theme.text.g, theme.text.b, 0.05)
+                border.color: theme.border
+                Text {
+                    id: tipText
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.leftMargin: 12
+                    anchors.rightMargin: 12
+                    text: youtubeAccessRecoveryPopup.details.tip || ""
+                    color: theme.muted
+                    font.pixelSize: 13
+                    wrapMode: Text.WordWrap
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: 20
+                Item { Layout.fillWidth: true }
+                StoneButton {
+                    label: "Later"
+                    Layout.preferredWidth: 84
+                    Layout.preferredHeight: 40
+                    onActivated: youtubeAccessRecoveryPopup.close()
+                }
+                StoneButton {
+                    id: youtubeAccessRecoveryOpen
+                    objectName: "youtubeAccessRecoveryOpen"
+                    label: "Open YouTube access"
+                    emphasized: true
+                    Layout.preferredWidth: 190
+                    Layout.preferredHeight: 40
+                    onActivated: {
+                        youtubeAccessRecoveryPopup.close()
+                        accessPopup.returnToSettings = false
+                        accessPopup.returnToOptions = false
+                        accessPopup.open()
+                    }
+                }
             }
         }
     }

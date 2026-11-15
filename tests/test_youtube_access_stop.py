@@ -75,9 +75,10 @@ def test_bot_check_on_three_videos_in_a_row_stops_the_playlist(
     assert kind == "error"
     assert isinstance(message, YouTubeAccessMessage)
     assert message.action == "open_youtube_access"
-    assert "3 videos in a row" in message
-    assert ("choose Browser" in message) is not use_cookies
-    assert ("cookies.txt" in message) is use_cookies
+    assert "3 videos in a row" in message.summary
+    assert any("choose Browser" in step for step in message.steps) is not use_cookies
+    assert any("cookies.txt" in step for step in message.steps) is use_cookies
+    assert "VPN" in message.tip and "VPN" in message
     logs = [payload["line"] for kind, payload in app.events.queue if kind == "job_log"]
     assert any("stopped before the remaining 7 video(s)" in line for line in logs)
     assert job.failure_diagnostic.reason == "authentication_required"
@@ -123,7 +124,7 @@ def test_single_video_bot_check_offers_youtube_access(monkeypatch, tmp_path: Pat
     [(kind, message)] = _terminals(app)
     assert kind == "error"
     assert isinstance(message, YouTubeAccessMessage)
-    assert "could not read this video" in message
+    assert "couldn't read this video" in message.summary
 
 
 def test_provider_bot_text_offers_youtube_access():
@@ -132,3 +133,12 @@ def test_provider_bot_text_offers_youtube_access():
     )
     assert isinstance(message, YouTubeAccessMessage)
     assert message.action_label == "YouTube access"
+
+
+def test_kept_videos_keep_the_structured_message():
+    message = app_module.youtube_access_message(stopped_after=3).with_kept(1)
+    assert isinstance(message, YouTubeAccessMessage)
+    assert message.kept == "1 finished video was kept."
+    assert message.steps and message.tip
+    assert str(message).startswith("1 finished video was kept.")
+    assert message.presentation()["kept"] == message.kept

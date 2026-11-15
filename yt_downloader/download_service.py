@@ -5742,10 +5742,7 @@ class DownloadWorkerCore:
                 self.events.put(
                     (
                         "partial",
-                        YouTubeAccessMessage(
-                            f"{outcome.success_count} valid output(s) kept. "
-                            + access_message
-                        ),
+                        access_message.with_kept(outcome.success_count),
                     )
                 )
             elif (
