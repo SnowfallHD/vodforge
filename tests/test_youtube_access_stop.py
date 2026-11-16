@@ -142,3 +142,4 @@ def test_kept_videos_keep_the_structured_message():
     assert message.steps and message.tip
     assert str(message).startswith("1 finished video was kept.")
     assert message.presentation()["kept"] == message.kept
+    assert message.title() == str(message).title()  # str.title() is not shadowed

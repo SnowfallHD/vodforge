@@ -442,7 +442,7 @@ class Bridge(QObject):
     pointerGestureEnded = Signal()
     pointerMoved = Signal(int)
     outputFolderRecoveryRequested = Signal(str)
-    youtubeAccessRecoveryRequested = Signal("QVariantMap")
+    youtubeAccessRecoveryRequested = Signal(dict)
     statusChanged = Signal()
     operationFeedback = Signal(str)
     libraryRemovalRequested = Signal()

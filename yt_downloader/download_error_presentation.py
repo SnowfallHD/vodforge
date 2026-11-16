@@ -49,6 +49,12 @@ class YouTubeAccessMessage(str):
     action = "open_youtube_access"
     action_label = "YouTube access"
     code = "youtube_access_required"
+    # Named "heading", not "title", so str.title() keeps working.
+    heading: str
+    summary: str
+    steps: tuple[str, ...]
+    tip: str
+    kept: str
 
     def __new__(
         cls,
@@ -61,7 +67,7 @@ class YouTubeAccessMessage(str):
         kept: str = "",
     ) -> Self:
         message = super().__new__(cls, text)
-        message.title = title
+        message.heading = title
         message.summary = summary or (text if not title else "")
         message.steps = tuple(steps)
         message.tip = tip
@@ -77,7 +83,7 @@ class YouTubeAccessMessage(str):
         )
         return YouTubeAccessMessage(
             f"{kept} {self}",
-            title=self.title,
+            title=self.heading,
             summary=self.summary,
             steps=self.steps,
             tip=self.tip,
@@ -87,7 +93,7 @@ class YouTubeAccessMessage(str):
     def presentation(self) -> dict[str, object]:
         """Fields for the pop-up, in display order."""
         return {
-            "title": self.title or "YouTube needs a signed-in browser",
+            "title": self.heading or "YouTube needs a signed-in browser",
             "summary": self.summary,
             "kept": self.kept,
             "steps": list(self.steps),
