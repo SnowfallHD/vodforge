@@ -85,8 +85,8 @@ class UpdateJourney(rj.Journey):
         if scenario not in SCENARIOS:
             raise rj.JourneyError(f"Unknown scenario {scenario!r}")
         self.scenario = scenario
-        # Only a Mac has developer tools to take away.
-        self.developer_tools = developer_tools or sys.platform == "win32"
+        # Only a Mac has developer tools to take away; Windows reports none.
+        self.developer_tools = developer_tools and sys.platform != "win32"
         self.ready_locks: list[str] = []
         self.root = root.resolve()
         self.home = self.root / "home"
