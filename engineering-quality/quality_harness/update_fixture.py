@@ -62,8 +62,15 @@ def serve(version: str, assets: list[Path], output: Path) -> None:
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             status, body, path = 404, b"not found", None
+            asset_request = any(
+                self.path == prefix + tag + "/" + name for name in files
+            )
             if (output / "unavailable").exists() and self.path.startswith(prefix):
                 status, body = 503, b"QA update fixture temporarily unavailable"
+            elif (output / "assets-unavailable").exists() and asset_request:
+                # The release is found but its download fails, as for the
+                # 0.2.7 Mac update; the app must then offer Repair.
+                status, body = 503, b"QA update download temporarily unavailable"
             elif self.path == prefix + "release.json":
                 status = 200
                 body = json.dumps(

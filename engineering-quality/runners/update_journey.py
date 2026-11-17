@@ -275,7 +275,8 @@ class UpdateJourney(rj.Journey):
 
     @staticmethod
     def set_unavailable(feed: Path, unavailable: bool) -> None:
-        marker = feed / "unavailable"
+        """Make only the download fail; the release itself is still found."""
+        marker = feed / "assets-unavailable"
         if unavailable:
             marker.touch()
         else:
@@ -401,12 +402,17 @@ class UpdateJourney(rj.Journey):
     def offer_visible(self) -> bool:
         # Both of the update window's buttons; Windows doesn't expose its
         # heading text, so the heading is only a fallback for the Later button.
-        if self.offer_control("updatePrimary", OFFER_BUTTONS) is None:
+        # The relabelled "newer" release fails its version check once
+        # downloaded, so the window may already be offering Repair.
+        if (
+            self.offer_control("updatePrimary", OFFER_BUTTONS + (REPAIR_BUTTON,))
+            is None
+        ):
             return False
         if self.offer_control("updateDismiss", ("Later",)) is not None:
             return True
         texts = self.all_texts()
-        return any(heading in texts for heading in OFFER_HEADINGS)
+        return any(heading in texts for heading in OFFER_HEADINGS + (REPAIR_HEADING,))
 
     # Journey ---------------------------------------------------------------
     def run(self) -> dict[str, Any]:
