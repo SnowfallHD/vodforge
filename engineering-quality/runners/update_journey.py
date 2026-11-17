@@ -10,6 +10,16 @@ preview service only, never production.
 3. Update window: serve the candidate again as a newer version and reopen. The
    update window must appear on launch; choose Later, then quit.
 
+With --scenario repair the first download fails (the feed answers 503), as the
+0.2.7 Mac update did. The app must show "Update needs attention" by itself, and
+Repair VODForge must install the candidate and reopen it.
+
+On a Mac, the developer tools (Xcode, Command Line Tools) are made unavailable
+to the app, as they are on most people's Macs: before 0.2.9 the updater needed
+them and failed everywhere else, while every QA Mac had them. The journey first
+proves the simulation works. On Windows, the helper's ready file is held open
+the moment it appears, as an antivirus scan can, which failed a 0.2.6 handoff.
+
 Everything stays under --root, which the QA feed requires: home, temporary
 files, the app and the profile. The QA key is read from --qa-key-file and passed
 only to the app's environment; it is never printed or written to the result.
@@ -48,9 +58,15 @@ OFFER_HEADINGS = ("Update available", "Downloading update", "Waiting to restart"
 
 
 def fixture_name(version: str) -> str:
+    """The asset the published release offers this platform's updater."""
     if sys.platform == "win32":
         return f"VODForge-Windows-Setup-v{version}.exe"
-    return f"VODForge-macOS-arm64-v{version}.zip"
+    return f"VODForge-macOS-universal2-v{version}.zip"
+
+
+SCENARIOS = ("install_on_quit", "repair")
+REPAIR_HEADING = "Update needs attention"
+REPAIR_BUTTON = "Repair VODForge"
 
 
 class UpdateJourney(rj.Journey):
@@ -62,8 +78,16 @@ class UpdateJourney(rj.Journey):
         candidate_version: str,
         qa_key: str,
         output: Path | None = None,
+        scenario: str = "install_on_quit",
+        developer_tools: bool = False,
     ) -> None:
         super().__init__(app, output or root / "journey", rj.DEFAULT_YOUTUBE_URL)
+        if scenario not in SCENARIOS:
+            raise rj.JourneyError(f"Unknown scenario {scenario!r}")
+        self.scenario = scenario
+        # Only a Mac has developer tools to take away.
+        self.developer_tools = developer_tools or sys.platform == "win32"
+        self.ready_locks: list[str] = []
         self.root = root.resolve()
         self.home = self.root / "home"
         self.downloads = self.home / "Downloads"
@@ -114,6 +138,10 @@ class UpdateJourney(rj.Journey):
             # The first launch opens a welcome page; keep it out of the
             # person's own browser.
             env["BROWSER"] = "/usr/bin/true"
+            if not self.developer_tools:
+                # xcrun, stapler and the other developer-tool placeholders
+                # fail here exactly as on a Mac without Xcode installed.
+                env["DEVELOPER_DIR"] = str(self.root / "no-developer-tools")
         if sys.platform == "win32":
             env.update(
                 USERPROFILE=str(self.home),
@@ -155,6 +183,100 @@ class UpdateJourney(rj.Journey):
             r["path"].endswith("/" + name) and r["status"] == 200
             for r in self.requests(feed)
         )
+
+    def developer_tools_present(self) -> bool:
+        """Whether the app's environment can run Apple's developer tools."""
+        if sys.platform == "win32":
+            return False
+        found = subprocess.run(
+            ["/usr/bin/xcrun", "--find", "stapler"],
+            env=self.environment(),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.launches -= 1  # environment() counted a launch that didn't happen
+        return found.returncode == 0
+
+    def hold_ready_files(self, stop: threading.Event) -> None:
+        """Hold each helper ready file open as soon as it appears (Windows).
+
+        A scanner opening the new file is what made Windows refuse the app's
+        delete in 0.2.6 (WinError 32). Python opens files without delete
+        sharing, so holding one reproduces that refusal.
+        """
+        if sys.platform != "win32":
+            return
+        held: set[Path] = set()
+        while not stop.is_set():
+            for path in self.profile_dir.rglob("handoff-*.ready"):
+                if path in held:
+                    continue
+                try:
+                    handle = path.open("rb")
+                except OSError:
+                    continue
+                held.add(path)
+                self.ready_locks.append(path.name)
+                threading.Timer(5, handle.close).start()
+            time.sleep(0.005)
+
+    def relaunched_pid(self, previous: int | None) -> int | None:
+        """The VODForge the update helper reopened from this folder, if any."""
+        import psutil
+
+        executable = (
+            self.app / "VODForge.exe"
+            if sys.platform == "win32"
+            else self.app / "Contents/MacOS/VODForge"
+        ).resolve()
+        for process in psutil.process_iter(["pid", "exe"]):
+            try:
+                exe = process.info["exe"]
+                if (
+                    exe
+                    and Path(exe).resolve() == executable
+                    and process.pid != previous
+                ):
+                    return process.pid
+            except (psutil.Error, OSError):
+                continue
+        return None
+
+    def adopt(self, pid: int) -> None:
+        """Drive a VODForge this journey didn't start (reopened after Repair)."""
+        import psutil
+
+        class Adopted:
+            def __init__(self, pid: int) -> None:
+                self.pid = pid
+                self._process = psutil.Process(pid)
+                self.returncode: int | None = None
+
+            def poll(self) -> int | None:
+                if self.returncode is None and not self._process.is_running():
+                    self.returncode = 0
+                return self.returncode
+
+            def wait(self, timeout: float | None = None) -> int:
+                code = self._process.wait(timeout=timeout)
+                self.returncode = 0 if code is None else code
+                return self.returncode
+
+        self.driver.process = Adopted(pid)  # type: ignore[assignment]
+        if sys.platform == "win32":
+            self.driver.app = self.driver.Application(backend="uia")
+            rj.wait_for(self.driver._connect, 60, "UI Automation connection")
+        else:
+            self.driver.app = self.driver.ax.AXUIElementCreateApplication(pid)
+
+    @staticmethod
+    def set_unavailable(feed: Path, unavailable: bool) -> None:
+        marker = feed / "unavailable"
+        if unavailable:
+            marker.touch()
+        else:
+            marker.unlink(missing_ok=True)
 
     # App facts -----------------------------------------------------------
     def installed_version(self) -> str:
@@ -288,8 +410,81 @@ class UpdateJourney(rj.Journey):
         if self.output.exists():
             raise rj.JourneyError(f"Refusing an existing output folder: {self.output}")
         self.output.mkdir(parents=True)
-        facts: dict[str, Any] = {"baseline_version": self.installed_version()}
+        facts: dict[str, Any] = {
+            "baseline_version": self.installed_version(),
+            "scenario": self.scenario,
+            "developer_tools_available": self.developer_tools_present(),
+        }
+        if facts["developer_tools_available"] != self.developer_tools:
+            raise rj.JourneyError(
+                "The developer-tools setting did not take effect for the app"
+            )
         log = self.output / "app.log"
+        stop_locks = threading.Event()
+        threading.Thread(
+            target=self.hold_ready_files, args=(stop_locks,), daemon=True
+        ).start()
+
+        def repair():
+            feed = self.start_feed(self.candidate_version)
+            self.set_unavailable(feed, True)
+            self.driver.launch(self.app, self.environment(), log)
+            self.wait_ready()
+            dismissed = self.dismiss_first_run()
+            name = fixture_name(self.candidate_version)
+            rj.wait_for(
+                lambda: any(
+                    r["path"].endswith("/" + name) and r["status"] == 503
+                    for r in self.requests(feed)
+                ),
+                300,
+                "the failed first download",
+            )
+            self.set_unavailable(feed, False)
+
+            def repair_offered():
+                if REPAIR_HEADING in self.all_texts():
+                    return self.offer_control("updatePrimary", (REPAIR_BUTTON,))
+                dismissed.extend(self.dismiss_first_run())
+                return None
+
+            try:
+                button = rj.wait_for(repair_offered, 120, "Update needs attention")
+            except rj.JourneyError as exc:
+                seen = [t for t in self.all_texts() if t][-40:]
+                raise rj.JourneyError(f"{exc}; shown {seen}")
+            self.driver.screenshot(self.output / "repair-offered.png")
+            previous = self.driver.process.pid
+            self.driver.press(button)
+            installed = rj.wait_for(
+                lambda: self.installed_version() == self.candidate_version,
+                600,
+                f"Repair to install {self.candidate_version}",
+            )
+            rj.wait_for(
+                lambda: any(
+                    r["status"] in {"installed", "relaunched"} for r in self.receipts()
+                ),
+                180,
+                "the repair helper's receipt",
+            )
+            # Repair reopens VODForge itself; that app must be the new version.
+            pid = rj.wait_for(
+                lambda: self.relaunched_pid(previous), 120, "VODForge to reopen"
+            )
+            self.adopt(pid)
+            self.wait_ready()
+            self.dismiss_first_run()
+            time.sleep(20)  # Report the install and let the outbox deliver.
+            self.quit()
+            time.sleep(15)
+            return {
+                "reopened_by_repair": True,
+                "dismissed": dismissed,
+                "installed": bool(installed),
+                "receipts": self.receipts(),
+                "feed_requests": self.requests(feed),
+            }
 
         def baseline():
             feed = self.start_feed(self.candidate_version)
@@ -392,22 +587,30 @@ class UpdateJourney(rj.Journey):
                 "feed_requests": self.requests(feed),
             }
 
+        steps = (
+            (("repair_after_failed_download", repair),)
+            if self.scenario == "repair"
+            else (("baseline_install_on_quit", baseline),)
+        ) + (
+            ("candidate_reopen", candidate),
+            ("update_window_on_launch", update_window),
+        )
         try:
-            for name, action in (
-                ("baseline_install_on_quit", baseline),
-                ("candidate_reopen", candidate),
-                ("update_window_on_launch", update_window),
-            ):
+            for name, action in steps:
                 if not self.step(name, action):
                     break
         finally:
+            stop_locks.set()
             if self.driver.process is not None and self.driver.process.poll() is None:
                 try:
                     self.quit()
                 except Exception:  # noqa: BLE001 - stopped below
                     self.driver.kill()
         result = {
-            "passed": len(self.steps) == 3 and all(s["passed"] for s in self.steps),
+            "passed": len(self.steps) == len(steps)
+            and all(s["passed"] for s in self.steps),
+            "format": "vodforge-update-journey/v2",
+            "ready_files_held_open": self.ready_locks,
             "machine": {"platform": sys.platform, "arch": rj.platform.machine()},
             "app": str(self.app),
             "candidate": self.candidate.name,
@@ -439,6 +642,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--candidate", type=Path, required=True)
     parser.add_argument("--candidate-version", required=True)
     parser.add_argument("--qa-key-file", type=Path, required=True)
+    parser.add_argument("--scenario", choices=SCENARIOS, default="install_on_quit")
+    parser.add_argument(
+        "--with-developer-tools",
+        action="store_true",
+        help="Leave Xcode available to the app (Mac); the release gate needs both",
+    )
     # The Windows journey script passes --output to every runner.
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
@@ -446,7 +655,14 @@ def main(argv: list[str] | None = None) -> int:
     if re.fullmatch(r"[0-9a-f]{64}", key) is None:
         raise SystemExit("The QA key file does not hold a preview key")
     result = UpdateJourney(
-        args.root, args.app, args.candidate, args.candidate_version, key, args.output
+        args.root,
+        args.app,
+        args.candidate,
+        args.candidate_version,
+        key,
+        args.output,
+        scenario=args.scenario,
+        developer_tools=args.with_developer_tools,
     ).run()
     print(json.dumps({k: result[k] for k in ("passed", "installation_id")}))
     return 0 if result["passed"] else 1

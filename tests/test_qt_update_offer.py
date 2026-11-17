@@ -85,3 +85,33 @@ def test_no_window_when_vodforge_is_up_to_date(found):
     check_finds("0.2.6")
     QTest.qWait(500)
     assert not popup(window).property("visible")
+
+
+def test_failed_background_update_opens_repair_once(found):
+    """A failed automatic download must reach the person as Repair VODForge.
+
+    In 0.2.7 the window was suppressed once the update needed attention, so a
+    Mac whose automatic download failed showed nothing and retried silently
+    every six hours. The Repair button was never on screen.
+    """
+    _app, bridge, window, check_finds = found
+    check_finds("0.2.8")
+    update_click(window, window.findChild(QObject, "updateDismiss"))  # Later
+    assert not popup(window).property("visible")
+
+    def background_failure() -> None:
+        bridge._updates.stage = "download"
+        bridge._updates.busy = True
+        bridge._updates.events.put(("error", ("verification failed", None)))
+        bridge._pump()
+        QTest.qWait(50)
+
+    background_failure()
+    assert popup(window).property("visible")
+    heading = window.findChild(QObject, "updateHeading").property("text")
+    assert heading == "Update needs attention"
+    primary = window.findChild(QObject, "updatePrimary")
+    assert primary.property("label") == "Repair VODForge"
+    update_click(window, window.findChild(QObject, "updateDismiss"))  # Later
+    background_failure()  # the same version failing again stays quiet
+    assert not popup(window).property("visible")

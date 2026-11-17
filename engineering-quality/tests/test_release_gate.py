@@ -250,6 +250,8 @@ def test_release_receipt_command_keeps_subcommand_routing(
         str(tmp_path / "e2e.json"),
         "--telemetry-result",
         str(tmp_path / "telemetry.json"),
+        "--update-result",
+        str(tmp_path / "update.json"),
         "--output-dir",
         str(tmp_path / "receipt"),
         "--command",
@@ -437,6 +439,25 @@ def test_optional_ux_review_cannot_block_or_hide_behavior_failure(
     assert gate_outcome(checks) == "failed"
 
 
+def _update_journeys(candidate):
+    from test_update_release import complete
+
+    results = complete()
+    for result in results:
+        result["candidate_version"] = candidate["candidate_version"]
+        result["baseline_version"] = "0.1.6"
+    return results
+
+
+def test_release_is_blocked_without_update_journeys() -> None:
+    from quality_harness.update_release import release_checks
+
+    checks = release_checks([], _candidate())
+    assert len(checks) == 6
+    assert {check["status"] for check in checks} == {"failed"}
+    assert all(check["required"] for check in checks)
+
+
 def test_legacy_success_receipt_keeps_debt_visible_but_blocks_temporal_gaps() -> None:
     from test_telemetry_release import candidate as telemetry_candidate
     from test_telemetry_release import telemetry_fixture
@@ -467,6 +488,7 @@ def test_legacy_success_receipt_keeps_debt_visible_but_blocks_temporal_gaps() ->
         telemetry_results=[
             telemetry_fixture(candidate, platform) for platform in ("macos", "windows")
         ],
+        update_results=_update_journeys(candidate),
         generated_at="2026-08-31T00:00:00+00:00",
     )
 

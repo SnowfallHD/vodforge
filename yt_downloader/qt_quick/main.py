@@ -696,6 +696,7 @@ class Bridge(QObject):
         )
         self._automatic_download_requested = False
         self._update_offer_requested: str | None = None
+        self._update_recovery_offered: str | None = None
         self._automatic_updates_supported = True
         selection = apply_theme_selection(
             self._settings.get("appearance_theme", DEFAULT_THEME_NAME),
@@ -1646,14 +1647,23 @@ class Bridge(QObject):
         Waits for the analytics choice to settle, so a first-launch consent
         question comes first. The window itself defers while another dialog is
         open. Closing it with Later leaves the update to install on quit.
+
+        An automatic download or install that fails in the background is
+        shown too, once per version, so the person sees Repair VODForge. Before
+        0.2.9 the failure was silent and the app retried every six hours.
         """
         release = self._updates.release
+        if release is None or not self._analytics.settled:
+            return
+        if self._updates.recovery:
+            if release.version == self._update_recovery_offered:
+                return
+            self._update_recovery_offered = release.version
+            self.updateOfferRequested.emit()
+            return
         if (
-            release is None
-            or not (self._updates.available or self._updates.manual)
-            or self._updates.recovery
+            not (self._updates.available or self._updates.manual)
             or release.version == self._update_offer_requested
-            or not self._analytics.settled
         ):
             return
         self._update_offer_requested = release.version
@@ -1670,12 +1680,22 @@ class Bridge(QObject):
 
     @Slot()
     def updateOfferShown(self) -> None:
-        if self._updates.available or self._updates.manual or self._updates.ready:
+        if (
+            self._updates.available
+            or self._updates.manual
+            or self._updates.ready
+            or self._updates.recovery
+        ):
             self._updates.observe("shown")
 
     @Slot(bool)
     def updateOfferClosed(self, explicitly_deferred: bool = False) -> None:
-        if self._updates.available or self._updates.manual or self._updates.ready:
+        if (
+            self._updates.available
+            or self._updates.manual
+            or self._updates.ready
+            or self._updates.recovery
+        ):
             self._updates.observe("deferred" if explicitly_deferred else "dismissed")
 
     @Slot()

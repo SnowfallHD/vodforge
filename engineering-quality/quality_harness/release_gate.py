@@ -958,14 +958,17 @@ def build_release_receipt(
     packaged_e2e: Mapping[str, Any],
     commands_used: Sequence[Sequence[str]],
     telemetry_results: Sequence[Mapping[str, Any]] = (),
+    update_results: Sequence[Mapping[str, Any]] = (),
     generated_at: str | None = None,
 ) -> dict[str, Any]:
     """Build a fail-closed release receipt from already-produced evidence."""
 
     from .telemetry_release import release_checks
+    from .update_release import release_checks as update_checks
 
     checks = [
         *release_checks(telemetry_results, candidate),
+        *update_checks(update_results, candidate),
         *evaluate_candidate_receipt(candidate),
         *evaluate_fast_result(fast_result),
         *evaluate_engineering_result(normal_result, profile="normal"),

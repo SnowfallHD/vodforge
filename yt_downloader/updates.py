@@ -35,6 +35,7 @@ SEMVER_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$")
 SHA256_RE = re.compile(r"^([0-9a-fA-F]{64})\s+[ *](.+)$")
 MACOS_BUNDLE_ID = "com.snowfallhd.vodforge"
 MACOS_TEAM_ID = "76G5W4954G"
+MACOS_GATEKEEPER_SOURCE = "source=Notarized Developer ID"
 WINDOWS_PUBLISHER = "Kryden Ventures, LLC"
 # A PowerShell 7 -> Python -> Windows PowerShell launch can inherit incompatible
 # PS7 modules. Update scripts need only the selected runtime's built-in modules.
@@ -619,10 +620,10 @@ def verify_macos_app(
             "The macOS update is not signed for VODForge by Kryden Ventures.",
             reason="validation",
         )
-    _run_checked(
-        ["/usr/bin/xcrun", "stapler", "validate", str(app_path)], runner=runner
-    )
-    _run_checked(
+    # Only programs every Mac has: stapler and xcrun need Apple's developer
+    # tools, which most people don't install. Gatekeeper accepts the app only
+    # when Apple notarized it, and says so in its assessment.
+    assessment = _run_checked(
         [
             "/usr/sbin/spctl",
             "--assess",
@@ -633,6 +634,11 @@ def verify_macos_app(
         ],
         runner=runner,
     )
+    if MACOS_GATEKEEPER_SOURCE not in f"{assessment.stdout}\n{assessment.stderr}":
+        raise UpdateError(
+            "The macOS update is not notarized by Apple.",
+            reason="validation",
+        )
 
 
 def prepare_macos_update(
@@ -802,8 +808,8 @@ def write_macos_swap_script(
         signing=$(/usr/bin/codesign -d --verbose=4 "$new_app" 2>&1) || fail "signing identity missing"
         /usr/bin/grep -Fqx 'Identifier={MACOS_BUNDLE_ID}' <<<"$signing" || fail "signed identifier mismatch"
         /usr/bin/grep -Fqx 'TeamIdentifier={MACOS_TEAM_ID}' <<<"$signing" || fail "team identifier mismatch"
-        /usr/bin/xcrun stapler validate "$new_app" >/dev/null 2>&1 || fail "notarization ticket missing"
-        /usr/sbin/spctl --assess --type execute "$new_app" >/dev/null 2>&1 || fail "Gatekeeper rejected update"
+        assessment=$(/usr/sbin/spctl --assess --type execute --verbose=2 "$new_app" 2>&1) || fail "Gatekeeper rejected update"
+        /usr/bin/grep -Fqx '{MACOS_GATEKEEPER_SOURCE}' <<<"$assessment" || fail "update is not notarized"
 
         version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$new_app/Contents/Info.plist" 2>/dev/null) || fail "bundle version missing"
         [[ "{expected_version}" == "" || "$version" == "{expected_version}" ]] || fail "staged version changed"
@@ -1179,7 +1185,13 @@ def launch_windows_update(
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
         if ready.is_file():
-            ready.unlink(missing_ok=True)
+            # The helper is running. PowerShell, an antivirus scan or the
+            # search indexer can still hold the file open, which makes
+            # Windows refuse the delete; that must not undo the handoff.
+            try:
+                ready.unlink(missing_ok=True)
+            except OSError:
+                pass
             return receipt
         if process.poll() is not None:
             break

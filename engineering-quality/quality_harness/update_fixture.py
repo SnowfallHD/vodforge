@@ -33,6 +33,9 @@ def serve(version: str, assets: list[Path], output: Path) -> None:
         f"VODForge-Windows-Setup-v{version}.exe",
         f"VODForge-macOS-arm64-v{version}.zip",
         f"VODForge-macOS-x64-v{version}.zip",
+        # Published releases carry a universal app, which every Mac updater
+        # since 0.2.6 downloads in preference to the per-architecture ones.
+        f"VODForge-macOS-universal2-v{version}.zip",
     }
     files = {path.name: path.resolve(strict=True) for path in assets}
     if not files or len(files) != len(assets) or not files.keys() <= accepted:

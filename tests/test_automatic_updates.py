@@ -183,7 +183,8 @@ def test_helpers_close_mode_preserves_signatures_and_never_reopens(tmp_path):
     assert "/usr/bin/open --env" not in script
     assert (
         "lockf -kn" in script
-        and "stapler validate" in script
+        and "stapler" not in script
+        and "source=Notarized Developer ID" in script
         and "spctl --assess" in script
     )
     if sys.platform != "win32":
@@ -397,6 +398,9 @@ def test_auto_helper_defers_to_reopened_app_then_installs_without_relaunch(tmp_p
             )
         )
     verify = tmp_path / "verify"
+    gatekeeper = tmp_path / "spctl"
+    gatekeeper.write_text("#!/bin/sh\necho 'source=Notarized Developer ID' >&2\n")
+    gatekeeper.chmod(0o755)
     verify.write_text(
         "#!/bin/bash\nprintf '%s\\n' 'Identifier=com.snowfallhd.vodforge' 'TeamIdentifier=76G5W4954G'\n"
     )
@@ -411,8 +415,7 @@ def test_auto_helper_defers_to_reopened_app_then_installs_without_relaunch(tmp_p
     script.write_text(
         script.read_text()
         .replace("/usr/bin/codesign", shlex.quote(str(verify)))
-        .replace("/usr/bin/xcrun stapler", "/usr/bin/true")
-        .replace("/usr/sbin/spctl", "/usr/bin/true")
+        .replace("/usr/sbin/spctl", shlex.quote(str(gatekeeper)))
         .replace("/usr/bin/logger", "/usr/bin/true")
     )
     command = [

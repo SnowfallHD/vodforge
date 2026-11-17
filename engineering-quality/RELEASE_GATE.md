@@ -110,12 +110,41 @@ After FAST, NORMAL, packaged E2E, and DEEP, bind the receipts:
   --e2e-result engineering-quality/reports/<e2e-id>/e2e-result.json \
   --telemetry-result engineering-quality/reports/<mac-journey>/telemetry-result.json \
   --telemetry-result engineering-quality/reports/<windows-journey>/telemetry-result.json \
+  --update-result <apple-silicon-install-on-quit>/update-result.json \
+  --update-result <apple-silicon-repair>/update-result.json \
+  --update-result <intel-install-on-quit>/update-result.json \
+  --update-result <intel-repair>/update-result.json \
+  --update-result <windows-install-on-quit>/update-result.json \
+  --update-result <windows-repair>/update-result.json \
   --output-dir engineering-quality/reports/<receipt-id> \
   --command "./engineering-quality/run fast ..." \
   --command "./engineering-quality/run normal ..." \
   --command "./engineering-quality/run packaged-e2e ..." \
   --command "./engineering-quality/run deep ..."
 ```
+
+### Updates and Repair
+
+People get new versions through the app's updater. When it breaks, the only way
+forward is the website, so the gate needs six passing
+`runners/update_journey.py` results: `--scenario install_on_quit` and
+`--scenario repair` on an Apple silicon Mac, an Intel Mac and a Windows PC. Each
+updates an older signed build to the candidate through the app itself. Repair
+starts with a failed download and must show "Update needs attention" without
+any action, install the candidate and reopen it.
+
+On a Mac the journey makes the developer tools (Xcode, Command Line Tools)
+unavailable to the app, as on most people's Macs, and proves it did. A Mac
+result with developer tools available does not count. The 0.2.8 Mac updater
+ran Apple's `stapler`, which exists only with Xcode installed, so every QA Mac
+updated fine and other Macs couldn't. On Windows the journey holds the helper's
+ready file open as soon as it appears, as an antivirus scan can (WinError 32 in
+0.2.6). The feed serves the same file names as a published release, including
+the universal Mac ZIP that Mac updaters download first.
+
+Build the baseline from the candidate's source with an older version number.
+Updating from the last public release also proves the existing users' path,
+but it can only pass on Macs where that release's updater worked.
 
 The JSON and Markdown receipt retain `passed`, `failed`, `skipped`, and `unproven` as distinct states. Any required non-passing state blocks publication.
 

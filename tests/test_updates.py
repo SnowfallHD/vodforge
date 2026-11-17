@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 import plistlib
+import re
 import subprocess
 from pathlib import Path
 
@@ -447,11 +448,30 @@ def _write_mac_app(
         plistlib.dump({"CFBundleIdentifier": bundle_id}, handle)
 
 
-def _mac_verification_runner(*, team_id: str = "76G5W4954G"):
+# Programs that are placeholders for Apple's developer tools: on a Mac
+# without Xcode or the Command Line Tools they fail with exit 1.
+DEVELOPER_TOOL_PROGRAMS = {"/usr/bin/xcrun", "/usr/bin/stapler", "/usr/bin/xcodebuild"}
+
+
+def _mac_verification_runner(
+    *, team_id: str = "76G5W4954G", source: str = "Notarized Developer ID"
+):
+    """Behave like a stock Mac: no developer tools, only system programs."""
+
     def run(command, **_kwargs):
+        if command[0] in DEVELOPER_TOOL_PROGRAMS:
+            return subprocess.CompletedProcess(
+                command,
+                1,
+                stdout="",
+                stderr="xcrun: error: invalid active developer path "
+                "(/Library/Developer/CommandLineTools), missing xcrun",
+            )
         stderr = ""
         if command[:3] == ["/usr/bin/codesign", "-d", "--verbose=4"]:
             stderr = f"Identifier=com.snowfallhd.vodforge\nTeamIdentifier={team_id}\n"
+        if command[0] == "/usr/sbin/spctl":
+            stderr = f"{command[-1]}: accepted\nsource={source}\n"
         return subprocess.CompletedProcess(command, 0, stdout="", stderr=stderr)
 
     return run
@@ -474,6 +494,32 @@ def test_macos_update_requires_exact_bundle_and_team_identity(tmp_path: Path):
     _write_mac_app(app_path, bundle_id="com.example.impostor")
     with pytest.raises(RuntimeError, match="wrong application identifier"):
         verify_macos_app(app_path, runner=_mac_verification_runner())
+
+
+def test_macos_update_requires_apple_notarization(tmp_path: Path):
+    app_path = tmp_path / "VODForge.app"
+    _write_mac_app(app_path)
+    # Signed by us but not notarized: Gatekeeper accepts it only as a
+    # developer-signed app, so the update must be refused.
+    with pytest.raises(RuntimeError, match="not notarized"):
+        verify_macos_app(
+            app_path, runner=_mac_verification_runner(source="Developer ID")
+        )
+
+
+def test_macos_update_runs_only_programs_every_mac_has(tmp_path: Path):
+    """A Mac without Xcode or the Command Line Tools must still update."""
+    app_path = tmp_path / "VODForge.app"
+    _write_mac_app(app_path)
+    commands = []
+    runner = _mac_verification_runner()
+
+    def recording(command, **kwargs):
+        commands.append(command[0])
+        return runner(command, **kwargs)
+
+    verify_macos_app(app_path, runner=recording)
+    assert commands and not set(commands) & DEVELOPER_TOOL_PROGRAMS
 
 
 def test_prepare_macos_update_extracts_direct_bundle_and_verifies_it(tmp_path: Path):
@@ -503,7 +549,8 @@ def test_macos_swap_script_reverifies_and_rolls_back(tmp_path: Path):
 
     assert "codesign --verify --deep --strict" in script
     assert "TeamIdentifier=76G5W4954G" in script
-    assert "stapler validate" in script
+    assert "stapler" not in script and "xcrun" not in script
+    assert "source=Notarized Developer ID" in script
     assert "spctl --assess" in script
     assert 'mv "$old_app" "$target_app"' in script
 
@@ -576,7 +623,6 @@ def test_windows_update_requires_valid_owned_timestamped_signature(tmp_path: Pat
 
 
 def test_windows_helper_is_hidden_and_requires_readiness(tmp_path):
-    import re
 
     from yt_downloader.updates import launch_windows_update
 
@@ -648,6 +694,47 @@ def test_windows_helper_start_failure_never_claims_handoff(tmp_path):
         launch_windows_update(
             installer, executable=target, popen=lambda *a, **k: FailedProcess()
         )
+
+
+def test_windows_handoff_survives_a_locked_ready_file(monkeypatch, tmp_path):
+    """The helper is running even when Windows refuses to delete its signal.
+
+    PowerShell, an antivirus scan or the search indexer can still hold the
+    ready file open (WinError 32). In 0.2.6 that undid a working handoff and
+    told the user the update failed while the helper was already waiting.
+    """
+    from yt_downloader import updates
+
+    target = tmp_path / "VODForge.exe"
+    installer = tmp_path / "VODForge-Windows-Setup-v1.2.3.exe"
+    target.touch()
+    installer.touch()
+
+    class Running:
+        def poll(self):
+            return None
+
+        def terminate(self):
+            raise AssertionError("a running helper must not be stopped")
+
+    def spawn(command, **_kwargs):
+        script = Path(command[-1]).read_text(encoding="utf-8-sig")
+        ready = re.search(r"\$ready = '((?:[^']|'')*)'", script).group(1)
+        Path(ready.replace("''", "'")).write_text("ready")
+        return Running()
+
+    original_unlink = Path.unlink
+
+    def locked_unlink(self, *args, **kwargs):
+        if self.suffix == ".ready":
+            error = PermissionError(13, "The process cannot access the file")
+            error.winerror = 32
+            raise error
+        return original_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", locked_unlink)
+    receipt = updates.launch_windows_update(installer, executable=target, popen=spawn)
+    assert receipt.suffix == ".json"
 
 
 def test_windows_verification_does_not_open_console(monkeypatch, tmp_path):

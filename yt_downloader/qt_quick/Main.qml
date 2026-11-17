@@ -176,7 +176,7 @@ Window {
     property bool updateOfferPending: false
     function offerUpdate() {
         if (updatePopup.visible) { updateOfferPending = false; return }
-        if (!(bridge.updateAvailable || bridge.updateManualAvailable)) { updateOfferPending = false; return }
+        if (!(bridge.updateAvailable || bridge.updateManualAvailable || bridge.updateRecovery)) { updateOfferPending = false; return }
         for (const blocker of updateOfferBlockers) {
             if (blocker && blocker.visible) { updateOfferPending = true; return }
         }

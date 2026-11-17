@@ -334,6 +334,9 @@ def test_macos_swap_executes_relaunch_and_rollback(tmp_path, outcome):
         )
     opened = tmp_path / "opened"
     verifier = tmp_path / "verify"
+    gatekeeper = tmp_path / "spctl"
+    gatekeeper.write_text("#!/bin/sh\necho 'source=Notarized Developer ID' >&2\n")
+    gatekeeper.chmod(0o755)
     verifier.write_text(
         "#!/bin/bash\n"
         + (
@@ -355,8 +358,7 @@ def test_macos_swap_executes_relaunch_and_rollback(tmp_path, outcome):
     script = (
         path.read_text()
         .replace("/usr/bin/codesign", shlex.quote(str(verifier)))
-        .replace("/usr/bin/xcrun stapler", "/usr/bin/true")
-        .replace("/usr/sbin/spctl", "/usr/bin/true")
+        .replace("/usr/sbin/spctl", shlex.quote(str(gatekeeper)))
         .replace("/usr/bin/open", shlex.quote(str(opener)))
         .replace("/usr/bin/logger", "/usr/bin/true")
     )
@@ -414,6 +416,9 @@ def test_macos_qa_update_relaunch_keeps_isolated_profile(tmp_path):
     )
     (source / "Contents/MacOS/VODForge").chmod(0o755)
     verifier = tmp_path / "verify"
+    gatekeeper = tmp_path / "spctl"
+    gatekeeper.write_text("#!/bin/sh\necho 'source=Notarized Developer ID' >&2\n")
+    gatekeeper.chmod(0o755)
     verifier.write_text(
         "#!/bin/bash\n"
         "echo 'Identifier=com.snowfallhd.vodforge'\n"
@@ -426,8 +431,7 @@ def test_macos_qa_update_relaunch_keeps_isolated_profile(tmp_path):
     script = (
         path.read_text()
         .replace("/usr/bin/codesign", shlex.quote(str(verifier)))
-        .replace("/usr/bin/xcrun stapler", "/usr/bin/true")
-        .replace("/usr/sbin/spctl", "/usr/bin/true")
+        .replace("/usr/sbin/spctl", shlex.quote(str(gatekeeper)))
         .replace("/usr/bin/logger", "/usr/bin/true")
     )
     path.write_text(script)

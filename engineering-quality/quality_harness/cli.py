@@ -162,6 +162,16 @@ def _parser() -> argparse.ArgumentParser:
         required=True,
         help="Preview-D1 journey receipt; repeat for Mac and Windows",
     )
+    release_receipt.add_argument(
+        "--update-result",
+        type=Path,
+        action="append",
+        required=True,
+        help=(
+            "update_journey.py result; both scenarios on Apple silicon, Intel "
+            "and Windows (six in all)"
+        ),
+    )
     release_receipt.add_argument("--output-dir", type=Path, required=True)
     release_receipt.add_argument(
         "--command",
@@ -503,6 +513,10 @@ def run_release_receipt_gate(args: argparse.Namespace) -> int:
         telemetry_results=[
             _read_json_object(path, label="preview telemetry result")
             for path in args.telemetry_result
+        ],
+        update_results=[
+            _read_json_object(path, label="update journey result")
+            for path in args.update_result
         ],
     )
     paths = write_release_receipt(args.output_dir.resolve(), receipt)
