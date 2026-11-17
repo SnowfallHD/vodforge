@@ -467,9 +467,18 @@ class UpdateJourney(rj.Journey):
                 raise rj.JourneyError(f"{exc}; shown {seen}")
             self.driver.screenshot(self.output / "repair-offered.png")
             previous = self.driver.process.pid
+            process = self.driver.process
             self.driver.press(button)
+
+            def repaired() -> bool:
+                # Collect the app's exit as macOS does for a real launch. An
+                # uncollected child stays a zombie that still answers kill -0,
+                # so the install script would wait for it until it gives up.
+                process.poll()
+                return self.installed_version() == self.candidate_version
+
             installed = rj.wait_for(
-                lambda: self.installed_version() == self.candidate_version,
+                repaired,
                 600,
                 f"Repair to install {self.candidate_version}",
             )
