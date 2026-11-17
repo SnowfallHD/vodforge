@@ -6479,7 +6479,7 @@ def test_qt_update_popup_content_fit_state_actions_and_progress(
     updates.status = (
         "Update downloaded. Finish active and queued work; VODForge will restart when it is idle."
         if state == "waiting"
-        else "Update needs attention. Try Repair or open the download page."
+        else "The update couldn't finish. Repair downloads the latest version again and installs it."
         if state == "error"
         else "Downloading and verifying the installer…"
         if updates.busy

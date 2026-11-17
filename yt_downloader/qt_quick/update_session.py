@@ -72,7 +72,7 @@ def _update_failure_status(detail: FailureDiagnostic | None, stage: str) -> str:
                 f"Access to the {location} was denied. Check folder access, "
                 "then retry the update or use the download page."
             )
-    return "Update needs attention. Try Repair or open the download page."
+    return "The update couldn't finish. Repair downloads the latest version again and installs it."
 
 
 class QtUpdateSession:
@@ -538,9 +538,7 @@ class QtUpdateSession:
             self.observe("failed", error=exc)
             self.pending_install = False
             self.recovery = True
-            self.status = (
-                "Update needs attention. Try Repair or open the download page."
-            )
+            self.status = "The update couldn't finish. Repair downloads the latest version again and installs it."
             self.observations.append(("failed", {"update_stage": "handoff"}))
             return False
         self.observe("handoff")
