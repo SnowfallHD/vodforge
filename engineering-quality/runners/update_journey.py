@@ -280,15 +280,31 @@ class UpdateJourney(rj.Journey):
             # installer verifies in a few seconds there.
             time.sleep(60)
             return
-        try:
-            rj.wait_for(
-                lambda: any("Update verified" in t for t in self.all_texts()),
-                600,
-                "the app to verify the downloaded update",
-            )
-        except rj.JourneyError as exc:
-            seen = [t for t in self.all_texts() if t][-40:]
-            raise rj.JourneyError(f"{exc}; shown {seen}")
+        # macOS doesn't expose the window's status text either. The app unpacks
+        # the update into a staged-* folder and checks it with ditto, codesign
+        # and spctl; a failed check deletes the folder. A staged app with no
+        # checker left running has passed.
+        import psutil
+
+        checkers = {"ditto", "codesign", "spctl"}
+        quiet_since: list[float] = []
+
+        def verified() -> bool:
+            staged = list(self.profile_dir.glob("updates/*/staged-*/VODForge.app"))
+            try:
+                children = psutil.Process(self.driver.process.pid).children(
+                    recursive=True
+                )
+                busy = any(child.name() in checkers for child in children)
+            except psutil.Error:
+                busy = True
+            if not staged or busy:
+                quiet_since.clear()
+                return False
+            quiet_since.append(time.monotonic())
+            return quiet_since[-1] - quiet_since[0] >= 5
+
+        rj.wait_for(verified, 600, "the app to verify the downloaded update")
 
     @staticmethod
     def set_unavailable(feed: Path, unavailable: bool) -> None:

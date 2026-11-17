@@ -215,8 +215,12 @@ class MacDriver:
         import Quartz
 
         assert self.process is not None
-        for info in Quartz.CGWindowListCopyWindowInfo(
-            Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID
+        # None without Screen Recording permission (for example over SSH).
+        for info in (
+            Quartz.CGWindowListCopyWindowInfo(
+                Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID
+            )
+            or []
         ):
             if (
                 info.get("kCGWindowOwnerPID") == self.process.pid
