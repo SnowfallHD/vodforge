@@ -8,7 +8,6 @@ to the Qt view; it never manufactures consent from a timeout.
 from __future__ import annotations
 
 import os
-
 import threading
 import time
 from collections.abc import Callable
