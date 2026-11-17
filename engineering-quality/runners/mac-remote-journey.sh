@@ -75,9 +75,11 @@ if [[ $journey == update_journey.py ]]; then
   rsync -a -e "ssh -F $out/ssh_config" "$CANDIDATE" remote:VODForgeQA/journey/candidate.zip
   "${r[@]}" 'umask 077; cat > ~/VODForgeQA/journey/qa-key' < "$QA_KEY_FILE"
   # The QA feed only serves an app inside the run's root.
-  pre="rm -rf result update-root && mkdir update-root && cp -R ${app:t} update-root/"
-  appdir="\$PWD/update-root/${app:t}"
-  extra="--root \$PWD/update-root --candidate \$PWD/candidate.zip --candidate-version $CANDIDATE_VERSION --qa-key-file \$PWD/qa-key --scenario ${SCENARIO:-install_on_quit}"
+  # One root per run, kept afterwards: it holds the app's own update log.
+  root="update-root-${SCENARIO:-install_on_quit}-$(date +%Y%m%dT%H%M%S)"
+  pre="rm -rf result && mkdir $root && cp -R ${app:t} $root/"
+  appdir="\$PWD/$root/${app:t}"
+  extra="--root \$PWD/$root --candidate \$PWD/candidate.zip --candidate-version $CANDIDATE_VERSION --qa-key-file \$PWD/qa-key --scenario ${SCENARIO:-install_on_quit}"
 fi
 
 set +e
@@ -86,6 +88,14 @@ code=${pipestatus[1]}
 set -e
 "${r[@]}" 'rm -f ~/VODForgeQA/journey/qa-key' || true
 rsync -a -e "ssh -F $out/ssh_config" remote:VODForgeQA/journey/result/ "$out/result/" || true
+if [[ $journey == update_journey.py ]]; then
+  rsync -a -e "ssh -F $out/ssh_config" --exclude '*.app' --exclude 'feed-assets-*' \
+    "remote:VODForgeQA/journey/$root/" "$out/root/" || true
+fi
+# The result file is the authority; a lost exit status must not read as a pass.
+for f in "$out"/result/*-result.json(N); do
+  grep -q '"passed": true' "$f" || code=1
+done
 "${r[@]}" "pgrep -f 'VODForgeQA/journey/${app:t}' >/dev/null && echo 'WARNING: a test app is still running on $machine' || true"
 echo "result: $out/result (exit $code)"
 exit $code
