@@ -452,8 +452,11 @@ class UpdateJourney(rj.Journey):
             self.set_unavailable(feed, False)
 
             def repair_offered():
-                if REPAIR_HEADING in self.all_texts():
-                    return self.offer_control("updatePrimary", (REPAIR_BUTTON,))
+                # The primary button reads Repair VODForge only when the update
+                # needs attention. Windows doesn't expose the heading text.
+                button = self.offer_control("updatePrimary", (REPAIR_BUTTON,))
+                if button is not None:
+                    return button
                 dismissed.extend(self.dismiss_first_run())
                 return None
 
