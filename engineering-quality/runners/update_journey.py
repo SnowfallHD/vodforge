@@ -54,7 +54,14 @@ import release_journey as rj
 from quality_harness import update_fixture
 
 OFFER_BUTTONS = ("Install now", "Download update")
-OFFER_HEADINGS = ("Update available", "Downloading update", "Waiting to restart")
+OFFER_HEADINGS = (
+    "Update available",
+    "Downloading update",
+    "Update in progress",
+    "Waiting to restart",
+)
+# While the download is still running the window offers Hide instead of Later.
+DISMISS_BUTTONS = ("Later", "Hide")
 
 
 def fixture_name(version: str) -> str:
@@ -442,7 +449,7 @@ class UpdateJourney(rj.Journey):
             is None
         ):
             return False
-        if self.offer_control("updateDismiss", ("Later",)) is not None:
+        if self.offer_control("updateDismiss", DISMISS_BUTTONS) is not None:
             return True
         texts = self.all_texts()
         return any(heading in texts for heading in OFFER_HEADINGS + (REPAIR_HEADING,))
@@ -620,7 +627,9 @@ class UpdateJourney(rj.Journey):
             self.driver.screenshot(shot)
             texts = [t for t in self.all_texts() if t]
             later = rj.wait_for(
-                lambda: self.offer_control("updateDismiss", ("Later",)), 10, "Later"
+                lambda: self.offer_control("updateDismiss", DISMISS_BUTTONS),
+                10,
+                "Later or Hide",
             )
             self.driver.press(later)
             rj.wait_for(lambda: not self.offer_visible(), 10, "the window to close")
