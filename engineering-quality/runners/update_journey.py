@@ -273,6 +273,23 @@ class UpdateJourney(rj.Journey):
         else:
             self.driver.app = self.driver.ax.AXUIElementCreateApplication(pid)
 
+    def wait_until_verified(self) -> None:
+        """Wait for the update window's "Update verified" status."""
+        if sys.platform == "win32":
+            # UI Automation doesn't expose the window's status text; the
+            # installer verifies in a few seconds there.
+            time.sleep(60)
+            return
+        try:
+            rj.wait_for(
+                lambda: any("Update verified" in t for t in self.all_texts()),
+                600,
+                "the app to verify the downloaded update",
+            )
+        except rj.JourneyError as exc:
+            seen = [t for t in self.all_texts() if t][-40:]
+            raise rj.JourneyError(f"{exc}; shown {seen}")
+
     @staticmethod
     def set_unavailable(feed: Path, unavailable: bool) -> None:
         """Make only the download fail; the release itself is still found."""
@@ -517,8 +534,10 @@ class UpdateJourney(rj.Journey):
                 300,
                 "the candidate download from the QA feed",
             )
-            # Verification (signature, notarization) runs after the download.
-            time.sleep(60)
+            # Unpacking and verifying the signature and notarization run after
+            # the download; on the Intel test Mac that alone takes over a
+            # minute. Quitting earlier leaves nothing to install.
+            self.wait_until_verified()
             self.quit()
             installed = rj.wait_for(
                 lambda: self.installed_version() == self.candidate_version,

@@ -36,6 +36,7 @@ import signal
 import subprocess
 import sys
 import time
+import traceback
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, ClassVar
@@ -579,6 +580,7 @@ class Journey:
         except Exception as exc:  # noqa: BLE001 - record and continue to evidence
             record["passed"] = False
             record["error"] = f"{type(exc).__name__}: {exc}"
+            record["traceback"] = traceback.format_exc(limit=8)
         record["seconds"] = round(time.monotonic() - started, 1)
         shot = self.output / f"{len(self.steps) + 1:02d}-{name}.png"
         try:
