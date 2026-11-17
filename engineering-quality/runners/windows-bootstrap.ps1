@@ -1,7 +1,10 @@
 param(
   [Parameter(Mandatory=$true)][ValidatePattern('^[a-f0-9]{40}$')][string]$SourceCommit,
   [Parameter(Mandatory=$true)][ValidatePattern('^[a-f0-9]{64}$')][string]$ArchiveSha256,
-  [switch]$PreviewTelemetry
+  [switch]$PreviewTelemetry,
+  # An older version number turns a build of the candidate's source into the
+  # baseline for the update journeys.
+  [ValidatePattern('^(\d+\.\d+\.\d+)?$')][string]$Version = ''
 )
 $ErrorActionPreference = 'Stop'
 $root = 'E:\VODForgeQA'
@@ -20,6 +23,7 @@ if ($PreviewTelemetry) {
   $env:VODFORGE_BUILD_TELEMETRY = 'preview'
   $env:VODFORGE_BUILD_VERSION = '0.1.8'
 }
+if ($Version) { $env:VODFORGE_BUILD_VERSION = $Version }
 $env:PIP_CACHE_DIR = Join-Path $root 'tools\pip-cache'
 $env:PYINSTALLER_CONFIG_DIR = Join-Path $root 'tools\pyinstaller-cache'
 $env:LOCALAPPDATA = Join-Path $root "profiles\build-$SourceCommit"

@@ -70,13 +70,18 @@ if (-not $Worker) {
 
 $result = @{job_id = $JobId; passed = $false; session_id = [Diagnostics.Process]::GetCurrentProcess().SessionId}
 $backup = Join-Path $run 'registration-backup'
+# The update journey runs the candidate's installer through the app's own
+# updater, which rewrites the PC's VODForge uninstall entry and shortcuts.
+$protectRegistration = $Installer -or ($Journey -eq 'update_journey.py')
 try {
   if ($result.session_id -eq 0) { throw 'Not an interactive desktop session' }
   if (Get-Process LogonUI -ErrorAction SilentlyContinue | Where-Object SessionId -eq $result.session_id) { throw 'The desktop is locked' }
-  if ($Installer) {
+  if ($protectRegistration) {
     New-Item -ItemType Directory -Path $backup | Out-Null
     cmd.exe /c "reg export `"$uninstallKey`" `"$backup\uninstall.reg`" /y >nul 2>&1"
     foreach ($link in $shortcuts) { if (Test-Path $link) { Copy-Item $link (Join-Path $backup (Backup-Name $link)) } }
+  }
+  if ($Installer) {
     # Wait for the installer only: after a silent install it starts VODForge
     # (that is how in-app updates relaunch), and -Wait would wait on that too.
     $setup = Start-Process $Installer -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=$App") -PassThru
@@ -108,7 +113,7 @@ try {
 } catch {
   $result.error = $_.Exception.Message
 } finally {
-  if ($Installer -and (Test-Path $backup)) {
+  if ($protectRegistration -and (Test-Path $backup)) {
     # Each restore step runs on its own, so one failure can't skip the others.
     # Native tools go through cmd: Windows PowerShell 5 under 'Stop' turns any
     # stderr text (reg.exe reports success there) into a terminating error.
@@ -131,8 +136,10 @@ try {
       } catch { $restore += "shortcut ${link}: $_" }
     }
     Start-Sleep -Seconds 2
-    Remove-Item $App -Recurse -Force -ErrorAction SilentlyContinue
-    if (Test-Path $App) { $restore += "test install still present: $App" }
+    if ($Installer) {
+      Remove-Item $App -Recurse -Force -ErrorAction SilentlyContinue
+      if (Test-Path $App) { $restore += "test install still present: $App" }
+    }
     $result.registration_restored = ($restore.Count -eq 0)
     $result.restore_problems = $restore
     if ($restore.Count -gt 0) { $result.passed = $false }
