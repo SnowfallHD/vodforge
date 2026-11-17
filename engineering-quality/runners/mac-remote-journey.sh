@@ -7,6 +7,9 @@
 #   engineering-quality/runners/mac-remote-journey.sh intel-mac qa-user dist/VODForge.app /tmp/intel-journey
 #
 # JOURNEY=deletion_journey.py runs the deletion journey instead of the release one.
+# JOURNEY=update_journey.py updates the app (the baseline) to CANDIDATE (an
+# update ZIP) with CANDIDATE_VERSION, QA_KEY_FILE and optionally SCENARIO=repair.
+# The key is copied with owner-only permissions and deleted after the run.
 #
 # - The remote host key is pinned from what Tailscale reports for that machine,
 #   kept in a file inside the result folder; your known_hosts is not changed.
@@ -66,10 +69,22 @@ rsync -a --delete -e "ssh -F $out/ssh_config" "$app" remote:VODForgeQA/journey/
   venv/bin/python -c 'import ApplicationServices as a, sys; sys.exit(0 if a.AXIsProcessTrusted() else \"Accessibility permission is missing for SSH sessions on this Mac\")'
   codesign --verify --deep --strict journey/${app:t}"
 
+extra="" appdir="\$PWD/${app:t}" pre="rm -rf result"
+if [[ $journey == update_journey.py ]]; then
+  : "${CANDIDATE:?CANDIDATE is required}" "${CANDIDATE_VERSION:?}" "${QA_KEY_FILE:?}"
+  rsync -a -e "ssh -F $out/ssh_config" "$CANDIDATE" remote:VODForgeQA/journey/candidate.zip
+  "${r[@]}" 'umask 077; cat > ~/VODForgeQA/journey/qa-key' < "$QA_KEY_FILE"
+  # The QA feed only serves an app inside the run's root.
+  pre="rm -rf result update-root && mkdir update-root && cp -R ${app:t} update-root/"
+  appdir="\$PWD/update-root/${app:t}"
+  extra="--root \$PWD/update-root --candidate \$PWD/candidate.zip --candidate-version $CANDIDATE_VERSION --qa-key-file \$PWD/qa-key --scenario ${SCENARIO:-install_on_quit}"
+fi
+
 set +e
-"${r[@]}" "cd ~/VODForgeQA/journey && rm -rf result && PYTHONPATH=eq ../venv/bin/python eq/runners/$journey --app \$PWD/${app:t} --output \$PWD/result" | tee "$out/run.log"
+"${r[@]}" "cd ~/VODForgeQA/journey && $pre && PYTHONPATH=eq ../venv/bin/python eq/runners/$journey --app $appdir --output \$PWD/result $extra" | tee "$out/run.log"
 code=${pipestatus[1]}
 set -e
+"${r[@]}" 'rm -f ~/VODForgeQA/journey/qa-key' || true
 rsync -a -e "ssh -F $out/ssh_config" remote:VODForgeQA/journey/result/ "$out/result/" || true
 "${r[@]}" "pgrep -f 'VODForgeQA/journey/${app:t}' >/dev/null && echo 'WARNING: a test app is still running on $machine' || true"
 echo "result: $out/result (exit $code)"

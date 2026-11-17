@@ -127,7 +127,10 @@ waive it by rerunning until it passes.
    Also update from the current public release on each machine, which proves the
    path existing installs take (on the Macs, that a 0.2.5 install accepts the
    universal app under its legacy name), and confirm saved history and media are
-   untouched.
+   untouched. A public-release app opens its first-launch welcome page from the
+   preview site in your own browser (builds from 0.2.9 don't in test mode); close
+   the tab. That preview page always asks for analytics choices, because the
+   preview site doesn't apply regional defaults.
 7. **Known defects.** `engineering-quality/acceptance/user-reported-defects.json` has
    no open item that this release claims to fix without packaged evidence.
 8. **Release notes.** `.github/scripts/render_release_notes.py <version>` renders

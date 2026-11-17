@@ -211,3 +211,26 @@ def test_only_one_owner_takes_automatic_attempt_and_completed_profiles_are_inert
     assert (load_or_create_installation_state(path).onboarding or {})[
         "browser_claim_auto_attempted"
     ]
+
+
+def test_test_runs_never_open_the_testers_browser(tmp_path, monkeypatch):
+    """Harness journeys run the real app on the tester's own computer.
+
+    Qt opens links through the system, which ignores BROWSER, so an update
+    journey opened the preview welcome page in the tester's own browser.
+    """
+    monkeypatch.setattr(analytics, "telemetry_collection_allowed", lambda: True)
+    monkeypatch.setenv("VODFORGE_QUALITY_E2E", "1")
+    load_or_create_installation_state(tmp_path / "installation.json")
+    consent = AnalyticsConsentOwner(tmp_path)
+    consent.choose_data_sharing(True)
+    session = analytics.QtAnalyticsSession(
+        tmp_path,
+        "0.2.9",
+        Mock(),
+        browser_opener=lambda url: pytest.fail(f"Opened {url} in the browser"),
+    )
+    session._started = True
+    session._start_automatic_browser_attribution()
+    assert session._attribution_work is None
+    session.close()

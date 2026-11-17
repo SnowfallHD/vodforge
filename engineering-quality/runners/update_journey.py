@@ -135,8 +135,11 @@ class UpdateJourney(rj.Journey):
             VODFORGE_QUALITY_E2E_LAUNCH_ID=uuid.uuid4().hex,
         )
         if sys.platform != "win32":
-            # The first launch opens a welcome page; keep it out of the
-            # person's own browser.
+            # Builds from 0.2.9 never open the first-launch welcome page in
+            # test mode. Older Qt builds open it through macOS, which ignores
+            # BROWSER, so a public-release baseline still opens one preview tab
+            # in the tester's browser; close it. BROWSER only covers older apps
+            # that used Python's webbrowser module.
             env["BROWSER"] = "/usr/bin/true"
             if not self.developer_tools:
                 # xcrun, stapler and the other developer-tool placeholders

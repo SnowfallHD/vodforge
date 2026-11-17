@@ -7,6 +7,8 @@ to the Qt view; it never manufactures consent from a timeout.
 
 from __future__ import annotations
 
+import os
+
 import threading
 import time
 from collections.abc import Callable
@@ -340,7 +342,11 @@ class QtAnalyticsSession:
 
     def _start_automatic_browser_attribution(self) -> None:
         if (
-            self._closed
+            # Test runs drive a real app on the tester's own computer. Qt opens
+            # links through the system, which no environment setting redirects,
+            # so the first-launch page would land in the tester's own browser.
+            os.environ.get("VODFORGE_QUALITY_E2E") == "1"
+            or self._closed
             or not self._started
             or self.owner is None
             or not telemetry_collection_allowed()
