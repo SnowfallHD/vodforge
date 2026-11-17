@@ -113,15 +113,21 @@ waive it by rerunning until it passes.
    Then check by hand what the journey can't: Library, Watch playback, My Files and
    Issues & Recovery look right, full screen and the menu-bar reveal on the Macs, and
    window resizing.
-6. **Updates from the previous public release.** On each of the three machines,
-   install the current public version in an isolated test profile and point its
-   updater at the candidate through the local QA update feed instead of GitHub
-   (`python -m quality_harness.update_fixture` with `VODFORGE_QA_UPDATE_FEED` on the
-   Macs; `engineering-quality/runners/windows-update-qa.ps1` on Windows). Nothing is
-   published for this test. Confirm the update installs and relaunches, then run
-   **Repair**, and confirm saved history and media are untouched. The Windows script
-   covers only the update; run Repair by hand afterwards. On the Macs this
-   is the test that a 0.2.5 install accepts the universal app under its legacy name.
+6. **Updates and Repair (required by the release gate).** Most people get new
+   versions only through the updater; if it breaks, they have to come back to the
+   website, and most won't. On each of the three machines run
+   `engineering-quality/runners/update_journey.py` twice against the final signed
+   candidate, `--scenario install_on_quit` and `--scenario repair`, and pass all six
+   results to `release-receipt` with `--update-result`. The baseline is an older
+   signed build in an isolated folder; build it from the candidate's source with an
+   older version number (for example `VODFORGE_BUILD_VERSION=<previous version>`) so
+   it tests the updater being shipped. On the Macs the journey makes Xcode and the
+   Command Line Tools unavailable to the app, as on most people's Macs; don't pass
+   `--with-developer-tools` for gate evidence. Nothing is published for this test.
+   Also update from the current public release on each machine, which proves the
+   path existing installs take (on the Macs, that a 0.2.5 install accepts the
+   universal app under its legacy name), and confirm saved history and media are
+   untouched.
 7. **Known defects.** `engineering-quality/acceptance/user-reported-defects.json` has
    no open item that this release claims to fix without packaged evidence.
 8. **Release notes.** `.github/scripts/render_release_notes.py <version>` renders

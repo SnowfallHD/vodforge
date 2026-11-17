@@ -12,6 +12,10 @@ VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$
 # Highlights per public version. Add an entry before rendering a new release so
 # published notes never fall back to another version's text.
 HIGHLIGHTS = {
+    "0.2.9": """- On Macs without Apple’s developer tools (Xcode), which is most Macs, in-app updates and **Repair VODForge** now finish. Before, they failed after downloading. If your Mac is on 0.2.8 or earlier and its updates fail, install this version once from [getvodforge.com](https://getvodforge.com); later updates install by themselves.
+- When an automatic update fails in the background, VODForge now opens the update window with **Repair VODForge** instead of retrying silently.
+- On Windows, an update no longer reports a failure when antivirus software briefly opens the updater’s files, so it installs on the first try.
+""",
     "0.2.8": """- When YouTube asks VODForge to confirm you’re not a bot, a window now explains what happened and how to fix it, with a button that opens **YouTube access** in Settings. A playlist stops after three videos in a row are blocked instead of trying every remaining video.
 - After a crash, a paused download can now be resumed or removed. Before, **Remove** failed and the paused item could stay after **Resume**.
 - VODForge can now show short notices from getvodforge.com, such as news about updates. Each one appears once, and only when nothing is downloading.
