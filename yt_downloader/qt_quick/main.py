@@ -697,6 +697,12 @@ class Bridge(QObject):
         self._automatic_download_requested = False
         self._update_offer_requested: str | None = None
         self._update_recovery_offered: str | None = None
+        # The launch check runs at once, whatever the analytics answer. On a
+        # new install that answer isn't known yet, so the check can't be
+        # recorded. One more check once recording is allowed lets a first
+        # update (or its failure) be seen without delaying anyone's update.
+        self._launch_check_done = False
+        self._launch_check_unrecorded = False
         self._automatic_updates_supported = True
         selection = apply_theme_selection(
             self._settings.get("appearance_theme", DEFAULT_THEME_NAME),
@@ -1674,9 +1680,35 @@ class Bridge(QObject):
             QTimer.singleShot(30 * 1000, self._auto_check_updates)
             return
         self._updates.telemetry = self._analytics.telemetry
+        recorded = self._recording_allowed()
         if self._updates.check(automatic=True):
             self.updateChanged.emit()
+            if not self._launch_check_done:
+                self._launch_check_unrecorded = not recorded
+        self._launch_check_done = True
         QTimer.singleShot(6 * 60 * 60 * 1000, self._auto_check_updates)
+
+    def _recording_allowed(self) -> bool:
+        telemetry = self._analytics.telemetry
+        try:
+            return telemetry is not None and telemetry.permitted()
+        except Exception:  # noqa: BLE001 - an unreadable choice records nothing
+            return False
+
+    def _recheck_once_recording_is_allowed(self) -> None:
+        """Repeat an unrecorded launch check once, after permission arrives.
+
+        Nothing from before permission is recorded; this new check starts
+        after it. A person who never allows analytics gets no extra check.
+        """
+        if not self._launch_check_unrecorded or not self._recording_allowed():
+            return
+        if self._updates.busy:
+            return  # try again on a later tick
+        self._launch_check_unrecorded = False
+        self._updates.telemetry = self._analytics.telemetry
+        if self._updates.check(automatic=True):
+            self.updateChanged.emit()
 
     @Slot()
     def updateOfferShown(self) -> None:
@@ -7737,6 +7769,7 @@ class Bridge(QObject):
         for action, dimensions in self._updates.take_observations():
             self._record_update_feature("updater", action, dimensions)
         self._offer_update_once()
+        self._recheck_once_recording_is_allowed()
         if not self._analytics.settled:
             if self._analytics.poll():
                 self.analyticsPromptRequested.emit()
