@@ -697,6 +697,7 @@ class Bridge(QObject):
         self._automatic_download_requested = False
         self._update_offer_requested: str | None = None
         self._update_recovery_offered: str | None = None
+        self._startup_update_check_deadline = time.monotonic() + 3.0
         self._automatic_updates_supported = True
         selection = apply_theme_selection(
             self._settings.get("appearance_theme", DEFAULT_THEME_NAME),
@@ -1670,6 +1671,23 @@ class Bridge(QObject):
         self.updateOfferRequested.emit()
 
     def _auto_check_updates(self) -> None:
+        # A new install can't record anything until the analytics region
+        # answers (at most 2.5 s), and work started before then is never
+        # recorded afterwards. Production 0.2.9: no new Mac reported its launch
+        # check, so a failed first update would have been invisible. Hold only
+        # this first check, only while recording isn't yet allowed, and only up
+        # to 3 s. A saved answer allows recording at once, so a returning user's
+        # check isn't delayed; a new install has the latest version anyway.
+        telemetry = self._analytics.telemetry
+        if (
+            telemetry is not None
+            and not self._analytics.settled
+            and time.monotonic() < self._startup_update_check_deadline
+            and not telemetry.permitted()
+        ):
+            QTimer.singleShot(250, self._auto_check_updates)
+            return
+        self._startup_update_check_deadline = 0.0
         if self._updates.busy:
             QTimer.singleShot(30 * 1000, self._auto_check_updates)
             return
