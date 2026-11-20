@@ -179,7 +179,10 @@ waive it by rerunning until it passes.
 5. **Website.** Push the website repo's `main`. Its build reads the latest release
    (`npm run sync:release`) and refuses to build if the DMG, Windows files or
    checksums are missing, so the website can only go out once the release is
-   public. Apply any pending D1 migrations first, in the order given in the
+   public. The same build adds the release to the website changelog from the
+   "What’s new" bullets of its GitHub notes (`npm run sync:changelog`), and fails
+   if they're missing, so check the rendered notes say what changed. Apply any
+   pending D1 migrations first, in the order given in the
    website README ("Pending production migrations"). Confirm the live site offers
    the new version's DMG and Windows downloads, and that the old
    `/download/mac-arm` and `/download/mac-intel` links land on the DMG. Then
