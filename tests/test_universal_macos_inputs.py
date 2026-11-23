@@ -20,7 +20,7 @@ def test_universal_inputs_require_both_slices_and_each_os_floor(
     def run(args, **kwargs):
         if "lipo" in args[0]:
             return arch
-        minimum = floor if args[2] == "x86_64" else "26.0"
+        minimum = floor if args[2] == "x86_64" else "15.0"
         return f"Load command 0\n cmd LC_BUILD_VERSION\n minos {minimum}\n"
 
     result = inspect_inputs([tmp_path], run)
@@ -125,7 +125,7 @@ def test_private_recipe_selects_universal_target_and_retains_per_arch_policy(
         (output / "dist/VODForge.app/Contents/Info.plist").read_bytes()
     )
     assert info["LSMinimumSystemVersionByArchitecture"] == {
-        "arm64": "26.0",
+        "arm64": "15.0",
         "x86_64": "15.0",
     }
     assert info["CFBundleVersion"] == "0.2.6"

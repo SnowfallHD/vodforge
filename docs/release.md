@@ -24,9 +24,11 @@ The website and the GitHub release notes offer one Mac download, the DMG. The ZI
 files are attached to the release for in-app updates only; the notes mention them
 but don't link them.
 
-Mac minimums stay per architecture inside the universal app: macOS 26 or newer on
-Apple silicon, macOS 15 or newer on Intel (`src/lib/platform-requirements.ts` in the
-website repo). Don't change those claims without testing on the older OS.
+The universal app needs macOS 15 or newer on both Apple silicon and Intel
+(`src/lib/platform-requirements.ts` in the website repo). Don't lower that claim
+without testing on the older OS, and never declare a minimum above what the files
+inside need: until 0.2.9 the Apple silicon minimum was 26 for no technical reason,
+and macOS refused to open the app or its installer on older Apple silicon Macs.
 
 ## Why the Apple silicon and Intel ZIPs still exist
 

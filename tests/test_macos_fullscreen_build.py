@@ -32,7 +32,7 @@ def compiler(tmp_path, *, wrong_arch=False, floor=None, foreign=False):
                 return "arm64"
             return " ".join(slices.get(args[-1], ["x86_64"]))
         arch = args[args.index("-arch") + 1]
-        version = floor or ("26.0" if arch == "arm64" else "15.0")
+        version = floor or "15.0"
         dependency = (
             "/tmp/foreign.dylib"
             if foreign
@@ -83,10 +83,7 @@ def test_explicit_helper_targets_and_source_output_provenance(tmp_path, arches):
         command = next(
             c for c in commands if "-arch" in c and c[c.index("-arch") + 1] == arch
         )
-        assert (
-            "-mmacosx-version-min=" + {"arm64": "26.0", "x86_64": "15.0"}[arch]
-            in command
-        )
+        assert "-mmacosx-version-min=15.0" in command
         assert str(source) in command
         assert str(tmp_path / "header_items.m") in command
         assert "-fno-objc-arc" in command and "-Werror" in command
@@ -145,7 +142,7 @@ def test_missing_source_existing_output_and_invalid_targets_stop_before_command(
 
 
 @pytest.mark.parametrize(
-    "arch,configured", [("arm64", "15.0"), ("x86_64", "14.9"), ("arm64", "nonsense")]
+    "arch,configured", [("arm64", "14.9"), ("x86_64", "14.9"), ("arm64", "nonsense")]
 )
 def test_lower_or_malformed_package_minimum_refused(arch, configured):
     from scripts.build_macos_fullscreen import deployment_minimum

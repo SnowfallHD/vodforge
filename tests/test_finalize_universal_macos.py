@@ -147,6 +147,13 @@ def test_finalize_builds_every_file_in_order_and_legacy_names_match(
         "smoke_test",
         lambda app, run=None: events.append(("smoke both architectures",)),
     )
+    mismatches = []
+
+    def fake_minimums(app):
+        events.append(("check minimum", app.name))
+        return list(mismatches)
+
+    monkeypatch.setattr(finalize_module, "minimum_errors", fake_minimums)
 
     output = tmp_path / "out"
     receipt = finalize(unsigned, output, "0.2.6")
@@ -156,6 +163,8 @@ def test_finalize_builds_every_file_in_order_and_legacy_names_match(
         "sign app",
         "smoke both architectures",
         "build installer",
+        "check minimum",
+        "check minimum",
         "sign installer",
         "build dmg",
         "sign dmg",
@@ -171,6 +180,13 @@ def test_finalize_builds_every_file_in_order_and_legacy_names_match(
         ]
         == "dmg"
     )
+
+    # A stated minimum that differs from the files stops before notarizing.
+    mismatches.append("VODForge.app: states macOS 26.0 for arm64")
+    events.clear()
+    with pytest.raises(ValueError, match="states macOS 26.0"):
+        finalize(unsigned, tmp_path / "out2", "0.2.6")
+    assert "sign installer" not in [e[0] for e in events]
 
 
 def test_finalize_refuses_an_existing_output(tmp_path):

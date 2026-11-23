@@ -75,7 +75,7 @@ def render_release_notes(version: str, *, draft: bool = False) -> str:
 
 [Download VODForge for Mac]({asset_url(version, mac_dmg)})
 
-One download for every Mac. Open it and double-click **Install VODForge**; it sets up a version that runs natively on Apple silicon (macOS 26 or newer) and Intel (macOS 15 or newer).
+One download for every Mac. Open it and double-click **Install VODForge**; it sets up a version that runs natively on Apple silicon and Intel Macs with macOS 15 or newer.
 
 ### Windows
 

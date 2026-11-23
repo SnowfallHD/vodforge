@@ -13,6 +13,7 @@ import subprocess
 from pathlib import Path
 
 from scripts.build_macos_dmg import require_universal_app
+from scripts.build_macos_fullscreen import FLOORS
 
 
 def run(args):
@@ -25,7 +26,7 @@ def compile_helper(output: Path):
     output.parent.mkdir(parents=True, exist_ok=True)
     source = Path(__file__).with_name("macos_installer.m").resolve()
     slices = []
-    for arch, minimum in (("arm64", "26.0"), ("x86_64", "15.0")):
+    for arch, minimum in FLOORS.items():
         thin = output.with_name(output.name + "-" + arch)
         if thin.exists():
             raise ValueError("Refusing existing architecture output")
@@ -84,10 +85,8 @@ def build_installer(payload: Path, output: Path):
                 "CFBundleIconFile": "VODForge.icns",
                 "CFBundleShortVersionString": audit["bundle_version"],
                 "CFBundleVersion": "1",
-                "LSMinimumSystemVersionByArchitecture": {
-                    "arm64": "26.0",
-                    "x86_64": "15.0",
-                },
+                # The same minimum as the app it installs.
+                "LSMinimumSystemVersionByArchitecture": dict(FLOORS),
                 "NSHighResolutionCapable": True,
                 "VFExecutableSHA256": digest,
             }

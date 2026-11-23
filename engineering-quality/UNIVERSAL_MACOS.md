@@ -5,8 +5,12 @@ universal2 `VODForge.app` (native arm64 and x86_64). The legacy Apple silicon an
 Intel ZIP names keep carrying that same universal app so VODForge 0.2.5 and earlier
 can still update. The release-facing plan is in [Releasing VODForge](../docs/release.md).
 
-Per-architecture minimums are unchanged: Apple silicon needs macOS 26 or newer and
-Intel needs macOS 15 or newer, until the older OS is actually tested.
+Both architectures need macOS 15 or newer. Until 0.2.9 the Apple silicon minimum
+was macOS 26, which no code required, and macOS refused to open the app and its
+installer on Apple silicon Macs that had not upgraded. The release workflow now
+opens both through LaunchServices on a macOS 15 Apple silicon runner, and
+`scripts/check_macos_minimum.py` fails when a stated minimum differs from what the
+files need.
 
 ## Current status (November 2026)
 

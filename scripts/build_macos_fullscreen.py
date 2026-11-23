@@ -12,7 +12,11 @@ from pathlib import Path
 
 from scripts.macos_native_closure import MACHO, apple, load_commands
 
-FLOORS = {"arm64": "26.0", "x86_64": "15.0"}
+# The helper's newest AppKit call (NSToolbarItem.hidden) arrived in macOS 15,
+# and every other file in the app needs macOS 15 or older. Until 0.2.9 the
+# Apple silicon floor was 26.0, which no code required: macOS refused to open
+# the app and its installer on Apple silicon Macs that had not upgraded.
+FLOORS = {"arm64": "15.0", "x86_64": "15.0"}
 LIBRARY = "libvodforge_fullscreen.dylib"
 PACKAGE_DESTINATION = "yt_downloader/platforms/macos"
 

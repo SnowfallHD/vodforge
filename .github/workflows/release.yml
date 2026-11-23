@@ -295,6 +295,26 @@ jobs:
           app=build/universal/dist/VODForge.app/Contents/MacOS/VODForge
           "$app" --runtime-smoke
           arch -x86_64 "$app" --runtime-smoke
+      - name: Open the app the way a user does, on macOS 15
+        # Running the binary directly skips the check macOS makes when a person
+        # opens an app: is this system new enough for the minimum the app states?
+        # Until 0.2.9 the Apple silicon minimum said macOS 26, so the app could
+        # not be opened on this runner's kind of Mac, and the direct smoke test
+        # above never noticed. The installer states the same minimum
+        # (scripts/build_macos_fullscreen.py FLOORS).
+        run: |
+          set -euo pipefail
+          system="$(sw_vers -productVersion)"
+          if [[ "$system" != 15.* || "$(uname -m)" != arm64 ]]; then
+            echo "This check needs an Apple silicon macOS 15 runner (found $system $(uname -m))." >&2
+            exit 1
+          fi
+          app=build/universal/dist/VODForge.app
+          build/universal-env/bin/python -m scripts.check_macos_minimum "$app"
+          out="$RUNNER_TEMP/launch-services-smoke.txt"
+          open -n -W --env VODFORGE_DISABLE_TELEMETRY=1 --stdout "$out" --stderr "$out" \
+            "$app" --args --runtime-smoke
+          grep -q VODFORGE_RUNTIME_SMOKE_OK "$out" || { cat "$out"; exit 1; }
       - name: Package the universal review application
         run: |
           mkdir -p dist/release

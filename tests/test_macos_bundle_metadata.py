@@ -22,7 +22,8 @@ from scripts.build_macos_fullscreen import deployment_minimum
         ("x86_64", "14.0", None, "15.0"),
         ("x86_64", None, "16.0", "16.0"),
         ("x86_64", "15.0", "16.0", "16.0"),
-        ("arm64", "15.0", None, "26.0"),
+        ("arm64", "26.0", None, "15.0"),
+        ("arm64", "14.0", None, "15.0"),
         ("arm64", None, "27.0", "27.0"),
     ],
 )

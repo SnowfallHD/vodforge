@@ -11,6 +11,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from scripts.build_macos_fullscreen import FLOORS
 from scripts.build_macos_fullscreen import build as build_fullscreen
 from scripts.macos_native_closure import ARCHES, MACHO, audit_payload
 from scripts.macos_package_contents import pyinstaller_options
@@ -44,7 +45,7 @@ def inspect_inputs(roots, run=subprocess.check_output):
                         "missing": sorted(ARCHES - slices),
                     }
                 )
-            for arch, maximum in [("arm64", (26, 0, 0)), ("x86_64", (15, 0, 0))]:
+            for arch, maximum in [("arm64", (15, 0, 0)), ("x86_64", (15, 0, 0))]:
                 if arch not in slices:
                     continue
                 text = run(
@@ -195,7 +196,7 @@ def package(source: Path, python: Path, tools: Path, output: Path, version: str)
         CFBundleShortVersionString=version,
         CFBundleVersion=version,
         LSMinimumSystemVersion="15.0",
-        LSMinimumSystemVersionByArchitecture={"arm64": "26.0", "x86_64": "15.0"},
+        LSMinimumSystemVersionByArchitecture=dict(FLOORS),
     )
     plist.write_bytes(plistlib.dumps(info))
     # Editing Info.plist invalidates PyInstaller's ad-hoc signature. Re-sign so

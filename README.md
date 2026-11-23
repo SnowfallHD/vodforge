@@ -112,7 +112,7 @@ Packaged downloads include the required runtimes; you do not need Python to use 
 GitHub Releases are the intended public download channel. Mac users download one
 DMG, `VODForge-macOS-universal2-v<version>.dmg`: open it and double-click
 **Install VODForge**. It installs a universal app that runs natively on Apple
-silicon (macOS 26 or newer) and Intel (macOS 15 or newer). Releases up to 0.2.5
+silicon and Intel Macs with macOS 15 or newer. Releases up to 0.2.5
 shipped separate Apple silicon and Intel ZIPs; installed copies of those versions
 keep updating in place (see [Releasing VODForge](docs/release.md)).
 

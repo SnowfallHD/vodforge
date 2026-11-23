@@ -28,6 +28,7 @@ from pathlib import Path
 
 from scripts.build_macos_dmg import build_dmg, require_installer_app
 from scripts.build_macos_installer import build_installer
+from scripts.check_macos_minimum import minimum_errors
 from scripts.sign_universal_macos import sign as sign_app
 
 IDENTITY = "Developer ID Application: Kryden Ventures, LLC (76G5W4954G)"
@@ -218,6 +219,11 @@ def finalize(
 
     installer = work / "installer" / "Install VODForge.app"
     build_installer(app, installer)
+    # Before spending a notarization on it: the app and installer must state
+    # exactly the macOS minimum their files need (see check_macos_minimum).
+    mismatches = minimum_errors(app) + minimum_errors(installer)
+    if mismatches:
+        raise ValueError("; ".join(mismatches))
     installer_receipt = sign_installer(
         installer, work, identity=identity, profile=profile
     )

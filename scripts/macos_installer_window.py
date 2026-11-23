@@ -110,7 +110,7 @@ def background_image(logo: Path, scale: int = 2):
     text(70, 41, "VODForge", 16, THEME["text"], "lm")
     text(320, 103, "Install VODForge", 32, THEME["text"])
     text(320, 140, "Double-click the icon below", 16, THEME["muted"])
-    text(320, 394, "Apple Silicon: macOS 26+  ·  Intel: macOS 15+", 12, THEME["muted"])
+    text(320, 394, "Requires macOS 15 or newer", 12, THEME["muted"])
     return image.convert("RGB")
 
 
