@@ -61,7 +61,7 @@ def needed_minimums(app: Path, run):
             if minimum and (
                 arch not in needed or _version(minimum) > _version(needed[arch][0])
             ):
-                needed[arch] = (minimum, str(path.relative_to(app)))
+                needed[arch] = (minimum, path.relative_to(app).as_posix())
     return needed
 
 

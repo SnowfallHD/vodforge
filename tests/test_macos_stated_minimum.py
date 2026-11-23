@@ -26,7 +26,7 @@ def app_with(tmp_path, stated, files):
     (app / "Contents" / "notes.txt").write_text("not code")
 
     def run(args):
-        path = args[-1]
+        path = args[-1].replace("\\", "/")
         slices = next(v for k, v in files.items() if path.endswith(k))
         if "lipo" in args[0]:
             return " ".join(slices)
