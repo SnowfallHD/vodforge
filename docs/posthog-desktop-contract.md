@@ -86,6 +86,12 @@ all follow the one analytics switch (`AnalyticsConsentOwner.allowed`):
 - A privacy request started from Help fetches the policy once, because the user
   asked; the answer cannot enable anything.
 - Region defaults for users who have not refused are unchanged.
+- Since 2026-11-24 the server also has the counts switched off for every
+  version and region: `/api/analytics/policy` answers
+  `native_baseline_mode=disabled` and `POST /api/telemetry/baseline` returns
+  403 without storing anything. The app-side path remains and stays unused
+  unless the server setting `NATIVE_BASELINE_ENABLED` is turned on again.
+  The server's own request totals and their PostHog export continue.
 
 ## Coarse native baseline, separately resolved — 2026-10-16UTC
 

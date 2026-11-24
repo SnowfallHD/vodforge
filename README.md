@@ -227,11 +227,17 @@ confirmed missing file.
 
 Library history, annotations, and downloaded media stay on your computer.
 **Share usage analytics** in Settings controls all analytics: installation,
-update, attribution and usage telemetry, and the anonymous counts. With it off,
-VODForge sends no analytics request of any kind, clears pending usage events,
-and no longer asks the server for the region's analytics policy at launch. The
-same applies after "No thanks" at the consent question, or after quitting
-while that question is open; a later region default cannot turn analytics on.
+update, attribution and usage telemetry. With it off, VODForge sends no
+analytics request of any kind, clears pending usage events, and no longer asks
+the server for the region's analytics policy at launch. The same applies after
+"No thanks" at the consent question, or after quitting while that question is
+open; a later region default cannot turn analytics on.
+
+Anonymous desktop counts are no longer collected. Versions 0.2.6 through 0.2.9
+could send coarse totals (app started, run completed or failed, local
+conversion completed or failed) in the US, Switzerland and Australia. Since
+24 November 2026 the server tells every version that this reporting is
+disabled and refuses any count that arrives, so no version sends them.
 
 Two requests are not analytics and still happen with it off: the app checks
 GitHub for updates and reads published announcements from getvodforge.com.
