@@ -215,10 +215,7 @@ def test_actual_producer_consent_and_bounded_selection_payloads(
     tmp_path, permitted, monkeypatch
 ):
     from yt_downloader.analytics_consent import AnalyticsConsentOwner
-    from yt_downloader.cloud_funnel import (
-        load_or_create_installation_state,
-        mark_attribution_claim_confirmed,
-    )
+    from yt_downloader.cloud_funnel import load_or_create_installation_state
     from yt_downloader.product_telemetry import ProductTelemetryOwner
     from yt_downloader.qt_quick.runtime import DownloadRuntime
     from yt_downloader.telemetry_credentials import TelemetryCredentialOwner
@@ -228,9 +225,8 @@ def test_actual_producer_consent_and_bounded_selection_payloads(
     )
 
     installation = tmp_path / "installation.json"
-    state = load_or_create_installation_state(installation)
+    load_or_create_installation_state(installation)
     AnalyticsConsentOwner(tmp_path).choose(permitted)
-    mark_attribution_claim_confirmed(installation, state.install_id)
     observed = []
     wire = []
     credential = SimpleNamespace(

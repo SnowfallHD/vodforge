@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import sys
 import threading
 import time
@@ -28,7 +27,6 @@ INSTALLATION_STATE_SCHEMA_VERSION = 1
 INSTALLATION_STATE_FILENAME = "installation.json"
 MAX_STATE_FILE_BYTES = 4096
 NETWORK_TIMEOUT_SECONDS = 4.0
-CLAIM_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{43}$")
 _STATE_LOCK = threading.Lock()
 
 
@@ -52,11 +50,19 @@ class InstallationState:
     # Read/write legacy acknowledgement solely for installation-file compatibility.
     # No runtime transport consumes this value.
     heycatch_first_launch_confirmed: bool = False
-    attribution_claim_opened: bool = False
-    attribution_claim_confirmed: bool = False
-    attribution_claim_token: str | None = None
     product_telemetry_allowed: bool = False
     onboarding: dict[str, Any] | None = None
+
+
+# VODForge 0.2.9 and earlier opened a thank-you page in the browser on first
+# launch and linked it to this installation. This version has no such step.
+# Those versions read this same file, so it always records the step as already
+# finished: running an older version on this profile will not start it.
+_FINISHED_BROWSER_LINK = {
+    "attribution_claim_opened": True,
+    "attribution_claim_confirmed": True,
+    "attribution_claim_token": None,
+}
 
 
 def installation_state_path(*, data_dir: Path | None = None, **kwargs: Any) -> Path:
@@ -73,15 +79,6 @@ def _parse_install_id(value: Any) -> str:
     if parsed.version != 4:
         raise InstallationIdentityError("installation ID must be a random UUID4")
     return str(parsed)
-
-
-def _parse_claim_token(value: Any) -> str | None:
-    if value is None:
-        return None
-    candidate = str(value).strip()
-    if not CLAIM_TOKEN_PATTERN.fullmatch(candidate):
-        raise InstallationIdentityError("attribution claim token is invalid")
-    return candidate
 
 
 def _read_state(path: Path) -> InstallationState:
@@ -105,7 +102,7 @@ def _read_state(path: Path) -> InstallationState:
     ):
         raise InstallationIdentityError("installation state has an unsupported schema")
     first_launch_confirmed = payload.get("first_launch_confirmed") is True
-    has_attribution_state = "heycatch_first_launch_confirmed" in payload
+    has_provider_state = "heycatch_first_launch_confirmed" in payload
     return InstallationState(
         onboarding=(
             payload.get("onboarding")
@@ -115,32 +112,13 @@ def _read_state(path: Path) -> InstallationState:
         install_id=_parse_install_id(payload.get("install_id")),
         first_launch_confirmed=first_launch_confirmed,
         cloud_seen_confirmed=payload.get("cloud_seen_confirmed") is True,
-        # Existing installations must not be relabeled as new first launches or
-        # surprised with a browser claim after upgrading.
+        # Existing installations must not be relabeled as new first launches.
         heycatch_first_launch_confirmed=(
             payload.get("heycatch_first_launch_confirmed") is True
-            if has_attribution_state
+            if has_provider_state
             else first_launch_confirmed
         ),
-        attribution_claim_opened=(
-            payload.get("attribution_claim_opened") is True
-            if has_attribution_state
-            else first_launch_confirmed
-        ),
-        attribution_claim_confirmed=(
-            payload.get("attribution_claim_confirmed") is True
-            if has_attribution_state
-            else first_launch_confirmed
-        ),
-        attribution_claim_token=_parse_claim_token(
-            payload.get("attribution_claim_token") if has_attribution_state else None
-        ),
-        product_telemetry_allowed=(
-            payload.get("product_telemetry_allowed") is True
-            if "product_telemetry_allowed" in payload
-            else has_attribution_state
-            and payload.get("attribution_claim_confirmed") is True
-        ),
+        product_telemetry_allowed=payload.get("product_telemetry_allowed") is True,
     )
 
 
@@ -153,9 +131,7 @@ def _encoded_state(state: InstallationState) -> bytes:
                 "first_launch_confirmed": state.first_launch_confirmed,
                 "cloud_seen_confirmed": state.cloud_seen_confirmed,
                 "heycatch_first_launch_confirmed": state.heycatch_first_launch_confirmed,
-                "attribution_claim_opened": state.attribution_claim_opened,
-                "attribution_claim_confirmed": state.attribution_claim_confirmed,
-                "attribution_claim_token": state.attribution_claim_token,
+                **_FINISHED_BROWSER_LINK,
                 "product_telemetry_allowed": state.product_telemetry_allowed,
                 "onboarding": state.onboarding,
             },
@@ -213,10 +189,7 @@ def load_or_create_installation_state(path: Path | None = None) -> InstallationS
     )
     candidate = InstallationState(
         install_id=str(uuid.uuid4()),
-        onboarding={
-            "browser_eligible": not existing_profile,
-            "welcome_eligible": not existing_profile,
-        },
+        onboarding={"welcome_eligible": not existing_profile},
     )
     if _create_state_exclusively(destination, candidate):
         return candidate
@@ -291,107 +264,6 @@ def record_rating_success(path: Path, run_id: str) -> InstallationState:
 def mark_first_launch_confirmed(path: Path, install_id: str) -> InstallationState:
     return _update_state(
         path, install_id, lambda state: replace(state, first_launch_confirmed=True)
-    )
-
-
-def mark_attribution_claim_issued(
-    path: Path,
-    install_id: str,
-    claim_token: str,
-    *,
-    if_unclaimed: bool = False,
-) -> InstallationState:
-    token = _parse_claim_token(claim_token)
-    if token is None:
-        raise InstallationIdentityError("attribution claim token is missing")
-    return _update_state(
-        path,
-        install_id,
-        lambda state: (
-            state
-            if state.attribution_claim_confirmed
-            or (if_unclaimed and state.attribution_claim_token is not None)
-            else replace(
-                state,
-                attribution_claim_token=token,
-                attribution_claim_opened=(
-                    state.attribution_claim_opened
-                    if state.attribution_claim_token == token
-                    else False
-                ),
-            )
-        ),
-    )
-
-
-def mark_attribution_claim_opened(
-    path: Path, install_id: str, *, claim_token: str | None = None
-) -> InstallationState:
-    return _update_state(
-        path,
-        install_id,
-        lambda state: (
-            state
-            if claim_token is not None and state.attribution_claim_token != claim_token
-            else replace(state, attribution_claim_opened=True)
-        ),
-    )
-
-
-def mark_attribution_claim_confirmed(
-    path: Path, install_id: str, *, claim_token: str | None = None
-) -> InstallationState:
-    return _update_state(
-        path,
-        install_id,
-        lambda state: (
-            state
-            if claim_token is not None and state.attribution_claim_token != claim_token
-            else replace(
-                state,
-                attribution_claim_confirmed=True,
-                attribution_claim_token=None,
-            )
-        ),
-    )
-
-
-def take_automatic_browser_claim_attempt(path: Path) -> bool:
-    """Admit one operational browser handoff per new installation, atomically."""
-    state = load_or_create_installation_state(path)
-    admitted = False
-
-    def take(current: InstallationState) -> InstallationState:
-        nonlocal admitted
-        onboarding = current.onboarding or {}
-        if (
-            onboarding.get("browser_eligible") is not True
-            or onboarding.get("browser_claim_auto_attempted") is True
-            or current.attribution_claim_opened
-            or current.attribution_claim_confirmed
-        ):
-            return current
-        admitted = True
-        return replace(
-            current,
-            onboarding={**onboarding, "browser_claim_auto_attempted": True},
-        )
-
-    _update_state(path, state.install_id, take)
-    return admitted
-
-
-def clear_attribution_claim(
-    path: Path, install_id: str, *, claim_token: str | None = None
-) -> InstallationState:
-    return _update_state(
-        path,
-        install_id,
-        lambda state: (
-            state
-            if claim_token is not None and state.attribution_claim_token != claim_token
-            else replace(state, attribution_claim_token=None)
-        ),
     )
 
 

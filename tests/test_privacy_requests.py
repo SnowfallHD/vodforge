@@ -160,7 +160,21 @@ def test_fresh_rights_capability_is_independent_from_usage_choice(
     import threading
     import time
 
-    from tests.test_attribution_permission import PolicyResponse
+    class PolicyResponse:
+        status = 200
+
+        def __init__(self, **fields):
+            self.fields = {"mode": "default-on", **fields}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def read(self, limit):
+            return json.dumps(self.fields).encode()
+
     from yt_downloader.qt_quick import analytics
 
     monkeypatch.setattr(analytics, "telemetry_collection_allowed", lambda: True)

@@ -27,9 +27,6 @@ from yt_downloader.cloud_funnel import (
     installation_platform,
     installation_state_path,
     load_or_create_installation_state,
-    mark_attribution_claim_confirmed,
-    mark_attribution_claim_issued,
-    mark_attribution_claim_opened,
     mark_cloud_seen_confirmed,
     mark_first_launch_confirmed,
     mark_heycatch_first_launch_confirmed,
@@ -135,26 +132,16 @@ def test_existing_confirmed_install_is_not_reclassified_as_a_new_heycatch_launch
     state = load_or_create_installation_state(path)
 
     assert state.heycatch_first_launch_confirmed is True
-    assert state.attribution_claim_opened is True
-    assert state.attribution_claim_confirmed is True
     assert state.product_telemetry_allowed is False
 
 
-def test_new_installation_persists_claim_and_heycatch_delivery_state(tmp_path: Path):
+def test_new_installation_persists_heycatch_delivery_state(tmp_path: Path):
     path = installation_state_path(data_dir=tmp_path)
     original = load_or_create_installation_state(path)
-    token = "A" * 43
 
-    issued = mark_attribution_claim_issued(path, original.install_id, token)
-    opened = mark_attribution_claim_opened(path, original.install_id)
-    claimed = mark_attribution_claim_confirmed(path, original.install_id)
     delivered = mark_heycatch_first_launch_confirmed(path, original.install_id)
 
-    assert issued.attribution_claim_token == token
-    assert opened.attribution_claim_opened is True
-    assert claimed.attribution_claim_confirmed is True
-    assert claimed.attribution_claim_token is None
-    assert claimed.product_telemetry_allowed is False
+    assert delivered.product_telemetry_allowed is False
     assert delivered.heycatch_first_launch_confirmed is True
     assert load_or_create_installation_state(path) == delivered
 

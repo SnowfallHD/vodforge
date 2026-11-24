@@ -5,10 +5,7 @@ from uuid import uuid4
 import pytest
 
 from yt_downloader.analytics_consent import AnalyticsConsentOwner
-from yt_downloader.cloud_funnel import (
-    load_or_create_installation_state,
-    mark_attribution_claim_confirmed,
-)
+from yt_downloader.cloud_funnel import load_or_create_installation_state
 from yt_downloader.posthog_analytics import (
     PosthogConfig,
     PosthogEventSink,
@@ -134,8 +131,7 @@ class Sink:
 def permitted(tmp_path):
     consent = AnalyticsConsentOwner(tmp_path)
     consent.choose(True)
-    state = load_or_create_installation_state(tmp_path / "installation.json")
-    mark_attribution_claim_confirmed(tmp_path / "installation.json", state.install_id)
+    load_or_create_installation_state(tmp_path / "installation.json")
     return consent
 
 
@@ -250,7 +246,7 @@ def test_first_run_requires_new_ack_current_consent_and_open_owner(
         "load_or_create_installation_state",
         lambda p: replace(state, first_launch_confirmed=already),
     )
-    session._attribution.needs_delivery = lambda state: True
+    session._first_launch.needs_delivery = lambda state: True
 
     def deliver(state, **kw):
         session._closed = closed
@@ -262,12 +258,12 @@ def test_first_run_requires_new_ack_current_consent_and_open_owner(
             consent.choose_posthog(True)
         return SimpleNamespace(first_launch_confirmed=ack)
 
-    session._attribution.deliver_first_launch = deliver
+    session._first_launch.deliver = deliver
     session.start_first_launch_delivery()
     import time
 
     for _ in range(100):
-        if session._attribution_work.poll() is not None:
+        if session._first_launch_work.poll() is not None:
             break
         time.sleep(0.01)
     assert session.telemetry.shutdown(3)

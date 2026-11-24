@@ -129,10 +129,9 @@ waive it by rerunning until it passes.
    Also update from the current public release on each machine, which proves the
    path existing installs take (on the Macs, that a 0.2.5 install accepts the
    universal app under its legacy name), and confirm saved history and media are
-   untouched. A public-release app opens its first-launch welcome page from the
-   preview site in your own browser (builds from 0.2.9 don't in test mode); close
-   the tab. That preview page always asks for analytics choices, because the
-   preview site doesn't apply regional defaults.
+   untouched. No version should open a browser page on first launch: this
+   version has no such step, and the website no longer answers the request
+   0.2.9 and earlier made for it. If one opens, stop and find out why.
 7. **Known defects.** `engineering-quality/acceptance/user-reported-defects.json` has
    no open item that this release claims to fix without packaged evidence.
 8. **Release notes.** `.github/scripts/render_release_notes.py <version>` renders
@@ -178,10 +177,12 @@ waive it by rerunning until it passes.
    attached to the draft, not local rebuilds.
 4. **Publish.** Publish the draft in GitHub. It becomes the latest release, and
    installed apps see the update within six hours or on **Check for updates**.
-5. **Website.** Push the website repo's `main`. Its build reads the latest release
-   (`npm run sync:release`) and refuses to build if the DMG, Windows files or
-   checksums are missing, so the website can only go out once the release is
-   public. The same build adds the release to the website changelog from the
+5. **Website.** In the website repo run
+   `npm run sync:release && npm run sync:changelog`, commit the two updated files
+   under `src/data/`, and push `main`. The build asks GitHub for the latest
+   release again and refuses to build if the DMG, Windows files or checksums are
+   missing; if GitHub will not answer, it builds with those committed files
+   instead, which is why they must already name the new release. The same build adds the release to the website changelog from the
    "What’s new" bullets of its GitHub notes (`npm run sync:changelog`), and fails
    if they're missing, so check the rendered notes say what changed. Apply any
    pending D1 migrations first, in the order given in the

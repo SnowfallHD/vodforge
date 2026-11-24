@@ -566,7 +566,6 @@ class Bridge(QObject):
             application_data_dir(),
             __version__,
             self._runtime.recovery,
-            browser_opener=lambda url: QDesktopServices.openUrl(QUrl(url)),
         )
         self._runtime.product_telemetry = self._analytics.telemetry
         self._analytics_allowed = self._analytics.allowed
@@ -888,22 +887,6 @@ class Bridge(QObject):
     @Property(bool, notify=analyticsChanged)
     def analyticsAllowed(self) -> bool:
         return self._analytics.allowed
-
-    @Property(str, notify=analyticsChanged)
-    def installationLinkStatus(self) -> str:
-        return self._analytics.installation_link_status
-
-    @Property(str, notify=analyticsChanged)
-    def installationLinkMessage(self) -> str:
-        return self._analytics.installation_link_message
-
-    @Slot(result=bool)
-    def requestInstallationLink(self) -> bool:
-        admitted = self._analytics.request_installation_link(
-            lambda url: QDesktopServices.openUrl(QUrl(url))
-        )
-        self.analyticsChanged.emit()
-        return admitted
 
     @Property(bool, notify=analyticsChanged)
     def posthogAvailable(self) -> bool:
@@ -7810,16 +7793,9 @@ class Bridge(QObject):
         ):
             self._record_settings_snapshot()
             self._analytics_snapshot_sent = True
-        previous_link_status = self._analytics.installation_link_status
-        previous_link_message = self._analytics.installation_link_message
         if self._analytics.settled and self._analytics.allowed:
             self._analytics.start_first_launch_delivery()
         self._analytics.poll_first_launch_delivery()
-        if (
-            previous_link_status != self._analytics.installation_link_status
-            or previous_link_message != self._analytics.installation_link_message
-        ):
-            self.analyticsChanged.emit()
         poll_failure_notice = "Download state needs attention. Close and reopen VODForge before starting more work."
         active_job_before = self._runtime.active_job
         events = []

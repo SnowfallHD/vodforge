@@ -104,14 +104,14 @@ def production_telemetry_contract(monkeypatch):
     from yt_downloader import (
         analytics_consent,
         cloud_funnel,
-        install_attribution,
+        first_launch,
         product_telemetry,
     )
 
     for module in (
         analytics_consent,
         cloud_funnel,
-        install_attribution,
+        first_launch,
         product_telemetry,
     ):
         monkeypatch.setattr(module, "telemetry_collection_allowed", lambda: True)

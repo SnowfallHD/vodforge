@@ -85,10 +85,8 @@ def test_region_request_has_no_identity_and_is_bounded(tmp_path, monkeypatch):
     assert owner.allowed
 
 
-def test_welcome_opportunity_is_once_and_builds_fail_closed(tmp_path, monkeypatch):
+def test_test_and_source_builds_fail_closed(tmp_path, monkeypatch):
     owner = AnalyticsConsentOwner(tmp_path)
-    assert owner.take_welcome()
-    assert not AnalyticsConsentOwner(tmp_path).take_welcome()
     owner.choose(True)
     monkeypatch.setattr(consent, "telemetry_collection_allowed", lambda: False)
     assert not consent.analytics_allowed(tmp_path)

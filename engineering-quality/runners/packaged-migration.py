@@ -42,8 +42,9 @@ def main():
             profile = args.output / name
             profile.mkdir()
             install_id = str(uuid.uuid4())
-            # Exact v0.1.8 schema: no onboarding/consent markers. Deliberately
-            # unconfirmed launch catches accidental browser activation on upgrade.
+            # Exact v0.1.8 schema: no onboarding/consent markers, and its
+            # first-launch browser link not yet started. No launch of this
+            # version may open a browser, on an upgrade or a fresh install.
             write(
                 profile / "installation.json",
                 {
@@ -127,7 +128,7 @@ def main():
                 write(profile / f"after-{launch}.json", snapshot)
                 events = journey["events"]
                 opens = [e for e in events if e["kind"] == "browser_requested"]
-                assert len(opens) == int(args.fresh and launch == 0), opens
+                assert opens == [], opens
                 prompts = [
                     e for e in events if e["kind"] == "permission_prompt_visible"
                 ]
@@ -138,21 +139,15 @@ def main():
                 if args.fresh and launch == 0:
                     install_id = state["install_id"]
                 assert state["install_id"] == install_id
-                if args.fresh and name != "unknown":
-                    assert (
-                        state["attribution_claim_token"]
-                        or state["attribution_claim_confirmed"]
-                    ), "Permitted fresh install did not issue a claim"
-                else:
-                    assert state["attribution_claim_token"] is None
+                # Saved as finished, so an older version sharing this profile
+                # does not start its own browser link.
+                assert state["attribution_claim_token"] is None
+                assert state["attribution_claim_opened"] is True
+                assert state["attribution_claim_confirmed"] is True
                 onboarding = state["onboarding"]
                 assert (
                     onboarding["region_checked"]
                     and onboarding["region_policy_version"] == 1
-                )
-                assert (
-                    onboarding["browser_eligible"] == args.fresh
-                    and onboarding["welcome_attempted"]
                 )
                 expected = {
                     "default": "default-on",

@@ -1,6 +1,6 @@
 """Actual Windows default-browser handoff, using a loopback-only receipt page.
 
-This checks OS dispatch, not attribution ingestion or the production claim page.
+This checks OS dispatch only; it opens no production page.
 Never reads browser storage or changes the default browser.
 """
 

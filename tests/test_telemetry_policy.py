@@ -35,28 +35,14 @@ def test_source_checkout_cannot_enable_production(monkeypatch):
 
 
 def test_disabled_transports_never_call_network(monkeypatch):
-    from yt_downloader import (
-        cloud_funnel,
-        install_attribution,
-        product_telemetry,
-    )
+    from yt_downloader import cloud_funnel, product_telemetry
 
     def forbidden(*args, **kwargs):
         pytest.fail("disabled telemetry attempted network access")
 
-    for module in (
-        cloud_funnel,
-        install_attribution,
-        product_telemetry,
-    ):
+    for module in (cloud_funnel, product_telemetry):
         monkeypatch.setattr(module, "telemetry_collection_allowed", lambda: False)
     assert not cloud_funnel._post_json("https://getvodforge.com", {}, opener=forbidden)
-    assert (
-        install_attribution._post_json_object(
-            "https://getvodforge.com", {}, opener=forbidden
-        )
-        is None
-    )
     assert not product_telemetry._post_d1_event(None, opener=forbidden)
 
 
@@ -73,8 +59,8 @@ def test_release_builds_explicitly_enable_telemetry():
         assert "VODFORGE_TELEMETRY_POLICY" in (root / script).read_text()
 
 
-def test_disabled_owners_do_not_open_browser_or_persist_delivery(tmp_path, monkeypatch):
-    from yt_downloader import install_attribution, product_telemetry
+def test_disabled_owners_do_not_persist_delivery(tmp_path, monkeypatch):
+    from yt_downloader import first_launch, product_telemetry
     from yt_downloader.cloud_funnel import (
         CLOUD_PAGE_URL,
         InstallationState,
@@ -88,10 +74,8 @@ def test_disabled_owners_do_not_open_browser_or_persist_delivery(tmp_path, monke
 
     path = tmp_path / "installation.json"
     state = InstallationState(install_id="8ea7e42f-6b48-4110-9e92-aaf94e4f0f3a")
-    owner = install_attribution.InstallationAttributionOwner(
-        path, first_party_recorder=forbidden, browser_opener=forbidden
-    )
-    assert owner.deliver_first_launch(state, app_version="0.1.8") == state
+    owner = first_launch.FirstLaunchDelivery(path, recorder=forbidden)
+    assert owner.deliver(state, app_version="0.1.8") == state
     assert not path.exists()
     assert cloud_page_url(state.install_id) == CLOUD_PAGE_URL
     outbox = tmp_path / "events.json"

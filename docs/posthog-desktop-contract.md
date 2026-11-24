@@ -70,6 +70,25 @@ disable the session's collection and report Off, with the existing save warning.
 Automatic browser-owned attribution remains independent of app usage permission;
 no automatic operational request is evidence of consent or a successful link.
 
+## No first-launch browser page or installation link — 2026-11-24
+
+This replaces every description below of an automatic or manual browser
+handoff, claim, ticket or "attribution" permission:
+
+- The app opens no web page on first launch and has no code that links an
+  installation to a browser or a referral. `install_attribution.py` is replaced
+  by `first_launch.py`, which only reports the first launch and each later
+  session to VODForge while analytics are on.
+- `AnalyticsConsentOwner` no longer has an attribution permission and ignores
+  `attribution_mode` in the policy answer. `settings.json` no longer gains
+  `attribution_permission_version` or `usage_scope_version`.
+- `installation.json` always records the old link as finished
+  (`attribution_claim_opened/confirmed: true`, token `null`), because 0.2.9 and
+  earlier read the same file and would otherwise start their own link when run
+  on the profile. New profiles carry no `browser_eligible` marker.
+- The website removed `/api/attribution/claim/*` and the `/claim` page the same
+  day, so released versions that still ask get no answer and open nothing.
+
 ## A refusal sends nothing — 2026-11-24
 
 This replaces the "independent of optional detailed sharing" rule in the next

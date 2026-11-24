@@ -199,8 +199,8 @@ A helper directly posting events is a transport test, not packaged journey proof
    previous version and `update_after.json` after the real upgrade to the candidate.
    Require the same installation, exactly one correct client_update transition,
    current version advancement, and no duplicate transition after another launch.
-7. Repeat on Windows. Cover accepted/refused/unknown regional permission, browser
-   claim source attribution and refusal, offline retry, exact retry deduplication,
+7. Repeat on Windows. Cover accepted/refused/unknown regional permission,
+   offline retry, exact retry deduplication,
    rate limiting, credential conflict and revocation in the required backend/local
    contracts. Successor app telemetry uses only first-party delivery. Legacy
    frozen-package provider receipts remain historical; removal does not relabel

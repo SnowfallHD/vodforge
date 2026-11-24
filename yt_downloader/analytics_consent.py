@@ -1,4 +1,4 @@
-"""Durable analytics permission, separate from browser attribution and build policy."""
+"""Durable analytics permission, separate from build policy."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ import threading
 import time
 import urllib.request
 import uuid
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -27,7 +26,6 @@ _ONBOARDING_KEYS = (
     "mode",
     "region_checked",
     "prompted",
-    "welcome_attempted",
     "posthog_mode",
     "posthog_region_resolved",
 )
@@ -39,7 +37,7 @@ ANALYTICS_BENEFITS = (
     ("sliders", "Optional sharing in Settings"),
 )
 ANALYTICS_DESCRIPTION = (
-    "Share optional reports and referral association. "
+    "Share optional usage and failure reports. "
     "Off sends no analytics of any kind. "
     "No media links, paths or credentials. See Privacy details."
 )
@@ -60,8 +58,6 @@ class AnalyticsConsentOwner:
     def __init__(self, directory: Path) -> None:
         self.path = directory / "settings.json"
         self._native_baseline_until = 0.0
-        self._attribution_until = 0.0
-        self._attribution_generation = 0
         self._privacy_requests_until = 0.0
         legacy = directory / "analytics-consent.json"
         with _LOCK:
@@ -88,13 +84,9 @@ class AnalyticsConsentOwner:
             if onboarding.get("storage_version") != 1:
                 old = load_settings(self.path).get("analytics_consent", {})
                 old = old if isinstance(old, dict) else {}
-                eligible = onboarding.get("browser_eligible") is True
                 update_onboarding(
                     installation,
                     storage_version=1,
-                    browser_eligible=eligible,
-                    welcome_attempted=not eligible
-                    or old.get("welcome_attempted") is True,
                     # Evaluate every pre-migration installation once under this
                     # policy. Old defaults are not an explicit user choice.
                     mode="unknown",
@@ -181,11 +173,9 @@ class AnalyticsConsentOwner:
                 state.get("choice") != "denied"
                 or state.get("posthog_choice") != "denied"
             ):
-                self.choose_data_sharing(False, acknowledge_scope=False)
+                self.choose_data_sharing(False)
 
-    def choose_data_sharing(
-        self, enabled: bool, *, acknowledge_scope: bool = True
-    ) -> None:
+    def choose_data_sharing(self, enabled: bool) -> None:
         """Persist one explicit user choice for all optional app analytics."""
         with _LOCK:
             changes: dict[str, Any] = {
@@ -193,55 +183,11 @@ class AnalyticsConsentOwner:
                 "posthog_choice": "granted" if enabled else "denied",
                 "posthog_epoch": str(uuid.uuid4()),
             }
-            if acknowledge_scope:
-                changes["usage_scope_version"] = 1
-                changes["attribution_permission_version"] = 1
             if not enabled:
                 changes["collection_epoch"] = str(uuid.uuid4())
             # Finish onboarding metadata before the atomic preference commit.
             self.update(prompted=True)
             update_analytics_settings(self.path, changes)
-
-    @property
-    def attribution_allowed(self) -> bool:
-        """Identity transmission needs its own fresh default or current grant."""
-        if not telemetry_collection_allowed():
-            return False
-        state = self.snapshot()
-        if (
-            not state
-            or _declined(state)
-            or "denied" in {state.get("choice"), state.get("posthog_choice")}
-        ):
-            return False
-        if state.get("choice") == "granted":
-            return (
-                type(state.get("attribution_permission_version")) is int
-                and state.get("attribution_permission_version") == 1
-            )
-        # Never ahead of analytics itself: a region default for the link alone
-        # cannot send the installation ID while analytics are not on.
-        return (
-            state.get("mode") == "default-on"
-            and time.monotonic() < self._attribution_until
-        )
-
-    def attribution_permission(self) -> Callable[[], bool]:
-        """Fence a bounded operation against Off/regrant and policy replacement."""
-        state = self.snapshot()
-        epochs = (state.get("collection_epoch"), state.get("posthog_epoch"))
-        generation = self._attribution_generation
-
-        def permitted() -> bool:
-            current = self.snapshot()
-            return (
-                self.attribution_allowed
-                and generation == self._attribution_generation
-                and epochs
-                == (current.get("collection_epoch"), current.get("posthog_epoch"))
-            )
-
-        return permitted
 
     @property
     def privacy_requests_available(self) -> bool:
@@ -304,13 +250,6 @@ class AnalyticsConsentOwner:
             return mode if mode in {"default-on", "opt-in"} else "unknown"
         return None
 
-    def take_welcome(self) -> bool:
-        with _LOCK:
-            if self.snapshot().get("welcome_attempted"):
-                return False
-            self.update(welcome_attempted=True)
-            return True
-
     def resolve(
         self,
         *,
@@ -326,8 +265,6 @@ class AnalyticsConsentOwner:
         and the app has to learn whether the service accepts them.
         """
         self._native_baseline_until = 0.0
-        self._attribution_until = 0.0
-        self._attribution_generation += 1
         self._privacy_requests_until = 0.0
         if not telemetry_collection_allowed():
             return "unknown"
@@ -378,14 +315,6 @@ class AnalyticsConsentOwner:
                 and value.get("native_baseline_mode") == "enabled"
                 else 0.0
             )
-            self._attribution_until = (
-                time.monotonic() + 24 * 3600
-                if value.get("resolved") is True
-                and type(value.get("attribution_policy_version")) is int
-                and value.get("attribution_policy_version") == 1
-                and value.get("attribution_mode") == "default-on"
-                else 0.0
-            )
             self._privacy_requests_until = (
                 time.monotonic() + 24 * 3600
                 if type(value.get("privacy_requests_version")) is int
@@ -395,7 +324,6 @@ class AnalyticsConsentOwner:
             return mode
         except (OSError, ValueError, RuntimeError):
             self._native_baseline_until = 0.0
-            self._attribution_until = 0.0
             self._privacy_requests_until = 0.0
             return "unknown"
 

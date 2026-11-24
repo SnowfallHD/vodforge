@@ -149,13 +149,13 @@ def test_qt_existing_permission_reports_recovery_and_one_open(
     assert not session.poll() and _Telemetry.instances[0].opens == 1
 
 
-def test_qt_first_launch_uses_existing_attribution_owner_once_after_consent(
+def test_qt_first_launch_is_reported_once_after_consent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     calls: list[str] = []
     monkeypatch.setattr(analytics, "telemetry_collection_allowed", lambda: True)
 
-    class Attribution:
+    class Delivery:
         def __init__(self, _path: Path, **_kwargs: Any) -> None:
             pass
 
@@ -163,29 +163,24 @@ def test_qt_first_launch_uses_existing_attribution_owner_once_after_consent(
             calls.append("needs")
             return True
 
-        def deliver_first_launch(
+        def deliver(
             self,
             _state: object,
             *,
             app_version: str,
             cancelled: Any,
-            browser_handoff: bool,
         ) -> Any:
             assert not cancelled()
-            assert browser_handoff is False
             calls.append(app_version)
             return SimpleNamespace(first_launch_confirmed=True)
 
-    monkeypatch.setattr(analytics, "InstallationAttributionOwner", Attribution)
+    monkeypatch.setattr(analytics, "FirstLaunchDelivery", Delivery)
     monkeypatch.setattr(
         analytics,
         "load_or_create_installation_state",
         lambda _path: SimpleNamespace(
             first_launch_confirmed=False,
             install_id="fixture-installation",
-            attribution_claim_confirmed=False,
-            attribution_claim_opened=False,
-            attribution_claim_token="",
         ),
     )
     session = analytics.QtAnalyticsSession(tmp_path, "0.2.3", _Recovery())

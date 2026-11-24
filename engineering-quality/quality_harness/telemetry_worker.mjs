@@ -18,7 +18,6 @@ const { readD1Migrations } = await import(
   pathToFileURL(resolve(poolRoot, poolPackage.exports["."].import))
 );
 const source = `import {handleEnrolledTelemetry} from ${JSON.stringify(resolve(site, "src/lib/enrolled-telemetry.ts"))};
-import {issueAttributionClaim} from ${JSON.stringify(resolve(site, "src/lib/attribution.ts"))};
 import {recordCloudSeen,recordCloudClick,recordFirstLaunch,joinWaitlist} from ${JSON.stringify(resolve(site, "src/lib/funnel.ts"))};
 import {recordProductEvents,normalizeProductEvent} from ${JSON.stringify(resolve(site, "src/lib/product-telemetry.ts"))};
 export default {async fetch(request,env) {
@@ -31,8 +30,7 @@ export default {async fetch(request,env) {
  if(action==='ownership-seed') {
    const {kind,installId}=await request.json();
    const input={installId,platform:'macos',appVersion:'0.1.8'};
-   if(kind==='claim') await issueAttributionClaim(env.DB,{installId,claimToken:crypto.randomUUID().replaceAll('-','')+'a'.repeat(11)});
-   else if(kind==='cloud_seen') await recordCloudSeen(env.DB,input);
+   if(kind==='cloud_seen') await recordCloudSeen(env.DB,input);
    else if(kind==='cloud_click') await recordCloudClick(env.DB,installId);
    else if(kind==='legacy_launch') await recordFirstLaunch(env.DB,input);
    else if(kind==='waitlist') await joinWaitlist(env.DB,{installId,email:installId+'@example.invalid'});

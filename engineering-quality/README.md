@@ -1532,9 +1532,11 @@ VODFORGE_DISABLE_TELEMETRY=1 VODFORGE_NATIVE_UI_TESTS=1 PYTHONPATH=. \
 These intercept region responses, browser opening and claim transport. They
 measure the source owner's browser-request/prompt timing, not OS browser focus.
 
-For browser regression QA, start the companion site on loopback port 4321 and
-execute `quality_harness/analytics_browser_journey.js` through Playwright's
-`browser_run_code` filename input. It uses isolated browser contexts and
+(The app no longer opens a browser page on first launch, and
+`quality_harness/analytics_browser_journey.js` was removed with it; the rest of
+this paragraph describes how that page was checked through 0.2.9.) The browser
+regression QA started the companion site on loopback port 4321 and ran that
+script through Playwright's `browser_run_code` filename input. It uses isolated browser contexts and
 intercepts every API and external HTTPS request, covering browser consent,
 GPC, closed tabs, source persistence, separate profiles, transient errors,
 claim expiry and the final ten seconds of the permission window. Boundary

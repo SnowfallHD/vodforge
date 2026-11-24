@@ -227,7 +227,7 @@ confirmed missing file.
 
 Library history, annotations, and downloaded media stay on your computer.
 **Share usage analytics** in Settings controls all analytics: installation,
-update, attribution and usage telemetry. With it off, VODForge sends no
+update and usage telemetry. With it off, VODForge sends no
 analytics request of any kind, clears pending usage events, and no longer asks
 the server for the region's analytics policy at launch. The same applies after
 "No thanks" at the consent question, or after quitting while that question is
@@ -248,18 +248,22 @@ Onboarding evaluates the region policy once and saves the decision locally.
 Opt-in and unknown regions require a choice before analytics can be sent;
 eligible default-on regions may enable it unless the user has declined.
 An explicit choice in Settings persists. Existing installations migrate their
-local state and evaluate the policy if needed without becoming new installs or
-reopening the first-install browser-link flow.
+local state and evaluate the policy if needed without becoming new installs.
 
 Permitted telemetry uses random installation identifiers, opaque attempt/retry
 identifiers, and bounded app/system facts. It covers export presets and encoders, bucketed
 media size/duration and processing time, queue/recovery outcomes, Library/player
 feature use, and verified updater outcomes. Feature actions record usage only;
 it excludes media URLs, titles, filenames, paths, searches, notes, tags, and
-playback positions. The first-install thank-you page opens only while analytics
-are on, and never after a refusal. Closing that tab does not cause it to
-reopen. See the [privacy notice](https://getvodforge.com/privacy/)
+playback positions. See the [privacy notice](https://getvodforge.com/privacy/)
 and [local-state ownership](docs/architecture.md#who-owns-what).
+
+VODForge does not open a web page on first launch and does not link an
+installation to a browser or a referral source. Versions 0.2.9 and earlier could
+open a thank-you page on first launch for that purpose; the code is removed, and
+the website removed its side for every version on 24 November 2026. The
+website's own thank-you page now appears when a download is started from the
+site, and is not connected to the app.
 
 App-open and failure observations include numeric OS/Python/Qt/downloader versions,
 processor architecture and logical CPU count, total/available memory in MB, and

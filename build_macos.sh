@@ -92,7 +92,6 @@ minimum_macos="$("$python_bin" -c 'import os,sys; from scripts.build_macos_fulls
     --ignore=tests/test_qt_terminal_dismissal.py \
     --ignore=tests/test_qt_worker_control_context.py \
     --ignore=tests/test_qt_analytics_session.py \
-    --ignore=tests/test_qt_automatic_attribution.py \
     --ignore=tests/test_qt_artwork_continuity.py \
     --ignore=tests/test_qt_card_material_bounds.py \
     --ignore=tests/test_qt_click_reliability.py \
@@ -216,7 +215,6 @@ minimum_macos="$("$python_bin" -c 'import os,sys; from scripts.build_macos_fulls
     tests/test_qt_terminal_dismissal.py \
     tests/test_qt_worker_control_context.py \
     tests/test_qt_analytics_session.py \
-    tests/test_qt_automatic_attribution.py \
     tests/test_qt_artwork_continuity.py \
     tests/test_qt_card_material_bounds.py \
     tests/test_qt_click_reliability.py \

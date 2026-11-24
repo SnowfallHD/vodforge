@@ -108,10 +108,7 @@ def save(path: Path, value):
 def pipeline(repo: Path, site: Path, destination: Path, *, cases=None):
     from yt_downloader import analytics_consent, product_telemetry
     from yt_downloader import telemetry_credentials as transport
-    from yt_downloader.cloud_funnel import (
-        load_or_create_installation_state,
-        mark_attribution_claim_confirmed,
-    )
+    from yt_downloader.cloud_funnel import load_or_create_installation_state
     from yt_downloader.library_diagnostics import begin_library_action
 
     runtime_repo = Path(__file__).resolve().parents[2]
@@ -178,8 +175,7 @@ def pipeline(repo: Path, site: Path, destination: Path, *, cases=None):
                 credential = transport.TelemetryCredentialOwner(client)
                 assert credential.first_launch("0.1.8", "macos")
                 installation = client / "installation.json"
-                state = load_or_create_installation_state(installation)
-                mark_attribution_claim_confirmed(installation, state.install_id)
+                load_or_create_installation_state(installation)
 
                 def create_usage(key):
                     def deliver(event):

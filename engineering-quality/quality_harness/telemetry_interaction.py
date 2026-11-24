@@ -405,7 +405,6 @@ def _local(raw, root, check):
     cases = owned.get("cases")
     origins = [
         "fresh",
-        "claim",
         "cloud_seen",
         "cloud_click",
         "legacy_launch",
@@ -426,7 +425,7 @@ def _local(raw, root, check):
             }
             for o in origins
         ],
-        "All six entry points preserve one credential, reject second actor and invalid credential, and exclude legacy writes",
+        "All five entry points preserve one credential, reject second actor and invalid credential, and exclude legacy writes",
     )
     receipt = _read(raw.get("receipt"), root, check, "after", "d1_receipt")
     check(

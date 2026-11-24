@@ -27,7 +27,6 @@ _BLOCKED_ATTEMPTS: list[str] = []
 _GUARD_INSTALLED = False
 _OWNERSHIP_ORIGINS = (
     "fresh",
-    "claim",
     "cloud_seen",
     "cloud_click",
     "legacy_launch",
@@ -401,10 +400,7 @@ def _read_line(process):
 def integration_probe(repo_root: Path, case_dir: Path, runner, server):
     from yt_downloader import analytics_consent, product_telemetry
     from yt_downloader import telemetry_credentials as transport
-    from yt_downloader.cloud_funnel import (
-        load_or_create_installation_state,
-        mark_attribution_claim_confirmed,
-    )
+    from yt_downloader.cloud_funnel import load_or_create_installation_state
     from yt_downloader.failure_diagnostics import FailureDiagnostic
 
     site = Path(
@@ -545,8 +541,7 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                     "macos",
                 )
                 state_path = case_dir / "client" / "installation.json"
-                state = load_or_create_installation_state(state_path)
-                mark_attribution_claim_confirmed(state_path, state.install_id)
+                load_or_create_installation_state(state_path)
                 delivered = []
 
                 def deliver(event):

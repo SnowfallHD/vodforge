@@ -52,8 +52,6 @@ def test_privacy_has_truthful_body_and_scroll_reachability(
             "settingsPosthogRow",
             "settingsPosthogToggle",
             "settingsPosthogDescription",
-            "settingsInstallationLink",
-            "settingsInstallationLinkDescription",
         ):
             assert window.findChild(QObject, name) is None
         for item in [heading, shown]:

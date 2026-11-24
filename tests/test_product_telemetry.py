@@ -10,10 +10,7 @@ import pytest
 pytestmark = pytest.mark.usefixtures("production_telemetry_contract")
 
 from yt_downloader import product_telemetry
-from yt_downloader.cloud_funnel import (
-    load_or_create_installation_state,
-    mark_attribution_claim_confirmed,
-)
+from yt_downloader.cloud_funnel import load_or_create_installation_state
 from yt_downloader.product_telemetry import (
     ProductTelemetryEvent,
     ProductTelemetryOwner,
@@ -24,9 +21,7 @@ def _permitted_installation(path: Path) -> str:
     from yt_downloader.analytics_consent import AnalyticsConsentOwner
 
     AnalyticsConsentOwner(path.parent).choose(True)
-    state = load_or_create_installation_state(path)
-    mark_attribution_claim_confirmed(path, state.install_id)
-    return state.install_id
+    return load_or_create_installation_state(path).install_id
 
 
 @pytest.mark.parametrize("permitted", [False, True])

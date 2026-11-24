@@ -11,57 +11,6 @@ from yt_downloader.qt_quick import analytics
 pytestmark = pytest.mark.usefixtures("production_telemetry_contract")
 
 
-@pytest.mark.parametrize("allowed", [False, True])
-@pytest.mark.parametrize("claim", ["confirmed", "pending", "absent"])
-@pytest.mark.parametrize("transport_allowed", [False, True])
-def test_cold_link_display_preserves_durable_fact_without_authorizing_delivery(
-    tmp_path, monkeypatch, allowed, claim, transport_allowed
-):
-    from yt_downloader.cloud_funnel import (
-        load_or_create_installation_state,
-        mark_attribution_claim_confirmed,
-        mark_attribution_claim_issued,
-        mark_attribution_claim_opened,
-    )
-
-    monkeypatch.setattr(
-        analytics, "telemetry_collection_allowed", lambda: transport_allowed
-    )
-    path = tmp_path / "installation.json"
-    state = load_or_create_installation_state(path)
-    if claim != "absent":
-        token = "a" * 43
-        mark_attribution_claim_issued(path, state.install_id, token)
-        mark_attribution_claim_opened(path, state.install_id, claim_token=token)
-        if claim == "confirmed":
-            mark_attribution_claim_confirmed(path, state.install_id, claim_token=token)
-    consent = AnalyticsConsentOwner(tmp_path)
-    consent.choose(allowed)
-    before = path.read_bytes()
-    monkeypatch.setattr(
-        analytics,
-        "ProductTelemetryOwner",
-        lambda **kwargs: ProductTelemetryOwner(
-            **kwargs, d1_recorder=lambda e: pytest.fail("Display sent telemetry")
-        ),
-    )
-    expected = (
-        "linked"
-        if claim == "confirmed"
-        else "waiting"
-        if claim == "pending"
-        else "unavailable"
-    )
-    for _ in range(2):
-        session = analytics.QtAnalyticsSession(tmp_path, "0.2.6", Mock())
-        assert session.installation_link_status == expected
-        assert session.allowed is (allowed and transport_allowed)
-        assert session._attribution_work is None
-        assert session._automatic_browser_opener is None
-        assert path.read_bytes() == before
-        session.close()
-
-
 @pytest.mark.parametrize("kind", ["app_opened", "feature_used"])
 @pytest.mark.parametrize("interruption", [None, "denied", "closed"])
 def test_idle_session_retries_same_pending_event_without_user_input(
@@ -121,95 +70,14 @@ def test_idle_session_retries_same_pending_event_without_user_input(
     session.close()
 
 
-@pytest.mark.parametrize(
-    "interruption", [None, "denied", "reenrolled", "closed", "browser_failed"]
-)
-@pytest.mark.parametrize("legacy", [False, True])
-def test_explicit_link_uses_gui_dispatch_and_only_canonical_claim_ack(
-    tmp_path, monkeypatch, interruption, legacy
-):
-    import threading
-    import time
-
-    from yt_downloader.cloud_funnel import load_or_create_installation_state
-    from yt_downloader.install_attribution import (
-        ClaimIssueResult,
-        InstallationAttributionOwner,
-    )
-
-    monkeypatch.setattr(analytics, "telemetry_collection_allowed", lambda: True)
-    consent = AnalyticsConsentOwner(tmp_path)
-    consent.choose_data_sharing(True)
-    monkeypatch.setattr(
-        analytics,
-        "ProductTelemetryOwner",
-        lambda **kwargs: ProductTelemetryOwner(**kwargs, d1_recorder=lambda e: True),
-    )
-    session = analytics.QtAnalyticsSession(tmp_path, "0.2.6", Mock())
-    if legacy:
-        from yt_downloader.cloud_funnel import update_onboarding
-
-        update_onboarding(
-            tmp_path / "installation.json", storage_version=1, browser_eligible=False
-        )
-    session._attribution = InstallationAttributionOwner(
-        tmp_path / "installation.json",
-        first_party_recorder=lambda *args, **kwargs: True,
-        claim_issuer=lambda install, token: ClaimIssueResult(
-            f"https://getvodforge.com/claim#token={token}"
-        ),
-        claim_reader=lambda token: "claimed",
-        browser_opener=lambda *args, **kwargs: pytest.fail(
-            "Startup must not open browser"
-        ),
-    )
-    dispatched = []
-    gui_thread = threading.get_ident()
-
-    def open_browser(url):
-        assert threading.get_ident() == gui_thread
-        dispatched.append(url)
-        return interruption != "browser_failed"
-
-    assert session.request_installation_link(open_browser)
-    assert not session.request_installation_link(open_browser)
-    assert not dispatched  # Never opens from preparation's worker thread.
-    if interruption in {"denied", "reenrolled"}:
-        consent.choose_data_sharing(False)
-        if interruption == "reenrolled":
-            consent.choose_data_sharing(True)
-    elif interruption == "closed":
-        session.close()
-    deadline = time.monotonic() + 3
-    while session._attribution_work is not None and time.monotonic() < deadline:
-        session.poll_first_launch_delivery()
-        time.sleep(0.005)
-    state = load_or_create_installation_state(tmp_path / "installation.json")
-    if interruption is None:
-        assert len(dispatched) == 1
-        assert state.attribution_claim_opened and state.attribution_claim_confirmed
-        assert state.attribution_claim_token is None
-        assert session.installation_link_status == "linked"
-    else:
-        assert (
-            not state.attribution_claim_opened and not state.attribution_claim_confirmed
-        )
-        assert len(dispatched) == (1 if interruption == "browser_failed" else 0)
-    session.close()
-    assert session.telemetry.shutdown(2)
-
-
-def test_disabled_session_display_does_not_create_identity_or_open_browser(
-    tmp_path, monkeypatch
-):
+def test_disabled_session_does_not_create_identity(tmp_path, monkeypatch):
     monkeypatch.setattr(analytics, "telemetry_collection_allowed", lambda: False)
     session = analytics.QtAnalyticsSession(tmp_path, "0.2.6", Mock())
-    assert session.installation_link_status == "unavailable"
     assert session.owner is None and session.telemetry is None
     assert not (tmp_path / "installation.json").exists()
-    assert not session.request_installation_link(
-        lambda url: pytest.fail("Disabled session opened a browser")
-    )
+    session.start_first_launch_delivery()
+    session.poll_first_launch_delivery()
+    assert not (tmp_path / "installation.json").exists()
     session.close()
 
 
@@ -326,6 +194,7 @@ EVERYTHING_ENABLED = {
     "resolved": True,
     "native_baseline_version": 1,
     "native_baseline_mode": "enabled",
+    # Still sent by the server for 0.2.9 and earlier; this version ignores it.
     "attribution_mode": "default-on",
     "attribution_policy_version": 1,
     "posthog_mode": "default-on",
@@ -407,21 +276,28 @@ def release_build(tmp_path, monkeypatch):
     return requests
 
 
+@pytest.fixture
+def browser_opens(monkeypatch):
+    """Every attempt to open the user's browser, none real."""
+    import webbrowser
+
+    opened: list[str] = []
+    for name in ("open", "open_new", "open_new_tab"):
+        monkeypatch.setattr(
+            webbrowser, name, lambda url, *_a, **_k: opened.append(url) or True
+        )
+    return opened
+
+
 def _use_every_sending_path(tmp_path):
-    """Launch, use and quit the app; return what it tried to open in a browser."""
+    """Launch, use and quit the app."""
     import time
 
     from yt_downloader import cloud_funnel
     from yt_downloader.cloud_funnel import load_or_create_installation_state
     from yt_downloader.telemetry_credentials import TelemetryCredentialOwner
 
-    opened: list[str] = []
-    session = analytics.QtAnalyticsSession(
-        tmp_path,
-        "0.2.9",
-        Mock(),
-        browser_opener=lambda url: opened.append(url) or True,
-    )
+    session = analytics.QtAnalyticsSession(tmp_path, "0.2.9", Mock())
     owner = session.owner
     session.start()
     assert session._resolved.wait(5)
@@ -431,7 +307,7 @@ def _use_every_sending_path(tmp_path):
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
             session.poll_first_launch_delivery()
-            if session._attribution_work is None and session._privacy_work is None:
+            if session._first_launch_work is None and session._privacy_work is None:
                 break
             time.sleep(0.01)
 
@@ -445,8 +321,6 @@ def _use_every_sending_path(tmp_path):
     assert telemetry.shutdown(5)
     session.start_first_launch_delivery()
     settle()
-    session.request_installation_link(lambda url: opened.append(url) or True)
-    settle()
     state = load_or_create_installation_state(tmp_path / "installation.json")
     pro_page = cloud_funnel.cloud_page_url(state.install_id)
     cloud_funnel.record_cloud_seen(state, app_version="0.2.9")
@@ -457,37 +331,66 @@ def _use_every_sending_path(tmp_path):
     credentials.event({"platform": "macos", "event_name": "app_opened"})
     session.close()
     assert telemetry.shutdown(5)
-    return owner, asked, opened, pro_page
+    return owner, asked, pro_page
 
 
 @pytest.mark.parametrize("refuse", REFUSALS, ids=lambda f: f.__name__.strip("_"))
-def test_a_refusal_sends_nothing_at_all(tmp_path, release_build, refuse):
+def test_a_refusal_sends_nothing_at_all(tmp_path, release_build, browser_opens, refuse):
     from yt_downloader import cloud_funnel
 
     refuse(AnalyticsConsentOwner(tmp_path))
-    owner, asked, opened, pro_page = _use_every_sending_path(tmp_path)
+    owner, asked, pro_page = _use_every_sending_path(tmp_path)
     assert release_build == []  # not even the launch policy check
-    assert opened == []
+    assert browser_opens == []
     assert asked == [False, False, False]  # and no second consent question
     assert pro_page == cloud_funnel.CLOUD_PAGE_URL  # no installation ID in the link
     assert not owner.allowed and owner.declined
     assert not owner.native_baseline_allowed
-    assert not owner.attribution_allowed and not owner.posthog_allowed
+    assert not owner.posthog_allowed
     assert not _load_outbox(tmp_path / "product-telemetry.json")
     assert not (tmp_path / "telemetry-credential.json").exists()
 
 
-def test_the_same_use_does_send_for_a_default_on_user(tmp_path, release_build):
+def test_the_same_use_does_send_for_a_default_on_user(
+    tmp_path, release_build, browser_opens
+):
     # The control for the test above: the spy sees real traffic, and a region
     # default with no refusal still works as before.
     AnalyticsConsentOwner(tmp_path).update(mode="default-on", region_checked=True)
-    owner, asked, _opened, pro_page = _use_every_sending_path(tmp_path)
+    owner, asked, pro_page = _use_every_sending_path(tmp_path)
     assert owner.allowed and not owner.declined
     assert asked == [False, False, False]
     assert "https://getvodforge.com/api/analytics/policy" in release_build
     assert "https://getvodforge.com/api/telemetry/baseline" in release_build
     assert any("/api/telemetry/v2/" in url for url in release_build)
     assert "iid=" in pro_page
+    # A new installation with analytics on, in a region the server still marks
+    # as link-by-default for older versions: no thank-you page is opened and
+    # nothing is asked of the link service that 0.2.9 and earlier used.
+    assert browser_opens == []
+    assert not [url for url in release_build if "attribution" in url or "claim" in url]
+
+
+def test_the_installation_record_tells_older_versions_the_link_is_finished(tmp_path):
+    # 0.2.9 and earlier read this file and would open their thank-you page for
+    # an installation that had not linked yet.
+    import json
+
+    from yt_downloader.cloud_funnel import (
+        load_or_create_installation_state,
+        mark_first_launch_confirmed,
+    )
+
+    path = tmp_path / "installation.json"
+    state = load_or_create_installation_state(path)
+    for saved in (path, None):
+        if saved is None:
+            mark_first_launch_confirmed(path, state.install_id)
+        record = json.loads(path.read_text())
+        assert record["attribution_claim_opened"] is True
+        assert record["attribution_claim_confirmed"] is True
+        assert record["attribution_claim_token"] is None
+        assert "browser_eligible" not in record["onboarding"]
 
 
 def test_turning_analytics_off_mid_session_stops_everything_held(
@@ -565,7 +468,6 @@ def test_a_privacy_request_after_a_refusal_asks_only_what_it_needs(
     # The answer said everything is enabled; the refusal still stands.
     owner = session.owner
     assert not owner.allowed and not owner.native_baseline_allowed
-    assert not owner.attribution_allowed
     assert not session.telemetry.record_baseline("app_started")
     session.close()
     assert len(release_build) == 2

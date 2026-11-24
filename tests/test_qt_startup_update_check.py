@@ -21,10 +21,7 @@ from PySide6.QtGui import QGuiApplication
 
 from yt_downloader import cloud_funnel, product_telemetry
 from yt_downloader.analytics_consent import AnalyticsConsentOwner
-from yt_downloader.cloud_funnel import (
-    load_or_create_installation_state,
-    mark_attribution_claim_confirmed,
-)
+from yt_downloader.cloud_funnel import load_or_create_installation_state
 from yt_downloader.product_telemetry import _load_outbox
 from yt_downloader.qt_quick import analytics as qt_analytics
 from yt_downloader.qt_quick import main as qt_main
@@ -78,8 +75,7 @@ def test_launch_check_is_recorded_while_region_is_rechecked(
     path = cloud_funnel.installation_state_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     AnalyticsConsentOwner(path.parent).update(mode="default-on", region_checked=True)
-    state = load_or_create_installation_state(path)
-    mark_attribution_claim_confirmed(path, state.install_id)
+    load_or_create_installation_state(path)
     app = QGuiApplication.instance() or QGuiApplication([])
     bridge = qt_main.Bridge(None)
     try:
@@ -143,12 +139,10 @@ def _new_install(tmp_path, monkeypatch, *, mode: str, delay: float):
         return original(self, opener=policy, deadline=deadline)
 
     monkeypatch.setattr(AnalyticsConsentOwner, "resolve", resolve)
-    # No saved analytics answer; the browser welcome is already done so no
-    # page opens during the test.
+    # No saved analytics answer.
     path = cloud_funnel.installation_state_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    state = load_or_create_installation_state(path)
-    mark_attribution_claim_confirmed(path, state.install_id)
+    load_or_create_installation_state(path)
     app = QGuiApplication.instance() or QGuiApplication([])
     bridge = qt_main.Bridge(None)
     return app, bridge, checks
