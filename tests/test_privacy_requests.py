@@ -166,12 +166,22 @@ def test_fresh_rights_capability_is_independent_from_usage_choice(
     monkeypatch.setattr(analytics, "telemetry_collection_allowed", lambda: True)
     session = QtAnalyticsSession(tmp_path, "0.2.6", Mock())
     session.owner.choose_data_sharing(False)
-    session.owner.resolve(
-        opener=lambda *a, **kw: PolicyResponse(
-            resolved=True, privacy_requests_version=1
-        )
-    )
-    assert session.owner.privacy_requests_available and not session.allowed
+    policy_requests = []
+    real_resolve = type(session.owner).resolve
+
+    def resolve(self, *, user_requested=False, **kwargs):
+        def policy(*_args, **_kwargs):
+            policy_requests.append(user_requested)
+            return PolicyResponse(resolved=True, privacy_requests_version=1)
+
+        return real_resolve(self, opener=policy, user_requested=user_requested)
+
+    monkeypatch.setattr(type(session.owner), "resolve", resolve)
+    # With analytics off the launch check is not made, so the capability is
+    # unknown until the user asks for a privacy request.
+    session.owner.resolve()
+    assert policy_requests == []
+    assert not session.owner.privacy_requests_available and not session.allowed
     gui = threading.get_ident()
 
     def issue(owner, kind, *, permitted):
@@ -194,6 +204,7 @@ def test_fresh_rights_capability_is_independent_from_usage_choice(
         session.poll_first_launch_delivery()
         time.sleep(0.005)
     assert opened == [f"https://getvodforge.com/privacy/request/#token={TOKEN}"]
+    assert policy_requests == [True]  # asked once, because the user asked
     assert not session.allowed and not (tmp_path / "telemetry-credential.json").exists()
     session.close()
     assert session.telemetry.shutdown(2)

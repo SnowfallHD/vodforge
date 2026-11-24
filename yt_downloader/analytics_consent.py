@@ -39,10 +39,21 @@ ANALYTICS_BENEFITS = (
     ("sliders", "Optional sharing in Settings"),
 )
 ANALYTICS_DESCRIPTION = (
-    "Share optional reports and referral association. Off stops new requests. "
-    "Regional basic counts and service records may continue. "
+    "Share optional reports and referral association. "
+    "Off sends no analytics of any kind. "
     "No media links, paths or credentials. See Privacy details."
 )
+
+
+def _declined(state: dict[str, Any]) -> bool:
+    """Off in Settings, or the consent question was shown and not accepted.
+
+    The question cannot be dismissed, so "shown and not answered" means the app
+    was quit while it was open. That is treated as a refusal, not as silence a
+    later region default may fill in.
+    """
+    choice = state.get("choice")
+    return choice == "denied" or (choice != "granted" and state.get("prompted") is True)
 
 
 class AnalyticsConsentOwner:
@@ -147,10 +158,16 @@ class AnalyticsConsentOwner:
                     )
 
     @property
+    def declined(self) -> bool:
+        """The user refused; nothing may be sent, not even the policy check."""
+        return _declined(self.snapshot())
+
+    @property
     def allowed(self) -> bool:
+        """The one switch every analytics request depends on."""
         state = self.snapshot()
         return state.get("choice") == "granted" or (
-            state.get("choice") != "denied" and state.get("mode") == "default-on"
+            not _declined(state) and state.get("mode") == "default-on"
         )
 
     def choose(self, enabled: bool) -> None:
@@ -191,14 +208,23 @@ class AnalyticsConsentOwner:
         if not telemetry_collection_allowed():
             return False
         state = self.snapshot()
-        if not state or "denied" in {state.get("choice"), state.get("posthog_choice")}:
+        if (
+            not state
+            or _declined(state)
+            or "denied" in {state.get("choice"), state.get("posthog_choice")}
+        ):
             return False
         if state.get("choice") == "granted":
             return (
                 type(state.get("attribution_permission_version")) is int
                 and state.get("attribution_permission_version") == 1
             )
-        return time.monotonic() < self._attribution_until
+        # Never ahead of analytics itself: a region default for the link alone
+        # cannot send the installation ID while analytics are not on.
+        return (
+            state.get("mode") == "default-on"
+            and time.monotonic() < self._attribution_until
+        )
 
     def attribution_permission(self) -> Callable[[], bool]:
         """Fence a bounded operation against Off/regrant and policy replacement."""
@@ -227,23 +253,17 @@ class AnalyticsConsentOwner:
 
     @property
     def native_baseline_allowed(self) -> bool:
-        """Fresh feature-specific policy only; never reuse the generic default."""
+        """Counts need analytics on and a fresh policy of their own.
+
+        They carry no identifier, but Off means nothing is sent, so they follow
+        the analytics switch like everything else.
+        """
         if (
             not telemetry_collection_allowed()
             or time.monotonic() >= self._native_baseline_until
         ):
             return False
-        state = self.snapshot()
-        if not state:
-            return False
-        legacy_refusal = "denied" in {
-            state.get("choice"),
-            state.get("posthog_choice"),
-        } and (
-            type(state.get("usage_scope_version")) is not int
-            or state.get("usage_scope_version") != 1
-        )
-        return not legacy_refusal
+        return self.allowed
 
     @property
     def posthog_allowed(self) -> bool:
@@ -292,14 +312,26 @@ class AnalyticsConsentOwner:
             return True
 
     def resolve(
-        self, *, opener: Any = telemetry_urlopen, deadline: float | None = None
+        self,
+        *,
+        opener: Any = telemetry_urlopen,
+        deadline: float | None = None,
+        user_requested: bool = False,
     ) -> str:
-        """No install ID, cookie, credential or analytics payload in this request."""
+        """No install ID, cookie, credential or analytics payload in this request.
+
+        After a refusal the answer could change nothing, and the request would
+        still tell the server the app was opened, so it is not made. The one
+        exception is ``user_requested``: the user asked for a privacy request
+        and the app has to learn whether the service accepts them.
+        """
         self._native_baseline_until = 0.0
         self._attribution_until = 0.0
         self._attribution_generation += 1
         self._privacy_requests_until = 0.0
         if not telemetry_collection_allowed():
+            return "unknown"
+        if not user_requested and self.declined:
             return "unknown"
         # The saved answer stays in effect until the server gives a new one;
         # delivery waits for this refresh (ProductTelemetryOwner policy_pending).

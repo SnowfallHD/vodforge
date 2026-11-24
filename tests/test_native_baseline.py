@@ -1,4 +1,4 @@
-"""Coarse first-party counters never reuse identity, rich queues or refusal history."""
+"""Coarse counts carry no identity and are sent only while analytics are on."""
 
 import json
 from unittest.mock import Mock
@@ -27,15 +27,17 @@ class Policy:
         return json.dumps(self.fields).encode()
 
 
-def resolve(owner, **overrides):
+def resolve(owner, user_requested=False, **overrides):
     fields = {
-        "mode": "opt-in",
+        "mode": "default-on",
         "resolved": True,
         "native_baseline_version": 1,
         "native_baseline_mode": "enabled",
         **overrides,
     }
-    return owner.resolve(opener=lambda *a, **k: Policy(fields))
+    return owner.resolve(
+        opener=lambda *a, **k: Policy(fields), user_requested=user_requested
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -44,12 +46,13 @@ def allowed_build(monkeypatch):
     monkeypatch.setattr(product, "telemetry_collection_allowed", lambda: True)
 
 
-@pytest.mark.parametrize("choice", ["default_off", "manual_off", "granted"])
-def test_eligible_baseline_same_closed_payload_in_each_optional_state(tmp_path, choice):
+@pytest.mark.parametrize("choice", ["default_on", "granted"])
+def test_eligible_baseline_same_closed_payload_while_analytics_are_on(tmp_path, choice):
     owner = AnalyticsConsentOwner(tmp_path)
-    if choice != "default_off":
-        owner.choose_data_sharing(choice == "granted")
+    if choice == "granted":
+        owner.choose_data_sharing(True)
     resolve(owner)
+    assert owner.allowed
     before = load_or_create_installation_state(
         tmp_path / "installation.json"
     ).install_id
@@ -66,9 +69,8 @@ def test_eligible_baseline_same_closed_payload_in_each_optional_state(tmp_path, 
     )
     assert telemetry.record_baseline("app_started")
     assert telemetry.shutdown(2)
-    assert not telemetry.record(
-        "run_completed"
-    )  # Rich path is off; coarse path survives.
+    # This owner's rich path is off; the coarse count is still made.
+    assert not telemetry.record("run_completed")
     assert telemetry.shutdown(2)
     assert [row["metric"] for row in sent] == ["app_started", "run_completed"]
     assert all(
@@ -99,26 +101,35 @@ def test_eligible_baseline_same_closed_payload_in_each_optional_state(tmp_path, 
 )
 def test_missing_or_unsupported_policy_never_inherits_generic_default(tmp_path, fields):
     owner = AnalyticsConsentOwner(tmp_path)
-    owner.choose_data_sharing(False)
+    owner.choose_data_sharing(True)  # analytics on; only the count policy is missing
     resolve(owner, **fields)
+    assert owner.allowed
     assert not owner.native_baseline_allowed
 
 
 @pytest.mark.parametrize("refusal", ["choice", "posthog_choice"])
-def test_historical_refusal_never_becomes_new_scope_by_migration(tmp_path, refusal):
+def test_any_refusal_stops_the_counts_however_it_was_recorded(tmp_path, refusal):
     owner = AnalyticsConsentOwner(tmp_path)
     consent.update_analytics_settings(owner.path, {refusal: "denied"})
     owner.migrate_data_sharing_choice()
-    resolve(owner)
+    # Even a server that says counts are enabled cannot restart them.
+    resolve(owner, user_requested=True)
     assert not owner.native_baseline_allowed
-    assert "usage_scope_version" not in owner.snapshot()
-    owner.choose_data_sharing(False)  # New scoped notice/control action.
+    owner.choose_data_sharing(False)  # Off again, through the current Settings control.
+    resolve(owner, user_requested=True)
+    assert not owner.native_baseline_allowed
+    assert not owner.allowed and not owner.posthog_allowed
+
+
+def test_counts_need_a_fresh_policy_each_session(tmp_path):
+    owner = AnalyticsConsentOwner(tmp_path)
+    resolve(owner)
     assert owner.native_baseline_allowed
     restarted = AnalyticsConsentOwner(tmp_path)
-    assert not restarted.native_baseline_allowed  # A saved policy is not fresh policy.
+    assert restarted.allowed  # the saved region default still applies
+    assert not restarted.native_baseline_allowed  # a saved policy is not a fresh one
     resolve(restarted)
     assert restarted.native_baseline_allowed
-    assert not restarted.allowed and not restarted.posthog_allowed
 
 
 def test_new_baseline_preserves_build_disabled_and_no_replay_boundaries(
@@ -166,8 +177,7 @@ def test_baseline_http_request_contains_no_identifier_or_credential(
     tmp_path, monkeypatch
 ):
     owner = AnalyticsConsentOwner(tmp_path)
-    owner.choose_data_sharing(False)
-    resolve(owner)
+    resolve(owner)  # a default-on region, no explicit choice
     requests = []
 
     class Accepted:

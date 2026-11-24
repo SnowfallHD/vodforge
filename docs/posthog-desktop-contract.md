@@ -70,6 +70,23 @@ disable the session's collection and report Off, with the existing save warning.
 Automatic browser-owned attribution remains independent of app usage permission;
 no automatic operational request is evidence of consent or a successful link.
 
+## A refusal sends nothing — 2026-11-24
+
+This replaces the "independent of optional detailed sharing" rule in the next
+section. The coarse counts, the browser link and the launch policy check now
+all follow the one analytics switch (`AnalyticsConsentOwner.allowed`):
+
+- Off in Settings, "No thanks" at the consent question, or quitting while the
+  question is open is a refusal (`AnalyticsConsentOwner.declined`).
+- After a refusal the app sends no counts, no events, no installation or link
+  request, and does not fetch `/api/analytics/policy` at launch. A later
+  region default cannot turn analytics on.
+- The counts are sent only while analytics are on, and still need their own
+  fresh policy answer. The `usage_scope_version` marker no longer permits them.
+- A privacy request started from Help fetches the policy once, because the user
+  asked; the answer cannot enable anything.
+- Region defaults for users who have not refused are unchanged.
+
 ## Coarse native baseline, separately resolved — 2026-10-16UTC
 
 The existing product telemetry worker now also admits five coarse first-party

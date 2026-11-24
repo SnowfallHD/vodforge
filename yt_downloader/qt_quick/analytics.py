@@ -142,6 +142,12 @@ class QtAnalyticsSession:
             return
         self._started = True
         self._deadline = time.monotonic() + 2.5
+        if owner.declined:
+            # The user refused: no policy check either. Its answer could not
+            # turn anything on, and the request alone reports an app launch.
+            self._mode = owner.saved_region_mode or "unknown"
+            self._resolved.set()
+            return
 
         def resolve() -> None:
             try:
@@ -403,22 +409,32 @@ class QtAnalyticsSession:
         if request_kind not in {"access", "deletion"}:
             return False
         owner = self.owner
-        if owner is None or not owner.privacy_requests_available:
+        # After a refusal the launch policy check is skipped, so whether the
+        # service takes requests is unknown until this explicit action asks.
+        ask_first = (
+            owner is not None
+            and not owner.privacy_requests_available
+            and owner.declined
+        )
+        if owner is None or not (owner.privacy_requests_available or ask_first):
             return bool(opener(f"{telemetry_site_origin()}/privacy/"))
         self._privacy_opener = opener
         self._privacy_work = ArchiveWorkOwner()
         credentials = TelemetryCredentialOwner(self._attribution_path.parent)
-        self._privacy_work.submit(
-            "privacy_request",
-            lambda cancelled: credentials.issue_privacy_request(
+
+        def issue(cancelled: threading.Event) -> str | None:
+            if ask_first and not cancelled.is_set() and not self._closed:
+                owner.resolve(user_requested=True)
+            return credentials.issue_privacy_request(
                 request_kind,
                 permitted=lambda: (
                     not cancelled.is_set()
                     and not self._closed
                     and owner.privacy_requests_available
                 ),
-            ),
-        )
+            )
+
+        self._privacy_work.submit("privacy_request", issue)
         return True
 
     def poll_first_launch_delivery(self) -> None:

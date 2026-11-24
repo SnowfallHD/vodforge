@@ -226,10 +226,17 @@ confirmed missing file.
 ## Privacy and usage analytics
 
 Library history, annotations, and downloaded media stay on your computer.
-**Share usage analytics** in Settings controls optional installation, update,
-attribution, and usage telemetry—not just recurring usage events. Turning it off
-also clears pending usage events. Checking for app updates remains a separate
-functional request; it is not permission to send analytics.
+**Share usage analytics** in Settings controls all analytics: installation,
+update, attribution and usage telemetry, and the anonymous counts. With it off,
+VODForge sends no analytics request of any kind, clears pending usage events,
+and no longer asks the server for the region's analytics policy at launch. The
+same applies after "No thanks" at the consent question, or after quitting
+while that question is open; a later region default cannot turn analytics on.
+
+Two requests are not analytics and still happen with it off: the app checks
+GitHub for updates and reads published announcements from getvodforge.com.
+Neither carries an installation identifier. A privacy request started from
+Help contacts getvodforge.com because you asked it to.
 
 Onboarding evaluates the region policy once and saves the decision locally.
 Opt-in and unknown regions require a choice before analytics can be sent;
@@ -243,9 +250,9 @@ identifiers, and bounded app/system facts. It covers export presets and encoders
 media size/duration and processing time, queue/recovery outcomes, Library/player
 feature use, and verified updater outcomes. Feature actions record usage only;
 it excludes media URLs, titles, filenames, paths, searches, notes, tags, and
-playback positions. The first-install thank-you page can open independently of
-consent, but attribution requires permission. Closing that tab does not cause it
-to reopen for late consent. See the [privacy notice](https://getvodforge.com/privacy/)
+playback positions. The first-install thank-you page opens only while analytics
+are on, and never after a refusal. Closing that tab does not cause it to
+reopen. See the [privacy notice](https://getvodforge.com/privacy/)
 and [local-state ownership](docs/architecture.md#who-owns-what).
 
 App-open and failure observations include numeric OS/Python/Qt/downloader versions,

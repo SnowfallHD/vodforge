@@ -165,8 +165,9 @@ Retain the UI action ledger, screenshots, exact candidate archive/executable has
 process launch identities, source commit, platform, and raw scoped D1 checkpoints.
 A helper directly posting events is a transport test, not packaged journey proof.
 
-1. Fresh isolated profile: decline or leave permission unknown; verify no optional
-   telemetry rows and capture `unknown.json`. Grant permission through the UI. Observe one installation and
+1. Fresh isolated profile: decline or leave permission unknown; verify no
+   telemetry rows of any kind, counts included, and capture `unknown.json`.
+   Grant permission through the UI. Observe one installation and
    credential, first launch and app-open event. Capture `first_launch.json`.
    Leave the app idle until this delivery completes: a later feature action must
    not be needed to wake the app-open queue. Require exactly one app-open event at
@@ -188,7 +189,9 @@ A helper directly posting events is a transport test, not packaged journey proof
    attempt. Capture `events_complete.json`. Keep bounded failure facts and exact
    event IDs. Validate the media output independently as part of ordinary E2E.
 4. Turn analytics off through Settings, quit/reopen, and exercise actions again.
-   Capture `denied.json`; installation observations and event rows must not change.
+   Capture `denied.json`; installation observations, event rows and the count
+   tables (`baseline_daily`, `baseline_hourly`) must not change. A refusal also
+   skips the launch request to `/api/analytics/policy`.
 5. With the same isolated profile, run the explicit telemetry-disabled negative
    journey, including app open and media use. Capture `disabled.json`; D1 must
    remain unchanged. Also retain transport suppression tests for unknown consent.
