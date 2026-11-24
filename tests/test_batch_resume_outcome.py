@@ -5,6 +5,7 @@ import queue
 import pytest
 
 from tests.test_run_identity import make_job
+from tests.worker_fixtures import _worker_test_app
 from yt_downloader import download_service as app_module
 from yt_downloader.download_service import (
     DownloadWorkerCore,
@@ -70,6 +71,44 @@ def test_all_processed_resume_resolves_saved_outcome(tmp_path, monkeypatch):
     terminal = worker.events.get_nowait()
     assert terminal[0] == "partial"
     assert "1 valid output(s)" in terminal[1] and "1 failed" in terminal[1]
+
+
+def test_append_failure_preserves_original_batch_error_and_later_url(tmp_path, monkeypatch):
+    job = make_job(tmp_path)
+    job.batch_mode = True
+    job.urls = ["https://example.com/bad", "https://example.com/good"]
+    job.url = job.urls[0]
+    worker = _worker_test_app()
+    report = tmp_path / "failures.txt"
+    report.write_text("stale failure", encoding="utf-8")
+    monkeypatch.setattr(app_module, "BATCH_FAILURE_REPORT_PATH", report)
+    monkeypatch.setattr(app_module, "write_diagnostic", lambda _msg: None)
+    processed = []
+
+    def download(child, **_kw):
+        processed.append(child.url)
+        if child.url.endswith("/bad"):
+            raise RuntimeError("Video unavailable")
+        return DownloadOutcome(success_count=1)
+
+    def deny_append(_path, _url, _error):
+        assert not report.exists(), "the pre-run reset still has to succeed"
+        raise PermissionError("write denied after reset")
+
+    monkeypatch.setattr(worker, "_download_worker_single", download)
+    monkeypatch.setattr(app_module, "append_batch_failure_report", deny_append)
+    worker._download_worker(job)
+    events = list(worker.events.queue)
+    assert processed == job.urls
+    assert job.failure_diagnostic.reason == "source_unavailable"
+    [partial] = [payload for kind, payload in events if kind == "partial"]
+    assert "1 valid output(s), 1 failed" in partial
+    assert "Failure report:" not in partial
+    assert any(
+        "Could not write the full failure report" in payload["line"]
+        for kind, payload in events
+        if kind == "job_log"
+    )
 
 
 @pytest.mark.parametrize("value", [-1, True, "1", 1_000_001])

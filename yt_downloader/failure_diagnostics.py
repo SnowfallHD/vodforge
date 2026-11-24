@@ -87,6 +87,7 @@ FIRST_PARTY_MODULES = frozenset(
         "app",
         "archive_library_ui",
         "archive_relink",
+        "download_service",
         "engagement_ui",
         "history",
         "library_annotations",
@@ -230,7 +231,27 @@ def path_failure_facts(value: object) -> dict[str, str | int]:
         return {}
 
 
-FAILURE_CODES = frozenset(
+_DOWNLOAD_ARTIFACT_CODES = frozenset(
+    {"download_metadata_missing", "staged_output_missing"}
+)
+
+
+class DownloadArtifactError(RuntimeError):
+    """Local message and the exact missing fact, not an inferred provider cause."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: Literal["download_metadata_missing", "staged_output_missing"],
+    ) -> None:
+        if code not in _DOWNLOAD_ARTIFACT_CODES:
+            raise ValueError("unsupported download artifact failure code")
+        super().__init__(message)
+        self.failure_code = code
+
+
+FAILURE_CODES = _DOWNLOAD_ARTIFACT_CODES | frozenset(
     {
         "history_malformed_json",
         "history_unsupported_schema",
@@ -334,6 +355,8 @@ def _typed_extractor_tls_code(error: BaseException) -> str | None:
 
 
 def failure_code(error: BaseException) -> str | None:
+    if isinstance(error, DownloadArtifactError):
+        return error.failure_code
     if isinstance(error, UnsafeOutputPathError):
         # Its typed refusal is authoritative; its local message may contain paths.
         return None
@@ -660,10 +683,14 @@ def capture_failure(
             continue
         seen.add(id(current))
         facts.update(_first_party_location(current))
-        code = failure_code(current) if inspect_text else None
+        artifact_error = isinstance(current, DownloadArtifactError)
+        inspect_message = inspect_text and not isinstance(
+            current, (DownloadArtifactError, UnsafeOutputPathError)
+        )
+        code = failure_code(current) if artifact_error or inspect_message else None
         if code is not None:
             facts["failure_code"] = code
-        if inspect_text and not isinstance(current, UnsafeOutputPathError):
+        if inspect_message:
             observed_cookie_failure = cookie_failure(str(current))
             if observed_cookie_failure is not None and (
                 observed_cookie_failure != "unknown" or "cookie_failure" not in facts
@@ -686,7 +713,8 @@ def capture_failure(
             current, (ssl.SSLError, socket.gaierror)
         ) or _typed_extractor_tls_code(current):
             facts["reason"] = "network"
-        name = type(current).__name__
+        # Preserve the existing wire type for these RuntimeError guards.
+        name = "RuntimeError" if artifact_error else type(current).__name__
         error_chain.append(name if name in ERROR_TYPES else "other")
         expected = getattr(current, "expected", None)
         if name == "ExtractorError" and type(expected) is bool:
@@ -716,11 +744,7 @@ def capture_failure(
             facts["reason"] = "permission_denied"
         elif isinstance(current, FileNotFoundError):
             facts["reason"] = "filesystem"
-        if (
-            inspect_text
-            and text_reason == "unknown"
-            and not isinstance(current, UnsafeOutputPathError)
-        ):
+        if inspect_message and text_reason == "unknown":
             text_reason = classify_failure(str(current))
         for attribute in ("status", "code"):
             value = getattr(current, attribute, None)
@@ -821,6 +845,7 @@ CODE_REASONS = {
     "connection_refused": "network",
     "connection_reset": "network",
     "encoder_unavailable": "dependency_missing",
+    "staged_output_missing": "validation",
     "unsupported_url": "invalid_input",
     "disk_full": "disk_full",
 }

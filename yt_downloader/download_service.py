@@ -60,6 +60,7 @@ from .export_planning import (
     export_mode_display_name,
 )
 from .failure_diagnostics import (
+    DownloadArtifactError,
     FailureDiagnostic,
     SourceSelectionError,
     capture_failure,
@@ -4188,6 +4189,7 @@ class _DownloadItemContext:
     total: int
     video_url: str
     label: str
+    playlist_info: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -4314,6 +4316,8 @@ class BatchProducedNoOutputError(RuntimeError):
 def _download_batch_terminal_event(
     result: _DownloadBatchResult,
     url_count: int,
+    *,
+    report_complete: bool = True,
 ) -> UiEvent:
     """Resolve one batch terminal without acquiring terminal-event authority."""
     outcome = result.outcome
@@ -4335,8 +4339,12 @@ def _download_batch_terminal_event(
     if outcome.success_count == 0:
         if outcome.failure_count:
             raise BatchProducedNoOutputError(
-                f"Batch produced no valid output — {outcome.failure_count} item(s) failed. "
-                f"Failure report: {BATCH_FAILURE_REPORT_PATH}"
+                f"Batch produced no valid output — {outcome.failure_count} item(s) failed."
+                + (
+                    f" Failure report: {BATCH_FAILURE_REPORT_PATH}"
+                    if report_complete
+                    else ""
+                )
             )
         return ("stopped", "Batch stopped without producing an output.")
     if outcome.failure_count or outcome.skipped_count or outcome.sidecar_failure_count:
@@ -4348,7 +4356,7 @@ def _download_batch_terminal_event(
             "Keep the valid files. Review Technical details for each issue and its next step."
             + (
                 f" Failure report: {BATCH_FAILURE_REPORT_PATH}"
-                if result.failures
+                if result.failures and report_complete
                 else ""
             ),
         )
@@ -4391,6 +4399,78 @@ def _download_entry_url(entry: dict[str, Any], fallback_url: str) -> str:
     if video_id:
         return f"https://www.youtube.com/watch?v={video_id}"
     return fallback_url
+
+
+def _verified_youtube_playlist_item_id(entry: dict[str, Any]) -> str:
+    """A flat YouTube entry may prove an item, but its containing source cannot."""
+    extractor = entry.get("ie_key") or entry.get("extractor_key") or ""
+    if entry.get("entries") is not None or extractor not in ("", "Youtube"):
+        return ""
+    reported_id = str(entry.get("id") or "").strip()
+    candidate = str(entry.get("webpage_url") or entry.get("url") or "").strip()
+    if not candidate or candidate == reported_id:
+        video_id = reported_id if extractor == "Youtube" else ""
+    else:
+        try:
+            parsed, query = _url_query_pairs(candidate)
+        except ValueError:
+            return ""
+        if parsed.scheme not in {"http", "https"}:
+            return ""
+        host = parsed.netloc.casefold().removeprefix("www.")
+        parts = parsed.path.strip("/").split("/")
+        if host == "youtu.be" and len(parts) == 1:
+            video_id = parts[0]
+        elif host in {"youtube.com", "m.youtube.com", "music.youtube.com"}:
+            if parts == ["watch"]:
+                video_ids = [value for key, value in query if key == "v"]
+                video_id = video_ids[0] if len(video_ids) == 1 else ""
+            elif len(parts) == 2 and parts[0] in {"shorts", "live", "embed"}:
+                video_id = parts[1]
+            else:
+                return ""
+        else:
+            return ""
+    if reported_id and reported_id != video_id:
+        return ""
+    return video_id if re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id) else ""
+
+
+def _early_playlist_item_failure_context(
+    job: DownloadJob, item: _DownloadItemContext
+) -> tuple[dict[str, Any], str]:
+    """Keep only useful local display facts; never turn the parent into a retry."""
+    entry = item.entry
+    info = {
+        key: entry[key]
+        for key in ("title", "uploader", "channel", "duration")
+        if entry.get(key)
+    }
+    info.setdefault("title", f"Playlist item {item.index}")
+    info = apply_playlist_context(
+        info, entry, item.playlist_info or {}, job.url, item.index
+    )
+    video_id = _verified_youtube_playlist_item_id(entry)
+    retry_url = ""
+    if video_id:
+        query = {"v": video_id}
+        if playlist_id := info.get("playlist_id"):
+            query["list"] = str(playlist_id)
+        retry_url = (
+            sanitize_durable_url(
+                "https://www.youtube.com/watch?" + urllib.parse.urlencode(query),
+                preserve_youtube_context=True,
+            )
+            or ""
+        )
+        if retry_url:
+            info["id"] = video_id
+            info["webpage_url"] = retry_url
+        if safe_playlist_id := youtube_url_playlist_id(retry_url):
+            info["playlist_id"] = safe_playlist_id
+        else:
+            info.pop("playlist_id", None)
+    return mark_metadata_output_type(info, job.output_type), retry_url
 
 
 def _global_download_progress(
@@ -4895,6 +4975,29 @@ class DownloadWorkerCore:
     product_telemetry: Any
     _active_progress_context: tuple[int, int, float, float] | None
     video_output_dirs_by_id: dict[str, Path]
+    _failure_report_incomplete = False
+
+    def _append_failure_report(
+        self, job: DownloadJob, url: str, error: Exception
+    ) -> None:
+        try:
+            append_batch_failure_report(BATCH_FAILURE_REPORT_PATH, url, error)
+        except OSError as exc:
+            # This report supplements the local run details; it must not own the run.
+            write_diagnostic(
+                f"could not append failure report: {type(exc).__name__}: {exc}"
+            )
+            if not self._failure_report_incomplete:
+                self._emit_job_log(
+                    job,
+                    "WARNING: Could not write the full failure report. See the run's Technical details.",
+                )
+            self._failure_report_incomplete = True
+
+    def _failure_report_detail(self, issue: str) -> str:
+        if self._failure_report_incomplete:
+            return issue
+        return f"Failure report: {BATCH_FAILURE_REPORT_PATH}"
 
     def _provider_network_coordinator(self) -> ProviderNetworkCoordinator:
         coordinator = self.__dict__.get("_provider_network")
@@ -4987,16 +5090,14 @@ class DownloadWorkerCore:
                     )
                 failures.append((item_url, issue))
                 outcome = outcome.combined_with(DownloadOutcome(failure_count=1))
-                append_batch_failure_report(
-                    BATCH_FAILURE_REPORT_PATH, item_url, provider_error
-                )
+                self._append_failure_report(job, item_url, provider_error)
                 write_diagnostic(
                     f"batch URL {index} of {len(urls)} failed but batch will continue: "
                     f"{type(provider_error).__name__}: {provider_error}"
                 )
                 self._emit_job_log(
                     job,
-                    f"WARNING: Batch URL {index} failed; continuing. Failure report: {BATCH_FAILURE_REPORT_PATH}",
+                    f"WARNING: Batch URL {index} failed; continuing. {self._failure_report_detail(issue)}",
                 )
             self.events.put(
                 (
@@ -5014,6 +5115,7 @@ class DownloadWorkerCore:
         return _DownloadBatchResult(outcome=outcome, failures=tuple(failures))
 
     def _download_worker(self, job: DownloadJob) -> None:
+        self._failure_report_incomplete = False
         urls = [url.strip() for url in (job.urls or [job.url]) if url.strip()]
         if len(urls) <= 1:
             single_url = urls[0] if urls else job.url
@@ -5039,7 +5141,13 @@ class DownloadWorkerCore:
                     "batch download worker control request: "
                     f"{batch_result.control_kind.value}"
                 )
-            self.events.put(_download_batch_terminal_event(batch_result, len(urls)))
+            self.events.put(
+                _download_batch_terminal_event(
+                    batch_result,
+                    len(urls),
+                    report_complete=not self._failure_report_incomplete,
+                )
+            )
         except Exception as exc:  # noqa: BLE001 - worker converts terminal failures into UI outcomes
             # When every item failed, the first item's cause is the run's cause;
             # the summary error itself says nothing about why.
@@ -5666,6 +5774,7 @@ class DownloadWorkerCore:
         *,
         playlist_continues: bool = False,
         failure_details: str = "",
+        exact_retry_url: str | None = None,
     ) -> None:
         if not isinstance(info, dict):
             return
@@ -5677,14 +5786,23 @@ class DownloadWorkerCore:
             message,
             terminal_run_id,
         )
-        retry_url = retry_url_for_item(terminal_info, video_url)
+        exact_item_retry = exact_retry_url is not None or job.exact_item_retry
+        if exact_retry_url is not None:
+            retry_url = exact_retry_url
+        elif job.exact_item_retry:
+            retry_url = job.url
+        else:
+            retry_url = retry_url_for_item(terminal_info, video_url)
         job.item_terminal_emitted = True
         terminal_job = replace(
             job,
             url=retry_url,
-            urls=[retry_url],
+            urls=[retry_url] if retry_url else [],
             single_video_only=True,
             batch_mode=False,
+            completed_batch_items=0,
+            batch_outcome=DownloadOutcome(),
+            batch_list_path="",
             preview_info=terminal_info,
             run_id=terminal_run_id,
             origin_run_id=job.run_id,
@@ -5698,6 +5816,7 @@ class DownloadWorkerCore:
             terminal_status=status,
             terminal_message=message,
             item_terminal_emitted=True,
+            exact_item_retry=exact_item_retry,
         )
         terminal_info = annotate_job_metadata(terminal_job, terminal_info)
         terminal_job.preview_info = terminal_info
@@ -5726,8 +5845,10 @@ class DownloadWorkerCore:
             if outcome.failure_count:
                 raise RuntimeError(
                     f"No valid {job.output_type.value} output was produced; "
-                    f"{outcome.failure_count} item(s) failed. Failure report: "
-                    f"{BATCH_FAILURE_REPORT_PATH}"
+                    f"{outcome.failure_count} item(s) failed. "
+                    + self._failure_report_detail(
+                        "See Technical details for recorded failures."
+                    )
                 )
             if emit_done:
                 self.events.put(
@@ -5786,7 +5907,7 @@ class DownloadWorkerCore:
         """Resolve one submitted source into ordered item inputs and playlist identity."""
         saved = job.preview_info or {}
         if (
-            job.recovery_reason == "missing_media"
+            (job.recovery_reason == "missing_media" or job.exact_item_retry)
             and job.single_video_only
             and not job.batch_mode
             and (job.urls or [job.url]) == [job.url]
@@ -5807,8 +5928,10 @@ class DownloadWorkerCore:
             entry = {"webpage_url": job.url}
             if saved.get("playlist_index") is not None:
                 entry["playlist_index"] = saved["playlist_index"]
-            write_diagnostic("playlist detection skipped: selected Library recovery")
+            write_diagnostic("playlist detection skipped: selected Library item recovery")
             return _ExpandedDownloadSource(playlist_info=playlist_info, entries=[entry])
+        if job.exact_item_retry:
+            raise RuntimeError("The saved playlist item's link could not be verified.")
 
         single_playlist_context = bool(
             job.single_video_only
@@ -5964,6 +6087,10 @@ class DownloadWorkerCore:
             raise RuntimeError(  # noqa: TRY004 - provider protocol failures use RuntimeError
                 f"{item.label}: YouTube source analysis did not return metadata"
             )
+        if job.exact_item_retry and preflight_info.get("id") != youtube_url_video_id(
+            job.url
+        ):
+            raise ValueError("YouTube did not return the requested playlist item.")
         preflight_info = mark_metadata_output_type(
             apply_playlist_context(
                 preflight_info,
@@ -6111,8 +6238,9 @@ class DownloadWorkerCore:
         self._active_progress_context = None
         control_check()
         if not isinstance(info, dict):
-            raise RuntimeError(  # noqa: TRY004 - provider protocol failures use RuntimeError
-                f"{item.label}: download did not return metadata"
+            raise DownloadArtifactError(
+                f"{item.label}: download did not return metadata",
+                code="download_metadata_missing",
             )
         info = mark_metadata_output_type(
             apply_playlist_context(
@@ -6163,9 +6291,10 @@ class DownloadWorkerCore:
             expected_extension=expected_extension,
         )
         if not staged_media:
-            raise RuntimeError(
+            raise DownloadArtifactError(
                 f"{item.label}: yt-dlp completed without producing the expected "
-                f"{expected_extension} file."
+                f"{expected_extension} file.",
+                code="staged_output_missing",
             )
 
         if downloaded_item.metadata.get("vodforge_original_caption_expected"):
@@ -6336,6 +6465,10 @@ class DownloadWorkerCore:
             result = replace(
                 result, access_block_streak=streak, access_block_index=item.index
             )
+        exact_retry_url = None
+        if result.metadata is None:
+            metadata, exact_retry_url = _early_playlist_item_failure_context(job, item)
+            result = replace(result, metadata=metadata)
         self._emit_failed_download_item_metadata(job, result, issue)
         write_diagnostic(
             f"{item.label} failed but playlist will continue: "
@@ -6350,8 +6483,13 @@ class DownloadWorkerCore:
             result.plan,
             item.video_url,
             failure_details=technical_download_error(error),
+            exact_retry_url=exact_retry_url,
         )
-        append_batch_failure_report(BATCH_FAILURE_REPORT_PATH, item.video_url, error)
+        self._append_failure_report(
+            job,
+            exact_retry_url if exact_retry_url is not None else item.video_url,
+            error,
+        )
         self.skip_video_requested = False
         if (
             access_blocked
@@ -6367,7 +6505,7 @@ class DownloadWorkerCore:
             return replace(result, outcome=failed_outcome, stop_source=True)
         self._emit_job_log(
             job,
-            f"WARNING: {item.label} failed; continuing to next video. Failure report: {BATCH_FAILURE_REPORT_PATH}",
+            f"WARNING: {item.label} failed; continuing to next video. {self._failure_report_detail(issue)}",
         )
         return replace(result, outcome=failed_outcome)
 
@@ -7022,6 +7160,7 @@ class DownloadWorkerCore:
                     total=total_videos,
                     video_url=_download_entry_url(entry, job.url),
                     label=f"Video {video_index} of {total_videos}",
+                    playlist_info=source.playlist_info,
                 )
                 result = self._coordinate_download_item(job, source, item, result)
                 if result.stop_source:

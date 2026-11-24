@@ -213,6 +213,27 @@ def test_real_audio_selection_failure_keeps_cause_and_correct_media_kind():
     assert "No downloadable video" not in download_error_message(error)
 
 
+@pytest.mark.parametrize(
+    ("formats", "evidence"),
+    [
+        ([], "YouTube returned no media formats"),
+        (
+            [{"format_id": "137", "acodec": "none", "vcodec": "avc1"}],
+            "none had usable audio",
+        ),
+    ],
+)
+def test_audio_selection_copy_uses_format_evidence_not_sign_in_guess(formats, evidence):
+    from yt_downloader.export_planning import build_mp3_export_plan
+    from yt_downloader.failure_diagnostics import SourceSelectionError
+
+    with pytest.raises(SourceSelectionError) as caught:
+        build_mp3_export_plan({"formats": formats})
+    message = download_error_message(caught.value)
+    assert evidence in message
+    assert "Settings → YouTube access" not in message
+
+
 @pytest.mark.parametrize("wrapped", [False, True])
 def test_path_budget_error_preserves_approved_message_and_folder_action(wrapped):
     from types import SimpleNamespace

@@ -240,8 +240,26 @@ def download_error_message(error: object) -> str:
         return f"YouTube requires age verification for this video. {BROWSER_GUIDANCE}"
     if "sign in to confirm" in text or "confirm you're not a bot" in text:
         return youtube_access_message()
+    if "did not return the requested playlist item" in text:
+        return (
+            "YouTube did not confirm that it found this video, so nothing was saved. "
+            "Check the video's link in your browser before trying again."
+        )
     if "no usable audio source" in text:
-        return f"No downloadable audio was available for this link. {BROWSER_GUIDANCE}"
+        if diagnostic is not None and diagnostic.format_count == 0:
+            return (
+                "No downloadable audio was available because YouTube returned no media "
+                "formats. Check that the video plays in your browser before trying again."
+            )
+        if diagnostic is not None and diagnostic.format_count:
+            return (
+                "YouTube returned media formats, but none had usable audio. "
+                "Check that the video has sound before trying again."
+            )
+        return (
+            "No downloadable audio was available for this link. "
+            "Check that the video plays in your browser before trying again."
+        )
     if "no video formats" in text or "no usable video source" in text:
         return f"No downloadable video was available for this link. {BROWSER_GUIDANCE}"
     if "requested format is not available" in text:

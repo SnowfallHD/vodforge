@@ -2600,10 +2600,21 @@ class Bridge(QObject):
                 None,
             )
             if row is not None:
+                job = self._issue_job(self._issue_run_id)
+                exact_retry = bool(job and job.exact_item_retry)
                 return {
                     "issue": True,
                     "sidecarsOnly": bool(row.get("vodforge_optional_issue_run_id")),
-                    "retryLabel": str(row.get("vodforge_optional_issue_label") or ""),
+                    "retryLabel": str(
+                        row.get("vodforge_optional_issue_label")
+                        or ("Retry this item" if exact_retry else "")
+                    ),
+                    "exactItemRetry": exact_retry,
+                    "retryUnavailable": exact_retry
+                    and not self._issue_settings.get("source"),
+                    "issueMessage": str(row.get("vodforge_terminal_message") or "")
+                    if exact_retry
+                    else "",
                     "keepLabel": str(row.get("vodforge_optional_keep_label") or ""),
                     "title": str(row.get("title") or "Interrupted download"),
                     "artwork": self._artwork.request(row),
@@ -3435,6 +3446,8 @@ class Bridge(QObject):
                         ),
                         "status": job.terminal_status or "Queued",
                         "type": job.output_type.value,
+                        "retryEnabled": not job.exact_item_retry or bool(job.url),
+                        "retryLabel": "Retry item" if job.exact_item_retry else "",
                         "progress": 100
                         * job.completed_batch_items
                         / max(1, len(job.urls)),
@@ -4185,7 +4198,7 @@ class Bridge(QObject):
     ) -> dict[str, Any]:
         return {
             "source": source,
-            "source_editable": not bool(source),
+            "source_editable": not bool(source) and not job.exact_item_retry,
             "output_dir": output_dir,
             "output_url": QUrl.fromLocalFile(output_dir).toString(),
             "output_type": job.output_type.value,
@@ -4260,6 +4273,9 @@ class Bridge(QObject):
             return
         if not self._issue_run_id or self._folder_browser.mode != "issues":
             return
+        job = self._issue_job(self._issue_run_id)
+        if job is not None and job.exact_item_retry:
+            return
         try:
             self._runtime.terminal_retry_source(self._issue_run_id)
         except ValueError:
@@ -4296,6 +4312,12 @@ class Bridge(QObject):
             "embed_metadata",
             "write_info_json",
         } or (key == "use_nvenc" and value and not self._nvenc_available):
+            return
+        if (
+            key == "single_video_only"
+            and (job := self._issue_job(self._issue_run_id)) is not None
+            and job.exact_item_retry
+        ):
             return
         self._issue_settings[key] = value
         self.historyChanged.emit()
@@ -4377,6 +4399,8 @@ class Bridge(QObject):
             try:
                 previous_source = self._runtime.terminal_retry_source(job.run_id)[1]
             except ValueError:
+                if job.exact_item_retry:
+                    raise
                 previous_source = str(config["source"])
             if config["source"] != previous_source:
                 raise ValueError("The source changed. Select this issue again.")

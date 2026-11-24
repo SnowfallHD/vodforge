@@ -190,6 +190,8 @@ class DownloadJob:
     terminal_status: str | None = None
     terminal_message: str = ""
     item_terminal_emitted: bool = False
+    # An early failed playlist child can only be retried at its verified item URL.
+    exact_item_retry: bool = False
     failure_diagnostic: FailureDiagnostic | None = None
     # Ephemeral observations follow the existing serialized worker, never own files.
     telemetry_operation_id: str | None = None

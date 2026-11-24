@@ -298,6 +298,14 @@ Column {
                 }
             }
             Text {
+                objectName: "libraryIssueReason"
+                visible: text.length > 0
+                text: inspector.item.issueMessage || ""
+                textFormat: Text.PlainText
+                width: parent.width; wrapMode: Text.WordWrap
+                color: theme.muted; font.pixelSize: 12
+            }
+            Text {
                 visible: !!inspector.item.missing
                 text: inspector.issueSettings.source_editable
                       ? "The saved file was not found. Choose its source and download settings, or find the moved file."
@@ -327,7 +335,7 @@ Column {
             Column {
                 width: parent.width
                 spacing: 10
-                visible: !inspector.item.sidecarsOnly
+                visible: !inspector.item.sidecarsOnly && !inspector.item.retryUnavailable
             Text { visible: !inspector.item.missing || inspector.item.canRedownload; text: "SOURCE VIDEO"; color: theme.muted; font.pixelSize: 12; font.bold: true }
             Row {
                 visible: (!inspector.item.missing || inspector.item.canRedownload)
@@ -505,7 +513,7 @@ Column {
                                 required property var modelData
                                 width: parent.width; height: 36
                                 label: (inspector.issueSettings[modelData.key] ? "✓  " : "    ") + modelData.label
-                                enabled: (!inspector.item.missing || modelData.key !== "single_video_only")
+                                enabled: (!(inspector.item.missing || inspector.item.exactItemRetry) || modelData.key !== "single_video_only")
                                          && (modelData.key !== "use_nvenc" || inspector.appBridge.nvencAvailable
                                              || !!inspector.issueSettings.use_nvenc)
                                 onActivated: inspector.appBridge.setIssueRetryFlag(modelData.key, !inspector.issueSettings[modelData.key])
@@ -529,7 +537,7 @@ Column {
             }
             StoneButton {
                 objectName: "libraryIssueDownload"
-                visible: !inspector.item.missing || inspector.item.canRedownload
+                visible: !inspector.item.retryUnavailable && (!inspector.item.missing || inspector.item.canRedownload)
                 width: parent.width; height: 42
                 label: inspector.item.retryLabel || (!inspector.item.missing && inspector.item.status === "Paused" ? "Resume" :
                        !inspector.item.missing && inspector.item.status === "Partial" ? "Retry" : "Download")

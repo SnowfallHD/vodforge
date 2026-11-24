@@ -127,6 +127,9 @@ def _safe_preview(info: Mapping[str, Any] | None) -> dict[str, Any]:
         and 0 <= float(duration) < 10**9
     ):
         result["duration"] = duration
+    playlist_index = info.get("playlist_index")
+    if type(playlist_index) is int and 1 <= playlist_index <= 1_000_000:
+        result["playlist_index"] = playlist_index
     tags = info.get("tags")
     if isinstance(tags, list):
         result["tags"] = [
@@ -257,6 +260,7 @@ def serialize_download_job(job: DownloadJob) -> dict[str, Any]:
         "batch_outcome": asdict(job.batch_outcome),
         "batch_list_path": job.batch_list_path,
         "preview_info": _safe_preview(job.preview_info),
+        "exact_item_retry": job.exact_item_retry,
         "run_id": job.run_id,
         "origin_run_id": job.origin_run_id,
         "recovery_reason": job.recovery_reason,
@@ -359,6 +363,9 @@ def deserialize_download_job(
             batch_outcome=_saved_batch_outcome(payload.get("batch_outcome", {})),
             batch_list_path=str(payload.get("batch_list_path") or "")[:4096],
             preview_info=_safe_preview(payload.get("preview_info")),
+            exact_item_retry=_required_bool(payload, "exact_item_retry")
+            if "exact_item_retry" in payload
+            else False,
             run_id=str(payload.get("run_id") or "")[:128],
             execution_run_id=str(payload.get("execution_run_id") or "")[:128] or None,
             retry_of_run_id=str(payload.get("retry_of_run_id") or "")[:128] or None,
@@ -1294,7 +1301,12 @@ class ActiveRunStore:
                 )
                 job.terminal_status = status
                 if not job.url:
-                    message += "\nThe saved source link is unavailable. Paste the source link to start a new download."
+                    message += (
+                        "\nVODForge could not confirm this item's link. To try again, "
+                        "paste the individual video's link into Forge."
+                        if job.exact_item_retry
+                        else "\nThe saved source link is unavailable. Paste the source link to start a new download."
+                    )
                 job.terminal_message = message
                 job.activity_lines = sanitize_run_activity(
                     record.get("activity_lines")

@@ -702,6 +702,12 @@ are not inferred. Retries send the original persisted context without resampling
 `failure_detail.source_trace` contains at most eight approved first-party
 module/line pairs. It excludes exception text, filenames, locals and third-party
 frames. Native crashes before Python persistence remain outside this capability.
+Download failures can include the approved `download_service` module and line.
+`download_metadata_missing` means the transfer returned no usable metadata
+object. `staged_output_missing` means VODForge could not locate the expected
+staged media artifact. These describe the observed outcome, not why the provider
+or a postprocessor produced it. No extra event, path or media identifier is sent.
+
 An OSError filename can yield path style, length (Windows UTF-16 units or POSIX
 encoded bytes), component count and largest component bytes. Only those numeric
 facts are sent; all four fields must validate together.

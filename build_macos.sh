@@ -102,6 +102,7 @@ minimum_macos="$("$python_bin" -c 'import os,sys; from scripts.build_macos_fulls
     --ignore=tests/test_qt_mac_native_runtime.py \
     --ignore=tests/test_qt_mac_preferences.py \
     --ignore=tests/test_qt_optional_sidecar_recovery.py \
+    --ignore=tests/test_qt_playlist_item_recovery.py \
     --ignore=tests/test_qt_run_artwork.py \
     --ignore=tests/test_qt_sidecar_recovery_controls.py \
     --ignore=tests/test_qt_windows_frame_resize.py \
@@ -225,6 +226,7 @@ minimum_macos="$("$python_bin" -c 'import os,sys; from scripts.build_macos_fulls
     tests/test_qt_mac_native_runtime.py \
     tests/test_qt_mac_preferences.py \
     tests/test_qt_optional_sidecar_recovery.py \
+    tests/test_qt_playlist_item_recovery.py \
     tests/test_qt_run_artwork.py \
     tests/test_qt_sidecar_recovery_controls.py \
     tests/test_qt_windows_frame_resize.py \

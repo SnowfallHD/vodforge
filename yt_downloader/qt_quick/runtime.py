@@ -25,6 +25,7 @@ from yt_downloader.cookie_inputs import (
 from yt_downloader.download_service import (
     DownloadWorkerCore,
     ProviderNetworkCoordinator,
+    canonical_youtube_url,
     retry_url_for_item,
     set_active_child_process_observer,
     single_video_url_requires_video_id_error,
@@ -468,8 +469,19 @@ class DownloadRuntime:
         }:
             raise ValueError("That saved run is no longer available to retry.")
         previous = matches[0]
-        url = retry_url_for_item(previous.preview_info or {}, previous.url)
+        preview = previous.preview_info or {}
+        url = (
+            previous.url
+            if previous.exact_item_retry
+            else retry_url_for_item(preview, previous.url)
+        )
         parsed = urlparse(url)
+        if previous.exact_item_retry and (
+            previous.urls != [url]
+            or not preview.get("id")
+            or url != canonical_youtube_url(preview)
+        ):
+            raise ValueError("This playlist item has no verified video link to retry.")
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValueError(
                 "This run has no usable source link. Enter one before retrying."
@@ -493,7 +505,7 @@ class DownloadRuntime:
         try:
             status, url = self.terminal_retry_source(run_id)
         except ValueError:
-            if previous.terminal_status not in {
+            if previous.exact_item_retry or previous.terminal_status not in {
                 "Failed",
                 "Stopped",
                 "Skipped",
@@ -543,6 +555,11 @@ class DownloadRuntime:
             settings_job,
             url=url,
             urls=list(previous.urls) if status in {"Paused", "Partial"} else [url],
+            single_video_only=(
+                previous.exact_item_retry or settings_job.single_video_only
+            ),
+            batch_mode=False if previous.exact_item_retry else settings_job.batch_mode,
+            exact_item_retry=previous.exact_item_retry,
             completed_batch_items=previous.completed_batch_items
             if status == "Paused"
             else 0,
