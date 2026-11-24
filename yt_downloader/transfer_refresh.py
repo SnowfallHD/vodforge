@@ -1,4 +1,4 @@
-"""Conservative split-stream refresh; never change access or selected quality."""
+"""Conservative transfer refresh; never change access or selected quality."""
 
 from pathlib import Path
 from typing import Any
@@ -162,3 +162,95 @@ class SplitTransferRefresh:
             raise TransferRefreshError(
                 "Completed video changed; transfer refresh stopped."
             )
+
+
+_REJECTED_AGAIN = (
+    "YouTube rejected the transfer again after one fresh link; stopped without "
+    "changing access settings or lowering quality. Try again in a few minutes."
+)
+
+
+class TransferRestartRefresh:
+    """One fresh link for the same selected formats after a rejected transfer.
+
+    YouTube sometimes answers a media request with 403 although the same video
+    downloads minutes later. Unlike SplitTransferRefresh this needs no finished
+    stream, so it also covers MP3, original audio and a rejected first stream.
+    """
+
+    def __init__(self, info: dict[str, Any], selector: str) -> None:
+        self.info = dict(info)
+        self.selector = selector
+        self.format_ids = tuple(part for part in selector.split("+") if part)
+        found = [_format(info, format_id) for format_id in self.format_ids]
+        self.formats = (
+            tuple(dict(item) for item in found if item is not None)
+            if found and all(item is not None for item in found)
+            else ()
+        )
+
+    def _rejected(self, errors: list[BaseException]) -> bool:
+        # Match the failed request in memory, never emit its signed URL.
+        failed = {
+            value
+            for error in errors
+            for value in (
+                getattr(error, "url", None),
+                getattr(getattr(error, "response", None), "url", None),
+            )
+            if isinstance(value, str) and value
+        }
+        for item in self.formats:
+            base = item.get("fragment_base_url")
+            for value in failed:
+                if value in (item.get("url"), item.get("manifest_url")) or (
+                    isinstance(base, str) and base and value.startswith(base)
+                ):
+                    return True
+        return False
+
+    def eligible(self, status: int | None, errors: list[BaseException]) -> bool:
+        return bool(
+            status == 403
+            and isinstance(self.info.get("id"), str)
+            and self.info["id"]
+            and self.formats
+            and self.info.get("availability") in (None, "public", "unlisted")
+            and not any(item.get("has_drm") for item in self.formats)
+            and self._rejected(errors)
+        )
+
+    def checked_refresh(self, fresh: dict[str, Any] | None) -> dict[str, Any]:
+        if not isinstance(fresh, dict) or fresh.get("id") != self.info.get("id"):
+            raise TransferRefreshError(
+                "Source identity changed during transfer refresh; no output was committed."
+            )
+        if fresh.get("availability") not in (None, "public", "unlisted"):
+            raise TransferRefreshError(
+                "Source access is restricted; transfer refresh stopped without changing access settings."
+            )
+        if fresh.get("duration") != self.info.get("duration"):
+            raise TransferRefreshError(
+                "Source duration changed during transfer refresh; retry with a new run."
+            )
+        changed = False
+        for old in self.formats:
+            new = _format(fresh, old["format_id"])
+            if new is None or _signature(old) != _signature(new) or new.get("has_drm"):
+                raise TransferRefreshError(
+                    "Selected formats changed or are unavailable; refresh stopped without lowering quality. Choose formats in a new run."
+                )
+            changed = changed or (
+                bool(new.get("url") or new.get("manifest_url"))
+                and (new.get("url"), new.get("manifest_url"))
+                != (old.get("url"), old.get("manifest_url"))
+            )
+        if not changed:
+            raise TransferRefreshError(
+                "The source returned the same rejected link; refresh stopped. Check source access and retry later."
+            )
+        return fresh
+
+    @staticmethod
+    def rejected_again() -> TransferRefreshError:
+        return TransferRefreshError(_REJECTED_AGAIN)

@@ -115,6 +115,24 @@ def is_youtube_access_challenge(diagnostic: object) -> bool:
     )
 
 
+def youtube_rate_limit_message(diagnostic: object) -> str | None:
+    """Wording for a video YouTube returned no media for while limiting requests.
+
+    Without this the person is told no video exists and to change the access
+    setting, when waiting is what helps.
+    """
+    if (
+        getattr(diagnostic, "extractor_warning", None) != "rate_limited"
+        or getattr(diagnostic, "format_count", None) != 0
+    ):
+        return None
+    return (
+        "YouTube is limiting requests from this connection, so it returned no media "
+        "for this video. Wait a while before retrying; repeated retries can prolong "
+        "the limit. " + VPN_TIP
+    )
+
+
 VPN_TIP = "Using a VPN? Turning it off for this download often helps too."
 
 
@@ -208,6 +226,13 @@ def download_error_message(error: object) -> str:
             "In Settings → YouTube access, choose an installed browser where you "
             "can play the video, or provide cookies.txt. If the video needs no "
             "sign-in, choose Public."
+        )
+    if diagnostic is not None and diagnostic.failure_code == "http_forbidden":
+        # Not a reading problem that an app update fixes: the site refused the
+        # request, which is usually temporary.
+        return (
+            "The site refused this download (HTTP 403). This is often temporary: "
+            "wait a few minutes, then retry. If it keeps happening: " + BROWSER_GUIDANCE
         )
     if (
         diagnostic is not None

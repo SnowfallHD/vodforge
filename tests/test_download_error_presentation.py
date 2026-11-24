@@ -315,3 +315,38 @@ def test_non_cookie_missing_file_keeps_filesystem_recovery():
     )
     assert "drive is connected" in download_error_message(error)
     assert "Public" not in download_error_message(error)
+
+
+def test_refused_download_says_it_is_usually_temporary_not_update_the_app():
+    from urllib.error import HTTPError
+
+    error = RuntimeError("download failed")
+    error.__cause__ = HTTPError("https://example.invalid/a", 403, "Forbidden", None, None)
+    message = download_error_message(error)
+    assert "HTTP 403" in message and "wait a few minutes" in message
+    assert "Update VODForge" not in message
+    assert "example.invalid" not in message
+
+
+@pytest.mark.parametrize(
+    ("warning", "formats", "expected"),
+    [
+        ("rate_limited", [], True),
+        ("rate_limited", [{"format_id": "18", "vcodec": "avc1", "acodec": "aac"}], False),
+        ("formats_missing", [], False),
+        (None, [], False),
+    ],
+)
+def test_no_media_while_rate_limited_says_wait(warning, formats, expected):
+    from yt_downloader.download_error_presentation import youtube_rate_limit_message
+    from yt_downloader.failure_diagnostics import SourceSelectionError, capture_failure
+
+    error = SourceSelectionError("No usable video source", formats)
+    diagnostic = capture_failure(
+        error, stage="analysis", extractor_warnings={warning} if warning else ()
+    )
+    message = youtube_rate_limit_message(diagnostic)
+    assert bool(message) is expected
+    if message:
+        assert "limiting requests" in message and "Wait" in message
+        assert "Settings" not in message

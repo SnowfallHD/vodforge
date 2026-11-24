@@ -45,6 +45,7 @@ from .download_error_presentation import (
     is_youtube_access_challenge,
     technical_download_error,
     youtube_access_message,
+    youtube_rate_limit_message,
 )
 from .export_inputs import (
     validate_custom_cover_art,
@@ -145,7 +146,11 @@ from .telemetry_features import (
     job_intent_dimensions,
 )
 from .thumbnail_network import ThumbnailUrlPolicy, download_bounded_url_bytes
-from .transfer_refresh import SplitTransferRefresh, TransferRefreshError
+from .transfer_refresh import (
+    SplitTransferRefresh,
+    TransferRefreshError,
+    TransferRestartRefresh,
+)
 from .updates import (
     update_ssl_context,
 )
@@ -225,7 +230,7 @@ def load_yt_dlp() -> Any | None:
 
 APP_NAME = "VODForge"
 
-PINNED_YTDLP_VERSION = "2026.10.26"
+PINNED_YTDLP_VERSION = "2026.11.23"
 
 PINNED_YTDLP_EJS_VERSION = "0.8.0"
 
@@ -3330,6 +3335,8 @@ def _download_with_audio_url_refresh(
     refresh: Callable[[], tuple[dict[str, Any] | None, tuple[Any, ...]]],
     control_check: Callable[[], None],
     emit_log: Callable[[str], None],
+    restart: TransferRestartRefresh | None = None,
+    prepare_refreshed: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> tuple[Any, tuple[Any, ...]]:
     transfer_options = dict(options)
     if guard is not None:
@@ -3346,10 +3353,36 @@ def _download_with_audio_url_refresh(
             control_check=control_check,
         )
     except Exception as exc:
-        if guard is None or not guard.eligible(
-            transient_network_error_status(exc), _network_exception_chain(exc)
-        ):
-            raise
+        status = transient_network_error_status(exc)
+        chain = _network_exception_chain(exc)
+        if guard is None or not guard.eligible(status, chain):
+            if restart is None or not restart.eligible(status, chain):
+                raise
+            # A rejected link is often accepted minutes later, so ask once for a
+            # fresh one. Same formats, same access; partial files are resumed.
+            control_check()
+            emit_log(
+                "YouTube rejected the transfer (HTTP 403); requesting a fresh link once with the same access settings and the same selected formats."
+            )
+            fresh, refreshed_cookies = refresh()
+            control_check()
+            fresh = restart.checked_refresh(fresh)
+            if prepare_refreshed is not None:
+                fresh = prepare_refreshed(fresh)
+            transfer_options["format"] = restart.selector
+            emit_log("Fresh link received; retrying the transfer once.")
+            try:
+                return _download_preflight_result_step(
+                    ytdlp_module,
+                    transfer_options,
+                    fresh,
+                    refreshed_cookies,
+                    control_check=control_check,
+                )
+            except Exception as retry_error:
+                if transient_network_error_status(retry_error) == 403:
+                    raise restart.rejected_again() from retry_error
+                raise
         control_check()
         emit_log(
             "Audio transfer was rejected after video completed; refreshing source metadata once with the same access settings."
@@ -6189,6 +6222,23 @@ class DownloadWorkerCore:
                 transfer_info, plan.video_format_id, plan.audio_format_id, staging_dir
             )
 
+        restart = TransferRestartRefresh(transfer_info, plan.format_selector)
+
+        def prepare_refreshed(fresh: dict[str, Any]) -> dict[str, Any]:
+            """Apply the same caption choice to the fresh metadata, or stop."""
+            if "subtitleslangs" not in options:
+                return fresh
+            scratch: dict[str, Any] = {"postprocessors": []}
+            prepared = apply_original_caption_options(
+                scratch, fresh, job.translated_subtitle_language
+            )
+            keys = ("writesubtitles", "writeautomaticsub", "subtitleslangs")
+            if any(scratch.get(key) != options.get(key) for key in keys):
+                raise TransferRefreshError(
+                    "Caption tracks changed during transfer refresh; retry with a new run."
+                )
+            return prepared
+
         def refresh_transfer_metadata():
             refresh_options = _build_item_preflight_options(
                 job,
@@ -6229,6 +6279,8 @@ class DownloadWorkerCore:
             refresh=refresh_transfer_metadata,
             control_check=control_check,
             emit_log=partial(self._emit_job_log, job),
+            restart=restart,
+            prepare_refreshed=prepare_refreshed,
         )
         info, session_cookies = provider_network.run_primary(download_step)
         write_diagnostic(
@@ -6451,7 +6503,9 @@ class DownloadWorkerCore:
             failure_detail=job.failure_diagnostic,
             dimensions={"failed_count": "1"},
         )
-        issue = format_ytdlp_user_error(error)
+        issue = youtube_rate_limit_message(
+            job.failure_diagnostic
+        ) or format_ytdlp_user_error(error)
         if item.total <= 1:
             raise _DownloadItemExecutionError(error, result) from error
         access_blocked = is_youtube_access_challenge(job.failure_diagnostic)
@@ -7066,6 +7120,10 @@ class DownloadWorkerCore:
         ):
             # One video YouTube blocked; a playlist's summary error is not one.
             user_error = youtube_access_message(cookies_on=job.use_cookies)
+        elif not isinstance(user_error, YouTubeAccessMessage) and (
+            limited := youtube_rate_limit_message(job.failure_diagnostic)
+        ):
+            user_error = limited
         self._emit_failed_download_item_metadata(job, result, user_error)
         write_diagnostic(f"download worker error: {type(error).__name__}: {error}")
         if re_raise:
