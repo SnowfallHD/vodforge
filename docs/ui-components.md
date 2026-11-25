@@ -137,6 +137,13 @@ pickers remain platform-owned.
   8 px inside the window (not inside a page that sits within it), and snaps to
   device pixels. Right-click menus open on press, at the pointer, through
   `anchorPoint`.
+- `LiquidToolTip` measures where its item is each time it opens; never map a
+  position in a binding, which runs before layouts place the item. Give a
+  wide item's tip `pointerX` so it opens at the pointer, not the item's middle.
+- Picking an output format never opens Options by itself; Options sits beside
+  the format menu. Options shows only choices that change the file: Original
+  audio is a stream copy, so it lists what gets saved instead of controls, and
+  has no tags field.
 - Motion comes from the shared `motion` table: menus 150 ms in / 100 ms out,
   tooltips 120 / 80, expanding sections 180, all ease-out and all instant
   with Reduce Motion. A reveal shapes its surface first and shows text only

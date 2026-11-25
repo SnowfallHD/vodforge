@@ -490,3 +490,77 @@ def test_thumbnails_arriving_one_by_one_refresh_the_library_once_per_burst(
         assert len(refreshes) == 2
     finally:
         _close(bridge, engine, window)
+
+
+@pytest.mark.parametrize("output_format", ["MP4", "MP3", "Original audio"])
+def test_picking_a_format_never_opens_options_on_its_own(
+    tmp_path, monkeypatch, output_format
+):
+    app, bridge, engine, window = _launch(tmp_path, monkeypatch, [])
+    try:
+        if output_format == "MP4":
+            bridge.setOutputFormat("MP3")
+        _trigger_item, popup = _open_from(
+            app, window, "forgeFormatButton", "forgeFormatPopup"
+        )
+        row = next(
+            item for item in _rows(popup) if item.property("label") == output_format
+        )
+        QMetaObject.invokeMethod(row, "activated")
+        QTest.qWait(120)
+        app.processEvents()
+        assert bridge.outputFormat == output_format
+        assert not window.findChild(QObject, "optionsMenu").property("visible")
+    finally:
+        _close(bridge, engine, window)
+
+
+def _tip_settle(app):
+    for _ in range(20):
+        app.processEvents()
+        QTest.qWait(10)
+
+
+def test_tooltip_opens_at_its_item_after_layout_moves_it(tmp_path, monkeypatch):
+    # The tip once mapped its position in a binding, evaluated before layouts
+    # placed the item and never again: the Forge title tip opened hundreds of
+    # pixels away, at the left edge below the thumbnail.
+    app, bridge, engine, window = _launch(tmp_path, monkeypatch, [])
+    try:
+        window.resize(1400, 900)
+        _tip_settle(app)
+        title = window.findChild(QObject, "forgeSelectedTitle")
+        tip = window.findChild(QObject, "forgeSelectedTitleTip")
+        root = window.contentItem()
+        origin = title.mapToItem(root, QPointF(0, 0))
+        tip.setProperty("text", "A long title that does not fit in the row")
+        tip.setProperty("pointerX", float("nan"))
+        tip.setProperty("visible", True)
+        _tip_settle(app)
+        anchor = tip.property("anchorPosition")
+        assert (anchor.x(), anchor.y()) == (origin.x(), origin.y())
+        width = tip.property("width")
+        # Without a pointer the tip centers on its item.
+        assert tip.property("x") == pytest.approx((title.width() - width) / 2, abs=1)
+        assert tip.property("y") == pytest.approx(title.height() + 6, abs=1)
+        tip.setProperty("visible", False)
+        _tip_settle(app)
+        # With a pointer it centers on the pointer, not the middle of a wide
+        # title, and stays put while the pointer moves.
+        tip.setProperty("pointerX", 500.0)
+        tip.setProperty("visible", True)
+        _tip_settle(app)
+        assert tip.property("x") == pytest.approx(500 - width / 2, abs=1)
+        tip.setProperty("pointerX", 100.0)
+        _tip_settle(app)
+        assert tip.property("x") == pytest.approx(500 - width / 2, abs=1)
+        # Near an edge it stays inside the window.
+        tip.setProperty("visible", False)
+        _tip_settle(app)
+        tip.setProperty("pointerX", -origin.x())
+        tip.setProperty("visible", True)
+        _tip_settle(app)
+        left = origin.x() + tip.property("x")
+        assert left >= tip.property("margins") - 0.5
+    finally:
+        _close(bridge, engine, window)

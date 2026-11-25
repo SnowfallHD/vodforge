@@ -445,7 +445,7 @@ def test_options_playlist_choice_and_full_settings_are_reachable(
         body = window.findChild(
             QObject,
             "composerExtrasScroll"
-            if output_format != "Original audio" and popup.property("sideBySideExtras")
+            if popup.property("sideBySideExtras")
             else "composerOptionsScroll",
         )
         viewport = body.property("contentItem")

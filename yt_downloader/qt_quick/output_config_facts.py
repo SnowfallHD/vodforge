@@ -152,7 +152,13 @@ def chosen_config_facts(
     add("Ignore playlists", toggle("single_video_only"))
     if config.get("batch_count"):
         add("URL list", f"{config['batch_count']} URLs")
-    add("Extra tags", ", ".join(config.get("tags") or []) or "None")
+    # Original audio is a stream copy: tags are never written into it.
+    add(
+        "Extra tags",
+        ", ".join(config.get("tags") or []) or "None"
+        if mp4 or mp3
+        else "N/A (saved unchanged)",
+    )
     return rows
 
 

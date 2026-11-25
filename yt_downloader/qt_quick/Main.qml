@@ -1347,6 +1347,15 @@ Window {
     readonly property real forgeHorizontalPad: 20 + 22 * Math.max(0, Math.min(1, (width - 920) / 180))
     readonly property real forgeTopPad: 18 + 8 * Math.max(0, Math.min(1, (height - 640) / 100))
     property string outputFormat: bridge.outputFormat
+    // What Original audio saves. It copies the source stream, so these are
+    // facts, not settings: there is nothing to encode, embed, or tag.
+    readonly property var originalAudioFacts: [
+        { label: "File type", value: "Opus (.opus) or AAC (.m4a), as the source has it" },
+        { label: "Bitrate", value: "Same as the source" },
+        { label: "Re-encoding", value: "None" },
+        { label: "Title and cover art", value: "Not added" },
+        { label: "Thumbnail and info files", value: "Not saved" }
+    ]
     property string selectedSavedOwner: ""
     property var pendingFileOwners: []
 
@@ -2078,7 +2087,7 @@ Window {
                         objectName: "forgeSelectedTitle"
                         Accessible.name: text
                         HoverHandler { id: forgeTitleHover }
-                        LiquidToolTip { visible: forgeTitleHover.hovered && forgeSelectedTitle.truncated; text: forgeSelectedTitle.text }
+                        LiquidToolTip { objectName: "forgeSelectedTitleTip"; visible: forgeTitleHover.hovered && forgeSelectedTitle.truncated; text: forgeSelectedTitle.text; pointerX: forgeTitleHover.point.position.x }
                         text: window.selectedForgeRun.title || "Ready for a new run"
                         Layout.fillWidth: true
                         Layout.minimumWidth: 0
@@ -3519,7 +3528,7 @@ Window {
                             }
                         }
                     }
-                    Text { text: "Tags are added to embedded metadata and the compact metadata file when enabled."; color: theme.muted; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                    Text { objectName: "settingsExtraTagsHint"; text: window.outputFormat === "Original audio" ? "Tags apply to MP4 and MP3. Original audio is saved unchanged, so tags are not added to it." : "Tags are added to embedded metadata and the compact metadata file when enabled."; color: theme.muted; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true }
                         }
                         ColumnLayout {
                             objectName: "settingsRightColumn"
@@ -3663,7 +3672,23 @@ Window {
                     }
                     Text {
                         visible: window.outputFormat === "Original audio"
-                        text: "Opus saves as .opus. AAC saves as .m4a. No bitrate or conversion settings needed."
+                        text: "WHAT GETS SAVED"
+                        color: theme.accent; font.pixelSize: 12; font.bold: true
+                    }
+                    Repeater {
+                        model: window.outputFormat === "Original audio" ? window.originalAudioFacts : []
+                        RowLayout {
+                            required property var modelData
+                            objectName: "settingsOriginalAudioFact"
+                            Layout.fillWidth: true
+                            spacing: 12
+                            Text { text: modelData.label; color: theme.muted; font.pixelSize: 13; Layout.preferredWidth: 150; Layout.alignment: Qt.AlignTop }
+                            Text { text: modelData.value; color: theme.text; font.pixelSize: 13; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                        }
+                    }
+                    Text {
+                        visible: window.outputFormat === "Original audio"
+                        text: "Choose MP3 for a set bitrate, embedded title, or cover art."
                         color: theme.muted; font.pixelSize: 13
                         wrapMode: Text.WordWrap; Layout.fillWidth: true
                     }
@@ -4165,7 +4190,6 @@ Window {
                     onActivated: {
                         bridge.setOutputFormat(modelData)
                         formatMenu.close()
-                        if (modelData === "MP3") optionsMenu.open()
                     }
                 }
             }
@@ -4340,11 +4364,26 @@ Window {
                         verticalAlignment: Text.AlignVCenter
                     }
                 }
-                Loader {
-                    active: window.outputFormat === "Original audio"
+                Text {
+                    objectName: "composerOriginalAudioLead"
+                    visible: window.outputFormat === "Original audio"
                     width: parent.width
-                    height: item ? item.implicitHeight : 0
-                    sourceComponent: composerAccessGroup
+                    leftPadding: 8; rightPadding: 8
+                    text: "Saves the source audio exactly as it is. There is nothing to tune."
+                    color: theme.text; font.pixelSize: 13
+                    wrapMode: Text.WordWrap
+                }
+                Repeater {
+                    model: window.outputFormat === "Original audio" ? window.originalAudioFacts : []
+                    Column {
+                        required property var modelData
+                        objectName: "composerOriginalAudioFact"
+                        width: parent.width
+                        leftPadding: 8; rightPadding: 8
+                        spacing: 1
+                        Text { width: parent.width - 16; text: modelData.label; color: theme.muted; font.pixelSize: 12 }
+                        Text { width: parent.width - 16; text: modelData.value; color: theme.text; font.pixelSize: 13; wrapMode: Text.WordWrap }
+                    }
                 }
                 Repeater {
                     model: [
@@ -4423,14 +4462,13 @@ Window {
                         height: 27
                         Text {
                             objectName: "composerSettingsHeading"
-                            text: window.outputFormat === "Original audio" ? "METADATA" : "SETTINGS"; color: theme.accent
+                            text: "SETTINGS"; color: theme.accent
                             font.pixelSize: 12; font.bold: true; font.letterSpacing: 1
                             width: parent.width; height: 32; leftPadding: 8
                             verticalAlignment: Text.AlignVCenter
                         }
                     }
                     Loader {
-                        active: window.outputFormat !== "Original audio"
                         width: parent.width
                         height: item ? item.implicitHeight : 0
                         sourceComponent: composerAccessGroup
@@ -4465,8 +4503,11 @@ Window {
                         label: "Translated subtitles: " + bridge.translatedSubtitleLabel
                         onActivated: { translatedSubtitleMenu.anchorItem = this; translatedSubtitleMenu.toggleFrom(this) }
                     }
-                    Text { width: parent.width; text: "Extra metadata tags"; color: theme.muted; font.pixelSize: 12 }
+                    // Original audio is copied unchanged, so tags have nowhere to go.
+                    Text { visible: window.outputFormat !== "Original audio"; width: parent.width; text: "Extra metadata tags"; color: theme.muted; font.pixelSize: 12 }
                     StoneField {
+                        objectName: "composerExtraTagsField"
+                        visible: window.outputFormat !== "Original audio"
                         width: parent.width; height: 38
                         TextField {
                             objectName: "composerExtraTagsInput"

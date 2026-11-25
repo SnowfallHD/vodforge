@@ -248,7 +248,7 @@ Item {
                 Layout.minimumWidth: 0
                 Layout.fillWidth: true
                 Accessible.name: text
-                LiquidToolTip { visible: parent.truncated && summaryHover.hovered; text: parent.text }
+                LiquidToolTip { visible: parent.truncated && summaryHover.hovered; text: parent.text; pointerX: summaryHover.point.position.x }
                 HoverHandler { id: summaryHover }
             }
             Text { text: "Runs process one at a time"; color: theme.muted; font.pixelSize: 12 }

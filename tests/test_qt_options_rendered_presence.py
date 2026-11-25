@@ -107,9 +107,13 @@ def test_options_supported_controls_survive_live_format_round_trip(
             expected = [
                 "composerYouTubeAccessButton",
                 "composerDownloadOption_single_video_only",
-                "composerExtraTagsInput",
                 "composerAllSettingsButton",
             ]
+            # Original audio is copied unchanged, so tags have nowhere to go.
+            tags = visual_item(window.contentItem(), "composerExtraTagsInput")
+            assert tags.isVisible() == (format_name != "Original audio")
+            if format_name != "Original audio":
+                expected.append("composerExtraTagsInput")
             if mp4:
                 expected += [
                     "composerDownloadOption_embed_thumbnail",
@@ -134,17 +138,7 @@ def test_options_supported_controls_survive_live_format_round_trip(
                 assert item is not None and item.isVisible(), name
                 scroll_name = (
                     "composerOptionsScroll"
-                    if (
-                        name.startswith("composerMp3")
-                        or (
-                            format_name == "Original audio"
-                            and name
-                            in (
-                                "composerYouTubeAccessButton",
-                                "composerDownloadOption_single_video_only",
-                            )
-                        )
-                    )
+                    if name.startswith("composerMp3")
                     else "composerExtrasScroll"
                 )
                 viewport = window.findChild(QObject, scroll_name).property(
@@ -175,12 +169,9 @@ def test_options_supported_controls_survive_live_format_round_trip(
             quick = visual_item(
                 window.contentItem(), "composerDownloadOption_single_video_only"
             )
-            viewport = window.findChild(
-                QObject,
-                "composerOptionsScroll"
-                if format_name == "Original audio"
-                else "composerExtrasScroll",
-            ).property("contentItem")
+            viewport = window.findChild(QObject, "composerExtrasScroll").property(
+                "contentItem"
+            )
             viewport.setProperty("contentY", 0)
             settle()
             previous = bridge.downloadOptions["single_video_only"]
@@ -264,12 +255,37 @@ def test_audio_options_has_two_meaningful_columns(
         assert not visual_item(window.contentItem(), "composerOutputModes").isVisible()
         assert not visual_item(window.contentItem(), "composerQualities").isVisible()
         record["shared"] = {}
-        for name in (
+        shared = [
             "composerYouTubeAccessButton",
             "composerDownloadOption_single_video_only",
-            "composerExtraTagsInput",
             "composerAllSettingsButton",
-        ):
+        ]
+        if output_format == "MP3":
+            shared.append("composerExtraTagsInput")
+        else:
+            assert not visual_item(
+                window.contentItem(), "composerExtraTagsInput"
+            ).isVisible()
+
+            def walk(item):
+                yield item
+                for child in item.childItems():
+                    yield from walk(child)
+
+            facts = [
+                item
+                for item in walk(window.contentItem())
+                if item.objectName() == "composerOriginalAudioFact" and item.isVisible()
+            ]
+            assert len(facts) == 5
+            assert visual_item(
+                window.contentItem(), "composerOriginalAudioLead"
+            ).isVisible()
+        assert (
+            window.findChild(QObject, "composerSettingsHeading").property("text")
+            == "SETTINGS"
+        )
+        for name in shared:
             item = visual_item(window.contentItem(), name)
             ancestors = []
             ancestor = item
@@ -289,17 +305,9 @@ def test_audio_options_has_two_meaningful_columns(
                 ancestor = ancestor.parentItem()
             record["shared"][name] = ancestors
             assert item.isVisible(), (name, ancestors)
-            target = window.findChild(
-                QObject,
-                "composerOptionsScroll"
-                if output_format == "Original audio"
-                and name
-                in (
-                    "composerYouTubeAccessButton",
-                    "composerDownloadOption_single_video_only",
-                )
-                else "composerExtrasScroll",
-            ).property("contentItem")
+            target = window.findChild(QObject, "composerExtrasScroll").property(
+                "contentItem"
+            )
             position = item.mapToItem(
                 target, QPointF(item.width() / 2, item.height() / 2)
             )
@@ -332,8 +340,9 @@ def test_audio_options_has_two_meaningful_columns(
             ]
             assert bright > 10, (name, bright, record)
         if output_format == "Original audio":
+            # Access belongs to the shared SETTINGS column, as it does for MP3.
             access = visual_item(window.contentItem(), "composerYouTubeAccessButton")
-            assert access.mapToScene(QPointF(0, 0)).x() < point.x()
+            assert access.mapToScene(QPointF(0, 0)).x() >= point.x()
             assert not any(
                 item.property("text")
                 == "Keep the source audio without extra compression."
@@ -390,7 +399,20 @@ def test_mp3_format_entry_reuses_the_canonical_options_owner(
         )
         QTest.qWait(120)
         assert bridge.outputFormat == "MP3"
-        assert window.findChild(QObject, "optionsMenu").property("visible")
+        # Choosing a format is just a choice: no format opens Options on its
+        # own (MP3 used to, a leftover from its retired separate popup).
+        options = window.findChild(QObject, "optionsMenu")
+        assert not options.property("visible")
+        button = window.findChild(QObject, "forgeOptionsButton")
+        QTest.mouseClick(
+            window,
+            Qt.LeftButton,
+            pos=button.mapToScene(
+                QPointF(button.width() / 2, button.height() / 2)
+            ).toPoint(),
+        )
+        QTest.qWait(120)
+        assert options.property("visible")
         assert not window.property("menuNavigationAllowed")
         assert window.findChild(QObject, "mp3OptionsPopup") is None
         assert visual_item(

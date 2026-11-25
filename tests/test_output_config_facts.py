@@ -147,3 +147,15 @@ def test_legacy_saved_retry_keeps_config_but_never_invents_access(tmp_path):
         is None
     )
     assert recorded_config({RETRY_JOB_METADATA_KEY: {}}) is None
+
+
+@pytest.mark.parametrize("output", list(OutputType))
+def test_extra_tags_show_as_not_applicable_for_original_audio(tmp_path, output):
+    # Original audio is a stream copy: VODForge writes no tags into it, so the
+    # summary must not list tags as if they were applied.
+    job = replace(make_job(tmp_path), output_type=output, tags=["alpha", "beta"])
+    value = facts(job)["Extra tags"]
+    if output == OutputType.ORIGINAL:
+        assert value == "N/A (saved unchanged)"
+    else:
+        assert value == "alpha, beta"

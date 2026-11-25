@@ -10,11 +10,24 @@ ToolTip {
     property real reveal: 0
     property bool singleLine: false
     readonly property var overlayItem: independentWindow ? null : Overlay.overlay
-    readonly property point anchorPosition: parent && overlayItem ? parent.mapToItem(overlayItem, 0, 0) : Qt.point(0, 0)
+    // Optional pointer x in the parent's coordinates. When set, the tip opens
+    // centered on the pointer instead of the middle of a wide parent.
+    property real pointerX: NaN
+    // Measured each time the tip opens. A binding to mapToItem() is evaluated
+    // once, before layouts place the parent, and then never again because
+    // nothing it reads changes: the tip opened hundreds of pixels away.
+    property point anchorPosition: Qt.point(0, 0)
+    property real openedPointerX: NaN
+    function measureAnchor() {
+        anchorPosition = parent && overlayItem ? parent.mapToItem(overlayItem, 0, 0) : Qt.point(0, 0)
+        openedPointerX = pointerX
+    }
+    onAboutToShow: measureAnchor()
+    readonly property real centerX: parent ? (isNaN(openedPointerX) ? parent.width / 2 : openedPointerX) : 0
     padding: 10
     margins: 12
     x: parent ? Math.max(margins - anchorPosition.x,
-            Math.min((parent.width - width) / 2,
+            Math.min(centerX - width / 2,
                 (overlayItem ? overlayItem.width : width + margins * 2) - margins - anchorPosition.x - width)) : 0
     y: parent ? (overlayItem && anchorPosition.y + parent.height + 6 + height > overlayItem.height - margins
             ? Math.max(margins - anchorPosition.y, -height - 6) : parent.height + 6) : 0
