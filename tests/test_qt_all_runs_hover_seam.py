@@ -324,3 +324,61 @@ def test_public_pointer_query_checks_live_rect_visibility_and_stale_item(run_sce
     item.deleteLater()
     QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
     assert not bridge.isPointerOverItem(item)
+
+
+@pytest.mark.parametrize("cover", ["options_panel", "run_menu", "notice"])
+def test_all_runs_list_does_not_open_through_what_is_in_front(run_scene, cover):
+    """Field report: with a menu or the Options panel open, hovering where the
+    All runs button sits underneath opened the list anyway."""
+    app, _bridge, window, button, popup = run_scene
+    center = button.mapToScene(QPointF(button.width() / 2, button.height() / 2))
+    if cover == "options_panel":
+        panel = window.findChild(QObject, "optionsMenu")
+        QMetaObject.invokeMethod(panel, "open")
+        app.processEvents()
+        settle_popups(window)
+        assert panel.property("visible")
+    elif cover == "run_menu":
+        # Open a deck card's menu, as a right-click on the card does.
+        from PySide6.QtCore import Q_ARG
+
+        deck = window.findChild(QObject, "forgeRunDeck")
+        record = deck.property("visibleRecords").toVariant()[0]
+        trigger = window.findChild(QObject, "runDeckHeading")
+        QMetaObject.invokeMethod(
+            deck,
+            "showActions",
+            Q_ARG("QVariant", record),
+            Q_ARG("QVariant", trigger),
+        )
+        app.processEvents()
+        assert window.findChild(QObject, "runActionsPopup").property("visible")
+    else:
+        notice = window.findChild(QObject, "operationNotice")
+        notice.setProperty("message", "A notice over the page.")
+        notice.setProperty("x", center.x() - 40)
+        notice.setProperty("y", center.y() - 20)
+        QMetaObject.invokeMethod(notice, "open")
+        QTest.qWait(400)
+        assert notice.property("visible")
+    move(window, center)
+    move(window, QPointF(center.x() + 1, center.y()))
+    QTest.qWait(200)
+    assert not popup.property("visible")
+    assert not button.property("hovered")
+
+
+def test_pointer_query_reports_a_control_covered_by_an_open_popup(run_scene):
+    app, bridge, window, button, _popup = run_scene
+    center = button.mapToScene(QPointF(button.width() / 2, button.height() / 2))
+    window.setProperty("qaPointerPosition", window.mapToGlobal(center.toPoint()))
+    assert bridge.isPointerOverItem(button)
+    panel = window.findChild(QObject, "optionsMenu")
+    QMetaObject.invokeMethod(panel, "open")
+    app.processEvents()
+    settle_popups(window)
+    assert not bridge.isPointerOverItem(button)
+    QMetaObject.invokeMethod(panel, "close")
+    settle_popups(window)
+    QTest.qWait(300)
+    assert bridge.isPointerOverItem(button)

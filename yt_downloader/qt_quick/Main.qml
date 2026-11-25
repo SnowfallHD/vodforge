@@ -290,7 +290,33 @@ Window {
         if (closePending && !bridge.running && !bridge.localRunning && !bridge.libraryFileRunning)
             Qt.callLater(window.close)
     }
+    // Closing pauses queued downloads (VODForge never restarts waiting work by
+    // itself), so say so before it happens instead of after the next launch.
+    property bool closeConfirmed: false
+    function closeWarning() {
+        const waiting = bridge.waitingCount
+        const running = bridge.running
+        if (!running && waiting === 0) return ""
+        const many = waiting === 1 ? "1 download is" : waiting + " downloads are"
+        const state = running && waiting ? "A download is running and " + many + " waiting."
+            : running ? "A download is running."
+            : many.charAt(0).toUpperCase() + many.slice(1) + " waiting."
+        const what = running && waiting ? "they are all" : running || waiting === 1 ? "it is" : "they are"
+        const resume = running + waiting > 1 ? "Resume all" : "Resume"
+        return state + " If you close VODForge now, " + what + " paused" +
+               (running ? ", and the running download may need to start over" : "") +
+               ". Next time, choose " + resume + " to continue."
+    }
     onClosing: function(close) {
+        if (!closeConfirmed && !closePending) {
+            const warning = closeWarning()
+            if (warning) {
+                close.accepted = false
+                closeConfirmPopup.message = warning
+                closeConfirmPopup.open()
+                return
+            }
+        }
         if (bridge.running || bridge.localRunning || bridge.libraryFileRunning) {
             closePending = true
             bridge.beginShutdown()
@@ -1431,31 +1457,71 @@ Window {
             onNoticeWidthChanged: requestPaint()
             onSurfaceColorChanged: requestPaint()
             onEdgeColorChanged: requestPaint()
-            onPaint: {
-                const c = getContext("2d")
-                c.clearRect(0, 0, width, height)
-                const w = width - 1, h = shellHeight - 0.5, r = 16
-                const drop = operationNotice.height * reveal
-                const half = noticeWidth * (0.30 + 0.70 * reveal) / 2
-                const left = width / 2 - half, right = width / 2 + half
-                const turn = Math.min(8, drop / 2)
-                c.beginPath(); c.moveTo(r, 0.5); c.lineTo(w-r, 0.5)
-                c.quadraticCurveTo(w, 0.5, w, r); c.lineTo(w, h-r)
-                c.quadraticCurveTo(w, h, w-r, h)
-                c.lineTo(right+turn, h)
-                c.quadraticCurveTo(right, h, right, h+turn)
-                c.lineTo(right, h+drop-turn)
-                c.quadraticCurveTo(right, h+drop, right-turn, h+drop)
-                c.lineTo(left+turn, h+drop)
-                c.quadraticCurveTo(left, h+drop, left, h+drop-turn)
-                c.lineTo(left, h+turn)
-                c.quadraticCurveTo(left, h, left-turn, h)
-                c.lineTo(r, h); c.quadraticCurveTo(0.5, h, 0.5, h-r)
-                c.lineTo(0.5, r); c.quadraticCurveTo(0.5, 0.5, r, 0.5)
-                c.closePath(); c.fillStyle = surfaceColor; c.fill()
-                c.strokeStyle = edgeColor; c.lineWidth = 1; c.stroke()
-            }
+            onPaint: window.paintComposerShell(getContext("2d"), width, height, shellHeight,
+                                               reveal, noticeWidth, surfaceColor, edgeColor, false)
         }
+    }
+    // The notice's tab hangs below the composer, over the hero area. Paint that
+    // part again above the page (and under the notice text, z 100) so the hero
+    // title never shows through the notice.
+    Item {
+        id: forgeNoticeDropLayer
+        objectName: "forgeNoticeDropLayer"
+        parent: window.contentItem
+        z: 99
+        x: forgeNoticeLayer.x; y: forgeNoticeLayer.y
+        width: forgeNoticeLayer.width; height: forgeNoticeLayer.height
+        clip: true
+        visible: forgeNoticeLayer.visible && operationNotice.visible
+        Canvas {
+            objectName: "forgeNoticeDrop"
+            x: forgeComposerShell.x; y: forgeComposerShell.y
+            width: forgeComposerShell.width
+            height: forgeComposerShell.height + operationNotice.height
+            property real shellHeight: forgeComposerShell.height
+            property real reveal: operationNotice.reveal
+            property real noticeWidth: operationNotice.width
+            property color surfaceColor: Qt.rgba(window.glassSurfaceColor.r,
+                window.glassSurfaceColor.g, window.glassSurfaceColor.b, window.glassControlOpacity)
+            property color edgeColor: theme.border
+            onWidthChanged: requestPaint()
+            onHeightChanged: requestPaint()
+            onShellHeightChanged: requestPaint()
+            onRevealChanged: requestPaint()
+            onNoticeWidthChanged: requestPaint()
+            onSurfaceColorChanged: requestPaint()
+            onEdgeColorChanged: requestPaint()
+            onPaint: window.paintComposerShell(getContext("2d"), width, height, shellHeight,
+                                               reveal, noticeWidth, surfaceColor, edgeColor, true)
+        }
+    }
+    // One outline for the composer and the notice tab below it. dropOnly paints
+    // just the tab (everything below the composer's bottom edge).
+    function paintComposerShell(c, width, height, shellHeight, reveal, noticeWidth, surfaceColor, edgeColor, dropOnly) {
+        c.clearRect(0, 0, width, height)
+        const w = width - 1, h = shellHeight - 0.5, r = 16
+        const drop = operationNotice.height * reveal
+        const half = noticeWidth * (0.30 + 0.70 * reveal) / 2
+        const left = width / 2 - half, right = width / 2 + half
+        const turn = Math.min(8, drop / 2)
+        c.save()
+        if (dropOnly) { c.beginPath(); c.rect(0, h + 0.5, width, height); c.clip() }
+        c.beginPath(); c.moveTo(r, 0.5); c.lineTo(w-r, 0.5)
+        c.quadraticCurveTo(w, 0.5, w, r); c.lineTo(w, h-r)
+        c.quadraticCurveTo(w, h, w-r, h)
+        c.lineTo(right+turn, h)
+        c.quadraticCurveTo(right, h, right, h+turn)
+        c.lineTo(right, h+drop-turn)
+        c.quadraticCurveTo(right, h+drop, right-turn, h+drop)
+        c.lineTo(left+turn, h+drop)
+        c.quadraticCurveTo(left, h+drop, left, h+drop-turn)
+        c.lineTo(left, h+turn)
+        c.quadraticCurveTo(left, h, left-turn, h)
+        c.lineTo(r, h); c.quadraticCurveTo(0.5, h, 0.5, h-r)
+        c.lineTo(0.5, r); c.quadraticCurveTo(0.5, 0.5, r, 0.5)
+        c.closePath(); c.fillStyle = surfaceColor; c.fill()
+        c.strokeStyle = edgeColor; c.lineWidth = 1; c.stroke()
+        c.restore()
     }
 
     // Native toolbar header (macOS). The windowed titlebar is transparent, so
@@ -2234,7 +2300,8 @@ Window {
                         readonly property bool primaryAction: false
                         parent: forgeSelectedActionRow.useOverflow ?
                             (primaryAction ? forgeAdaptivePrimary : forgeFailedActions) : forgeFailedActions
-                        readonly property bool available: window.selectedForgeRun.kind === "terminal" || window.selectedForgeRun.retrySidecarsOnly === true
+                        readonly property bool available: (window.selectedForgeRun.kind === "terminal" || window.selectedForgeRun.retrySidecarsOnly === true) &&
+                            window.selectedForgeRun.removable !== false
                         visible: available && (!forgeSelectedActionRow.useOverflow || primaryAction)
                         label: "Remove"; size: "inline"; width: forgeSelectedActionRow.useOverflow ? (primaryAction ? Math.min(implicitWidth, 190) : forgeSecondaryActions.width) : 80; deepHover: true
                         enabled: !bridge.fileActionBusy
@@ -2392,6 +2459,7 @@ Window {
                 compact: window.compactHeight
                 headerActions: forgeActiveActionsComponent
                 headerActionsEnabled: bridge.running
+                hoverAdmissible: window.menuNavigationAllowed
                 Layout.fillWidth: true
                 Layout.preferredHeight: implicitHeight
                 Layout.minimumHeight: implicitHeight
@@ -2714,7 +2782,7 @@ Window {
                 }
             }
             StoneButton {
-                label: "Move media to Trash"
+                label: "Move media to " + bridge.trashName
                 Layout.fillWidth: true
                 Layout.preferredHeight: 42
                 onActivated: {
@@ -2747,7 +2815,8 @@ Window {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
                 text: bridge.fileActionRecovery ? "Review interrupted file change" :
-                    bridge.fileActionName === "move" ? "Move saved media" : "Saved media files"
+                    bridge.fileActionName === "move" ? "Move saved media" :
+                    bridge.fileActionName === "remove_run" ? "Remove run" : "Move to " + bridge.trashName
                 color: theme.text
                 font.pixelSize: 21
                 font.bold: true
@@ -2844,7 +2913,7 @@ Window {
                 StoneButton {
                     objectName: "fileActionConfirmButton"
                     visible: bridge.fileActionEligible
-                    label: bridge.fileActionName === "move" ? "Move verified media" : bridge.fileActionName === "remove_run" ? "Remove run" : "Move to Trash"
+                    label: bridge.fileActionName === "move" ? "Move verified media" : bridge.fileActionName === "remove_run" ? "Remove run" : "Move to " + bridge.trashName
                     Layout.fillWidth: true
                     Layout.preferredHeight: 40
                     onActivated: bridge.confirmFileAction()
@@ -2871,6 +2940,57 @@ Window {
                     Layout.preferredWidth: 90
                     Layout.preferredHeight: 40
                     onActivated: fileActionPopup.close()
+                }
+            }
+        }
+    }
+    StonePopup {
+        id: closeConfirmPopup
+        objectName: "closeConfirmation"
+        property string message: ""
+        x: Math.max(0, (window.width - width) / 2)
+        y: Math.max(0, (window.height - height) / 2)
+        width: Math.min(420, window.width - 32)
+        height: closeConfirmColumn.implicitHeight + 32
+        padding: 16
+        modal: true
+        closePolicy: Popup.CloseOnEscape
+        ColumnLayout {
+            id: closeConfirmColumn
+            anchors.fill: parent
+            spacing: 12
+            Text {
+                text: "Close VODForge?"
+                color: theme.text
+                font.pixelSize: 19
+                font.bold: true
+            }
+            Text {
+                objectName: "closeConfirmationMessage"
+                text: closeConfirmPopup.message
+                color: theme.muted
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                StoneButton {
+                    objectName: "closeConfirmationKeepOpen"
+                    label: "Keep open"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 42
+                    onActivated: closeConfirmPopup.close()
+                }
+                StoneButton {
+                    objectName: "closeConfirmationClose"
+                    label: "Close anyway"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 42
+                    onActivated: {
+                        window.closeConfirmed = true
+                        closeConfirmPopup.close()
+                        Qt.callLater(window.close)
+                    }
                 }
             }
         }
@@ -3845,7 +3965,7 @@ Window {
             Flow {
                 visible: bridge.cookieSource === "Browser"
                 Layout.fillWidth: true
-                Layout.preferredHeight: visible ? 125 : 0
+                Layout.preferredHeight: visible ? implicitHeight : 0
                 spacing: 6
                 Repeater {
                     model: bridge.cookieBrowserOptions
@@ -3865,7 +3985,8 @@ Window {
                 StoneButton { label: "Choose file"; Layout.preferredWidth: 108; Layout.preferredHeight: 38; onActivated: cookieFileDialog.open() }
             }
             Text {
-                text: bridge.cookieSource === "Browser" ? "VODForge reads this browser’s sign-in store for the run. On Windows, use Firefox or cookies.txt for Chromium browsers." :
+                objectName: "youtubeAccessExplanation"
+                text: bridge.cookieSource === "Browser" ? "VODForge reads this browser’s sign-in store for the run." + (bridge.cookieBrowserLimitation ? " " + bridge.cookieBrowserLimitation : "") :
                       bridge.cookieSource === "cookies.txt" ? "The selected file is used for this session. Its contents are not stored in settings." :
                       "No account information is used."
                 color: theme.muted; font.pixelSize: 13; wrapMode: Text.WordWrap; Layout.fillWidth: true

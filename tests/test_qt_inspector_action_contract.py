@@ -14,11 +14,17 @@ def test_inspector_actions_use_authoritative_selection_and_keep_file_actions_sep
     assert 'path: inspector.recoveryActions.location || ""' in source
     assert "visible: !!inspector.recoveryActions.canOpenLocation" in panel
     assert "openInspectorLocation(inspector.recoveryActions.selectionKey)" in panel
-    assert "visible: !!inspector.recoveryActions.dismissRunId" in panel
+    # One Remove per item: "Remove run" only when the run saved no files;
+    # otherwise the Trash button covers the run too.
+    assert (
+        "visible: !!inspector.recoveryActions.dismissRunId && "
+        "!inspector.recoveryActions.savedOwner" in panel
+    )
     assert "requestRunRemoval(inspector.recoveryActions.dismissRunId)" in panel
+    assert 'label: "Remove run"' in panel
     assert "visible: !!inspector.recoveryActions.savedOwner" in panel
     assert (
         "requestInspectorLibraryRemoval(inspector.recoveryActions.selectionKey)"
         in panel
     )
-    assert "review owned files for Trash" in panel
+    assert 'label: "Move to " + inspector.appBridge.trashName' in panel

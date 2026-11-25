@@ -202,3 +202,35 @@ def idle_runtime(tmp_path: Path, monkeypatch) -> DownloadRuntime:
     runtime = DownloadRuntime()
     runtime._launch = lambda job: None
     return runtime
+
+
+@pytest.mark.parametrize(
+    ("platform", "offered"),
+    [
+        ("win32", ["Firefox"]),
+        (
+            "darwin",
+            ["Chrome", "Edge", "Firefox", "Brave", "Chromium", "Opera", "Vivaldi"],
+        ),
+        (
+            "linux",
+            ["Chrome", "Edge", "Firefox", "Brave", "Chromium", "Opera", "Vivaldi"],
+        ),
+    ],
+)
+def test_only_browsers_vodforge_can_read_are_offered(platform, offered):
+    from yt_downloader.cookie_inputs import available_cookie_browsers
+
+    assert available_cookie_browsers(platform) == offered
+    # Everything offered is something the run will accept on that platform.
+    for name in offered:
+        assert windows_chromium_cookie_warning(name, platform=platform) is None
+
+
+def test_windows_message_says_why_and_what_works():
+    from yt_downloader.cookie_inputs import WINDOWS_CHROMIUM_COOKIE_MESSAGE
+
+    message = windows_chromium_cookie_warning("Edge", platform="win32")
+    assert message == WINDOWS_CHROMIUM_COOKIE_MESSAGE
+    assert "Edge" in message and "Firefox" in message and "cookies.txt" in message
+    assert "unreliable" not in message

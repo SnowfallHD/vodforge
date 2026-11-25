@@ -347,12 +347,77 @@ def test_partial_missing_selected_media_cleans_verified_empty_hierarchy(
             child.unlink()
     result, _ = execute(tmp_path, record)
     assert result.outcomes[0][1] == "entry_removed"
+    # A leftover thumbnail in the folder VODForge made for this video alone
+    # (its ID is in the folder name) is this video's, even without metadata.json.
+    # Keeping it used to strand the folder and the whole channel folder.
+    assert root.is_dir() and list(root.iterdir()) == []
     if remaining == "thumbnail.jpg":
-        # A generic thumbnail without its ownership metadata is not ours to trash.
-        assert (folder / remaining).read_bytes() == b"fixture thumbnail"
-        assert root.is_dir()
-    else:
-        assert root.is_dir() and list(root.iterdir()) == []
+        assert (
+            tmp_path / "Trash" / "thumbnail.jpg"
+        ).read_bytes() == b"fixture thumbnail"
+
+
+@pytest.mark.parametrize("media_present", [True, False])
+def test_thumbnail_without_metadata_is_trashed_only_from_the_videos_own_folder(
+    tmp_path, media_present
+):
+    root, folder, record = canonical_legacy_fixture(tmp_path)
+    (folder / "metadata.json").unlink()
+    if not media_present:
+        (folder / "video.mp4").unlink()
+    result, _ = execute(tmp_path, record)
+    assert result.outcomes[0][1] == ("completed" if media_present else "entry_removed")
+    assert (tmp_path / "Trash" / "thumbnail.jpg").read_bytes() == b"fixture thumbnail"
+    assert root.is_dir() and list(root.iterdir()) == []
+
+
+def test_thumbnail_without_metadata_stays_in_a_folder_not_named_for_the_video(
+    tmp_path,
+):
+    root = tmp_path / "Library"
+    folder = root / "My own folder"
+    folder.mkdir(parents=True)
+    media = folder / "video.mp4"
+    media.write_bytes(b"fixture media")
+    (folder / "thumbnail.jpg").write_bytes(b"someone else's thumbnail")
+    record = {
+        "id": "fixture",
+        "title": "Selected video",
+        "vodforge_run_id": "run",
+        "vodforge_output_type": "MP4",
+        "vodforge_output_path": str(media),
+        "vodforge_output_dir": str(folder),
+    }
+    result, _ = execute(tmp_path, record)
+    assert result.outcomes[0][1] == "completed"
+    assert (folder / "thumbnail.jpg").read_bytes() == b"someone else's thumbnail"
+    assert not media.exists()
+
+
+@pytest.mark.parametrize("clutter", [".DS_Store", "Thumbs.db", "desktop.ini"])
+@pytest.mark.parametrize("where", ["video", "playlist", "channel"])
+def test_system_clutter_does_not_keep_emptied_download_folders(
+    tmp_path, clutter, where
+):
+    root, folder, record = canonical_legacy_fixture(tmp_path)
+    target = {"video": folder, "playlist": folder.parent, "channel": folder.parents[2]}[
+        where
+    ]
+    (target / clutter).write_bytes(b"system file")
+    result, _ = execute(tmp_path, record)
+    assert result.outcomes[0][1] == "completed"
+    assert root.is_dir() and list(root.iterdir()) == []
+
+
+def test_a_real_file_next_to_clutter_keeps_the_channel_folder(tmp_path):
+    _root, folder, record = canonical_legacy_fixture(tmp_path)
+    channel = folder.parents[2]
+    (channel / ".DS_Store").write_bytes(b"system file")
+    (channel / "notes.txt").write_text("mine")
+    result, _ = execute(tmp_path, record)
+    assert result.outcomes[0][1] == "completed"
+    assert (channel / "notes.txt").read_text() == "mine"
+    assert (channel / ".DS_Store").exists()
 
 
 def test_unindexed_empty_canonical_video_branches_are_cleaned(tmp_path):

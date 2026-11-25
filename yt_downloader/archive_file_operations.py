@@ -149,6 +149,46 @@ def directory_evidence(path: Path) -> tuple[tuple[Path, int, int], ...]:
     return tuple(result)
 
 
+# Files the operating system drops into folders a person has opened (Finder's
+# view settings, Windows Explorer's thumbnail cache and folder settings). They
+# are never media, and leaving them behind kept "empty" download folders, and so
+# the whole channel folder, on disk after the last video went to the Trash.
+SYSTEM_CLUTTER_NAMES = frozenset({".ds_store", "thumbs.db", "desktop.ini"})
+
+
+def _is_system_clutter(entry: os.DirEntry[str]) -> bool:
+    if entry.name.casefold() not in SYSTEM_CLUTTER_NAMES:
+        return False
+    try:
+        observed = entry.stat(follow_symlinks=False)
+    except OSError:
+        return False
+    return stat.S_ISREG(observed.st_mode) and not _redirect(observed)
+
+
+def _clear_system_clutter(folder: Path) -> None:
+    """Delete system clutter, but only from a folder that holds nothing else."""
+    with os.scandir(folder) as children:
+        entries = list(children)
+    if not entries or not all(_is_system_clutter(entry) for entry in entries):
+        return
+    for entry in entries:
+        os.unlink(entry.path)
+
+
+def _item_folder_name_matches(folder: str, video_id: str) -> bool:
+    """Whether a folder is the one VODForge made for this video alone:
+    "<title> [<id>]" (optionally with a variant suffix) or "path-safe videos/<id>"."""
+    return folder == video_id or bool(
+        re.fullmatch(
+            r".+ \["
+            + re.escape(video_id)
+            + r"\](?: - [A-Za-z0-9 _-]{1,40} \[[0-9a-f]{16}\])?",
+            folder,
+        )
+    )
+
+
 def _regular_evidence(path: Path) -> ArtifactEvidence:
     value = path.lstat()
     if _redirect(value) or not stat.S_ISREG(value.st_mode) or value.st_nlink != 1:
@@ -242,6 +282,20 @@ def _observe(
                 if record.get(key) and data.get(key) and record[key] != data[key]:
                     raise ValueError("Companion identity differs")
             artifacts.append(metadata_evidence)
+            for name in COMPANION_NAMES:
+                if name == "metadata.json":
+                    continue
+                try:
+                    artifacts.append(_regular_evidence(path.parent / name))
+                except FileNotFoundError:
+                    pass
+        elif record.get("id") and _item_folder_name_matches(
+            path.parent.name, str(record["id"])
+        ):
+            # No metadata.json to prove the thumbnail's owner, but the folder is
+            # the one VODForge made for this video alone (its ID is in the name),
+            # so its thumbnail belongs to it. Leaving it kept the folder, and the
+            # channel folder above it, on disk.
             for name in COMPANION_NAMES:
                 if name == "metadata.json":
                     continue
@@ -445,9 +499,17 @@ def _ensure_move_parents(destination: Path, target: Path) -> None:
 
 
 def _prune_empty_source(
-    record: Mapping[str, Any], item: FileOperationItem, *, leaf_only: bool = False
+    record: Mapping[str, Any],
+    item: FileOperationItem,
+    *,
+    leaf_only: bool = False,
+    clear_clutter: bool = False,
 ) -> None:
-    """Remove only empty, unchanged owned ancestors below the retained root."""
+    """Remove only empty, unchanged owned ancestors below the retained root.
+
+    Deleting to the Trash also clears Finder/Explorer clutter (.DS_Store,
+    Thumbs.db, desktop.ini) from a folder left otherwise empty; a move keeps it.
+    """
     if item.source is None:
         return
     root = _move_root(record, item.source)
@@ -470,6 +532,8 @@ def _prune_empty_source(
                 observed.st_ino,
             ):
                 return
+            if clear_clutter:
+                _clear_system_clutter(current)
             current.rmdir()  # Atomic empty-only removal; unrelated siblings stop it.
         except FileNotFoundError:
             if not item.missing_media:
@@ -510,6 +574,8 @@ def _empty_channel_directories(channel: Path) -> dict[Path, tuple[int, int]] | N
                     inspected += 1
                     if inspected > MAX_HISTORY_ITEMS:
                         return None
+                    if _is_system_clutter(child):
+                        continue
                     observed = child.stat(follow_symlinks=False)
                     # Media of every format, metadata-only, thumbnail-only and
                     # unknown files all retain the channel's higher hierarchy.
@@ -531,12 +597,12 @@ def _prune_trash_source(
     channel = _trash_channel_root(record, item.source)
     directories = _empty_channel_directories(channel) if channel is not None else None
     if channel is None or directories is None:
-        _prune_empty_source(record, item, leaf_only=True)
+        _prune_empty_source(record, item, leaf_only=True, clear_clutter=True)
         return
     proofs = {path: (device, inode) for path, device, inode in item.ancestors}
     if directories.get(channel) != proofs.get(channel):
         return
-    _prune_empty_source(record, item, leaf_only=True)
+    _prune_empty_source(record, item, leaf_only=True, clear_clutter=True)
     try:
         item.source.parent.lstat()
     except FileNotFoundError:
@@ -608,6 +674,7 @@ def _prune_trash_source(
                 for path, device, inode in evidence
             ):
                 return
+            _clear_system_clutter(folder)
             folder.rmdir()
             directories.pop(folder)
         except (OSError, ValueError):

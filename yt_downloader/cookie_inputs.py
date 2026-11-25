@@ -6,7 +6,11 @@ from pathlib import Path
 
 from .models import CookieSource
 from .platform_services import is_windows
-from .youtube_access import COOKIE_BROWSER_PLACEHOLDER, COOKIE_BROWSER_VALUES
+from .youtube_access import (
+    COOKIE_BROWSER_OPTIONS,
+    COOKIE_BROWSER_PLACEHOLDER,
+    COOKIE_BROWSER_VALUES,
+)
 
 WINDOWS_CHROMIUM_COOKIE_BROWSERS = {
     "brave",
@@ -16,10 +20,27 @@ WINDOWS_CHROMIUM_COOKIE_BROWSERS = {
     "opera",
     "vivaldi",
 }
+# On Windows these browsers keep their sign-in store locked while they run and
+# encrypt it so that only the browser itself can read it (app-bound
+# encryption). VODForge does not try to get around either, so it cannot use
+# them at all there; it says so instead of letting the run fail.
 WINDOWS_CHROMIUM_COOKIE_MESSAGE = (
-    "Chrome/Edge/Brave/Chromium browser-cookie import is unreliable on Windows because Chromium locks its cookie database. "
-    "Choose cookies.txt with an exported YouTube cookies.txt file, choose Firefox browser cookies under Browser, or switch YouTube access to Public."
+    "On Windows, Edge, Chrome, Brave, Opera and Vivaldi lock their sign-in so other "
+    "apps can't use it. In Settings → YouTube access, choose Browser → Firefox, or "
+    "choose cookies.txt with a file exported from your browser."
 )
+
+
+def available_cookie_browsers(platform: str | None = None) -> list[str]:
+    """Browser names VODForge can actually read on this platform."""
+    return [
+        name
+        for name in COOKIE_BROWSER_OPTIONS[1:]
+        if not (
+            is_windows(platform)
+            and COOKIE_BROWSER_VALUES[name] in WINDOWS_CHROMIUM_COOKIE_BROWSERS
+        )
+    ]
 
 
 def browser_cookie_value(label_or_value: str | None) -> str | None:

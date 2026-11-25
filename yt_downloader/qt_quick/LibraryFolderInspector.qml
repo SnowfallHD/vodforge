@@ -753,12 +753,14 @@ Column {
             }
             StoneButton {
                 objectName: "libraryInspectorDismissRun"
-                visible: !!inspector.recoveryActions.dismissRunId
+                // One Remove per item: when the run saved files, the button
+                // below covers the run as well (it moves them, then removes it).
+                visible: !!inspector.recoveryActions.dismissRunId && !inspector.recoveryActions.savedOwner
                 width: Math.min(parent.width, implicitWidth)
                 height: 28
                 size: "inline"
-                label: "Remove"
-                accessibilityLabel: "Remove run and review owned files for Trash"
+                label: "Remove run"
+                accessibilityLabel: "Remove this run"
                 onActivated: inspector.appBridge.requestRunRemoval(inspector.recoveryActions.dismissRunId)
             }
             StoneButton {
@@ -767,8 +769,8 @@ Column {
                 width: Math.min(parent.width, implicitWidth)
                 height: 28
                 size: "inline"
-                label: "Remove"
-                accessibilityLabel: "Review owned media for removal to Trash"
+                label: "Move to " + inspector.appBridge.trashName
+                accessibilityLabel: "Review this item's files before moving them to the " + inspector.appBridge.trashName
                 onActivated: inspector.appBridge.requestInspectorLibraryRemoval(inspector.recoveryActions.selectionKey)
             }
         }

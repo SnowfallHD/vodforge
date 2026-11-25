@@ -136,6 +136,35 @@ def youtube_rate_limit_message(diagnostic: object) -> str | None:
 VPN_TIP = "Using a VPN? Turning it off for this download often helps too."
 
 
+def youtube_player_check_message(diagnostic: object) -> str | None:
+    """Wording for a video whose media YouTube hid behind a player check this
+    version of yt-dlp could not solve.
+
+    YouTube changes that check from time to time; the fix ships in a VODForge
+    update. Signing in does not help, so this must not send the person to the
+    YouTube access setting (which is what the generic "no video" wording did).
+    """
+    if getattr(diagnostic, "extractor_warning", None) != "challenge_solving_failed":
+        return None
+    if getattr(diagnostic, "failure_code", None) not in {
+        "no_video_stream",
+        "no_audio_stream",
+    }:
+        return None
+    return (
+        "YouTube changed how its player works, and this version of VODForge can't "
+        "read this video yet. Signing in won't help. Check for updates in Settings, "
+        "then retry; if no update is available yet, retry later."
+    )
+
+
+def known_youtube_cause_message(diagnostic: object) -> str | None:
+    """A specific explanation when the diagnostic shows why YouTube gave no media."""
+    return youtube_rate_limit_message(diagnostic) or youtube_player_check_message(
+        diagnostic
+    )
+
+
 def youtube_access_message(
     *, cookies_on: bool = False, stopped_after: int | None = None
 ) -> YouTubeAccessMessage:

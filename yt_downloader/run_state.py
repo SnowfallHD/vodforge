@@ -951,6 +951,26 @@ class ActiveRunStore:
             and not ownership.get("children")
         )
 
+    def removal_state(self, run_id: str) -> str:
+        """What removing this run's record would involve.
+
+        "none": nothing is held for it; removing touches no files.
+        "partial": a settled paused attempt; removing deletes its kept partial files.
+        "protected": recovery has not settled (pending, failed, cancelled, or a
+        process may still own it), so the record cannot be removed yet.
+        """
+        with self._lock:
+            held = [
+                record
+                for record in self._failure_records(self._read_unlocked())
+                if record["job"].get("run_id") == run_id and record.get("ownership")
+            ]
+        if not held:
+            return "none"
+        if len(held) != 1 or not self._settled_partial(held[0]):
+            return "protected"
+        return "partial" if held[0]["ownership"].get("staging_dirs") else "none"
+
     def holds_settled_partial(self, run_id: str) -> bool:
         """Whether removing this paused run also deletes its kept partial files."""
         return any(

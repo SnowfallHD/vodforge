@@ -10,11 +10,15 @@ Item {
     property bool attached: false
     property real reveal: expanded ? 1 : 0
     property real availableWidth: 440
+    // Read by the bridge's pointer check: page controls under a visible notice
+    // are covered, like controls under a popup.
+    readonly property bool shieldsPointer: visible
     readonly property real targetWidth: Math.min(availableWidth, Math.max(120, metrics.advanceWidth + 36))
     width: targetWidth
     height: Math.min(116, label.implicitHeight + 20)
     visible: expanded || reveal > 0
-    z: 100
+    // Above the mini player (z 100) and the notice tab layer (z 99).
+    z: 110
     function open() { expanded = true }
     function close() { expanded = false }
     Behavior on reveal {
@@ -22,6 +26,15 @@ Item {
     }
     TextMetrics { id: metrics; text: notice.message; font.pixelSize: 14 }
     LiquidSurface { anchors.fill: parent; reveal: notice.reveal; visible: !notice.attached }
+    // The notice sits in front of the page: the pointer stops here, so controls
+    // and tooltips underneath do not react through it.
+    MouseArea {
+        objectName: "noticePointerShield"
+        anchors.fill: parent
+        hoverEnabled: true
+        acceptedButtons: Qt.AllButtons
+        enabled: notice.visible
+    }
     Text {
         id: label
         x: 18; y: 9

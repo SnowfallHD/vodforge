@@ -6886,7 +6886,9 @@ def test_qt_run_remove_requires_confirmation_and_keeps_unowned_files(
         assert bridge._issue_run_id == job.run_id
         assert bridge.requestRunRemoval(job.run_id)
         assert bridge._runtime.recovered
-        assert "Unindexed partial files" in bridge.fileActionStatus
+        assert "didn't save any files" in bridge.fileActionStatus
+        assert "nothing on your computer changes" in bridge.fileActionStatus
+        assert "removed only after all selected entries" not in bridge.fileActionSummary
         bridge.cancelRunRemovalReview()
         assert not bridge.confirmFileAction()
         assert bridge._runtime.recovered
@@ -7681,3 +7683,118 @@ def test_rating_counts_only_actual_current_completed_runtime_events(
         assert bridge._engagement.rating_pending
     finally:
         bridge.close()
+
+
+def _removal_bridge(tmp_path, monkeypatch, status="Stopped"):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    qt_app()
+    bridge = qt_main.Bridge(None)
+    bridge._timer.stop()
+    job = make_job(tmp_path)
+    job.terminal_status = status
+    bridge._runtime.recovery.terminal_attempt(job, status, "Test")
+    bridge._runtime.recovered = bridge._runtime.recovery.store.load_terminal_jobs()
+    return bridge, job
+
+
+def test_run_that_saved_nothing_can_be_removed_while_a_download_runs(
+    tmp_path, monkeypatch
+):
+    """Field report: Remove was refused whenever any download was running, even
+    for a run that never saved a file (removing it changes nothing on disk)."""
+    from dataclasses import replace
+
+    bridge, job = _removal_bridge(tmp_path, monkeypatch, "Paused")
+    other = replace(make_job(tmp_path), run_id="running-now")
+    monkeypatch.setattr(bridge._runtime, "active_job", other)
+    feedback = []
+    bridge.operationFeedback.connect(feedback.append)
+    try:
+        assert bridge.runRemovable(job.run_id)
+        assert bridge.requestRunRemoval(job.run_id), feedback
+        assert "didn't save any files" in bridge.fileActionSummary
+        assert bridge.confirmFileAction()
+        assert not [j for j in bridge._runtime.recovered if j.run_id == job.run_id]
+        assert bridge._runtime.active_job is other
+        assert "Nothing on your computer changed" in bridge.fileActionStatus
+    finally:
+        monkeypatch.setattr(bridge._runtime, "active_job", None)
+        bridge.close()
+
+
+def test_run_with_saved_files_waits_for_downloads_and_says_why(tmp_path, monkeypatch):
+    from dataclasses import replace
+
+    bridge, job = _removal_bridge(tmp_path, monkeypatch, "Partial")
+    media = tmp_path / "saved.mp4"
+    media.write_bytes(b"saved")
+    bridge._runtime.history = [
+        {
+            "id": "abc123",
+            "title": "Saved part",
+            "vodforge_run_id": job.run_id,
+            "vodforge_output_type": "MP4",
+            "vodforge_output_path": str(media),
+            "vodforge_output_dir": str(tmp_path),
+        }
+    ]
+    monkeypatch.setattr(
+        bridge._runtime, "active_job", replace(make_job(tmp_path), run_id="running-now")
+    )
+    feedback = []
+    bridge.operationFeedback.connect(feedback.append)
+    try:
+        assert not bridge.requestRunRemoval(job.run_id)
+        assert feedback and "changes files on disk" in feedback[-1]
+        assert media.read_bytes() == b"saved"
+    finally:
+        monkeypatch.setattr(bridge._runtime, "active_job", None)
+        bridge.close()
+
+
+@pytest.mark.parametrize("state", ["failed", "cancelled", "pending"])
+def test_remove_is_not_offered_while_recovery_protects_unfinished_files(
+    tmp_path, monkeypatch, state
+):
+    bridge, job = _removal_bridge(tmp_path, monkeypatch, "Paused")
+    store = bridge._runtime.recovery.store
+    monkeypatch.setattr(store, "removal_state", lambda run_id: "protected")
+    feedback = []
+    bridge.operationFeedback.connect(feedback.append)
+    try:
+        assert not bridge.runRemovable(job.run_id)
+        assert not bridge.requestRunRemoval(job.run_id)
+        assert "Retry recovery" in feedback[-1]
+        assert bridge._runtime.recovered
+    finally:
+        bridge.close()
+
+
+def test_removal_state_reads_the_recovery_record(tmp_path):
+    from yt_downloader.run_state import ActiveRunStore
+
+    store = ActiveRunStore(tmp_path / "run-state.json")
+    job = make_job(tmp_path)
+    store.record_terminal_attempt(job, "Stopped", "Test")
+    assert store.removal_state(job.run_id) == "none"
+    payload = store._read_unlocked()
+    record = payload["recovered_failures"][0]
+    record["ownership"] = {
+        "children": [],
+        "staging_dirs": [str(tmp_path / ".vfstage" / "t")],
+    }
+    for recovery_state, expected in [
+        ("ready", "partial"),
+        ("failed", "protected"),
+        ("cancelled", "protected"),
+        ("pending", "protected"),
+    ]:
+        record["recovery_state"] = recovery_state
+        store._write_unlocked(payload)
+        assert store.removal_state(job.run_id) == expected, recovery_state
+    record["recovery_state"] = "ready"
+    record["ownership"]["children"] = [{"pid": 1}]
+    store._write_unlocked(payload)
+    assert store.removal_state(job.run_id) == "protected"

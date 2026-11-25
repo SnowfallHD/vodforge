@@ -31,6 +31,7 @@ from yt_downloader.download_service import (
     single_video_url_requires_video_id_error,
     terminate_all_active_child_processes,
     validate_output_directory_access,
+    youtube_url_video_id,
 )
 from yt_downloader.history import (
     RETRY_JOB_METADATA_KEY,
@@ -63,6 +64,37 @@ from yt_downloader.run_state import (
 )
 from yt_downloader.telemetry_features import export_dimensions
 from yt_downloader.youtube_access import COOKIE_BROWSER_VALUES
+
+
+def link_label(url: str) -> str:
+    """A short, recognisable form of a source link for when no title is known."""
+    text = str(url or "").strip()
+    video_id = youtube_url_video_id(text) if text else None
+    if video_id:
+        return f"youtube.com/watch?v={video_id}"
+    parsed = urlparse(text)
+    if parsed.netloc:
+        label = (parsed.netloc.removeprefix("www.") + parsed.path).rstrip("/")
+        return label[:80] + ("…" if len(label) > 80 else "")
+    return ""
+
+
+def job_display_title(job: DownloadJob) -> str:
+    """The run's video title, or, before one is known, the link it came from.
+
+    A download that never started (for example one waiting when VODForge was
+    closed) has no title yet; a generic "MP4 download" made every such card
+    look the same.
+    """
+    title = str((job.preview_info or {}).get("title") or "")
+    if title.strip():
+        return title
+    urls = [str(u) for u in (job.urls or []) if str(u).strip()]
+    if len(urls) > 1:
+        return f"{len(urls)} links"
+    return (
+        link_label(urls[0] if urls else job.url) or f"{job.output_type.value} download"
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -673,9 +705,7 @@ class DownloadRuntime:
             pass
 
     def _activity_upsert(self, job: DownloadJob, status: str, detail: str) -> None:
-        title = str(
-            (job.preview_info or {}).get("title") or f"{job.output_type.value} download"
-        )
+        title = job_display_title(job)
         entry = {
             "runId": job.run_id,
             "title": title[:300],

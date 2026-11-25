@@ -391,3 +391,21 @@ def test_batch_outcome_checkpoint_reopens_and_resumes_prior_issues(runtime, tmp_
         assert resumed.batch_outcome == paused.batch_outcome
     finally:
         reopened.close()
+
+
+def test_card_title_is_the_link_until_the_video_title_is_known(tmp_path):
+    from yt_downloader.qt_quick.runtime import job_display_title, link_label
+
+    job = make_job(tmp_path)
+    job.preview_info = {}
+    # A download that never started (waiting when VODForge closed) has no title.
+    assert job_display_title(job) == "youtube.com/watch?v=abc123"
+    job.urls = [job.url, "https://www.youtube.com/watch?v=def456"]
+    assert job_display_title(job) == "2 links"
+    job.preview_info = {"title": "  Real title  "}
+    assert job_display_title(job) == "  Real title  "
+    assert link_label("https://youtu.be/xyz?si=tracking") == "youtube.com/watch?v=xyz"
+    assert link_label("https://www.example.com/some/video/") == "example.com/some/video"
+    assert link_label("not a link") == ""
+    job.preview_info, job.urls, job.url = {}, [], ""
+    assert job_display_title(job) == "MP4 download"

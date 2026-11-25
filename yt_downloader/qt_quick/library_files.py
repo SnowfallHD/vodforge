@@ -27,7 +27,7 @@ from yt_downloader.history import (
     load_history,
 )
 from yt_downloader.library_move_summary import move_summary
-from yt_downloader.platform_services import system_trash_available
+from yt_downloader.platform_services import is_windows, system_trash_available
 
 
 def relocated_owner_map(
@@ -44,6 +44,44 @@ def relocated_owner_map(
         if len(matches) == 1:
             relocated[owner] = matches.pop()
     return relocated
+
+
+def trash_name(platform: str | None = None) -> str:
+    """What the person's system calls the place deleted files go."""
+    return "Recycle Bin" if is_windows(platform) else "Trash"
+
+
+def trash_summary(ready: int, missing: int, files: int, leftover_files: int = 0) -> str:
+    """Plain wording for what moving Library items to the Trash does."""
+    place = trash_name()
+    parts = []
+    if ready:
+        videos = "1 video" if ready == 1 else f"{ready} videos"
+        their = "its" if ready == 1 else "their"
+        count = f"{files} file{'s' if files != 1 else ''} in all"
+        parts.append(
+            f"Move {videos} to the {place}, with {their} metadata and thumbnail "
+            f"files ({count})."
+        )
+    if missing:
+        gone = "1 item is" if missing == 1 else f"{missing} items are"
+        parts.append(
+            f"{gone} already gone from disk, so only "
+            + ("its Library entry is" if missing == 1 else "their Library entries are")
+            + " removed"
+            + (
+                f", and the {leftover_files} metadata and thumbnail file"
+                + ("s" if leftover_files != 1 else "")
+                + f" left behind go to the {place}."
+                if leftover_files
+                else "."
+            )
+        )
+    parts.append(
+        "Folders left empty are removed too, up to the channel folder once nothing "
+        "else is in it. Other files in those folders stay."
+    )
+    return " ".join(parts)
 
 
 class QtLibraryFiles:
@@ -114,7 +152,7 @@ class QtLibraryFiles:
             return False
         if action == "delete" and not system_trash_available():
             self.phase = "error"
-            self.status = "Trash is unavailable. The media and Library card were kept."
+            self.status = f"The {trash_name()} is unavailable. The media and Library card were kept."
             return False
         self.action, self.destination = action, destination
         self.records = copy.deepcopy(list(records))
@@ -268,10 +306,13 @@ class QtLibraryFiles:
                     )
                 else:
                     owned_files = sum(len(item.artifacts) for item in payload.items)
-                    self.status = (
-                        f"Move {owned_files} owned file(s) to Trash and remove "
-                        f"{ready + missing} Library entry(s)? Verified empty download "
-                        "folders are cleaned; the output root and other content stay."
+                    leftover_files = sum(
+                        len(item.artifacts)
+                        for item in payload.items
+                        if item.state == "missing"
+                    )
+                    self.status = trash_summary(
+                        ready, missing, owned_files - leftover_files, leftover_files
                     )
                 if not self.eligible and self.action != "move":
                     reasons = []

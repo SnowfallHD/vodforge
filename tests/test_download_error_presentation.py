@@ -321,7 +321,9 @@ def test_refused_download_says_it_is_usually_temporary_not_update_the_app():
     from urllib.error import HTTPError
 
     error = RuntimeError("download failed")
-    error.__cause__ = HTTPError("https://example.invalid/a", 403, "Forbidden", None, None)
+    error.__cause__ = HTTPError(
+        "https://example.invalid/a", 403, "Forbidden", None, None
+    )
     message = download_error_message(error)
     assert "HTTP 403" in message and "wait a few minutes" in message
     assert "Update VODForge" not in message
@@ -332,7 +334,11 @@ def test_refused_download_says_it_is_usually_temporary_not_update_the_app():
     ("warning", "formats", "expected"),
     [
         ("rate_limited", [], True),
-        ("rate_limited", [{"format_id": "18", "vcodec": "avc1", "acodec": "aac"}], False),
+        (
+            "rate_limited",
+            [{"format_id": "18", "vcodec": "avc1", "acodec": "aac"}],
+            False,
+        ),
         ("formats_missing", [], False),
         (None, [], False),
     ],
@@ -350,3 +356,56 @@ def test_no_media_while_rate_limited_says_wait(warning, formats, expected):
     if message:
         assert "limiting requests" in message and "Wait" in message
         assert "Settings" not in message
+
+
+STORYBOARDS = [
+    {"format_id": f"sb{n}", "vcodec": "none", "acodec": "none", "ext": "mhtml"}
+    for n in range(4)
+]
+
+
+@pytest.mark.parametrize(
+    ("warning", "formats", "expected"),
+    [
+        # The field case: only the four storyboard image formats came back.
+        ("challenge_solving_failed", STORYBOARDS, "player"),
+        ("challenge_solving_failed", [], "player"),
+        # Rate limiting still wins when YouTube returned nothing at all.
+        ("rate_limited", [], "limit"),
+        ("bot_challenge", STORYBOARDS, None),
+        (None, STORYBOARDS, None),
+    ],
+)
+def test_player_check_failure_says_update_not_sign_in(warning, formats, expected):
+    from yt_downloader.download_error_presentation import known_youtube_cause_message
+    from yt_downloader.failure_diagnostics import SourceSelectionError, capture_failure
+
+    error = SourceSelectionError("No usable video source", formats)
+    diagnostic = capture_failure(
+        error, stage="analysis", extractor_warnings={warning} if warning else ()
+    )
+    message = known_youtube_cause_message(diagnostic)
+    if expected is None:
+        assert message is None
+        return
+    assert message is not None
+    if expected == "player":
+        assert "changed how its player works" in message
+        assert "Check for updates" in message
+        # The old guidance sent people to YouTube access, which cannot help here.
+        assert "YouTube access" not in message and "Browser" not in message
+    else:
+        assert "limiting requests" in message
+
+
+def test_player_check_failure_in_an_audio_run_also_says_update():
+    from yt_downloader.download_error_presentation import known_youtube_cause_message
+    from yt_downloader.failure_diagnostics import SourceSelectionError, capture_failure
+
+    diagnostic = capture_failure(
+        SourceSelectionError("No usable audio source", STORYBOARDS),
+        stage="analysis",
+        extractor_warnings={"challenge_solving_failed"},
+    )
+    assert diagnostic.failure_code == "no_audio_stream"
+    assert "changed how its player works" in known_youtube_cause_message(diagnostic)

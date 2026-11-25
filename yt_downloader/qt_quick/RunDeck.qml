@@ -10,7 +10,7 @@ Item {
     // One measured slot keeps active controls in the deck's header allocation.
     property Component headerActions: null
     property bool headerActionsEnabled: true
-    readonly property real headerActionsAvailableWidth: Math.max(0, width - deckHeading.implicitWidth -
+    readonly property real headerActionsAvailableWidth: Math.max(0, width - deckHeading.implicitWidth - (resumeAllButton.visible ? resumeAllButton.implicitWidth + 8 : 0) -
         (allRunsButton.visible ? allRunsButton.width : 0) - 2 * deckHeader.spacing)
     readonly property real headingTopInset: 12
     implicitHeight: deckLayout.implicitHeight + headingTopInset
@@ -45,9 +45,13 @@ Item {
         hoverClose.stop()
         allRunsPopup.close()
     }
+    // False while another surface owns the pointer (a modal panel or menu);
+    // the All runs list must not open behind or on top of it.
+    property bool hoverAdmissible: true
     function reconcilePointerMotion() {
         if (!allRunsButton.visible || !deck.visible) { retireHover(); return }
-        const overTrigger = deck.appBridge.isPointerOverItem(allRunsButton)
+        const overTrigger = deck.hoverAdmissible && !actionsPopup.visible &&
+            deck.appBridge.isPointerOverItem(allRunsButton)
         const overPopup = allRunsPopup.visible && deck.appBridge.isPointerOverItem(allRunsPopup.contentItem.parent)
         allRunsButton.liveHover = !deck.appBridge.isPointerPressed() && overTrigger
         if (!deck.appBridge.isPointerPressed() && overTrigger) {
@@ -118,6 +122,19 @@ Item {
                 visible: deck.headerActionsEnabled && item !== null
                 Layout.preferredWidth: item ? Math.min(item.implicitWidth, deck.headerActionsAvailableWidth) : 0
                 Layout.preferredHeight: item ? item.implicitHeight : 0
+            }
+            // Several downloads paused together (VODForge was closed with work
+            // waiting): one action resumes them all, in their original order.
+            StoneButton {
+                id: resumeAllButton
+                objectName: "resumeAllPausedButton"
+                visible: (deck.appBridge.pausedCount || 0) > 1
+                label: "Resume all " + (deck.appBridge.pausedCount || 0)
+                size: "inline"
+                Layout.preferredWidth: implicitWidth
+                Layout.preferredHeight: buttonMetrics.inline.height
+                Accessible.description: "Resume every paused download; they run one at a time."
+                onActivated: deck.appBridge.resumeAllPaused()
             }
             // This hover trigger has one held face. Pointer presses navigate;
             // they do not introduce StoneButton's separate click-face state.
@@ -352,7 +369,7 @@ Item {
             }
             StoneButton {
                 objectName: "dismissTerminalRun"
-                visible: (deck.selectedRecord.kind === "terminal" || deck.selectedRecord.retrySidecarsOnly === true) && !deck.selectedRecord.protectedRecovery
+                visible: (deck.selectedRecord.kind === "terminal" || deck.selectedRecord.retrySidecarsOnly === true) && deck.selectedRecord.removable !== false
                 label: "Remove"
                 Layout.fillWidth: true
                 onActivated: { deck.appBridge.requestRunRemoval(deck.selectedRecord.runId); actionsPopup.close() }

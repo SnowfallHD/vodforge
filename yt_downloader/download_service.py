@@ -43,9 +43,9 @@ from .cookie_inputs import (
 from .download_error_presentation import (
     YouTubeAccessMessage,
     is_youtube_access_challenge,
+    known_youtube_cause_message,
     technical_download_error,
     youtube_access_message,
-    youtube_rate_limit_message,
 )
 from .export_inputs import (
     validate_custom_cover_art,
@@ -6503,7 +6503,7 @@ class DownloadWorkerCore:
             failure_detail=job.failure_diagnostic,
             dimensions={"failed_count": "1"},
         )
-        issue = youtube_rate_limit_message(
+        issue = known_youtube_cause_message(
             job.failure_diagnostic
         ) or format_ytdlp_user_error(error)
         if item.total <= 1:
@@ -7121,9 +7121,9 @@ class DownloadWorkerCore:
             # One video YouTube blocked; a playlist's summary error is not one.
             user_error = youtube_access_message(cookies_on=job.use_cookies)
         elif not isinstance(user_error, YouTubeAccessMessage) and (
-            limited := youtube_rate_limit_message(job.failure_diagnostic)
+            known := known_youtube_cause_message(job.failure_diagnostic)
         ):
-            user_error = limited
+            user_error = known
         self._emit_failed_download_item_metadata(job, result, user_error)
         write_diagnostic(f"download worker error: {type(error).__name__}: {error}")
         if re_raise:

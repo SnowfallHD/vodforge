@@ -4408,7 +4408,9 @@ def test_cookie_file_takes_precedence_over_browser_cookie_import(tmp_path: Path)
 def test_windows_chromium_cookie_error_is_actionable(monkeypatch):
     monkeypatch.setattr(app_module.sys, "platform", "win32")
 
-    with pytest.raises(RuntimeError, match="exported YouTube cookies.txt"):
+    with pytest.raises(
+        RuntimeError, match="choose Browser → Firefox, or choose cookies.txt"
+    ):
         apply_ytdlp_cookie_options(
             {}, use_cookies=True, cookie_file=None, cookie_browser="Chrome"
         )

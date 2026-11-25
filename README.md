@@ -448,6 +448,7 @@ before producing a release.
 - YouTube audio is already compressed. The 320 kbps MP3 default minimizes additional encoding loss, but it cannot become lossless or restore source detail.
 - Choose Original audio to avoid that additional lossy encoding step. MOV and other output containers are not currently offered.
 - Browser-cookie and `cookies.txt` access run through `yt-dlp`; only the selected method is active, and VODForge does not upload or store cookie contents.
+- On Windows, Edge, Chrome, Brave, Opera, Vivaldi and Chromium lock their sign-in so other apps can't read it, so VODForge offers only Firefox there; use `cookies.txt` for other browsers.
 - Download only content you own or have permission to use, and follow the applicable platform terms and laws.
 
 ## Contributing

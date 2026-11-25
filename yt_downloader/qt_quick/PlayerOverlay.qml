@@ -158,7 +158,11 @@ Item {
         objectName: "playerSeekPreview"
         onVisibleChanged: Qt.callLater(controls.observePreview)
         visible: (seekHover.containsMouse || previewHover.hovered) && controls.player && controls.player.duration > 0
-        width: 160; height: chapterTrack.chapterAt(controls.hoverSeconds) ? 132 : 112; radius: 7
+        // The stage clips its content, so on a short player the preview must fit
+        // in the room above the controls instead of being cut off at the top.
+        readonly property real fullHeight: chapterTrack.chapterAt(controls.hoverSeconds) ? 132 : 112
+        readonly property real roomAbove: Math.max(0, controls.y - 4)
+        width: 160; height: Math.min(fullHeight, roomAbove + 9); radius: 7
         x: Math.max(4, Math.min(controls.width - width - 4, seekHover.x + seekHover.mouseX - width / 2))
         y: -height + 9
         color: "#f009090d"
@@ -169,7 +173,8 @@ Item {
             onStatusChanged: Qt.callLater(controls.observePreview)
             anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
             anchors.margins: 4
-            height: 85
+            height: Math.max(0, 85 - (hoverPreview.fullHeight - hoverPreview.height))
+            visible: height >= 24
             source: controls.lastPreviewImage || controls.fallbackArtwork
             fillMode: Image.PreserveAspectFit
             smooth: true

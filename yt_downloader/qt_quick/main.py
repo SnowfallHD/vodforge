@@ -86,7 +86,7 @@ from yt_downloader.cloud_funnel import (
     record_cloud_click,
     record_cloud_seen,
 )
-from yt_downloader.cookie_inputs import browser_cookie_value
+from yt_downloader.cookie_inputs import available_cookie_browsers, browser_cookie_value
 from yt_downloader.download_error_presentation import download_error_message
 from yt_downloader.download_service import (
     DIAGNOSTICS_LOG_PATH,
@@ -225,7 +225,11 @@ from yt_downloader.product_theme import (
 from yt_downloader.qt_quick.analytics import QtAnalyticsSession
 from yt_downloader.qt_quick.artwork import QtArtwork, ThumbnailReductionProvider
 from yt_downloader.qt_quick.help_observations import QtHelpObservations
-from yt_downloader.qt_quick.library_files import QtLibraryFiles, relocated_owner_map
+from yt_downloader.qt_quick.library_files import (
+    QtLibraryFiles,
+    relocated_owner_map,
+    trash_name,
+)
 from yt_downloader.qt_quick.library_window_model import register_window_model
 from yt_downloader.qt_quick.local_conversion import (
     LocalConversionRuntime,
@@ -240,7 +244,11 @@ from yt_downloader.qt_quick.presentation import QtPresentationProbe
 from yt_downloader.qt_quick.previews import QtPreviewSession
 from yt_downloader.qt_quick.relink import QtRelinkSession
 from yt_downloader.qt_quick.run_controls import RunControlEvents, RunControlPresentation
-from yt_downloader.qt_quick.runtime import DownloadPreferences, DownloadRuntime
+from yt_downloader.qt_quick.runtime import (
+    DownloadPreferences,
+    DownloadRuntime,
+    job_display_title,
+)
 from yt_downloader.qt_quick.scene_projection import (
     collection_picker,
     library_scene,
@@ -1001,9 +1009,20 @@ class Bridge(QObject):
     @Property(str, notify=fileActionChanged)
     def fileActionSummary(self) -> str:
         message = self._files.status
-        if self._files.phase == "preview" and self._remove_run_request:
-            message += "\n\nThe run is removed only after all selected entries are cleared. Unverified files and unrelated folders are kept."
+        if (
+            self._files.phase == "preview"
+            and self._remove_run_request
+            and self._remove_run_request[1]
+        ):
+            message = (
+                "This run saved the files below. Removing it moves them to the "
+                f"{trash_name()} first, then removes the run. " + message
+            )
         return message
+
+    @Property(str, constant=True)
+    def trashName(self) -> str:
+        return trash_name()
 
     @Property(_QVARIANT_LIST, notify=fileActionChanged)
     def fileActionPaths(self) -> list[str]:
@@ -1027,9 +1046,7 @@ class Bridge(QObject):
                 for artifact in item.artifacts
             ]
             if paths:
-                message += "\n\nVerified owned files:\n" + "\n".join(paths)
-            if self._remove_run_request:
-                message += "\n\nThe run is removed only after all selected entries are cleared. Unverified files and unrelated folders are kept."
+                message += "\n\nFiles to move:\n" + "\n".join(paths)
         return message
 
     @Property(str, notify=fileActionChanged)
@@ -1242,6 +1259,7 @@ class Bridge(QObject):
             and job in self._runtime.recovered
             and job.terminal_status
             in {"Failed", "Stopped", "Skipped", "Paused", "Partial"}
+            and self._runtime.recovery.store.removal_state(job.run_id) != "protected"
             else "",
             "savedOwner": str(item.get("owner") or self._missing_issue_owner or ""),
         }
@@ -1518,7 +1536,17 @@ class Bridge(QObject):
 
     @Slot(result=bool)
     def confirmFileAction(self) -> bool:
-        if (
+        # Removing a run that saved nothing and holds nothing is a record change
+        # only, allowed while downloads run (see _run_removal_refusal).
+        record_only = bool(
+            self._remove_run_request
+            and not self._remove_run_request[1]
+            and self._runtime.recovery.store.removal_state(
+                self._remove_run_request[0].run_id
+            )
+            == "none"
+        )
+        if not record_only and (
             self._relink.active
             or self._runtime.active_job is not None
             or self._runtime.busy
@@ -1527,6 +1555,11 @@ class Bridge(QObject):
             or self._import_pending
             or self._file_action_busy
         ):
+            self._files.status = (
+                "Downloads or other file work started, so nothing changed. "
+                "Try again when they finish."
+            )
+            self.fileActionChanged.emit()
             return False
         if self._remove_run_request:
             job, owners = self._remove_run_request
@@ -3255,7 +3288,18 @@ class Bridge(QObject):
 
     @Property(_QVARIANT_LIST, constant=True)
     def cookieBrowserOptions(self) -> list[str]:
-        return list(COOKIE_BROWSER_OPTIONS[1:])
+        return available_cookie_browsers()
+
+    @Property(str, constant=True)
+    def cookieBrowserLimitation(self) -> str:
+        """Why some browsers are missing from the list, or empty when none are."""
+        return (
+            "Edge, Chrome, Brave, Opera and Vivaldi lock their sign-in on Windows, "
+            "so VODForge can't use them. Use Firefox, or cookies.txt exported from "
+            "your browser."
+            if len(available_cookie_browsers()) < len(COOKIE_BROWSER_OPTIONS) - 1
+            else ""
+        )
 
     @Property(_QVARIANT_LIST, notify=activityChanged)
     def activity(self) -> list[dict[str, str]]:
@@ -3392,9 +3436,7 @@ class Bridge(QObject):
                     "executionToken": self._run_menu_identity_token,
                     "controls": self.runControls,
                     "kind": "active",
-                    "title": str(
-                        preview.get("title") or f"{active.output_type.value} download"
-                    ),
+                    "title": job_display_title(active),
                     "detail": str(
                         preview.get("uploader") or preview.get("channel") or ""
                     ),
@@ -3418,9 +3460,7 @@ class Bridge(QObject):
                         "kind": kind,
                         "title": "Batch List"
                         if job.batch_mode and job.terminal_status == "Paused"
-                        else str(
-                            preview.get("title") or f"{job.output_type.value} download"
-                        ),
+                        else job_display_title(job),
                         "detail": str(
                             preview.get("uploader")
                             or preview.get("channel")
@@ -3450,6 +3490,9 @@ class Bridge(QObject):
             record.update(
                 recoveryPending=pending,
                 protectedRecovery=True,
+                # Remove works once recovery has settled; until then it can't.
+                removable=self._runtime.recovery.store.removal_state(record["runId"])
+                != "protected",
                 retryEnabled=not pending,
                 retryLabel="Resume" if state == "ready" else "Retry recovery",
                 status="Cancelling recovery"
@@ -5059,6 +5102,41 @@ class Bridge(QObject):
     def pointerMotionSequence(self) -> int:
         return getattr(self, "_hover_pointer_sequence", 0)
 
+    def _covered_by_overlay(self, item: QQuickItem, cursor: QPointF) -> bool:
+        """Whether a popup, menu, modal dim or notice drawn in front of the page
+        covers the pointer at this item.
+
+        The window-wide pointer filter sees every move, so a plain geometry test
+        let controls react through an open menu or the Options panel. Popups and
+        their dims live in Qt's overlay layer, above all page content.
+        """
+        window = self._window
+        content = window.contentItem() if window is not None else None
+        if content is None:
+            return False
+        for layer in content.childItems():
+            # Page-level surfaces that float over content (notices) say so.
+            if (
+                layer.property("shieldsPointer") is True
+                and not layer.isAncestorOf(item)
+                and layer.contains(layer.mapFromGlobal(cursor))
+            ):
+                return True
+        for overlay in content.childItems():
+            if overlay.metaObject().className() != "QQuickOverlay":
+                continue
+            for layer in overlay.childItems():
+                if (
+                    not layer.isVisible()
+                    or layer.opacity() <= 0
+                    or layer is item
+                    or layer.isAncestorOf(item)
+                ):
+                    continue
+                if layer.contains(layer.mapFromGlobal(cursor)):
+                    return True
+        return False
+
     @Slot(QObject, result=bool)
     def isPointerOverItem(self, item: QObject) -> bool:
         # mapFromGlobal uses the item's actual native host without exporting a
@@ -5079,7 +5157,10 @@ class Bridge(QObject):
             expected = QPointF(window.mapToGlobal(item.mapToScene(QPointF()).toPoint()))
             if abs(origin.x() - expected.x()) > 1 or abs(origin.y() - expected.y()) > 1:
                 return False
-            return bool(item.contains(item.mapFromGlobal(QPointF(QCursor.pos()))))
+            cursor = QPointF(QCursor.pos())
+            if not item.contains(item.mapFromGlobal(cursor)):
+                return False
+            return not self._covered_by_overlay(item, cursor)
         except RuntimeError:
             # A queued hover may outlive its QML item or bound window.
             return False
@@ -6091,7 +6172,7 @@ class Bridge(QObject):
 
     @Slot(str)
     def setCookieBrowser(self, value: str) -> None:
-        if value not in COOKIE_BROWSER_OPTIONS[1:] or not browser_cookie_value(value):
+        if value not in available_cookie_browsers() or not browser_cookie_value(value):
             return
         self._cookie_browser = value
         self._cookie_source = CookieSource.BROWSER
@@ -7176,26 +7257,62 @@ class Bridge(QObject):
         self.issueRetrySettingsRequested.emit()
         return True
 
-    @Slot(str, result=bool)
-    def requestRunRemoval(self, run_id: str) -> bool:
+    def _run_removal_refusal(self, run_id: str) -> str:
+        """Why this run cannot be removed right now, or "" when it can.
+
+        A run that saved no files and holds no partial files is only a record:
+        removing it never touches the disk, so it is allowed while downloads
+        run. Anything that moves files to the Trash or deletes partial files
+        waits, because those changes write the Library history and folders a
+        running download may also be writing.
+        """
         job = self._issue_job(run_id)
         if (
             job is None
             or job not in self._runtime.recovered
             or job.terminal_status
             not in {"Failed", "Stopped", "Skipped", "Paused", "Partial"}
-            or self._update_work_pending()
-            or self._files.phase in {"checking", "working"}
         ):
-            self.operationFeedback.emit(
-                "Finish active work or recovery before removing this run."
+            return "This run is no longer available to remove."
+        state = self._runtime.recovery.store.removal_state(run_id)
+        if state == "protected":
+            return (
+                "This run's recovery hasn't finished, so its unfinished files are "
+                "still protected. Choose Retry recovery first."
             )
+        if self._files.busy or self._files.phase in {"checking", "working"}:
+            return "Wait for the current Library file change to finish."
+        saves_files = any(
+            row.get("vodforge_run_id") == run_id for row in self._runtime.history
+        )
+        if (saves_files or state == "partial") and self._update_work_pending():
+            return (
+                "Removing this run changes files on disk, so it waits until "
+                "downloads and other file work finish. Try again then."
+            )
+        return ""
+
+    @Slot(str, result=bool)
+    def runRemovable(self, run_id: str) -> bool:
+        """Whether Remove can ever succeed for this run (recovery has settled)."""
+        return (
+            self._issue_job(run_id) is not None
+            and self._runtime.recovery.store.removal_state(run_id) != "protected"
+        )
+
+    @Slot(str, result=bool)
+    def requestRunRemoval(self, run_id: str) -> bool:
+        refusal = self._run_removal_refusal(run_id)
+        if refusal:
+            self.operationFeedback.emit(refusal)
             return False
+        job = self._issue_job(run_id)
         owners = tuple(
             history_archive_owner(row)
             for row in self._runtime.history
             if row.get("vodforge_run_id") == run_id
         )
+        title = job_display_title(job)
         if owners:
             if not self.startFileActions("delete", list(owners), QUrl()):
                 return False
@@ -7203,17 +7320,13 @@ class Bridge(QObject):
             self._files.plan = None
             self._files.action = "remove_run"
             self._files.phase = "preview"
-            partial = (
-                "Its unfinished partial download, kept so it could resume, "
-                "will be deleted. "
-                if self._runtime.recovery.store.holds_settled_partial(run_id)
-                else "Unindexed partial files cannot be verified and will be kept. "
-            )
             self._files.status = (
-                "Remove this run? No owned Library files are recorded. "
-                + partial
-                + "The output folder and unrelated files will not be removed.\n\n"
-                + str(job.output_dir)
+                f"Remove “{title}” from VODForge? Its unfinished download, kept so "
+                "it could resume, is deleted. Nothing else in "
+                f"{job.output_dir} changes."
+                if self._runtime.recovery.store.removal_state(run_id) == "partial"
+                else f"Remove “{title}” from VODForge? It didn't save any files, "
+                "so nothing on your computer changes."
             )
         self._remove_run_request = (job, owners)
         self.fileActionChanged.emit()
@@ -7233,8 +7346,11 @@ class Bridge(QObject):
         job, owners = request
         remaining = {history_archive_owner(row) for row in self._runtime.history}
         if self._files.phase != "done" or any(owner in remaining for owner in owners):
-            self._files.status += " Run kept because cleanup was incomplete."
+            self._files.status += (
+                " The run was kept because not every file could be moved."
+            )
             return
+        partial = self._runtime.recovery.store.removal_state(job.run_id) == "partial"
         try:
             removed = self._issue_job(
                 job.run_id
@@ -7242,11 +7358,16 @@ class Bridge(QObject):
         except RunStateError:
             removed = False
         self._files.status = (
-            "Run removed. Verified files moved to Trash; already-missing entries cleared."
+            f"Run removed. Its files are in the {trash_name()}."
             if removed and owners
-            else "Run removed. No owned files were recorded; unverified files were kept."
+            else "Run removed. Its unfinished download was deleted."
+            if removed and partial
+            else "Run removed. Nothing on your computer changed."
             if removed
-            else "File cleanup finished, but the run could not be removed. Retry Remove."
+            else f"The files are in the {trash_name()}, but the run couldn't be "
+            "removed. Choose Remove again."
+            if owners
+            else "The run couldn't be removed. Choose Remove again."
         )
         self.historyChanged.emit()
         self.activityChanged.emit()
@@ -7258,6 +7379,7 @@ class Bridge(QObject):
         *,
         current_job: Any = None,
         stay_in_issues: bool = False,
+        quiet: bool = False,
     ) -> bool:
         try:
             if self._closed:
@@ -7349,11 +7471,12 @@ class Bridge(QObject):
         if self._composer_resume_run_id == run_id:
             self._reset_batch_composer()
             self.sourceAccepted.emit()
-        if retry is self._runtime.active_job:
-            self._status_text = "Retry started."
-            self.statusChanged.emit()
-        else:
-            self.operationFeedback.emit("Added retry to the queue.")
+        if not quiet:
+            if retry is self._runtime.active_job:
+                self._status_text = "Retry started."
+                self.statusChanged.emit()
+            else:
+                self.operationFeedback.emit("Added retry to the queue.")
         if stay_in_issues or self._issue_run_id == run_id:
             self._issue_run_id = retry.run_id
             self._folder_inspector_key = f"run:{retry.run_id}"
@@ -7363,9 +7486,61 @@ class Bridge(QObject):
         if stay_in_issues:
             self.historyChanged.emit()
             self._record_update_feature("guidance", "recovery_selected")
-        else:
+        elif not quiet:
             self.select("Forge")
         return True
+
+    def _resumable_paused_ids(self) -> list[str]:
+        """Paused runs that Resume would restart now, in their original order.
+
+        A run still waiting for, or in, startup recovery is left alone: its
+        own Retry recovery action handles it.
+        """
+        ids = []
+        for job in self._runtime.recovered:
+            if job.terminal_status != "Paused":
+                continue
+            resource = self._runtime.resource_recoveries.get(job.run_id)
+            if resource is not None and (
+                resource["recovery_state"] != "ready"
+                or resource.get("recovery_inflight", False)
+            ):
+                continue
+            ids.append(job.run_id)
+        return ids
+
+    @Property(int, notify=runDeckChanged)
+    def pausedCount(self) -> int:
+        return len(self._resumable_paused_ids())
+
+    @Property(int, notify=runDeckChanged)
+    def waitingCount(self) -> int:
+        """Downloads queued behind the active one; closing VODForge pauses them."""
+        return len(self._runtime.queued)
+
+    @Slot(result=int)
+    def resumeAllPaused(self) -> int:
+        """Resume every paused run: the first starts, the rest wait in order."""
+        resumed = 0
+        problems: list[str] = []
+        for run_id in self._resumable_paused_ids():
+            if self._admit_retry(run_id, quiet=True):
+                resumed += 1
+            elif self._status and self._status not in problems:
+                problems.append(self._status)
+        if resumed:
+            message = (
+                f"Resumed {resumed} download{'s' if resumed != 1 else ''}; "
+                "they run one at a time."
+            )
+            if problems:
+                message += f" Some could not resume: {problems[0]}"
+            self.operationFeedback.emit(message)
+            self.select("Forge")
+        elif problems:
+            self.operationFeedback.emit(problems[0])
+        self.runDeckChanged.emit()
+        return resumed
 
     def _pump(self) -> None:
         now = time.monotonic()

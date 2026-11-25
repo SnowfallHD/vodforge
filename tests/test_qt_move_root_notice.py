@@ -14,8 +14,11 @@ def test_delete_preview_counts_owned_companions_when_media_is_missing(tmp_path):
     controller.action = "delete"
     controller.events.put(("plan", plan))
     assert controller.poll()
-    assert "2 owned file(s) to Trash" in controller.status
-    assert "output root and other content stay" in controller.status
+    assert "1 item is already gone from disk" in controller.status
+    assert (
+        "the 2 metadata and thumbnail files left behind go to the" in controller.status
+    )
+    assert "Other files in those folders stay" in controller.status
 
 
 def test_missing_root_notice_does_not_claim_location_is_inaccessible(tmp_path):

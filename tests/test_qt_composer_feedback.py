@@ -235,6 +235,15 @@ def test_window_close_pauses_active_download_and_retires_after_worker(
     sink = bridge._runtime._worker_app.events
     window.close()
     app.processEvents()
+    # Closing with work running or waiting asks first; nothing is paused yet.
+    confirm = window.findChild(QObject, "closeConfirmation")
+    assert confirm.property("visible")
+    assert not bridge._runtime._closing
+    message = window.findChild(QObject, "closeConfirmationMessage").property("text")
+    assert "A download is running and 1 download is waiting" in message
+    assert "paused" in message and "Resume all" in message
+    window.findChild(QObject, "closeConfirmationClose").activated.emit()
+    QTest.qWait(50)
     assert bridge._runtime._closing
     assert window.isVisible(), "Wait for the active worker before retiring the window"
     sink.put((terminal, "Interrupted while closing"))
@@ -248,3 +257,131 @@ def test_window_close_pauses_active_download_and_retires_after_worker(
     )
     assert paused.terminal_status == "Paused"
     assert paused.completed_batch_items == job.completed_batch_items
+
+
+@pytest.mark.parametrize(
+    ("waiting", "running", "expected"),
+    [
+        (0, False, None),
+        (3, False, "3 downloads are waiting"),
+        (1, False, "1 download is waiting"),
+    ],
+)
+def test_close_warns_only_when_work_would_pause(
+    feedback_scene, tmp_path, monkeypatch, waiting, running, expected
+):
+    from dataclasses import replace
+
+    from PySide6.QtCore import QObject
+    from PySide6.QtTest import QTest
+
+    app, bridge, window = feedback_scene
+    bridge._timer.stop()
+    job = make_job(tmp_path)
+    monkeypatch.setattr(
+        bridge._runtime,
+        "queued",
+        [replace(job, run_id=f"waiting-{n}") for n in range(waiting)],
+    )
+    assert bridge.waitingCount == waiting and not bridge.running
+    window.close()
+    app.processEvents()
+    confirm = window.findChild(QObject, "closeConfirmation")
+    if expected is None:
+        assert not confirm.property("visible")
+        QTest.qWait(50)
+        assert not window.isVisible()
+        return
+    assert confirm.property("visible") and window.isVisible()
+    message = window.findChild(QObject, "closeConfirmationMessage").property("text")
+    assert expected in message
+    assert ("Resume all" in message) is (waiting > 1)
+    window.findChild(QObject, "closeConfirmationKeepOpen").activated.emit()
+    QTest.qWait(50)
+    assert window.isVisible() and not confirm.property("visible")
+
+
+def test_resume_all_restarts_every_paused_run_in_order(
+    feedback_scene, tmp_path, monkeypatch
+):
+    """The field case: VODForge closed with downloads waiting; they reopen Paused."""
+    from dataclasses import replace
+
+    from PySide6.QtCore import QObject
+
+    from yt_downloader.run_state import RunRecoveryOwner
+
+    app, bridge, window = feedback_scene
+    bridge._timer.stop()
+    monkeypatch.setattr(runtime_module.threading, "Thread", DormantThread)
+    runtime = bridge._runtime
+    first = make_job(tmp_path)
+    waiting = [
+        replace(
+            first,
+            run_id=f"waiting-{n}",
+            url=f"https://www.youtube.com/watch?v=w{n}",
+            urls=[f"https://www.youtube.com/watch?v=w{n}"],
+        )
+        for n in range(3)
+    ]
+    runtime.recovery.queue_changed(waiting)
+    restored, queued = RunRecoveryOwner(runtime.recovery.store.path).startup_recovery()
+    assert queued == [] and [j.terminal_status for j in restored] == ["Paused"] * 3
+    runtime.recovered = restored
+    bridge.runDeckChanged.emit()
+    app.processEvents()
+    assert bridge.pausedCount == 3
+    button = window.findChild(QObject, "resumeAllPausedButton")
+    assert button.property("visible") and button.property("label") == "Resume all 3"
+    feedback = []
+    bridge.operationFeedback.connect(feedback.append)
+    assert bridge.resumeAllPaused() == 3
+    assert runtime.active_job is not None
+    started = [runtime.active_job, *runtime.queued]
+    assert [job.url for job in started] == [job.url for job in waiting]
+    assert not [job for job in runtime.recovered if job.terminal_status == "Paused"]
+    assert bridge.pausedCount == 0
+    app.processEvents()
+    assert not button.property("visible")
+    assert feedback and feedback[-1].startswith("Resumed 3 downloads")
+
+
+def test_forge_notice_tab_is_drawn_above_the_page_title(feedback_scene):
+    """Field report: the hero title "MP4 download" painted over the notice's tab."""
+    from PySide6.QtCore import QObject
+    from PySide6.QtQuick import QQuickItem
+    from PySide6.QtTest import QTest
+
+    _app, bridge, window = feedback_scene
+    bridge.select("Forge")
+    notice = window.findChild(QObject, "operationNotice")
+    notice.setProperty("message", "A notice that hangs over the hero title.")
+    from PySide6.QtCore import QMetaObject
+
+    QMetaObject.invokeMethod(notice, "open")
+    QTest.qWait(400)
+    drop = window.findChild(QQuickItem, "forgeNoticeDropLayer")
+    title = window.findChild(QQuickItem, "forgeSelectedTitle")
+    assert drop.isVisible()
+    content = window.contentItem()
+
+    def top_level(item):
+        while item.parentItem() is not content:
+            item = item.parentItem()
+        return item
+
+    page = top_level(title)
+    # Stacking among the window's top-level items: page < notice tab < notice text.
+    assert page.z() < drop.z() < notice.property("z")
+    # The tab covers the part of the page right under the composer, where the
+    # hero title sits.
+    tab = window.findChild(QQuickItem, "forgeNoticeDrop")
+    tab_top = tab.mapToScene(QPointF(0, tab.property("shellHeight"))).y()
+    notice_top = notice.mapToScene(QPointF(0, 0)).y()
+    assert abs(tab_top - notice_top) <= 1
+    # The notice stops the pointer from reaching what is underneath.
+    shield = window.findChild(QQuickItem, "noticePointerShield")
+    assert shield.isEnabled() and shield.property("hoverEnabled")
+    # A mini player (z 100) never covers a notice.
+    assert notice.property("z") > 100
