@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from PySide6.QtCore import QObject
+from PySide6.QtTest import QTest
 
 from tests.test_qt_update_check_guidance import (
     update_notice_scene as _update_notice_scene,
@@ -152,6 +153,11 @@ def test_cancelled_window_close_does_not_handoff(
     handoffs = []
     monkeypatch.setattr(bridge._updates, "install", lambda **kw: handoffs.append(kw))
     assert window.close() is False
+    # A running download first asks whether to close; nothing shuts down yet.
+    assert not shutdowns and not bridge._closed and not handoffs
+    assert window.findChild(QObject, "closeConfirmation").property("visible")
+    window.findChild(QObject, "closeConfirmationClose").activated.emit()
+    QTest.qWait(50)
     assert shutdowns and not bridge._closed and not handoffs
     bridge._runtime.active_job = None
     bridge._updates.automatic_download = False

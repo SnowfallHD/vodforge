@@ -1,5 +1,6 @@
 """Unverified saved files offer recovery without acquiring deletion authority."""
 
+import sys
 import time
 
 import pytest
@@ -42,7 +43,10 @@ def test_unreachable_saved_path_can_forget_card_without_deleting_files(
             assert bridge.fileActionReviewOwner == owner
         else:
             assert not started
-            assert "Trash is unavailable" in bridge.fileActionStatus
+            assert "is unavailable" in bridge.fileActionStatus
+            assert ("Recycle Bin" if sys.platform == "win32" else "Trash") in (
+                bridge.fileActionStatus
+            )
             assert bridge.fileActionReviewOwner == ""
         assert not bridge.fileActionEligible
         assert not bridge.confirmFileAction()
