@@ -63,9 +63,15 @@ waive it by rerunning until it passes.
    `migrations/0026_release_0_2_6.sql` in the website repo). Without this, the server
    rejects the new version's telemetry. See the website repo's
    `docs/telemetry-operations.md`.
-2. **CI.** The **Tests** workflow passes on all six jobs (macOS, Windows and Linux,
-   Python 3.11 and 3.13).
-3. **Engineering-quality harness.** On the signing Mac:
+2. **CI.** The **Tests** workflow passes on all six test jobs (macOS, Windows and
+   Linux, Python 3.11 and 3.13) and its **fast-static** job. That job runs
+   `python scripts/fast_static_checks.py`: FAST's blocking style, type, security
+   and dependency checks, with the same commands. The **Build Release Draft**
+   workflow runs it again and builds nothing if it fails.
+3. **Engineering-quality harness.** Run FAST before starting the draft, not after:
+   it takes about 30 minutes, and a failure found once the files are signed means
+   rebuilding, re-signing and testing again (0.3.0's FAST failed only after
+   signing, on formatting and a scanner warning). On the signing Mac:
 
    ```sh
    ./engineering-quality/run fast
@@ -141,6 +147,8 @@ waive it by rerunning until it passes.
 
 1. **Draft.** With clean, pushed `main`, run the **Build Release Draft** workflow in
    GitHub Actions with the version (for example `0.2.6`). It:
+   - runs FAST's static checks (`scripts/fast_static_checks.py`) and stops if
+     any fails;
    - builds and signs the Windows installer and portable ZIP with Azure Artifact
      Signing;
    - builds and tests an Apple silicon app and an Intel app on matching runners,

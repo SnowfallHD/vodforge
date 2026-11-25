@@ -438,7 +438,10 @@ def test_builds_collect_impersonation_runtime(tmp_path):
 def test_private_windows_qa_skips_mac_without_changing_release_gate():
     workflow = (ROOT / ".github/workflows/release.yml").read_text()
     mac = workflow.split("  macos:\n", 1)[1].split("    steps:", 1)[0]
-    assert "if: ${{ !(inputs.artifacts_only && inputs.qa_windows_only) }}" in mac
+    assert (
+        "if: ${{ !cancelled() && needs.fast-static.result != 'failure'"
+        " && !(inputs.artifacts_only && inputs.qa_windows_only) }}"
+    ) in mac
     draft = workflow.split("  draft:\n", 1)[1].split("    steps:", 1)[0]
     assert "if: ${{ !inputs.artifacts_only }}" in draft
     assert "needs: [windows, macos-universal]" in draft

@@ -31,7 +31,9 @@ def test_mp3_playlist_reports_observed_transfer_boundaries_without_private_data(
     app._find_deno = lambda: None
     monkeypatch.setattr(download, "load_yt_dlp", lambda: object())
     monkeypatch.setattr(download, "write_diagnostic", lambda _message: None)
-    monkeypatch.setattr(download, "BATCH_FAILURE_REPORT_PATH", tmp_path / "failures.txt")
+    monkeypatch.setattr(
+        download, "BATCH_FAILURE_REPORT_PATH", tmp_path / "failures.txt"
+    )
     monkeypatch.setattr(
         download, "save_cached_thumbnail_image", lambda *_a, **_kw: None
     )

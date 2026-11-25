@@ -61,19 +61,9 @@ def _pytest_commands(
     ]
 
 
-def run_static_suite(
-    repo_root: Path, case_dir: Path, *, deep: bool = False
-) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    case_dir.mkdir(parents=True, exist_ok=True)
-    from .aggregate_observation import AggregateObservation, ref, save
-
-    observation = AggregateObservation(
-        "unit_static.repository_suite", case_dir, repo_root
-    )
-    python = sys.executable
-    commands: list[tuple[str, list[str], float]] = _pytest_commands(
-        repo_root, python
-    ) + [
+def tool_commands(python: str) -> list[tuple[str, list[str], float]]:
+    """Every non-pytest-group command FAST runs, shared with CI's static job."""
+    return [
         (
             "pytest_harness",
             _tool_command(python, "pytest", "-q", "engineering-quality/tests"),
@@ -156,6 +146,21 @@ def run_static_suite(
             300,
         ),
     ]
+
+
+def run_static_suite(
+    repo_root: Path, case_dir: Path, *, deep: bool = False
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    case_dir.mkdir(parents=True, exist_ok=True)
+    from .aggregate_observation import AggregateObservation, ref, save
+
+    observation = AggregateObservation(
+        "unit_static.repository_suite", case_dir, repo_root
+    )
+    python = sys.executable
+    commands: list[tuple[str, list[str], float]] = _pytest_commands(
+        repo_root, python
+    ) + tool_commands(python)
     started = time.monotonic()
     outputs: dict[str, dict[str, Any]] = {}
     test_environment = os.environ.copy()

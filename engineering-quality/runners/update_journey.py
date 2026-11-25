@@ -338,8 +338,13 @@ class UpdateJourney(rj.Journey):
                 check=False,
             ).stdout
             return out.strip()
-        with (self.app / "Contents/Info.plist").open("rb") as handle:
-            return str(plistlib.load(handle).get("CFBundleShortVersionString", ""))
+        # The installer moves the old app aside before moving the new one in,
+        # so the bundle can be briefly absent or half-written: not yet installed.
+        try:
+            with (self.app / "Contents/Info.plist").open("rb") as handle:
+                return str(plistlib.load(handle).get("CFBundleShortVersionString", ""))
+        except (OSError, plistlib.InvalidFileException):
+            return ""
 
     def receipts(self) -> list[dict[str, Any]]:
         found = []

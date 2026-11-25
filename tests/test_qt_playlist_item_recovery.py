@@ -120,7 +120,10 @@ def test_early_failure_recovers_only_verified_item_after_restart_even_if_report_
         assert [url for url, _ in report_attempts] == [_ITEM_URL, ""]
         assert all("No usable audio source" in error for _, error in report_attempts)
         assert (
-            sum("Could not write the full failure report" in line for line in parent.activity_lines)
+            sum(
+                "Could not write the full failure report" in line
+                for line in parent.activity_lines
+            )
             == 1
         )
         assert not any("Failure report:" in line for line in parent.activity_lines)
@@ -213,7 +216,9 @@ def test_early_failure_recovers_only_verified_item_after_restart_even_if_report_
         assert restored["playlist_index"] == 2
         assert restored["playlist_title"] == "Fixture playlist"
         assert verified.run_id not in {job.run_id for job in bridge._runtime.recovered}
-        assert verified_again.run_id not in {job.run_id for job in bridge._runtime.recovered}
+        assert verified_again.run_id not in {
+            job.run_id for job in bridge._runtime.recovered
+        }
         assert ambiguous.run_id in {job.run_id for job in bridge._runtime.recovered}
     finally:
         window.close()

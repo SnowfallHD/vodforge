@@ -61,7 +61,7 @@ class InstallationState:
 _FINISHED_BROWSER_LINK = {
     "attribution_claim_opened": True,
     "attribution_claim_confirmed": True,
-    "attribution_claim_token": None,
+    "attribution_claim_token": None,  # nosec B105 - an empty value, not a credential
 }
 
 

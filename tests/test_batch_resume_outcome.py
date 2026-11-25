@@ -73,7 +73,9 @@ def test_all_processed_resume_resolves_saved_outcome(tmp_path, monkeypatch):
     assert "1 valid output(s)" in terminal[1] and "1 failed" in terminal[1]
 
 
-def test_append_failure_preserves_original_batch_error_and_later_url(tmp_path, monkeypatch):
+def test_append_failure_preserves_original_batch_error_and_later_url(
+    tmp_path, monkeypatch
+):
     job = make_job(tmp_path)
     job.batch_mode = True
     job.urls = ["https://example.com/bad", "https://example.com/good"]

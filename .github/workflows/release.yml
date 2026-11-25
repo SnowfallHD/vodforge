@@ -38,8 +38,29 @@ permissions:
   id-token: write
 
 jobs:
+  # FAST's blocking style, type, security and dependency checks. A release is
+  # never built from a commit that would fail them (QA-only artifact builds skip it).
+  fast-static:
+    if: ${{ !inputs.artifacts_only }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -r requirements-dev.txt -r engineering-quality/requirements.txt
+      - name: Install media test tools
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg libegl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0
+      - name: Run FAST static checks
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python scripts/fast_static_checks.py
+
   windows:
-    if: ${{ !(inputs.artifacts_only && inputs.qa_macos_only) }}
+    needs: fast-static
+    if: ${{ !cancelled() && needs.fast-static.result != 'failure' && !(inputs.artifacts_only && inputs.qa_macos_only) }}
     runs-on: windows-latest
     environment: release
     steps:
@@ -178,7 +199,8 @@ jobs:
           if-no-files-found: error
 
   macos:
-    if: ${{ !(inputs.artifacts_only && inputs.qa_windows_only) }}
+    needs: fast-static
+    if: ${{ !cancelled() && needs.fast-static.result != 'failure' && !(inputs.artifacts_only && inputs.qa_windows_only) }}
     strategy:
       # One architecture failing shouldn't hide the other's result.
       fail-fast: false

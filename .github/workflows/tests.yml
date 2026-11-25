@@ -10,6 +10,26 @@ permissions:
   contents: read
 
 jobs:
+  # The FAST release gate's blocking static checks, so a failure appears on the
+  # commit that caused it, not during release testing.
+  fast-static:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -r requirements-dev.txt -r engineering-quality/requirements.txt
+      - name: Install media test tools
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg libegl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0
+      - name: Run FAST static checks
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python scripts/fast_static_checks.py
+
   test:
     strategy:
       fail-fast: false

@@ -5961,7 +5961,9 @@ class DownloadWorkerCore:
             entry = {"webpage_url": job.url}
             if saved.get("playlist_index") is not None:
                 entry["playlist_index"] = saved["playlist_index"]
-            write_diagnostic("playlist detection skipped: selected Library item recovery")
+            write_diagnostic(
+                "playlist detection skipped: selected Library item recovery"
+            )
             return _ExpandedDownloadSource(playlist_info=playlist_info, entries=[entry])
         if job.exact_item_retry:
             raise RuntimeError("The saved playlist item's link could not be verified.")
