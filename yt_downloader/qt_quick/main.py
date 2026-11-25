@@ -8586,6 +8586,9 @@ def create_engine(
         "motion", motion_durations(bridge.reducedMotion)
     )
     engine.rootContext().setContextProperty("menuMetrics", dict(MENU_METRICS))
+    # The same timings before Reduce Motion, for a component that applies its
+    # own reduced-motion switch (the Forge notice).
+    engine.rootContext().setContextProperty("motionBase", dict(MOTION_MS))
     engine.rootContext().setContextProperty("monoFontFamily", FONT_MONO_FAMILY)
     engine.rootContext().setContextProperty("qualityOptions", list(QUALITY_OPTIONS))
     engine.rootContext().setContextProperty(

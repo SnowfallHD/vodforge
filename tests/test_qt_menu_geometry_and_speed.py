@@ -449,11 +449,10 @@ def test_thumbnails_arriving_one_by_one_refresh_the_library_once_per_burst(
         bridge.selectHome("Library")
         bridge.navigateLibraryFolders("folders")
         app.processEvents()
-        # Start between bursts: nothing from setup still waiting to refresh.
-        for _ in range(40):
-            if not bridge._artwork_view_timer.isActive():
-                break
-            QTest.qWait(10)
+        # Start between bursts, with no real thumbnail work arriving meanwhile.
+        bridge._timer.stop()
+        bridge._artwork_view_timer.stop()
+        bridge._artwork_view_pending = False
         app.processEvents()
         refreshes = []
         bridge.libraryViewChanged.connect(lambda: refreshes.append(True))

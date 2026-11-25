@@ -22,7 +22,7 @@ Item {
     function open() { expanded = true }
     function close() { expanded = false }
     Behavior on reveal {
-        NumberAnimation { duration: notice.reducedMotion ? 0 : motion.expand; easing.type: Easing.OutCubic }
+        NumberAnimation { duration: notice.reducedMotion ? 0 : motionBase.expand; easing.type: Easing.OutCubic }
     }
     TextMetrics { id: metrics; text: notice.message; font.pixelSize: 14 }
     LiquidSurface { anchors.fill: parent; reveal: notice.reveal; visible: !notice.attached }
