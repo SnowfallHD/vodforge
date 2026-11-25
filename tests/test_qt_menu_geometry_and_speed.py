@@ -77,8 +77,32 @@ def _trigger(window, name):
     )
 
 
+def _scroll_into_view(app, trigger):
+    """Scroll the nearest scrolling ancestor so the whole trigger shows, as a
+    user would before opening its menu (font metrics move it per platform)."""
+    item = trigger.parentItem()
+    while item is not None and item.property("contentY") is None:
+        item = item.parentItem()
+    if item is None:
+        return
+    flick = item
+    top = trigger.mapToItem(flick, QPointF(0, 0)).y()
+    bottom = top + trigger.height()
+    margin = 80
+    content_y = flick.property("contentY")
+    if bottom + margin > flick.height():
+        content_y += bottom + margin - flick.height()
+    elif top < margin:
+        content_y -= margin - top
+    limit = max(0.0, flick.property("contentHeight") - flick.height())
+    flick.setProperty("contentY", max(0.0, min(limit, content_y)))
+    for _ in range(4):
+        app.processEvents()
+
+
 def _open_from(app, window, trigger_name, popup_name):
     trigger = _trigger(window, trigger_name)
+    _scroll_into_view(app, trigger)
     QMetaObject.invokeMethod(trigger, "activated")
     popup = window.findChild(QObject, popup_name)
     for _ in range(40):
@@ -299,7 +323,8 @@ def test_interface_motion_uses_the_shared_timing_table():
     ):
         source = (QML / name).read_text(encoding="utf-8")
         assert "InOutCubic" not in source, name
-        assert "motion." in source, name
+        # The notice applies its own Reduce Motion switch to the base timings.
+        assert "motion." in source or "motionBase." in source, name
     main = (QML / "Main.qml").read_text(encoding="utf-8")
     assert "duration: bridge.reducedMotion ? 0 : 280" not in main
 
