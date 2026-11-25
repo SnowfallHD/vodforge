@@ -126,6 +126,26 @@ pickers remain platform-owned.
 - Popups fit their visible contents up to the window limit. Scroll only the body
   when needed; keep primary/Cancel actions reachable. Hidden fields release their
   height. Do not use a stretch spacer to turn a short form into a tall empty one.
+- Floating menus use `menuMetrics` from `main.py`: 40 px compact-button rows,
+  2 px gaps and a 4 px inset. Let a menu take its height from its rows; never
+  hand-compute a height (`rowsHeight(count)` exists for scrolling lists). A
+  value dropdown (a field showing its current choice) uses `fieldWidth(min)` so
+  it is at least as wide as its field, and its rows use the same words as the
+  field and mark the current choice. Action menus keep their own width and line
+  up with one edge of their trigger.
+- `AnchoredPopup` opens from the trigger edge, grows out of that edge, stays
+  8 px inside the window (not inside a page that sits within it), and snaps to
+  device pixels. Right-click menus open on press, at the pointer, through
+  `anchorPoint`.
+- Motion comes from the shared `motion` table: menus 150 ms in / 100 ms out,
+  tooltips 120 / 80, expanding sections 180, all ease-out and all instant
+  with Reduce Motion. A reveal shapes its surface first and shows text only
+  once the surface is whole.
+- Moving around a view refreshes only that view. Library routes emit
+  `libraryViewChanged`, Watch routes `watchSceneChanged`; `historyChanged` is
+  for a change to saved history, which every view shows. Read a bridge
+  projection once per QML file through a `readonly property`, since every read
+  of a bridge property recomputes it.
 - Catalogs and prose scroll vertically. Technical activity wraps long tokens and
   fixes content width to viewport width; hiding a horizontal scrollbar alone does
   not prevent sideways scrolling. Horizontal scrolling is intentional only for

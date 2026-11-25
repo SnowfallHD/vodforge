@@ -865,21 +865,21 @@ Item {
         preferAbove: true
         alignRight: true
         width: 244
-        height: 102
-        padding: 5
         Column {
             width: parent.width
-            spacing: 2
+            spacing: menuMetrics.gap
             StoneButton {
                 objectName: "playerFitButton"
-                width: parent.width; height: 42
+                width: parent.width; height: menuMetrics.row
+                size: "compact"
                 label: "Fit entire video"
                 selected: !scene.videoFill
                 onActivated: { if (scene.videoFill) scene.toggleFill(); playerOptions.close() }
             }
             StoneButton {
                 objectName: "playerFillButton"
-                width: parent.width; height: 42
+                width: parent.width; height: menuMetrics.row
+                size: "compact"
                 label: "Fill frame (crop)"
                 selected: scene.videoFill
                 enabled: !scene.player || scene.player.activeSubtitleTrack < 0

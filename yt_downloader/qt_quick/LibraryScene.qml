@@ -9,7 +9,8 @@ Item {
     property var appBridge
     signal annotationRequested(int index)
     signal annotationOwnerRequested(string owner)
-    signal actionsRequested(string owner, var anchor, var scrollViewport)
+    // point: where a right-click happened, in anchor coordinates (else null).
+    signal actionsRequested(string owner, var anchor, var scrollViewport, var point)
     signal collectionRequested()
     signal importRequested()
     signal selectionActionRequested(string action, var owners)
@@ -112,6 +113,7 @@ Item {
     }
     readonly property string route: projection.route || "home"
     readonly property var counts: projection.counts || ({})
+    readonly property var categories: appBridge.libraryCategories
     readonly property var groups: projection.groups || []
     readonly property var media: projection.media || []
     property string previousRoute: "home"
@@ -141,7 +143,7 @@ Item {
         anchors.fill: parent
         visible: scene.route === "detail"
         appBridge: scene.appBridge
-        onActionsRequested: function(owner, anchor, scrollViewport) { scene.actionsRequested(owner, anchor, scrollViewport) }
+        onActionsRequested: function(owner, anchor, scrollViewport) { scene.actionsRequested(owner, anchor, scrollViewport, null) }
         onAnnotationRequested: function(owner) { scene.annotationOwnerRequested(owner) }
     }
 
@@ -488,17 +490,18 @@ Item {
                                     scene.toggleGroup(modelData)
                                 } else scene.appBridge.navigateLibraryGroup(modelData.kind, modelData.key)
                             }
-                            function openContextMenu(anchor) {
+                            function openContextMenu(anchor, point) {
                                 scene.groupMenuKind = modelData.kind
                                 scene.groupMenuKey = modelData.key
                                 groupMenu.anchorItem = anchor
+                                groupMenu.anchorPoint = point || null
                                 groupMenu.toggleFrom(anchor)
                             }
                             MouseArea {
                                 objectName: "libraryGroupContextArea"
                                 anchors.fill: parent
                                 acceptedButtons: Qt.RightButton
-                                onClicked: groupCard.openContextMenu(groupCard)
+                                onPressed: function(mouse) { groupCard.openContextMenu(groupCard, Qt.point(mouse.x, mouse.y)) }
                             }
                             ArtworkImage {
                                 objectName: "libraryGroupArtworkImage"
@@ -637,7 +640,8 @@ Item {
                     height: childrenRect.height
                     spacing: 12
                     StoneButton {
-                        label: scene.appBridge.librarySort === "recent" ? "Newest first" : "Title A–Z"
+                        objectName: "librarySortButton"
+                        label: (scene.appBridge.librarySort === "recent" ? "Newest first" : "Title A–Z") + "  ▾"
                         width: 172
                         height: 40
                         onActivated: { sortPopup.anchorItem = this; sortPopup.toggleFrom(this) }
@@ -766,6 +770,16 @@ Item {
                                 if (scene.mediaSelectionMode) scene.toggleSelection(modelData.owner)
                                 else scene.appBridge.openLibraryDetails(modelData.owner)
                             }
+                            // Right-click opens the same menu as More, at the pointer.
+                            MouseArea {
+                                objectName: "libraryMediaContextArea"
+                                anchors.fill: parent
+                                acceptedButtons: Qt.RightButton
+                                enabled: !scene.mediaSelectionMode
+                                onPressed: function(mouse) {
+                                    scene.actionsRequested(mediaCard.modelData.owner, mediaCard, viewport, Qt.point(mouse.x, mouse.y))
+                                }
+                            }
                             ArtworkImage {
                                 objectName: "libraryMediaArtworkImage"
                                 x: mediaCard.artworkFaceInset; y: mediaCard.artworkFaceInset
@@ -799,7 +813,7 @@ Item {
                                 Row {
                                     spacing: 5
                                     StoneButton { label: "Play"; size: "inline"; width: 78; onActivated: scene.appBridge.openLibraryOwner(modelData.owner) }
-                                    StoneButton { label: "More"; size: "inline"; width: 72; onActivated: scene.actionsRequested(modelData.owner, this, viewport) }
+                                    StoneButton { label: "More"; size: "inline"; width: 72; onActivated: scene.actionsRequested(modelData.owner, this, viewport, null) }
                                 }
                             }
                         }
@@ -832,11 +846,9 @@ Item {
                 parent: scene
                 scrollViewport: viewport
                 width: Math.min(260, scene.width - 24)
-                height: 150
-                padding: 5
                 Column {
-                    anchors.fill: parent
-                    spacing: 2
+                    width: parent.width
+                    spacing: menuMetrics.gap
                     Repeater {
                         model: [
                             { label: "Add to Collection…", action: "collection" },
@@ -845,7 +857,8 @@ Item {
                         ]
                         StoneButton {
                             required property var modelData
-                            width: parent.width; height: 44
+                            width: parent.width; height: menuMetrics.row
+                            size: "compact"
                             objectName: "librarySelectionAction_" + modelData.action
                             label: modelData.label
                             onActivated: {
@@ -859,16 +872,18 @@ Item {
             }
             AnchoredPopup {
                 id: sortPopup
+                objectName: "librarySortPopup"
                 parent: scene
                 scrollViewport: viewport
-                width: 190
-                padding: 8
+                // A dropdown is exactly as wide as the button that opens it.
+                width: fieldWidth(172)
                 modal: false
                 Column {
                     width: parent.width
-                    spacing: 5
-                    StoneButton { label: "Recently Added"; width: parent.width; height: 38; onActivated: { scene.appBridge.setLibrarySort("recent"); sortPopup.close() } }
-                    StoneButton { label: "Title"; width: parent.width; height: 38; onActivated: { scene.appBridge.setLibrarySort("title"); sortPopup.close() } }
+                    spacing: menuMetrics.gap
+                    // Same words as the button, and the current order is marked.
+                    StoneButton { size: "compact"; label: "Newest first"; selected: scene.appBridge.librarySort === "recent"; width: parent.width; height: menuMetrics.row; onActivated: { scene.appBridge.setLibrarySort("recent"); sortPopup.close() } }
+                    StoneButton { size: "compact"; label: "Title A–Z"; selected: scene.appBridge.librarySort !== "recent"; width: parent.width; height: menuMetrics.row; onActivated: { scene.appBridge.setLibrarySort("title"); sortPopup.close() } }
                 }
             }
             AnchoredPopup {
@@ -878,14 +893,12 @@ Item {
                 scrollViewport: viewport
                 anchorItem: filterButton
                 width: 206
-                height: 164
-                padding: 4
                 onClosed: collectionsSubmenu.close()
                 onXChanged: collectionsSubmenu.reposition()
                 onYChanged: collectionsSubmenu.reposition()
                 Column {
-                    anchors.fill: parent
-                    spacing: 2
+                    width: parent.width
+                    spacing: menuMetrics.gap
                     Repeater {
                         model: [
                             { label: "All media", type: "All" },
@@ -894,7 +907,8 @@ Item {
                         ]
                         StoneButton {
                             required property var modelData
-                            width: parent.width; height: 38
+                            width: parent.width; height: menuMetrics.row
+                            size: "compact"
                             label: modelData.label
                             selected: scene.appBridge.libraryType === modelData.type
                             onActivated: {
@@ -906,7 +920,8 @@ Item {
                     StoneButton {
                         id: collectionsFilterButton
                         objectName: "libraryCollectionsFilterButton"
-                        width: parent.width; height: 38
+                        width: parent.width; height: menuMetrics.row
+                        size: "compact"
                         label: "Collections  ›"
                         selected: scene.appBridge.libraryCategory !== "All categories"
                         onHoveredChanged: {
@@ -930,17 +945,17 @@ Item {
                 openRight: true
                 anchorItem: collectionsFilterButton
                 width: 212
-                height: Math.min(280, scene.appBridge.libraryCategories.length * 40 + 8)
-                padding: 4
+                height: Math.min(280, rowsHeight(scene.categories.length))
                 ListView {
                     objectName: "libraryCollectionsFilterList"
                     anchors.fill: parent
                     clip: true
-                    spacing: 2
-                    model: scene.appBridge.libraryCategories
+                    spacing: menuMetrics.gap
+                    model: scene.categories
                     delegate: StoneButton {
                         required property string modelData
-                        width: ListView.view.width; height: 38
+                        width: ListView.view.width; height: menuMetrics.row
+                        size: "compact"
                         label: modelData
                         selected: scene.appBridge.libraryCategory === modelData
                         onActivated: {
@@ -962,14 +977,13 @@ Item {
         preferAbove: true
         alignRight: true
         width: 200
-        height: scene.groupMenuLabel === "collection" ? 147 : 100
-        padding: 3
         Column {
-            anchors.fill: parent
-            spacing: 3
+            width: parent.width
+            spacing: menuMetrics.gap
             StoneButton {
                 objectName: "libraryGroupOpenButton"
-                width: parent.width; height: 44
+                width: parent.width; height: menuMetrics.row
+                size: "compact"
                 label: "Open " + scene.groupMenuLabel
                 onActivated: {
                     const group = scene.currentMenuGroup()
@@ -979,7 +993,8 @@ Item {
             }
             StoneButton {
                 objectName: "libraryGroupSelectButton"
-                width: parent.width; height: 44
+                width: parent.width; height: menuMetrics.row
+                size: "compact"
                 label: "Select " + scene.groupMenuLabel
                 onActivated: {
                     const group = scene.currentMenuGroup()
@@ -993,7 +1008,8 @@ Item {
             StoneButton {
                 objectName: "libraryGroupDeleteButton"
                 visible: scene.groupMenuLabel === "collection"
-                width: parent.width; height: 44
+                width: parent.width; height: menuMetrics.row
+                size: "compact"
                 label: "Delete " + scene.groupMenuLabel + "…"
                 onActivated: {
                     const group = scene.currentMenuGroup()

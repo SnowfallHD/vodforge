@@ -22,7 +22,7 @@ Item {
     function open() { expanded = true }
     function close() { expanded = false }
     Behavior on reveal {
-        NumberAnimation { duration: notice.reducedMotion ? 0 : 240; easing.type: Easing.InOutCubic }
+        NumberAnimation { duration: notice.reducedMotion ? 0 : motion.expand; easing.type: Easing.OutCubic }
     }
     TextMetrics { id: metrics; text: notice.message; font.pixelSize: 14 }
     LiquidSurface { anchors.fill: parent; reveal: notice.reveal; visible: !notice.attached }
@@ -45,7 +45,7 @@ Item {
         wrapMode: Text.WordWrap
         maximumLineCount: 4
         elide: Text.ElideRight
-        opacity: Math.max(0, (notice.reveal - 0.65) / 0.35)
+        opacity: Math.max(0, (notice.reveal - 0.6) / 0.4)
         clip: true
         height: Math.min(84, implicitHeight)
         Accessible.role: Accessible.StaticText

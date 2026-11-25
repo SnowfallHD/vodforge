@@ -22,12 +22,12 @@ ToolTip {
             overlayItem ? Math.max(1, overlayItem.width - margins * 2) : 420,
             tooltipLabel.implicitWidth + leftPadding + rightPadding)
     enter: Transition {
-        NumberAnimation { target: tooltip; property: "reveal"; from: 0; to: 1; duration: bridge.reducedMotion ? 0 : 240; easing.type: Easing.InOutCubic }
+        NumberAnimation { target: tooltip; property: "reveal"; from: 0; to: 1; duration: motion.tipIn; easing.type: Easing.OutCubic }
     }
     exit: Transition {
-        NumberAnimation { target: tooltip; property: "reveal"; to: 0; duration: bridge.reducedMotion ? 0 : 180; easing.type: Easing.InOutCubic }
+        NumberAnimation { target: tooltip; property: "reveal"; to: 0; duration: motion.tipOut; easing.type: Easing.OutCubic }
     }
-    background: LiquidSurface { reveal: tooltip.reveal }
+    background: LiquidSurface { reveal: tooltip.reveal; growUp: tooltip.y < 0 }
     contentItem: Text {
         id: tooltipLabel
         objectName: "liquidTooltipLabel"
@@ -36,6 +36,6 @@ ToolTip {
         font.pixelSize: 13
         wrapMode: tooltip.singleLine ? Text.NoWrap : Text.WrapAnywhere
         elide: tooltip.singleLine ? Text.ElideRight : Text.ElideNone
-        opacity: Math.max(0, (tooltip.reveal - 0.65) / 0.35)
+        opacity: Math.max(0, (tooltip.reveal - 0.6) / 0.4)
     }
 }

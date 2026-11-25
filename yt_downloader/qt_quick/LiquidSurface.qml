@@ -5,17 +5,23 @@ Canvas {
     property real reveal: 1.0
     property color fillColor: theme.bg
     property color borderColor: theme.border
+    // Grow out of the bottom edge when the surface sits above its anchor.
+    property bool growUp: false
+    onGrowUpChanged: requestPaint()
     onWidthChanged: requestPaint()
     onHeightChanged: requestPaint()
     onRevealChanged: requestPaint()
     onPaint: {
         const c = getContext("2d")
         c.clearRect(0, 0, width, height)
-        const p = surface.reveal
-        if (p <= 0) return
+        if (surface.reveal <= 0) return
+        // Full shape by 60% of the reveal, as StonePopup; text fades in after.
+        const p = Math.min(1, surface.reveal / 0.6)
         const w = (width - 2) * (0.30 + 0.70 * p)
         const left = (width - w) / 2, right = left + w
-        const top = 1, bottom = Math.max(top, (height - 1) * p)
+        const span = (height - 2) * p
+        const top = surface.growUp ? height - 1 - span : 1
+        const bottom = Math.max(top, top + span)
         const r = Math.min(8, (bottom - top) / 2)
         c.beginPath()
         c.moveTo(left + r, top)

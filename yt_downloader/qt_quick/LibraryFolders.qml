@@ -8,6 +8,8 @@ Item {
     objectName: "libraryFolderBrowser"
     property var appBridge
     readonly property var model: appBridge.libraryFolders
+    // Read each bridge projection once per change; every read recomputes it.
+    readonly property var inspectorItem: appBridge.libraryFolderInspector
     readonly property bool showInspector: Window.window && Window.window.width >= 920 && Window.window.height >= 740
     // Viewport geometry owns column widths; metadata must never widen a column.
     readonly property real inspectorColumnWidth: Math.min(680, Math.max(
@@ -188,17 +190,17 @@ Item {
                 StoneButton {
                     objectName: "libraryFolderCompactDetails"
                     visible: !browser.showInspector
-                    enabled: !!browser.appBridge.libraryFolderInspector.owner
-                             || !!browser.appBridge.libraryFolderInspector.issue
-                             || !!browser.appBridge.libraryFolderInspector.file
-                             || !!browser.appBridge.libraryFolderInspector.folder
+                    enabled: !!browser.inspectorItem.owner
+                             || !!browser.inspectorItem.issue
+                             || !!browser.inspectorItem.file
+                             || !!browser.inspectorItem.folder
                     label: browser.model.mode === "issues" ? "Selected issue" : "Selected details"
                     size: "inline"
                     Layout.preferredWidth: 145
                     onActivated: {
                         if (browser.model.mode === "issues"
-                                || browser.appBridge.libraryFolderInspector.file
-                                || browser.appBridge.libraryFolderInspector.folder)
+                                || browser.inspectorItem.file
+                                || browser.inspectorItem.folder)
                             compactIssuePopup.toggleFrom(this)
                         else browser.appBridge.openSelectedLibraryFolderDetail()
                     }
@@ -280,9 +282,10 @@ Item {
                                 anchors.fill: parent
                                 acceptedButtons: Qt.RightButton
                                 enabled: browser.model.mode === "issues"
-                                onClicked: {
+                                onPressed: function(mouse) {
                                     if (browser.appBridge.selectLibraryFolderComponent(modelData.key)) {
                                         issueContext.anchorItem = parent
+                                        issueContext.anchorPoint = Qt.point(mouse.x, mouse.y)
                                         issueContext.open()
                                     }
                                 }
@@ -363,8 +366,7 @@ Item {
         objectName: "libraryFolderAncestorsPopup"
         parent: browser.Window.window ? browser.Window.window.contentItem : browser
         width: Math.min(320, browser.width - 24)
-        height: Math.min(300, ancestorList.implicitHeight + 16)
-        padding: 8
+        height: Math.min(300, ancestorList.implicitHeight + topPadding + bottomPadding)
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         ScrollView {
             anchors.fill: parent
@@ -374,7 +376,7 @@ Item {
             Column {
                 id: ancestorList
                 width: ancestorsPopup.availableWidth
-                spacing: 4
+                spacing: menuMetrics.gap
                 Repeater {
                     model: pathTrail.crumbs.slice(1, pathTrail.compact ? -1 : -2)
                     StoneButton {
@@ -383,7 +385,8 @@ Item {
                         label: modelData.label
                         accessibilityLabel: "Open " + modelData.label + " folder"
                         width: ancestorList.width
-                        size: "inline"
+                        height: menuMetrics.row
+                        size: "compact"
                         onActivated: {
                             ancestorsPopup.close()
                             browser.appBridge.openLibraryBreadcrumb(modelData.key)
@@ -417,7 +420,6 @@ Item {
         id: issueContext
         objectName: "libraryIssueContextMenu"
         width: 180
-        padding: 10
         property string capturedKey: ""
         onOpened: capturedKey = browser.model.selectedKey || ""
         Column {
@@ -425,6 +427,8 @@ Item {
             StoneButton {
                 label: "Remove"
                 width: parent.width
+                height: menuMetrics.row
+                size: "compact"
                 onActivated: {
                     browser.appBridge.requestInspectorLibraryRemoval(issueContext.capturedKey)
                     issueContext.close()

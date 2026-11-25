@@ -10,17 +10,22 @@ Popup {
     // Opt in only app-owned dropdowns; modal/native surfaces keep their policy.
     property bool liquidMotion: false
     property real reveal: liquidMotion ? 0 : 1
+    // The surface takes its full shape in the first 60% of the reveal; the
+    // contents fade in after that, so text never shows outside the surface.
+    readonly property real formed: Math.min(1, reveal / 0.6)
+    // Grow out of the edge that touches the trigger (set by AnchoredPopup).
+    property bool growUp: false
     enter: Transition {
-        NumberAnimation { target: popup; property: "reveal"; to: 1; duration: popup.liquidMotion && !bridge.reducedMotion ? 240 : 0; easing.type: Easing.InOutCubic }
+        NumberAnimation { target: popup; property: "reveal"; to: 1; duration: popup.liquidMotion ? motion.menuIn : 0; easing.type: Easing.OutCubic }
     }
     exit: Transition {
-        NumberAnimation { target: popup; property: "reveal"; to: 0; duration: popup.liquidMotion && !bridge.reducedMotion ? 180 : 0; easing.type: Easing.InOutCubic }
+        NumberAnimation { target: popup; property: "reveal"; to: 0; duration: popup.liquidMotion ? motion.menuOut : 0; easing.type: Easing.OutCubic }
     }
     Binding {
         target: popup.contentItem
         property: "opacity"
         when: popup.liquidMotion
-        value: Math.max(0, (popup.reveal - 0.65) / 0.35)
+        value: Math.max(0, (popup.reveal - 0.6) / 0.4)
     }
     property Item triggerItem
     property bool dismissedByTriggerPress: false
@@ -72,10 +77,10 @@ Popup {
     background: StoneField {
         id: surface
         x: (popup.width - width) / 2
-        y: 0
-        width: popup.width * (popup.liquidMotion ? 0.30 + 0.70 * popup.reveal : 1)
-        height: popup.height * (popup.liquidMotion ? popup.reveal : 1)
-        opacity: popup.liquidMotion ? popup.reveal : 1
+        y: popup.growUp ? popup.height - height : 0
+        width: popup.width * (popup.liquidMotion ? 0.30 + 0.70 * popup.formed : 1)
+        height: popup.height * (popup.liquidMotion ? popup.formed : 1)
+        opacity: popup.liquidMotion ? Math.min(1, popup.reveal / 0.4) : 1
         surfaceOpacity: popup.surfaceOpacity
         materialWidth: popup.materialWidth
         materialHeight: popup.materialHeight

@@ -7,6 +7,7 @@ Column {
     objectName: "libraryFolderInspector"
     property var appBridge
     readonly property var item: appBridge.libraryFolderInspector
+    readonly property var folders: appBridge.libraryFolders
     readonly property var issueSettings: item.settings || ({})
     readonly property var recoveryActions: appBridge.inspectorRecoveryActions || ({})
     property string section: "Item"
@@ -136,8 +137,8 @@ Column {
     StoneButton {
         id: openCurrentFolder
         objectName: "libraryFolderOpenLocationButton"
-        visible: inspector.appBridge.libraryFolders.mode === "folders"
-                 && !!inspector.appBridge.libraryFolders.path
+        visible: inspector.folders.mode === "folders"
+                 && !!inspector.folders.path
         label: "Open this folder"
         width: parent.width; height: 40
         onActivated: inspector.appBridge.openLibraryCurrentFolder()

@@ -394,7 +394,7 @@ Item {
                                     alignRight: true
                                     width: 250
                                     contentItem: Column {
-                                        spacing: 4
+                                        spacing: menuMetrics.gap
                                         Repeater {
                                             model: [
                                                 {field: "source_description", label: "Copy original description"},
@@ -404,6 +404,8 @@ Item {
                                             StoneButton {
                                                 required property var modelData
                                                 width: parent.width
+                                                height: menuMetrics.row
+                                                size: "compact"
                                                 label: modelData.label
                                                 enabled: !!((detail.item.sourceCopy || {})[modelData.field])
                                                 onActivated: {

@@ -315,7 +315,7 @@ def test_dropdown_matrix_repeated_pointer_and_keyboard(tmp_path, monkeypatch, me
                 "help": "Help",
                 "profile": bridge.localProfile + "  ▾",
                 "support-reason": "Select one…  ▾",
-                "sort": "Newest first",
+                "sort": "Newest first  ▾",
                 "format": "MP4  ▾",
             }[menu]
             matches = [

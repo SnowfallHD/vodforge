@@ -21,7 +21,7 @@ StoneField {
         height: Math.min(implicitHeight, field.Window.window ? field.Window.window.height - 32 : 480)
         contentItem: Flickable {
             objectName: "outputPathTooltipViewport"
-            opacity: Math.max(0, (pathTooltip.reveal - 0.65) / 0.35)
+            opacity: Math.max(0, (pathTooltip.reveal - 0.6) / 0.4)
             implicitHeight: fullPathText.implicitHeight
             contentHeight: fullPathText.implicitHeight
             contentWidth: width

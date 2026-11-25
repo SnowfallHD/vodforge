@@ -439,6 +439,32 @@ class Materials(QQuickImageProvider):
         return image
 
 
+# One timing scale for the whole interface. Menus and tooltips appear quickly
+# and leave faster; expanding sections take a little longer because they move
+# the content around them. Reduced motion makes all of them instant.
+MOTION_MS = {
+    "menuIn": 150,
+    "menuOut": 100,
+    "tipIn": 120,
+    "tipOut": 80,
+    "expand": 180,
+    "fade": 120,
+}
+
+
+# One layout for every floating menu: compact-button rows, a small gap and a
+# small inset, so menus line up with each other and fit their rows exactly.
+MENU_METRICS = {
+    "row": BUTTON_METRICS["compact"].height,
+    "gap": 2,
+    "padding": 4,
+}
+
+
+def motion_durations(reduced: bool) -> dict[str, int]:
+    return {name: 0 if reduced else value for name, value in MOTION_MS.items()}
+
+
 def _system_reduced_motion() -> bool:
     """Read the native preference without importing the Python AppKit bridge."""
     from yt_downloader.qt_quick.mac_preferences import system_reduced_motion
@@ -461,6 +487,8 @@ class Bridge(QObject):
     runningChanged = Signal()
     historyChanged = Signal()
     librarySceneChanged = Signal()
+    # Library route/selection only. History changes emit it too (below).
+    libraryViewChanged = Signal()
     activityChanged = Signal()
     runDeckChanged = Signal()
     forgePreviewChanged = Signal()
@@ -516,6 +544,12 @@ class Bridge(QObject):
 
     def __init__(self, event_log: Path | None) -> None:
         super().__init__()
+        # Forge reads the run deck through several properties when it changes,
+        # which rebuilt it three or four times per change. While one change is
+        # being delivered (_emit_run_deck) it is built once and shared. Any
+        # read outside that moment builds it fresh, so it is never stale.
+        self._run_deck_cache: dict[str, Any] | None = None
+        self._run_deck_delivering = 0
         self._runtime = DownloadRuntime()
         self._download_poll_failed = False
         self._run_menu_identity_job: Any | None = None
@@ -532,11 +566,15 @@ class Bridge(QObject):
         self.historyChanged.connect(self._clear_artwork_records)
         self.historyChanged.connect(self.playerSceneChanged.emit)
         self.historyChanged.connect(self.watchSceneChanged.emit)
-        self.historyChanged.connect(self.librarySceneChanged.emit)
+        # Saved history changes refresh every view. Moving around the Library
+        # refreshes only the Library, so a switch does not rebuild Forge's run
+        # deck, Watch or the player.
+        self.historyChanged.connect(self.libraryViewChanged.emit)
+        self.libraryViewChanged.connect(self.librarySceneChanged.emit)
+        self.libraryViewChanged.connect(self.activeSearchChanged.emit)
         self.librarySearchChanged.connect(self.activeSearchChanged.emit)
-        self.historyChanged.connect(self.activeSearchChanged.emit)
         self.selectionChanged.connect(self.activeSearchChanged.emit)
-        self.historyChanged.connect(self.runDeckChanged.emit)
+        self.historyChanged.connect(self._emit_run_deck)
         self._support = QtSupportSession(self._runtime.history_path.parent)
         self._help_observations = QtHelpObservations()
         self._latest_failure: FailureContext | None = None
@@ -866,6 +904,27 @@ class Bridge(QObject):
         self._save_timer.setSingleShot(True)
         self._save_timer.timeout.connect(self._save_preferences)
         self._feedback_ready = True
+        # Thumbnails finish one at a time. Refresh the Library for the first at
+        # once, then at most every 100 ms, not once per thumbnail.
+        self._artwork_view_timer = QTimer(self)
+        self._artwork_view_timer.setSingleShot(True)
+        self._artwork_view_timer.setInterval(100)
+        self._artwork_view_timer.timeout.connect(self._flush_artwork_view)
+        self._artwork_view_pending = False
+
+    def _refresh_library_for_artwork(self) -> None:
+        if self._artwork_view_timer.isActive():
+            self._artwork_view_pending = True
+            return
+        self._artwork_view_pending = False
+        self.libraryViewChanged.emit()
+        self._artwork_view_timer.start()
+
+    def _flush_artwork_view(self) -> None:
+        if self._artwork_view_pending and not self._closed:
+            self._artwork_view_pending = False
+            self.libraryViewChanged.emit()
+            self._artwork_view_timer.start()
 
     @property
     def _status(self) -> str:
@@ -883,7 +942,7 @@ class Bridge(QObject):
     def status(self) -> str:
         return self._status
 
-    @Property(str, notify=historyChanged)
+    @Property(str, notify=libraryViewChanged)
     def issueOperationStatus(self) -> str:
         owner, message = self._sidecar_feedback
         return message if owner and owner == self._issue_run_id else ""
@@ -1220,7 +1279,7 @@ class Bridge(QObject):
             return False
         return QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.parent)))
 
-    @Property(_QVARIANT_MAP, notify=historyChanged)
+    @Property(_QVARIANT_MAP, notify=libraryViewChanged)
     def inspectorRecoveryActions(self) -> dict[str, Any]:
         """Offer actions for the exact displayed owner, not a mutable list index."""
         if self._library_scene_route != "folders" or not self._folder_inspector_key:
@@ -1475,7 +1534,7 @@ class Bridge(QObject):
         self._status = "Redownloading this saved video with its output profile."
         self.select("Forge")
         self.runningChanged.emit()
-        self.activityChanged.emit()
+        self._emit_activity()
         self.statusChanged.emit()
         return True
 
@@ -2243,7 +2302,7 @@ class Bridge(QObject):
             "avatar" if kind == "channel" else "playlist",
         )
 
-    @Property(_QVARIANT_MAP, notify=historyChanged)
+    @Property(_QVARIANT_MAP, notify=libraryViewChanged)
     def libraryFolders(self) -> dict[str, Any]:
         self._reconcile_folder_browser()
         model = self._folder_browser
@@ -2371,7 +2430,7 @@ class Bridge(QObject):
             ("availability_full" if full else "availability_one", records)
         )
         self._start_availability_scan()
-        self.historyChanged.emit()
+        self.libraryViewChanged.emit()
 
     def _queue_folder_listing(self) -> None:
         model = self._folder_browser
@@ -2384,7 +2443,7 @@ class Bridge(QObject):
             # known routes (or this folder's last listing) until its result arrives.
             self._availability_requests.append(("folder_list", str(model.path)))
             self._start_availability_scan()
-        self.historyChanged.emit()
+        self.libraryViewChanged.emit()
 
     @staticmethod
     def _folder_file_detail(name: str, size: int) -> str:
@@ -2590,7 +2649,7 @@ class Bridge(QObject):
             for slide in self._editorial_slides
         ]
 
-    @Property(_QVARIANT_MAP, notify=historyChanged)
+    @Property(_QVARIANT_MAP, notify=libraryViewChanged)
     def libraryDetail(self) -> dict[str, Any]:
         return self._library_detail_projection(
             self._library_detail_owner,
@@ -2601,7 +2660,7 @@ class Bridge(QObject):
             ),
         )
 
-    @Property(_QVARIANT_MAP, notify=historyChanged)
+    @Property(_QVARIANT_MAP, notify=libraryViewChanged)
     def libraryFolderInspector(self) -> dict[str, Any]:
         if self._library_scene_route != "folders":
             return {}
@@ -3371,7 +3430,7 @@ class Bridge(QObject):
             if newline >= 0:
                 combined = combined[newline + 1 :]
         self._activity_log_text = combined
-        self.activityChanged.emit()
+        self._emit_activity()
 
     @Slot()
     def openActivityLogFolder(self) -> None:
@@ -3402,8 +3461,33 @@ class Bridge(QObject):
     def runControls(self) -> list[dict[str, str]]:
         return self._run_controls.actions(self._runtime.active_job)
 
+    def _deliver_with_run_deck(self, signal: Any) -> None:
+        # Qt tells QML before any Python slot on the same signal, so the
+        # shared copy must be dropped here, before emitting, never after.
+        self._run_deck_cache = None
+        self._run_deck_delivering += 1
+        try:
+            signal.emit()
+        finally:
+            self._run_deck_delivering -= 1
+            self._run_deck_cache = None
+
+    def _emit_run_deck(self) -> None:
+        self._deliver_with_run_deck(self.runDeckChanged)
+
+    def _emit_activity(self) -> None:
+        # Forge's activity line reads the selected run from the deck.
+        self._deliver_with_run_deck(self.activityChanged)
+
     @Property(_QVARIANT_MAP, notify=runDeckChanged)
     def runDeck(self) -> dict[str, Any]:
+        if not self._run_deck_delivering:
+            return self._build_run_deck()
+        if self._run_deck_cache is None:
+            self._run_deck_cache = self._build_run_deck()
+        return self._run_deck_cache
+
+    def _build_run_deck(self) -> dict[str, Any]:
         records: list[dict[str, Any]] = []
         preview = self.forgePreview
         if preview["phase"] in {"loading", "failed"}:
@@ -3844,8 +3928,8 @@ class Bridge(QObject):
         )
         if paused is not None:
             self._prepare_paused_composer(paused)
-        self.runDeckChanged.emit()
-        self.activityChanged.emit()
+        self._emit_run_deck()
+        self._emit_activity()
         self.select("Forge")
         return True
 
@@ -3923,7 +4007,7 @@ class Bridge(QObject):
             self._library_group_kind = self._library_group_key = ""
         if self._library_scene_route != "all" and self._library_search:
             self.setLibrarySearch("")
-        self.historyChanged.emit()
+        self.libraryViewChanged.emit()
 
     def _set_status(self, value: str) -> None:
         self._status = value
@@ -4033,7 +4117,7 @@ class Bridge(QObject):
         self._library_detail_owner = ""
         self._detail_versions = []
         self._library_detail_origin = None
-        self.historyChanged.emit()
+        self.libraryViewChanged.emit()
         if route == "folders":
             self._record_update_feature(
                 "archive", "folders", {"archive_mode": "folders"}
@@ -4058,7 +4142,7 @@ class Bridge(QObject):
         if len(matches) == 1:
             self._folder_browser.navigate(matches[0].path)
             self._queue_folder_listing()
-            self.historyChanged.emit()
+            self.libraryViewChanged.emit()
 
     @Slot(str, str)
     def navigateLibraryGroup(self, kind: str, key: str) -> None:
@@ -4073,7 +4157,7 @@ class Bridge(QObject):
         self._library_scene_route = "group"
         self._library_group_kind = kind
         self._library_group_key = key
-        self.historyChanged.emit()
+        self.libraryViewChanged.emit()
 
     @Slot(str, result=bool)
     def openLibraryDetails(self, owner: str) -> bool:
@@ -4092,7 +4176,7 @@ class Bridge(QObject):
             )
         self._library_detail_owner = owner
         self._library_scene_route = "detail"
-        self.historyChanged.emit()
+        self.libraryViewChanged.emit()
         self._record_update_feature("library", "selected")
         usage(self._analytics.telemetry, "archive", "inspector_opened")
         return True
@@ -4108,7 +4192,7 @@ class Bridge(QObject):
         self._library_detail_owner = ""
         self._detail_versions = []
         self._library_detail_origin = None
-        self.historyChanged.emit()
+        self.libraryViewChanged.emit()
 
     @Slot(str)
     def navigateLibraryFolders(self, mode: str) -> None:
@@ -4154,7 +4238,7 @@ class Bridge(QObject):
             else:
                 self._availability_work.cancel()
                 self._availability_requests.clear()
-                self.historyChanged.emit()
+                self.libraryViewChanged.emit()
 
     @Slot(str, result=bool)
     def openFolderMissingIssue(self, owner: str) -> bool:
@@ -4269,7 +4353,7 @@ class Bridge(QObject):
         if value not in options.get(key, set()):
             return
         self._issue_settings[key] = value
-        self.historyChanged.emit()
+        self.libraryViewChanged.emit()
 
     @Slot(str, str)
     def setIssueManualValue(self, key: str, value: str) -> None:
@@ -4282,7 +4366,7 @@ class Bridge(QObject):
         if not isinstance(manual, dict) or key not in manual or len(value) > 32:
             return
         self._issue_settings["manual"] = {**manual, key: value}
-        self.historyChanged.emit()
+        self.libraryViewChanged.emit()
 
     @Slot(str)
     def setIssueRetrySource(self, value: str) -> None:
@@ -4293,7 +4377,7 @@ class Bridge(QObject):
             and self._missing_plan.job is None
         ):
             self._issue_settings["source"] = value.strip()
-            self.historyChanged.emit()
+            self.libraryViewChanged.emit()
             return
         if self._missing_issue_owner and self._folder_browser.mode == "issues":
             return
@@ -4306,7 +4390,7 @@ class Bridge(QObject):
             self._runtime.terminal_retry_source(self._issue_run_id)
         except ValueError:
             self._issue_settings["source"] = value.strip()
-            self.historyChanged.emit()
+            self.libraryViewChanged.emit()
 
     @Slot(result=bool)
     def copyIssueSource(self) -> bool:
@@ -4346,7 +4430,7 @@ class Bridge(QObject):
         ):
             return
         self._issue_settings[key] = value
-        self.historyChanged.emit()
+        self.libraryViewChanged.emit()
 
     @Slot(QUrl)
     def chooseIssueOutputUrl(self, value: QUrl) -> None:
@@ -4361,7 +4445,7 @@ class Bridge(QObject):
             return
         self._issue_settings["output_dir"] = str(path)
         self._issue_settings["output_url"] = QUrl.fromLocalFile(str(path)).toString()
-        self.historyChanged.emit()
+        self.libraryViewChanged.emit()
 
     @Slot(str, result=bool)
     def dismissOptionalIssue(self, selection_key: str) -> bool:
@@ -4385,8 +4469,8 @@ class Bridge(QObject):
             self._folder_inspector_key = ""
             self._set_status("Video kept. It now appears as completed in Run Deck.")
             self.historyChanged.emit()
-            self.activityChanged.emit()
-            self.runDeckChanged.emit()
+            self._emit_activity()
+            self._emit_run_deck()
         return removed
 
     @Slot(result=bool)
@@ -4598,7 +4682,7 @@ class Bridge(QObject):
         )
         self.historyChanged.emit()
         self.runningChanged.emit()
-        self.activityChanged.emit()
+        self._emit_activity()
         return True
 
     @Slot()
@@ -4648,7 +4732,7 @@ class Bridge(QObject):
             self._folder_inspector_key = key
             self._folder_inspector_owner = ""
             self._folder_inspector_versions = []
-            self.historyChanged.emit()
+            self.libraryViewChanged.emit()
             usage(self._analytics.telemetry, "archive", "inspector_opened")
             return True
         if (
@@ -4668,7 +4752,7 @@ class Bridge(QObject):
             )
             if plan.kind in {"available", "unavailable", "ambiguous"}:
                 self._missing_files.pop(owner, None)
-                self.historyChanged.emit()
+                self.libraryViewChanged.emit()
                 return False
             self._missing_issue_owner = owner
             self._folder_file_path = ""
@@ -4710,7 +4794,7 @@ class Bridge(QObject):
                     "write_info_json": False,
                 }
             )
-            self.historyChanged.emit()
+            self.libraryViewChanged.emit()
             usage(self._analytics.telemetry, "archive", "inspector_opened")
             return True
         if (
@@ -4751,7 +4835,7 @@ class Bridge(QObject):
             self._issue_settings = self._retry_settings_for_job(
                 job, source, str(job.output_dir) if job.output_dir.is_dir() else ""
             )
-            self.historyChanged.emit()
+            self.libraryViewChanged.emit()
             usage(self._analytics.telemetry, "archive", "inspector_opened")
             return True
         if component is None or component.kind != "media":
@@ -4767,7 +4851,7 @@ class Bridge(QObject):
         self._missing_issue_owner = ""
         self._issue_live_phase = ""
         self._issue_settings = {}
-        self.historyChanged.emit()
+        self.libraryViewChanged.emit()
         usage(self._analytics.telemetry, "archive", "inspector_opened")
         return True
 
@@ -4781,7 +4865,7 @@ class Bridge(QObject):
             return False
         changed = self._folder_inspector_owner != owner
         self._folder_inspector_owner = owner
-        self.historyChanged.emit()
+        self.libraryViewChanged.emit()
         if changed:
             usage(self._analytics.telemetry, "archive", "version_selected")
         return True
@@ -4895,7 +4979,7 @@ class Bridge(QObject):
             self._folder_inspector_versions = []
             self._issue_run_id = ""
             self._issue_settings = {}
-            self.historyChanged.emit()
+            self.libraryViewChanged.emit()
             self._record_update_feature(
                 "archive", "folder_opened", {"archive_mode": "folders"}
             )
@@ -4944,7 +5028,7 @@ class Bridge(QObject):
         self._folder_inspector_versions = []
         self._issue_run_id = ""
         self._issue_settings = {}
-        self.historyChanged.emit()
+        self.libraryViewChanged.emit()
         self._record_update_feature(
             "archive", "scene_navigated", {"archive_mode": "folders"}
         )
@@ -4969,7 +5053,7 @@ class Bridge(QObject):
         self._issue_run_id = ""
         self._missing_issue_owner = ""
         self._issue_settings = {}
-        self.historyChanged.emit()
+        self.libraryViewChanged.emit()
         self._record_update_feature(
             "archive", "scene_navigated", {"archive_mode": "folders"}
         )
@@ -4985,7 +5069,7 @@ class Bridge(QObject):
         if model.page >= last_page:
             return
         model.page += 1
-        self.historyChanged.emit()
+        self.libraryViewChanged.emit()
         usage(self._analytics.telemetry, "archive", "scene_paged")
 
     @Slot(str, result=bool)
@@ -4998,7 +5082,7 @@ class Bridge(QObject):
             return False
         changed = self._library_detail_owner != owner
         self._library_detail_owner = owner
-        self.historyChanged.emit()
+        self.libraryViewChanged.emit()
         if changed:
             usage(self._analytics.telemetry, "archive", "version_selected")
         return True
@@ -5028,7 +5112,8 @@ class Bridge(QObject):
         self._watch_group_key = ""
         self._watch_group_kind = ""
         self._watch_search = ""
-        self.historyChanged.emit()
+        self.watchSceneChanged.emit()
+        self.activeSearchChanged.emit()
         if route in {"channels", "playlists", "collections"}:
             self._record_update_feature("watch", route)
 
@@ -5049,7 +5134,8 @@ class Bridge(QObject):
         self._watch_group_kind = kind
         self._watch_group_key = key
         self._watch_search = ""
-        self.historyChanged.emit()
+        self.watchSceneChanged.emit()
+        self.activeSearchChanged.emit()
         if kind == "channel":
             self._record_update_feature(
                 "watch", "channel_opened", {"watch_mode": "channels"}
@@ -5061,7 +5147,8 @@ class Bridge(QObject):
         if value == self._watch_search:
             return
         self._watch_search = value
-        self.historyChanged.emit()
+        self.watchSceneChanged.emit()
+        self.activeSearchChanged.emit()
         if value.strip():
             self._record_update_feature("watch", "searched")
 
@@ -5092,7 +5179,8 @@ class Bridge(QObject):
         else:
             self._watch_scene_route = "home"
             self._watch_group_kind = self._watch_group_key = self._watch_search = ""
-        self.historyChanged.emit()
+        self.watchSceneChanged.emit()
+        self.activeSearchChanged.emit()
 
     @Slot(result=bool)
     def isPointerPressed(self) -> bool:
@@ -5676,7 +5764,8 @@ class Bridge(QObject):
             self._remember_library_route()
             self._library_scene_route = "all"
         self.librarySearchChanged.emit()
-        self.historyChanged.emit()
+        self.libraryViewChanged.emit()
+        self.playerSceneChanged.emit()
         if query.strip():
             self._record_update_feature("library", "searched")
 
@@ -5693,7 +5782,8 @@ class Bridge(QObject):
             return
         self._library_type = output_type
         self.libraryTypeChanged.emit()
-        self.historyChanged.emit()
+        self.libraryViewChanged.emit()
+        self.playerSceneChanged.emit()
         self._record_update_feature("library", "filtered")
 
     @Slot(str)
@@ -5704,7 +5794,8 @@ class Bridge(QObject):
             return
         self._library_category = category
         self.libraryCategoryChanged.emit()
-        self.historyChanged.emit()
+        self.libraryViewChanged.emit()
+        self.playerSceneChanged.emit()
         self._record_update_feature("library", "filtered")
 
     @Slot(str)
@@ -5746,7 +5837,8 @@ class Bridge(QObject):
             return
         self._library_sort = value
         self.librarySortChanged.emit()
-        self.historyChanged.emit()
+        self.libraryViewChanged.emit()
+        self.playerSceneChanged.emit()
         usage(self._analytics.telemetry, "archive", "scene_sorted")
 
     @Slot(int, result=bool)
@@ -7101,7 +7193,7 @@ class Bridge(QObject):
         self._status = "Recovery cancelled; partial files remain in Issues & Recovery."
         self.statusChanged.emit()
         self.historyChanged.emit()
-        self.runDeckChanged.emit()
+        self._emit_run_deck()
         return True
 
     @Slot(str, str, result=bool)
@@ -7177,7 +7269,7 @@ class Bridge(QObject):
             return False
         if removed:
             self.operationFeedback.emit("Queued run removed.")
-            self.activityChanged.emit()
+            self._emit_activity()
             self.historyChanged.emit()
         return removed
 
@@ -7370,8 +7462,8 @@ class Bridge(QObject):
             else "The run couldn't be removed. Choose Remove again."
         )
         self.historyChanged.emit()
-        self.activityChanged.emit()
-        self.runDeckChanged.emit()
+        self._emit_activity()
+        self._emit_run_deck()
 
     def _admit_retry(
         self,
@@ -7390,7 +7482,7 @@ class Bridge(QObject):
                 )
                 self.statusChanged.emit()
                 self.historyChanged.emit()
-                self.runDeckChanged.emit()
+                self._emit_run_deck()
                 return True
             if self._sidecar_work.busy:
                 raise RuntimeError("Finish the artwork recovery before retrying.")
@@ -7422,7 +7514,7 @@ class Bridge(QObject):
                 self._sidecar_feedback = (run_id, self._status)
                 self.historyChanged.emit()
                 self.statusChanged.emit()
-                self.runDeckChanged.emit()
+                self._emit_run_deck()
                 return True
             if job is not None and optional_outcome(job):
                 raise RuntimeError(
@@ -7480,7 +7572,7 @@ class Bridge(QObject):
         if stay_in_issues or self._issue_run_id == run_id:
             self._issue_run_id = retry.run_id
             self._folder_inspector_key = f"run:{retry.run_id}"
-        self.activityChanged.emit()
+        self._emit_activity()
         self.historyChanged.emit()
         self.runningChanged.emit()
         if stay_in_issues:
@@ -7539,7 +7631,7 @@ class Bridge(QObject):
             self.select("Forge")
         elif problems:
             self.operationFeedback.emit(problems[0])
-        self.runDeckChanged.emit()
+        self._emit_run_deck()
         return resumed
 
     def _pump(self) -> None:
@@ -7578,7 +7670,7 @@ class Bridge(QObject):
                 self._status = "Artwork recovery did not finish. The saved video and issue are retained."
             self._sidecar_feedback = (target.job.run_id if target else "", self._status)
             self.statusChanged.emit()
-            self.runDeckChanged.emit()
+            self._emit_run_deck()
             self.historyChanged.emit()
         availability = self._availability_work.poll()
         if availability is not None and availability.kind == "folder_list":
@@ -7615,7 +7707,7 @@ class Bridge(QObject):
                     self._folder_browser.set_folder_entries(current_path, entries)
                 elif availability.error:
                     self._folder_browser.set_folder_entries(current_path, ())
-                self.historyChanged.emit()
+                self.libraryViewChanged.emit()
         elif availability is not None and availability.kind.startswith("availability_"):
             fingerprints = {
                 history_archive_owner(row): record_fingerprint(row)
@@ -7712,7 +7804,7 @@ class Bridge(QObject):
             if is_current_preview:
                 self._set_status(str(metadata_record["status"]))
                 self.forgePreviewChanged.emit()
-            self.runDeckChanged.emit()
+            self._emit_run_deck()
             self.historyChanged.emit()
         if self._relink.poll():
             phase = self._relink.phase
@@ -7867,11 +7959,11 @@ class Bridge(QObject):
                 "detail",
                 "folders",
             }:
-                self.historyChanged.emit()
+                self._refresh_library_for_artwork()
             elif self._selection == "Watch" and not self._playback_url.isEmpty():
                 self.playerSceneChanged.emit()
             elif self._selection == "Forge":
-                self.runDeckChanged.emit()
+                self._emit_run_deck()
         files_changed = self._files.poll()
         files_running = self._files.busy
         if files_running != self._last_library_file_running:
@@ -7925,7 +8017,7 @@ class Bridge(QObject):
                     self._library_category = LIBRARY_ALL_CATEGORIES
                     self.libraryCategoryChanged.emit()
                 self.historyChanged.emit()
-                self.activityChanged.emit()
+                self._emit_activity()
             if self._remove_run_request and self._files.phase in {
                 "done",
                 "error",
@@ -7989,7 +8081,7 @@ class Bridge(QObject):
                     self._forge_technical = "\n".join(active_job_before.activity_lines)[
                         -50_000:
                     ]
-                    self.activityChanged.emit()
+                    self._emit_activity()
                 events = self._runtime.poll()
             except (HistoryError, OSError, RunStateError, ValueError):
                 self._status = "Download state needs attention. See Technical details."
@@ -8114,9 +8206,9 @@ class Bridge(QObject):
                 self.runningChanged.emit()
                 self.historyChanged.emit()
         if events:
-            self.activityChanged.emit()
+            self._emit_activity()
             self.runningChanged.emit()
-            self.runDeckChanged.emit()
+            self._emit_run_deck()
         for kind, payload in self._local.poll():
             if kind == "progress" and isinstance(payload, LocalAudioVideoProgress):
                 self._local_progress = payload.label
@@ -8302,7 +8394,7 @@ class Bridge(QObject):
         }
         self._set_status("Fetching metadata preview…")
         self.forgePreviewChanged.emit()
-        self.runDeckChanged.emit()
+        self._emit_run_deck()
         self.select("Forge")
         return True
 
@@ -8462,7 +8554,7 @@ class Bridge(QObject):
             else:
                 self._status_text = "Preparing download…"
             outcome = "queued" if queued else "started"
-            self.activityChanged.emit()
+            self._emit_activity()
         self.statusChanged.emit()
         self._record("submit", outcome)
         return outcome in {"queued", "started"}
@@ -8490,6 +8582,10 @@ def create_engine(
     engine.rootContext().setContextProperty("bridge", bridge)
     engine.rootContext().setContextProperty("theme", dict(THEME))
     engine.rootContext().setContextProperty("buttonFontFamily", FONT_UI_FAMILY)
+    engine.rootContext().setContextProperty(
+        "motion", motion_durations(bridge.reducedMotion)
+    )
+    engine.rootContext().setContextProperty("menuMetrics", dict(MENU_METRICS))
     engine.rootContext().setContextProperty("monoFontFamily", FONT_MONO_FAMILY)
     engine.rootContext().setContextProperty("qualityOptions", list(QUALITY_OPTIONS))
     engine.rootContext().setContextProperty(

@@ -102,18 +102,18 @@ Item {
         preferAbove: true
         alignRight: true
         width: 270
-        height: 104
-        padding: 3
         Column {
-            anchors.fill: parent
-            spacing: 3
+            width: parent.width
+            spacing: menuMetrics.gap
             StoneButton {
-                width: parent.width; height: 46
+                width: parent.width; height: menuMetrics.row
+                size: "compact"
                 label: "View in Library"
                 onActivated: { morePopup.close(); scene.showLibraryDetails(scene.moreOwner) }
             }
             StoneButton {
-                width: parent.width; height: 46
+                width: parent.width; height: menuMetrics.row
+                size: "compact"
                 label: "Browse personal categories"
                 onActivated: { morePopup.close(); scene.appBridge.navigateWatch("collections") }
             }

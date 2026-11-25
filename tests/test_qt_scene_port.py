@@ -1092,6 +1092,8 @@ def test_issue_inspector_retries_with_selected_settings_and_stays_until_success(
         options_button = window.findChild(QObject, "libraryIssueOptions")
         quality_button.activated.emit()
         options_button.activated.emit()
+        # Measure the final layout, after both sections finish expanding.
+        QTest.qWait(qt_main.MOTION_MS["expand"] + 120)
         app.processEvents()
         download_button = window.findChild(QObject, "libraryIssueDownload")
         polish_scene(issue_panel)
@@ -2266,10 +2268,15 @@ def test_caption_menu_fits_content_and_preserves_bounded_scroll(
         menu.open()
         app.processEvents()
         # One 40px off action, either the 24px empty explanation or 40px
-        # track actions, 2px gaps, and intentional 5px surface padding.
-        expected = 76 if not track_count else min(250, 50 + 42 * track_count)
+        # track actions, 2px gaps, and the shared 4px menu inset.
+        inset = qt_main.MENU_METRICS["padding"]
+        expected = (
+            66 + 2 * inset
+            if not track_count
+            else min(250, 40 + 2 * inset + 42 * track_count)
+        )
         assert menu.property("height") == expected
-        assert menu.property("availableHeight") == expected - 10
+        assert menu.property("availableHeight") == expected - 2 * inset
         assert menu.property("width") == 245
     finally:
         if menu is not None:

@@ -350,6 +350,7 @@ def test_all_runs_list_does_not_open_through_what_is_in_front(run_scene, cover):
             "showActions",
             Q_ARG("QVariant", record),
             Q_ARG("QVariant", trigger),
+            Q_ARG("QVariant", None),
         )
         app.processEvents()
         assert window.findChild(QObject, "runActionsPopup").property("visible")

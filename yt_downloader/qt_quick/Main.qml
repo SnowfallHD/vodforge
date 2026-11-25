@@ -223,6 +223,14 @@ Window {
         bridge.select("Watch")
     }
     readonly property var selectedForgeRun: bridge.forgeSelection
+    readonly property var libraryCategories: bridge.libraryCategories
+    // Pending choices refresh live; selected-run facts retain their job snapshot.
+    // Read once here for both the full and compact details.
+    readonly property var forgeSelectedFacts: (bridge.outputFormat, bridge.exportMode, bridge.quality,
+                                               bridge.outputPath, bridge.downloadOptions, bridge.nvencAvailable,
+                                               bridge.manualValues, bridge.mp3Values, bridge.cookieSource,
+                                               bridge.cookieBrowser, bridge.extraTags, bridge.batchSummary,
+                                               bridge.forgeSelectedFacts)
     readonly property string selectedForgeToneStatus:
         window.showingForgePreview && bridge.forgePreview.phase === "failed" ?
             "Failed" : (window.selectedForgeRun.status || "")
@@ -480,11 +488,7 @@ Window {
                 displayType: window.forgeDisplayType
                 preview: window.showingForgePreview
                 // Pending choices refresh live; selected-run facts retain their job snapshot.
-                selectedFacts: (bridge.outputFormat, bridge.exportMode, bridge.quality,
-                                bridge.outputPath, bridge.downloadOptions, bridge.nvencAvailable,
-                                bridge.manualValues, bridge.mp3Values, bridge.cookieSource,
-                                bridge.cookieBrowser, bridge.extraTags, bridge.batchSummary,
-                                bridge.forgeSelectedFacts)
+                selectedFacts: window.forgeSelectedFacts
             }
         }
     }
@@ -512,43 +516,47 @@ Window {
         parent: window.contentItem
         preferAbove: true
         width: 235
-        height: helpMenuContent.implicitHeight + 2 * padding + 2
-        padding: 3
         Column {
             id: helpMenuContent
-            anchors.fill: parent
-            spacing: 3
+            width: parent.width
+            spacing: menuMetrics.gap
             StoneButton {
-                width: parent.width; height: 46
+                width: parent.width; height: menuMetrics.row
+                size: "compact"
                 label: "Support"
                 onActivated: { bridge.prepareHelpAction("feedback"); helpMenu.close(); window.closeDownloadSettings(); bridge.openSupport("feedback") }
             }
             StoneButton {
-                width: parent.width; height: 46
+                width: parent.width; height: menuMetrics.row
+                size: "compact"
                 label: "Write a review"
                 onActivated: { bridge.prepareHelpAction("review"); helpMenu.close(); window.closeDownloadSettings(); bridge.openSupport("review") }
             }
             StoneButton {
                 objectName: "helpWhatsNew"
-                width: parent.width; height: 46
+                width: parent.width; height: menuMetrics.row
+                size: "compact"
                 visible: bridge.whatsNewAvailable
                 label: "What’s new"
                 onActivated: { bridge.prepareHelpAction("menu"); helpMenu.close(); window.closeDownloadSettings(); bridge.openWhatsNew() }
             }
             StoneButton {
-                width: parent.width; height: 46
+                width: parent.width; height: menuMetrics.row
+                size: "compact"
                 label: "Welcome tour"
                 onActivated: { bridge.prepareHelpAction("welcome"); helpMenu.close(); window.closeDownloadSettings(); bridge.openWelcomeTour() }
             }
             StoneButton {
                 objectName: "helpPrivacyAccess"
-                width: parent.width; height: 46
+                width: parent.width; height: menuMetrics.row
+                size: "compact"
                 label: "Request my data"
                 onActivated: { helpMenu.close(); bridge.requestPrivacyAction("access") }
             }
             StoneButton {
                 objectName: "helpPrivacyDeletion"
-                width: parent.width; height: 46
+                width: parent.width; height: menuMetrics.row
+                size: "compact"
                 label: "Request data deletion"
                 onActivated: { helpMenu.close(); bridge.requestPrivacyAction("deletion") }
             }
@@ -898,15 +906,16 @@ Window {
         id: supportReasonMenu
         parent: window.contentItem
         preferAbove: true
-        width: 290; height: 238; padding: 3
+        width: fieldWidth(240)
         scrollViewport: supportBody
         Column {
-            anchors.fill: parent; spacing: 2
+            width: parent.width; spacing: menuMetrics.gap
             Repeater {
                 model: ["Download problem", "Playback problem", "Interface problem", "Suggestion", "Other"]
                 StoneButton {
                     required property string modelData
-                    width: parent.width; height: 44
+                    width: parent.width; height: menuMetrics.row
+                    size: "compact"
                     label: modelData
                     selected: modelData === supportPopup.reason
                     onActivated: { supportPopup.reason = modelData; supportReasonMenu.close() }
@@ -2440,11 +2449,7 @@ Window {
                         displayType: window.forgeDisplayType
                         preview: window.showingForgePreview
                         // Pending choices refresh live; selected-run facts retain their job snapshot.
-                selectedFacts: (bridge.outputFormat, bridge.exportMode, bridge.quality,
-                                bridge.outputPath, bridge.downloadOptions, bridge.nvencAvailable,
-                                bridge.manualValues, bridge.mp3Values, bridge.cookieSource,
-                                bridge.cookieBrowser, bridge.extraTags, bridge.batchSummary,
-                                bridge.forgeSelectedFacts)
+                selectedFacts: window.forgeSelectedFacts
                         showHeading: false
                     }
                 }
@@ -2479,9 +2484,10 @@ Window {
             onAnnotationOwnerRequested: function(owner) {
                 if (bridge.openAnnotationOwner(owner)) annotationPopup.open()
             }
-            onActionsRequested: function(owner, anchor, scrollViewport) {
+            onActionsRequested: function(owner, anchor, scrollViewport, point) {
                 window.selectedSavedOwner = owner
                 libraryItemPopup.anchorItem = anchor
+                libraryItemPopup.anchorPoint = point || null
                 libraryItemPopup.scrollViewport = scrollViewport
                 libraryItemPopup.toggleFrom(anchor)
             }
@@ -2721,28 +2727,29 @@ Window {
         preferAbove: true
         alignRight: true
         width: 260
-        height: 342
-        padding: 8
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         ColumnLayout {
-            anchors.fill: parent
-            spacing: 5
+            width: parent.width
+            spacing: menuMetrics.gap
             StoneButton {
                 label: "Open folder"
                 Layout.fillWidth: true
-                Layout.preferredHeight: 42
+                Layout.preferredHeight: menuMetrics.row
+                size: "compact"
                 onActivated: { bridge.openLibraryFolder(window.selectedSavedOwner); libraryItemPopup.close() }
             }
             StoneButton {
                 label: "Copy media path"
                 Layout.fillWidth: true
-                Layout.preferredHeight: 42
+                Layout.preferredHeight: menuMetrics.row
+                size: "compact"
                 onActivated: { bridge.copyLibraryPath(window.selectedSavedOwner); libraryItemPopup.close() }
             }
             StoneButton {
                 label: "Find this file…"
                 Layout.fillWidth: true
-                Layout.preferredHeight: 42
+                Layout.preferredHeight: menuMetrics.row
+                size: "compact"
                 onActivated: {
                     window.pendingRelinkOwner = window.selectedSavedOwner
                     libraryItemPopup.close()
@@ -2752,7 +2759,8 @@ Window {
             StoneButton {
                 label: "Edit notes, tags & category"
                 Layout.fillWidth: true
-                Layout.preferredHeight: 42
+                Layout.preferredHeight: menuMetrics.row
+                size: "compact"
                 onActivated: {
                     if (bridge.openAnnotationOwner(window.selectedSavedOwner)) {
                         libraryItemPopup.close()
@@ -2763,7 +2771,8 @@ Window {
             StoneButton {
                 label: "Remove Library card"
                 Layout.fillWidth: true
-                Layout.preferredHeight: 42
+                Layout.preferredHeight: menuMetrics.row
+                size: "compact"
                 onActivated: {
                     if (bridge.prepareLibraryRemoval(window.selectedSavedOwner)) {
                         libraryItemPopup.close()
@@ -2774,7 +2783,8 @@ Window {
             StoneButton {
                 label: "Move media to…"
                 Layout.fillWidth: true
-                Layout.preferredHeight: 42
+                Layout.preferredHeight: menuMetrics.row
+                size: "compact"
                 onActivated: {
                     window.pendingFileOwners = [window.selectedSavedOwner]
                     libraryItemPopup.close()
@@ -2784,7 +2794,8 @@ Window {
             StoneButton {
                 label: "Move media to " + bridge.trashName
                 Layout.fillWidth: true
-                Layout.preferredHeight: 42
+                Layout.preferredHeight: menuMetrics.row
+                size: "compact"
                 onActivated: {
                     libraryItemPopup.close()
                     if (bridge.startFileAction("delete", window.selectedSavedOwner, Qt.url(""))) {
@@ -3214,7 +3225,7 @@ Window {
                 Layout.fillHeight: true
                 clip: true
                 spacing: 5
-                model: bridge.libraryCategories.slice(1)
+                model: window.libraryCategories.slice(1)
                 delegate: StoneButton {
                     required property string modelData
                     width: collectionTargetList.width
@@ -3281,7 +3292,7 @@ Window {
                         // Closing the list restores focus here. That return is
                         // not a fresh request to open it again.
                         if (activeFocus && focusReason !== Qt.PopupFocusReason &&
-                                bridge.libraryCategories.length > 1) {
+                                window.libraryCategories.length > 1) {
                             annotationCategoryMenu.anchorItem = parent
                             annotationCategoryMenu.open()
                         }
@@ -3291,6 +3302,8 @@ Window {
                     id: annotationCategoryButton
                     objectName: "annotationCategoryButton"
                     x: parent.width - 40; y: 3; width: 36; height: 34
+                    // No saved categories yet: nothing to choose, so no list.
+                    visible: window.libraryCategories.length > 1
                     label: "▾"; size: "inline"
                     onActivated: { annotationCategoryMenu.anchorItem = parent; annotationCategoryMenu.toggleFrom(this) }
                 }
@@ -3368,21 +3381,21 @@ Window {
         // Focus can open the list before the arrow has ever been activated.
         triggerItem: annotationCategoryButton
         parent: window.contentItem
-        width: Math.min(360, annotationPopup.width - 36)
-        height: Math.min(250, bridge.libraryCategories.slice(1).length * 41 + 8)
-        padding: 4
+        width: fieldWidth(200)
+        height: Math.min(250, rowsHeight(window.libraryCategories.slice(1).length))
         ScrollView {
             anchors.fill: parent
             clip: true
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
             Column {
                 width: parent.width
-                spacing: 1
+                spacing: menuMetrics.gap
                 Repeater {
-                    model: bridge.libraryCategories.slice(1)
+                    model: window.libraryCategories.slice(1)
                     StoneButton {
                         required property string modelData
-                        width: parent.width; height: 40
+                        width: parent.width; height: menuMetrics.row
+                        size: "compact"
                         label: modelData
                         onActivated: { categoryInput.text = modelData; annotationCategoryMenu.close() }
                     }
@@ -3755,20 +3768,20 @@ Window {
     }
     AnchoredPopup {
         id: appearanceThemeMenu
+        objectName: "appearanceThemeMenu"
         parent: window.contentItem
         scrollViewport: settingsBody
         preferAbove: true
-        width: 230
-        height: 260
-        padding: 4
+        width: fieldWidth(230)
         Column {
-            anchors.fill: parent
-            spacing: 2
+            width: parent.width
+            spacing: menuMetrics.gap
             Repeater {
                 model: bridge.appearanceThemes
                 StoneButton {
                     required property string modelData
-                    width: 222; height: 40
+                    width: parent.width; height: menuMetrics.row
+                    size: "compact"
                     label: modelData
                     selected: bridge.appearanceTheme === modelData
                     onActivated: {
@@ -4062,13 +4075,11 @@ Window {
         parent: window.contentItem
         preferAbove: true
         width: 230
-        height: forgeSecondaryActions.implicitHeight + padding * 2
-        padding: 6
         Column {
             id: forgeSecondaryActions
             objectName: "forgeSecondaryActions"
             width: parent.width
-            spacing: 4
+            spacing: menuMetrics.gap
             Repeater {
                 model: [forgeFolderControl, forgeRetryControl, forgeIssuesControl, forgeFailedFolderControl, forgeRemoveControl]
                 StoneButton {
@@ -4077,8 +4088,9 @@ Window {
                     visible: modelData.available && !modelData.primaryAction
                     label: modelData.label
                     enabled: modelData.enabled
-                    size: "inline"
+                    size: "compact"
                     width: forgeSecondaryActions.width
+                    height: menuMetrics.row
                     onActivated: { modelData.activated(); forgeSecondaryPopup.close() }
                 }
             }
@@ -4093,20 +4105,20 @@ Window {
         parent: window.contentItem
         preferAbove: true
         width: 210
-        height: 100
-        padding: 6
         Column {
-            anchors.fill: parent
-            spacing: 4
+            width: parent.width
+            spacing: menuMetrics.gap
             StoneButton {
                 objectName: "forgeRetrySameSettings"
-                width: parent.width; height: 42
+                width: parent.width; height: menuMetrics.row
+                size: "compact"
                 label: "Same settings"
                 onActivated: { const run = forgeRetryPopup.runId; forgeRetryPopup.close(); bridge.retryTerminal(run) }
             }
             StoneButton {
                 objectName: "forgeRetryChangeSettings"
-                width: parent.width; height: 42
+                width: parent.width; height: menuMetrics.row
+                size: "compact"
                 label: "Change settings"
                 onActivated: { const run = forgeRetryPopup.runId; forgeRetryPopup.close(); bridge.openRunRetrySettings(run) }
             }
@@ -4116,17 +4128,16 @@ Window {
         id: localProfilePopup
         parent: window.contentItem
         preferAbove: true
-        width: 320
-        height: 184
-        padding: 3
+        width: fieldWidth(320)
         Column {
-            anchors.fill: parent
-            spacing: 2
+            width: parent.width
+            spacing: menuMetrics.gap
             Repeater {
                 model: localVideoProfiles
                 StoneButton {
                     required property string modelData
-                    width: 314; height: 42
+                    width: parent.width; height: menuMetrics.row
+                    size: "compact"
                     label: modelData
                     selected: bridge.localProfile === modelData
                     onActivated: { bridge.setLocalProfile(modelData); localProfilePopup.close() }
@@ -4138,18 +4149,17 @@ Window {
         id: formatMenu
         objectName: "forgeFormatPopup"
         parent: window.contentItem
-        width: 170
-        height: 150
-        padding: 3
+        width: fieldWidth(170)
         Column {
-            anchors.fill: parent
-            spacing: 3
+            width: parent.width
+            spacing: menuMetrics.gap
             Repeater {
                 model: ["MP4", "MP3", "Original audio"]
                 StoneButton {
                     required property string modelData
-                    width: 164
-                    height: 44
+                    width: parent.width
+                    height: menuMetrics.row
+                    size: "compact"
                     label: modelData
                     selected: window.outputFormat === modelData
                     onActivated: {
@@ -4169,7 +4179,7 @@ Window {
         readonly property bool customTarget: window.outputFormat === "MP4" && bridge.exportMode === "Manual Override"
         property real customReveal: customTarget ? 1 : 0
         Behavior on customReveal {
-            NumberAnimation { duration: bridge.reducedMotion ? 0 : 280; easing.type: Easing.InOutCubic }
+            NumberAnimation { duration: motion.expand ? motion.expand + 40 : 0; easing.type: Easing.OutCubic }
         }
         readonly property real columnMinimum: 250
         readonly property real columnGap: 16
@@ -4396,7 +4406,7 @@ Window {
                         target: composerQuickExtras
                         property: "opacity"
                         from: 0; to: 1
-                        duration: 200
+                        duration: motion.expand
                         easing.type: Easing.OutCubic
                     }
                     Connections {
@@ -4568,18 +4578,17 @@ Window {
         objectName: "settingsOutputModeMenu"
         parent: window.contentItem
         scrollViewport: settingsBody
-        width: 250
-        height: bridge.exportModeOptions.length * 41 + 8
-        padding: 4
+        width: fieldWidth(185)
         onOpened: settingsQualityMenu.close()
         Column {
-            anchors.fill: parent
-            spacing: 1
+            width: parent.width
+            spacing: menuMetrics.gap
             Repeater {
                 model: bridge.exportModeOptions
                 StoneButton {
                     required property var modelData
-                    width: parent.width; height: 40
+                    width: parent.width; height: menuMetrics.row
+                    size: "compact"
                     label: modelData.label
                     selected: bridge.exportMode === modelData.value
                     onActivated: { bridge.setExportMode(modelData.value); settingsOutputModeMenu.close() }
@@ -4592,18 +4601,17 @@ Window {
         objectName: "settingsQualityMenu"
         parent: window.contentItem
         scrollViewport: settingsBody
-        width: 250
-        height: qualityOptions.length * 41 + 8
-        padding: 4
+        width: fieldWidth(185)
         onOpened: settingsOutputModeMenu.close()
         Column {
-            anchors.fill: parent
-            spacing: 1
+            width: parent.width
+            spacing: menuMetrics.gap
             Repeater {
                 model: qualityOptions
                 StoneButton {
                     required property string modelData
-                    width: parent.width; height: 40
+                    width: parent.width; height: menuMetrics.row
+                    size: "compact"
                     label: modelData
                     selected: bridge.quality === modelData
                     onActivated: { bridge.setQuality(modelData); settingsQualityMenu.close() }
@@ -4618,8 +4626,7 @@ Window {
         scrollViewport: optionsMenu.visible
             ? (optionsMenu.sideBySideExtras ? composerExtrasScroll : composerOptionsScroll)
             : settingsBody
-        width: 270; height: Math.min(320, window.height - 48)
-        padding: 4
+        width: fieldWidth(270); height: Math.min(320, window.height - 48, rowsHeight(bridge.subtitleLanguageChoices.length))
         ScrollView {
             anchors.fill: parent
             clip: true
@@ -4627,13 +4634,14 @@ Window {
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
             Column {
                 width: parent.width
-                spacing: 1
+                spacing: menuMetrics.gap
                 Repeater {
                     model: bridge.subtitleLanguageChoices
                     StoneButton {
                         required property var modelData
                         objectName: "translatedSubtitleChoice_" + modelData.code
-                        width: parent.width; height: 40
+                        width: parent.width; height: menuMetrics.row
+                        size: "compact"
                         label: modelData.label
                         selected: bridge.translatedSubtitleLanguage === modelData.code
                         onActivated: { bridge.setTranslatedSubtitleLanguage(modelData.code); translatedSubtitleMenu.close() }

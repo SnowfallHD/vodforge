@@ -71,7 +71,7 @@ Item {
         function onWidthChanged() { deck.retireHover() }
         function onHeightChanged() { deck.retireHover() }
     }
-    function showActions(record, anchor) {
+    function showActions(record, anchor, point) {
         const trigger = anchor || allRunsButton
         if ((actionsPopup.visible && !actionsPopup.exitInProgress) ||
                 (actionsPopup.triggerItem === trigger && actionsPopup.dismissedByTriggerPress)) {
@@ -83,6 +83,7 @@ Item {
             return
         selectedRecord = record
         actionsPopup.anchorItem = trigger
+        actionsPopup.anchorPoint = point || null
         actionsPopup.toggleFrom(actionsPopup.anchorItem)
     }
     Connections {
@@ -229,7 +230,7 @@ Item {
                         Layout.fillWidth: true
                         Layout.preferredHeight: deck.compact ? 50 : 68
                         onChosen: deck.appBridge.selectRunRecord(record.selectionKey)
-                        onActionsRequested: function(anchor) { deck.showActions(record, anchor) }
+                        onActionsRequested: function(anchor, point) { deck.showActions(record, anchor, point) }
                     }
                 }
             }
@@ -264,7 +265,6 @@ Item {
         preferAbove: true
         alignRight: true
         width: 225
-        padding: 10
         modal: false
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         onClosed: {
@@ -273,7 +273,7 @@ Item {
         }
         ColumnLayout {
             width: actionsPopup.availableWidth
-            spacing: 6
+            spacing: menuMetrics.gap
             StoneButton {
                 objectName: "runCompletedPlay"
                 visible: deck.completedOwner.length > 0
@@ -281,6 +281,8 @@ Item {
                 label: "Play"
                 Accessible.description: enabled ? "Play this saved media" : "Saved media is unavailable. Open Show in Library for recovery."
                 Layout.fillWidth: true
+                Layout.preferredHeight: menuMetrics.row
+                size: "compact"
                 onActivated: { deck.appBridge.openLibraryOwner(deck.completedOwner); actionsPopup.close() }
             }
             StoneButton {
@@ -288,6 +290,8 @@ Item {
                 visible: deck.completedOwner.length > 0
                 label: "Show in Library"
                 Layout.fillWidth: true
+                Layout.preferredHeight: menuMetrics.row
+                size: "compact"
                 onActivated: { if (deck.appBridge.openLibraryDetails(deck.completedOwner)) deck.appBridge.select("Library"); actionsPopup.close() }
             }
             StoneButton {
@@ -297,6 +301,8 @@ Item {
                 label: "Show in Folder"
                 Accessible.description: enabled ? "Open this saved media folder" : "Saved media is unavailable. Open Show in Library for recovery."
                 Layout.fillWidth: true
+                Layout.preferredHeight: menuMetrics.row
+                size: "compact"
                 onActivated: { deck.appBridge.openLibraryFolder(deck.completedOwner); actionsPopup.close() }
             }
             StoneButton {
@@ -307,6 +313,8 @@ Item {
                 Accessible.description: action.description || ""
                 LiquidToolTip { singleLine: true; visible: parent.hovered; text: parent.action.description || "" }
                 Layout.fillWidth: true
+                Layout.preferredHeight: menuMetrics.row
+                size: "compact"
                 onActivated: {
                     deck.appBridge.controlRun(deck.selectedRecord.runId, action.operation)
                     actionsPopup.close()
@@ -320,6 +328,8 @@ Item {
                 Accessible.description: action.description || ""
                 LiquidToolTip { singleLine: true; visible: parent.hovered; text: parent.action.description || "" }
                 Layout.fillWidth: true
+                Layout.preferredHeight: menuMetrics.row
+                size: "compact"
                 onActivated: {
                     deck.appBridge.controlRun(deck.selectedRecord.runId, action.operation)
                     actionsPopup.close()
@@ -333,6 +343,8 @@ Item {
                 Accessible.description: action.description || ""
                 LiquidToolTip { singleLine: true; visible: parent.hovered; text: parent.action.description || "" }
                 Layout.fillWidth: true
+                Layout.preferredHeight: menuMetrics.row
+                size: "compact"
                 onActivated: {
                     deck.appBridge.controlRun(deck.selectedRecord.runId, action.operation)
                     actionsPopup.close()
@@ -344,12 +356,16 @@ Item {
                 label: "Cancel recovery"
                 Accessible.description: "Stop recovery; keep partial files and uncertain ownership in Issues & Recovery."
                 Layout.fillWidth: true
+                Layout.preferredHeight: menuMetrics.row
+                size: "compact"
                 onActivated: { deck.appBridge.cancelResourceRecovery(deck.selectedRecord.runId); actionsPopup.close() }
             }
             StoneButton {
                 visible: deck.selectedRecord.kind === "queued"
                 label: "Remove from queue"
                 Layout.fillWidth: true
+                Layout.preferredHeight: menuMetrics.row
+                size: "compact"
                 onActivated: { deck.appBridge.removeQueued(deck.selectedRecord.runId); actionsPopup.close() }
             }
             StoneButton {
@@ -358,6 +374,8 @@ Item {
                 label: deck.selectedRecord.retryLabel || (deck.selectedRecord.status === "Paused" ? "Resume" : "Retry run")
                 enabled: deck.selectedRecord.retryEnabled !== false
                 Layout.fillWidth: true
+                Layout.preferredHeight: menuMetrics.row
+                size: "compact"
                 onActivated: { deck.appBridge.retryTerminal(deck.selectedRecord.runId); actionsPopup.close() }
             }
             StoneButton {
@@ -365,6 +383,8 @@ Item {
                 visible: (deck.selectedRecord.kind === "terminal" || deck.selectedRecord.retrySidecarsOnly === true) && deck.appBridge.runHasSavedFile(deck.selectedRecord.runId || "")
                 label: "Show in Folder"
                 Layout.fillWidth: true
+                Layout.preferredHeight: menuMetrics.row
+                size: "compact"
                 onActivated: { deck.appBridge.openRunFolder(deck.selectedRecord.runId); actionsPopup.close() }
             }
             StoneButton {
@@ -372,6 +392,8 @@ Item {
                 visible: (deck.selectedRecord.kind === "terminal" || deck.selectedRecord.retrySidecarsOnly === true) && deck.selectedRecord.removable !== false
                 label: "Remove"
                 Layout.fillWidth: true
+                Layout.preferredHeight: menuMetrics.row
+                size: "compact"
                 onActivated: { deck.appBridge.requestRunRemoval(deck.selectedRecord.runId); actionsPopup.close() }
             }
             StoneButton {
@@ -379,11 +401,15 @@ Item {
                 visible: (deck.selectedRecord.kind === "terminal" || deck.selectedRecord.retrySidecarsOnly === true) || deck.selectedRecord.kind === "active"
                 label: "Open Issues & Recovery"
                 Layout.fillWidth: true
+                Layout.preferredHeight: menuMetrics.row
+                size: "compact"
                 onActivated: { deck.appBridge.openRunIssues(deck.selectedRecord.runId); actionsPopup.close() }
             }
             StoneButton {
                 label: "View Activity"
                 Layout.fillWidth: true
+                Layout.preferredHeight: menuMetrics.row
+                size: "compact"
                 onActivated: { deck.appBridge.select("Activity"); actionsPopup.close() }
             }
         }
@@ -449,7 +475,7 @@ Item {
                 showActions: true
                 width: allRunsList.width - 8
                 height: 68
-                onActionsRequested: function(anchor) { deck.showActions(record, anchor) }
+                onActionsRequested: function(anchor, point) { deck.showActions(record, anchor, point) }
                 onChosen: {
                     deck.appBridge.selectRunRecord(record.selectionKey)
                     allRunsPopup.close()

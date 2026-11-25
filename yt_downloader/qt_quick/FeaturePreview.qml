@@ -257,9 +257,10 @@ Item {
         objectName: "featurePreviewCategoryMenu"
         preferAbove: false
         width: Math.min(300, preview.width - 12)
-        height: 45; padding: 3
         StoneButton {
-            anchors.fill: parent
+            width: parent.width
+            height: menuMetrics.row
+            size: "compact"
             label: "Travel"; selected: true
             onActivated: categoryPreview.close()
         }
@@ -269,14 +270,14 @@ Item {
         objectName: "featurePreviewLocalProfileMenu"
         preferAbove: true
         width: Math.min(300, preview.width - 12)
-        height: localVideoProfiles.length * 39 + 6; padding: 3
         Column {
-            anchors.fill: parent
+            width: parent.width
             Repeater {
                 model: localVideoProfiles
                 StoneButton {
                     required property string modelData
-                    width: parent.width; height: 39
+                    width: parent.width; height: menuMetrics.row
+                    size: "compact"
                     label: modelData
                     selected: preview.demoLocalProfile === modelData
                     onActivated: { preview.demoLocalProfile = modelData; localProfilePreview.close() }
@@ -288,17 +289,16 @@ Item {
         id: modePreview
         preferAbove: false
         width: Math.min(300, preview.width - 12)
-        height: 6 * 39 + 6
-        padding: 3
         Column {
-            anchors.fill: parent
-            spacing: 0
+            width: parent.width
+            spacing: menuMetrics.gap
             Repeater {
                 model: bridge.exportModeOptions
                 StoneButton {
                     required property var modelData
                     width: parent.width
-                    height: 39
+                    height: menuMetrics.row
+                    size: "compact"
                     label: modelData.label
                     selected: preview.mode === modelData.label
                     onActivated: { preview.mode = modelData.label; modePreview.close() }
@@ -309,14 +309,15 @@ Item {
     AnchoredPopup {
         id: browserPreview
         preferAbove: false
-        width: 220; height: 136; padding: 3
+        width: 220
         Column {
-            anchors.fill: parent; spacing: 2
+            width: parent.width; spacing: menuMetrics.gap
             Repeater {
                 model: ["Chrome", "Edge", "Firefox"]
                 StoneButton {
                     required property string modelData
-                    width: parent.width; height: 42; label: modelData
+                    width: parent.width; height: menuMetrics.row; label: modelData
+                    size: "compact"
                     onActivated: browserPreview.close()
                 }
             }

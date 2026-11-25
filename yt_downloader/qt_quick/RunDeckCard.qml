@@ -10,7 +10,8 @@ StoneField {
     property bool showActions: true
     property int slotIndex: -1
     signal chosen()
-    signal actionsRequested(var anchor)
+    // point: where a right-click happened, in card coordinates (null for ⋯).
+    signal actionsRequested(var anchor, var point)
 
     interactive: true
     accessibilityLabel: (record.title || "Run") + ", " + (record.status || "") +
@@ -23,7 +24,8 @@ StoneField {
         anchors.fill: parent
         acceptedButtons: Qt.RightButton
         enabled: card.showActions
-        onClicked: card.actionsRequested(card)
+        // Open on press, as native context menus do.
+        onPressed: function(mouse) { card.actionsRequested(card, Qt.point(mouse.x, mouse.y)) }
     }
 
     RowLayout {
@@ -103,7 +105,7 @@ StoneField {
             accessibilityLabel: "Actions for " + (card.record.title || "")
             size: "inline"
             Layout.preferredWidth: visible ? 31 : 0
-            onActivated: card.actionsRequested(this)
+            onActivated: card.actionsRequested(this, null)
         }
     }
 }

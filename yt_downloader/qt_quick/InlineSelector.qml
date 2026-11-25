@@ -9,7 +9,7 @@ Column {
     property bool expanded: false
     property real reveal: expanded ? 1 : 0
     Behavior on reveal {
-        NumberAnimation { duration: bridge.reducedMotion ? 0 : 240; easing.type: Easing.InOutCubic }
+        NumberAnimation { duration: motion.expand; easing.type: Easing.OutCubic }
     }
     signal chosen(string value)
     spacing: 4

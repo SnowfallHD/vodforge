@@ -10,7 +10,6 @@ AnchoredPopup {
     alignRight: true
     width: Math.min(245, parent.width - 24)
     height: Math.min(250, captionChoices.implicitHeight + topPadding + bottomPadding)
-    padding: 5
     ScrollView {
         anchors.fill: parent
         clip: true
@@ -20,9 +19,10 @@ AnchoredPopup {
         Column {
             id: captionChoices
             width: menu.availableWidth
-            spacing: 2
+            spacing: menuMetrics.gap
             StoneButton {
-                width: parent.width; height: 40
+                width: parent.width; height: menuMetrics.row
+                size: "compact"
                 label: "Off"
                 selected: menu.selectedIndex < 0
                 onActivated: { menu.trackRequested(-1); menu.close() }
@@ -38,7 +38,8 @@ AnchoredPopup {
                 model: menu.tracks
                 StoneButton {
                     required property var modelData
-                    width: parent.width; height: 40
+                    width: parent.width; height: menuMetrics.row
+                    size: "compact"
                     label: modelData.label
                     selected: menu.selectedIndex === modelData.index
                     onActivated: { menu.trackRequested(modelData.index); menu.close() }
