@@ -133,6 +133,10 @@ class QtArtwork:
         self._request_sources: dict[str, tuple[str, ...]] = {}
         self._ready: dict[str, str] = {}
         self._cached_fallback: dict[str, str] = {}
+        # What the request presented when it was queued. A later read can find
+        # the worker's freshly saved file as a fallback, but the views that
+        # rendered the queued value still need the completion repaint.
+        self._queued_fallback: dict[str, str] = {}
         self._unavailable: dict[str, float] = {}
 
     def _private_cached_fallback(self, record: dict[str, Any], key: str) -> str:
@@ -232,6 +236,7 @@ class QtArtwork:
             return fallback
         self._unavailable.pop(key, None)
         self._pending[key] = (dict(record), size, role)
+        self._queued_fallback[key] = fallback
         self._start_next()
         return fallback
 
@@ -325,7 +330,7 @@ class QtArtwork:
             self._start_next()
             return False
         self._pending.pop(key, None)
-        fallback = self._cached_fallback.get(key, "")
+        fallback = self._queued_fallback.pop(key, "")
         if result.value and not result.error:
             self._ready[key] = result.value
         else:
@@ -342,6 +347,7 @@ class QtArtwork:
         self._pending.clear()
         self._request_sources.clear()
         self._cached_fallback.clear()
+        self._queued_fallback.clear()
 
 
 class ThumbnailReductionProvider(QQuickImageProvider):

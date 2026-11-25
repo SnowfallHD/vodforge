@@ -12,6 +12,17 @@ VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$
 # Highlights per public version. Add an entry before rendering a new release so
 # published notes never fall back to another version's text.
 HIGHLIGHTS = {
+    "0.3.0": """- Updated the YouTube download component (yt-dlp 2026.11.23). It fixes downloads that failed with “no downloadable video” after a change on YouTube. When a failure does come from YouTube’s player check, VODForge now says so and suggests checking for updates, instead of pointing to browser access.
+- When YouTube refuses a transfer partway through, VODForge gets a fresh link once and continues. When YouTube is limiting requests, it says so and asks you to wait.
+- A video that failed inside a playlist now shows why in Issues & Recovery and can be retried on its own.
+- Quitting while downloads are running or waiting now asks first and says they will be paused. The Run Deck offers **Resume all** when you come back.
+- Removing a run that saved no files now works while downloads are running, and the remove window says exactly what will happen: files go to the Trash or Recycle Bin, an unfinished download is deleted, or nothing changes.
+- On Windows, Edge, Chrome, Brave, Opera, Vivaldi and Chromium are no longer offered under **YouTube access**, because Windows locks their saved sign-ins while they run. Use Firefox or a cookies.txt file instead.
+- Apple silicon Macs on macOS 15 can now open VODForge. Before, macOS asked for macOS 26 without a reason.
+- Switching between Library, Watch and Forge is faster, menus open faster and line up with the button that opened them, and right-click menus open at the pointer. Tooltips now appear where your pointer is.
+- With **Original audio**, Options now shows what is saved (the source audio, unchanged) instead of settings that don’t apply to it.
+- Turning **Share usage analytics** off, or answering **No thanks**, now stops every analytics request, including anonymous counts. VODForge no longer opens a browser page on first launch.
+""",
     "0.2.9": """- On Macs without Apple’s developer tools (Xcode), which is most Macs, in-app updates and **Repair VODForge** now finish. Before, they failed after downloading. If your Mac is on 0.2.8 or earlier and its updates fail, install this version once from [getvodforge.com](https://getvodforge.com); later updates install by themselves.
 - When an automatic update fails in the background, VODForge now opens the update window with **Repair VODForge** instead of retrying silently.
 - On Windows, an update no longer reports a failure when antivirus software briefly opens the updater’s files, so it installs on the first try.

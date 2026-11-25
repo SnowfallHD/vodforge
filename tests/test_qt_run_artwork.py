@@ -120,6 +120,44 @@ def test_run_thumbnail_metadata_bypasses_previous_unavailable(tmp_path, monkeypa
         owner.close()
 
 
+def test_completion_repaints_even_when_a_read_already_found_the_saved_file(
+    tmp_path, monkeypatch
+):
+    # A view can read the card again after the worker saved the thumbnail but
+    # before the UI thread retires the request. Views that rendered the queued
+    # placeholder still need the completion repaint.
+    from yt_downloader.qt_quick import artwork as artwork_module
+
+    owner = QtArtwork(tmp_path / "artwork")
+    saved = threading.Event()
+    real_save = artwork_module.save_cached_thumbnail_bytes
+
+    def save(*args, **kwargs):
+        path = real_save(*args, **kwargs)
+        saved.set()
+        return path
+
+    monkeypatch.setattr(owner._source, "resolve_asset", lambda *_: None)
+    monkeypatch.setattr(artwork_module, "save_cached_thumbnail_bytes", save)
+    monkeypatch.setattr(
+        artwork_module, "download_bounded_url_bytes", lambda url, **_: image_bytes()
+    )
+    row = metadata()
+    try:
+        assert owner.request(row, role="run") == ""
+        assert saved.wait(3)
+        assert owner.request(row, role="run").startswith("file:")
+        deadline = time.monotonic() + 3
+        repainted = False
+        while owner._pending and time.monotonic() < deadline:
+            repainted = owner.poll() or repainted
+            time.sleep(0.005)
+        assert not owner._pending
+        assert repainted
+    finally:
+        owner.close()
+
+
 def test_run_metadata_changed_during_fetch_discards_stale_publication(
     tmp_path, monkeypatch
 ):
