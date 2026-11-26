@@ -63,6 +63,11 @@ their date; some name modules that have since been removed.
   need it to pass. `tests/test_fast_static_gate.py` fails if the script drifts
   from FAST's commands or either workflow stops running it. Restoring the two
   0.3.0 files makes the script fail ruff_format and bandit.
+- The first CI run of that job disagreed with FAST: it ran on Linux, where mypy
+  reads platform branches differently, and pip installed ruff 0.17.6, whose new
+  rules the signing Mac's 0.16.5 doesn't have. The job now runs on macOS and the
+  static tools are pinned to exact versions in `requirements.txt` here; upgrade
+  them deliberately, fixing what the new version reports in the same change.
 
 ## An update swap briefly leaves no app — 2026-11-25
 

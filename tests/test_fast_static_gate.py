@@ -63,3 +63,20 @@ def test_release_builds_wait_for_fast_static_checks():
         # A failed check stops the build; only QA artifact builds skip it.
         assert "needs.fast-static.result != 'failure'" in jobs[name]["if"]
     assert jobs["fast-static"]["if"] == "${{ !inputs.artifacts_only }}"
+
+
+def test_ci_static_checks_match_the_signing_mac():
+    # FAST runs on the signing Mac. On Linux, mypy reads platform branches
+    # differently, and a newer ruff adds rules: either made CI disagree with FAST.
+    for name in ("tests.yml", "release.yml"):
+        assert _workflow(name)["jobs"]["fast-static"]["runs-on"] == "macos-latest"
+    pins = {}
+    for line in (
+        (ROOT / "engineering-quality/requirements.txt").read_text().splitlines()
+    ):
+        requirement = line.split(";")[0].split("#")[0]
+        if "==" in requirement:
+            name, version = requirement.split("==")
+            pins[name.strip().lower()] = version.strip()
+    for tool in ("ruff", "mypy", "bandit", "vulture", "pip-audit"):
+        assert tool in pins, f"{tool} must be pinned to an exact version"

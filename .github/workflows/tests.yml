@@ -13,7 +13,8 @@ jobs:
   # The FAST release gate's blocking static checks, so a failure appears on the
   # commit that caused it, not during release testing.
   fast-static:
-    runs-on: ubuntu-latest
+    # macOS, like the signing Mac that runs FAST: mypy checks platform branches.
+    runs-on: macos-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -24,7 +25,7 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements-dev.txt -r engineering-quality/requirements.txt
       - name: Install media test tools
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg libegl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0
+        run: brew list ffmpeg >/dev/null 2>&1 || brew install ffmpeg
       - name: Run FAST static checks
         env:
           QT_QPA_PLATFORM: offscreen

@@ -4,12 +4,14 @@ psutil>=7,<8
 pytest-cov>=6,<8
 pytest-timeout>=2.3,<3
 jsonschema>=4.25,<5
-ruff>=0.12,<1
-mypy>=1.17,<2
-bandit>=1.8,<2
-pip-audit>=2.9,<3
+# Static-check tools are pinned so FAST on the signing Mac and CI's fast-static
+# job give the same answer; a newer release can add rules. Upgrade them deliberately.
+ruff==0.16.5
+mypy==1.20.2
+bandit==1.9.4
+pip-audit==2.10.1
 radon>=6,<7
-vulture>=2.14,<3
+vulture==2.16
 mutmut>=3.3,<4
 pyobjc-framework-Quartz>=11,<13; sys_platform == "darwin"
 # Accessibility drivers for runners/release_journey.py.
