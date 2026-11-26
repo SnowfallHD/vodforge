@@ -1,63 +1,107 @@
 {
-  "captured": "2026-09-29",
-  "interface": "actual Qt Quick app",
+  "captured": "2026-11-25",
+  "interface": "actual Qt Quick app, signed 0.3.0 release build",
+  "window": "1280x820 points (Mac at 2x, Windows at 100% scale)",
+  "sample_library": "scripts/seed_public_design_profile.py: twelve fictional items (ten MP4, two MP3) and one stopped run; artwork made from the repository's generated nature images; telemetry off",
+  "notes": "Unmodified window captures (macOS with its own window shadow; Windows with a soft added shadow), placed on a desktop wallpaper. Titles, channels, descriptions, links and source facts are fictional; output facts are measured from the sample files. No personal media or library appears.",
   "screenshots": [
     {
-      "file": "recovery.png",
-      "sha256": "57ce09c5a9d8be9b971a9188fa348665372db506c4fed573b8e644bb7f44c1ab",
-      "kind": "native-macos-app-screenshot",
-      "sourceCommit": "0ea952f",
-      "sampleMedia": "fictional nature fixture",
-      "designStatus": "development preview, not public release 0.2.2"
+      "file": "mac/forge.jpg",
+      "sha256": "ee0a9eedf0ab334c2563e082f0c95ce4ee13cc4ea32ce251cf96559d84b8f854",
+      "platform": "macOS",
+      "app": "VODForge 0.3.0, signed release build (64c5746)",
+      "frame": "macOS Catalina night wallpaper"
     },
     {
-      "file": "watch.png",
-      "sha256": "7de1edf5cbf91453cb21d4c773b3fef5090db6ca2edde62bd797dbdd08eeca7e",
-      "kind": "native-macos-app-screenshot",
-      "sourceCommit": "0ea952f",
-      "sampleMedia": "fictional nature fixture",
-      "designStatus": "development preview, not public release 0.2.2"
+      "file": "mac/library-detail.jpg",
+      "sha256": "9ed58d9c555697b02b3a5844295f99addd73bff02b85ae4e82e96bb37a066657",
+      "platform": "macOS",
+      "app": "VODForge 0.3.0, signed release build (64c5746)",
+      "frame": "macOS Catalina night wallpaper"
     },
     {
-      "file": "library-detail.png",
-      "sha256": "ea9a38a7948a629e17090c9a7f9431da554d4300dd6265249cf30b852bf3341b",
-      "kind": "native-macos-app-screenshot",
-      "sourceCommit": "0ea952f",
-      "sampleMedia": "fictional nature fixture",
-      "designStatus": "development preview, not public release 0.2.2"
+      "file": "mac/library.jpg",
+      "sha256": "17528c71acf215b35a3155b726d729cd5f902a50ac655e63800b30c9fa5ecdc1",
+      "platform": "macOS",
+      "app": "VODForge 0.3.0, signed release build (64c5746)",
+      "frame": "macOS Catalina night wallpaper"
     },
     {
-      "file": "library.png",
-      "sha256": "9c6442aa389c0f148b9b3302f0f4558bbf53949bcdd111ff28e9a6eaf38cbe49",
-      "kind": "native-macos-app-screenshot",
-      "sourceCommit": "0ea952f",
-      "sampleMedia": "fictional nature fixture",
-      "designStatus": "development preview, not public release 0.2.2"
+      "file": "mac/my-files.jpg",
+      "sha256": "6e2b0b973fc19a484691fed57067d56d736c75d64cefe029d5b614149e2e2768",
+      "platform": "macOS",
+      "app": "VODForge 0.3.0, signed release build (64c5746)",
+      "frame": "macOS Catalina night wallpaper"
     },
     {
-      "file": "my-files.png",
-      "sha256": "d146b69aa747534e7652fab838489f5c91e94b89e287e2c57de4ab3efd494211",
-      "kind": "native-macos-app-screenshot",
-      "sourceCommit": "0ea952f",
-      "sampleMedia": "fictional nature fixture",
-      "designStatus": "development preview, not public release 0.2.2"
+      "file": "mac/player.jpg",
+      "sha256": "99b2f6049392f72b79ced6003f702aebd8d554c902fb611a8a70fe2a0994c4a4",
+      "platform": "macOS",
+      "app": "VODForge 0.3.0, signed release build (64c5746)",
+      "frame": "macOS Catalina night wallpaper"
     },
     {
-      "file": "forge.png",
-      "sha256": "6a37a1b4d809fab7fcdbab5f2297f940e6a2ae6544bf084422cd93c08d2e816f",
-      "kind": "native-macos-app-screenshot",
-      "sourceCommit": "0ea952f",
-      "sampleMedia": "fictional nature fixture",
-      "designStatus": "development preview, not public release 0.2.2"
+      "file": "mac/recovery.jpg",
+      "sha256": "6e4f1fc147339ea3fc0d6a6626a13d2a2f30a9345f767ae54eb3a69324fd92fe",
+      "platform": "macOS",
+      "app": "VODForge 0.3.0, signed release build (64c5746)",
+      "frame": "macOS Catalina night wallpaper"
     },
     {
-      "file": "player.png",
-      "sha256": "18500beaa5858e6a0deeb44bd7d93374070ad1b9fe69d8355190456516162fd0",
-      "kind": "native-macos-app-screenshot",
-      "sourceCommit": "0ea952f",
-      "sampleMedia": "fictional nature fixture",
-      "designStatus": "development preview, not public release 0.2.2"
+      "file": "mac/watch.jpg",
+      "sha256": "deb2e81e45e9e106cbe228e7453e3a68fc1f225a49c5f44e12e3b3af7577fc06",
+      "platform": "macOS",
+      "app": "VODForge 0.3.0, signed release build (64c5746)",
+      "frame": "macOS Catalina night wallpaper"
+    },
+    {
+      "file": "windows/forge.jpg",
+      "sha256": "16f2ef104a55cfa75fb7e92f03670b80ce0f58c355ead394f2ee1b7df79cde23",
+      "platform": "Windows 10",
+      "app": "VODForge 0.3.0, signed release build (64c5746)",
+      "frame": "Windows 10 default wallpaper"
+    },
+    {
+      "file": "windows/library-detail.jpg",
+      "sha256": "80f7118429f0cb89d1d6e5f73bad303155f0b7085563bcd9af162ef23b0554e4",
+      "platform": "Windows 10",
+      "app": "VODForge 0.3.0, signed release build (64c5746)",
+      "frame": "Windows 10 default wallpaper"
+    },
+    {
+      "file": "windows/library.jpg",
+      "sha256": "dff866625520f0b0f316863a43875668f0d69965b5964e74f682527537d415fa",
+      "platform": "Windows 10",
+      "app": "VODForge 0.3.0, signed release build (64c5746)",
+      "frame": "Windows 10 default wallpaper"
+    },
+    {
+      "file": "windows/my-files.jpg",
+      "sha256": "8778e2dac68743b743968f2f0f76020ebe22033612bed7910e3ebdc1c77db43c",
+      "platform": "Windows 10",
+      "app": "VODForge 0.3.0, signed release build (64c5746)",
+      "frame": "Windows 10 default wallpaper"
+    },
+    {
+      "file": "windows/player.jpg",
+      "sha256": "31d0a149cf36a230adcb98c397eb2afeb104c6f0777d1d499f1cdd8dd29991d2",
+      "platform": "Windows 10",
+      "app": "VODForge 0.3.0, signed release build (64c5746)",
+      "frame": "Windows 10 default wallpaper"
+    },
+    {
+      "file": "windows/recovery.jpg",
+      "sha256": "8ced3b48086154d0ce6ef61f7ff3521367d282feadc3f309d3a0510639825d3f",
+      "platform": "Windows 10",
+      "app": "VODForge 0.3.0, signed release build (64c5746)",
+      "frame": "Windows 10 default wallpaper"
+    },
+    {
+      "file": "windows/watch.jpg",
+      "sha256": "a9244b1c9dce06027adbe3000d15142723c94d186a177c14fc3709e3704d180b",
+      "platform": "Windows 10",
+      "app": "VODForge 0.3.0, signed release build (64c5746)",
+      "frame": "Windows 10 default wallpaper"
     }
-  ],
-  "notes": "Unmodified native screenshots. Generated nature artwork is sample media. Fictional source links and activity are illustrative. No private user library is included."
+  ]
 }

@@ -15,11 +15,13 @@ Turn YouTube videos and playlists into organized **MP4 video**, **MP3 audio**, o
 **Original audio**. Choose your quality, follow clear progress, and keep everything
 in a searchable Library with built-in playback.
 
-![Actual VODForge Watch workspace with fictional nature media](assets/readme/current-design/watch.png)
+![VODForge Watch on macOS with a fictional nature library](assets/readme/current-design/mac/watch.jpg)
 
-> These native screenshots show the Qt Quick interface with a fictional nature
-> library. See the latest release for the available version. No personal media
-> appears in these assets.
+![VODForge Watch on Windows with a fictional nature library](assets/readme/current-design/windows/watch.jpg)
+
+> Screenshots of VODForge 0.3.0 on macOS and Windows with a fictional nature
+> library; no personal media appears in them. Windows versions of every screen
+> are in [assets/readme/current-design/windows](assets/readme/current-design/windows).
 > [Screenshot provenance](assets/readme/current-design/manifest.json) · [Press assets](https://getvodforge.com/press/)
 
 [Install](#install-a-packaged-release) · [Using VODForge](#using-vodforge) ·
@@ -57,7 +59,7 @@ unfinished download is deleted, or nothing changes. Quitting while downloads are
 running or waiting asks first; they return as Paused, and the Run Deck offers
 **Resume all**.
 
-![Actual Forge activity, output facts and Run Deck](assets/readme/current-design/forge.png)
+![Forge with a completed run, its output facts and the Run Deck](assets/readme/current-design/mac/forge.jpg)
 
 ### Library: find it and keep the details
 
@@ -66,9 +68,9 @@ scoped to Library. Item details keep source descriptions, tags, private notes, s
 versions and output facts together. Copy controls preserve full source URLs and text.
 Local description edits retain the original provider information.
 
-![Actual Library with nature playlists and channels](assets/readme/current-design/library.png)
+![Library with channels, playlists and collections](assets/readme/current-design/mac/library.jpg)
 
-![Actual Library item details](assets/readme/current-design/library-detail.png)
+![Library item details with description, tags and notes](assets/readme/current-design/mac/library-detail.jpg)
 
 ### Watch: a place for your saved media
 
@@ -80,7 +82,7 @@ The internal player preserves the full picture in Fit mode, supports playback co
 and local previews, and returns to the route that opened it. More to Watch and source
 and output information remain accessible around the player.
 
-![Actual native player with fictional nature footage](assets/readme/current-design/player.png)
+![The built-in player with More to Watch](assets/readme/current-design/mac/player.jpg)
 
 ### My Files: browse locations on your computer
 
@@ -90,7 +92,7 @@ ancestors through its overflow menu; compact **Back** sits below it. The right s
 shows the current folder or selected file and **Open this folder** opens that exact
 location. Select a video, thumbnail or metadata file for its relevant details.
 
-![Actual My Files with recognizable folder symbols](assets/readme/current-design/my-files.png)
+![My Files browsing the saved folders](assets/readme/current-design/mac/my-files.jpg)
 
 ### Issues & Recovery: resolve interrupted runs and missing files
 
@@ -101,7 +103,7 @@ Custom controls used by Forge appear here. A retry stays in this view, updates i
 state as work advances, and leaves the list only after success. Ordinary new downloads
 are not added to recovery just because they are running.
 
-![Actual Issues and Recovery with a fictional stopped run](assets/readme/current-design/recovery.png)
+![Issues & Recovery with a stopped run](assets/readme/current-design/mac/recovery.jpg)
 
 The app uses shared vector symbols, floating popup shadows and native control
 semantics. Support offers separate, plain checkboxes for a reply and optional deeper

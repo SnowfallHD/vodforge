@@ -70,12 +70,13 @@ fixed public account URL, without media or installation context.
 
 ## Public screenshots and reproduction
 
-Seven unmodified native app captures live in `assets/readme/current-design/`:
-Forge, Library, Watch, player, Library details, My Files and Issues & Recovery.
-They were captured in late September 2026, before the native macOS toolbar
-header, so they don't show the current header. The JSON manifest records source
-identity and hashes. Nature artwork is fictional
-sample media; interface pixels are from the actual packaged Qt application.
+The README shows seven screens on macOS and Windows, in
+`assets/readme/current-design/mac/` and `windows/`: Forge, Library, Watch, the
+player, Library details, My Files and Issues & Recovery. They are unmodified
+window captures of VODForge 0.3.0 placed on a desktop wallpaper, made from a
+fictional sample library (`scripts/seed_public_design_profile.py`); the JSON
+manifest records each file's hash, platform and build. How to retake them is in
+`assets/readme/README.md`.
 Generated reference images guide website composition and are not public product captures.
 
 `scripts/seed_public_design_profile.py` creates an isolated sample HOME using the
