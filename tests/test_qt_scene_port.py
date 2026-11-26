@@ -85,10 +85,21 @@ def visual_item(root, name: str):
 
 
 def polish_scene(item):
-    """Complete scheduled nested positioners before measuring their geometry."""
+    """Complete scheduled nested positioners before measuring their geometry.
+
+    Polishing one child can relayout its parent and delete a sibling that is
+    still in this list (a Repeater or Loader rebuilding). Skip items deleted
+    since the list was read: PySide then returns a dead wrapper, which on
+    Windows CI surfaced as "QMetaObject has no attribute childItems".
+    """
+    from PySide6.QtQuick import QQuickItem
+    from shiboken6 import isValid
+
     for child in item.childItems():
-        polish_scene(child)
-    item.ensurePolished()
+        if isValid(child) and isinstance(child, QQuickItem):
+            polish_scene(child)
+    if isValid(item):
+        item.ensurePolished()
 
 
 def settle_popups(window):
