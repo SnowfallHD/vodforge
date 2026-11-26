@@ -51,6 +51,11 @@ interrupted runs. Switch to Technical for the detailed, vertically scrolling log
 The Run Deck shows artwork, state and progress; **All N runs** opens the full scrollable
 card list. Active and queued work, stopped/canceled, failed and skipped runs remain
 visible alongside completed exports. Removing a queued item removes that item.
+Removing a run that saved no files works while other downloads run, and the
+confirmation says what will happen: files go to the Trash or Recycle Bin, an
+unfinished download is deleted, or nothing changes. Quitting while downloads are
+running or waiting asks first; they return as Paused, and the Run Deck offers
+**Resume all**.
 
 ![Actual Forge activity, output facts and Run Deck](assets/readme/current-design/forge.png)
 
@@ -204,9 +209,17 @@ and [measured export guide](https://getvodforge.com/mp4-export-settings/).
 Failures pair a plain-language explanation with a practical next step. Switch
 to **Technical** for the recorded cause and process details; older records that
 lack those details say so. NVIDIA failures explain how to retry with CPU encoding.
+When YouTube's player check fails, the message says it is a YouTube change and
+suggests checking for updates. If YouTube refuses a transfer partway through,
+VODForge gets a fresh link once and continues; when YouTube is limiting requests,
+it says so and asks you to wait. A video that fails inside a playlist shows its
+reason in Issues & Recovery and can be retried on its own.
 
-Updates close and relaunch the app automatically after verified installation.
-Windows targets the running app’s folder even when another copy is registered,
+With automatic updates on (the default), a new release downloads and is verified
+in the background, then installs when you quit; **Install now** restarts sooner.
+A downloaded update is also offered in a window when you next open the app.
+Installation waits while downloads, queued runs or local conversions are active,
+and the app reopens on the new version afterwards. Windows targets the running app’s folder even when another copy is registered,
 and the helper runs without a PowerShell console. If installation fails, use
 **Repair VODForge** where offered to download and verify the latest official
 installer. Repair backs up saved app data and checks preservation before relaunch;
@@ -379,7 +392,9 @@ It does not require an external player or shell `PATH` configuration for package
 [Releasing VODForge](docs/release.md) is the full guide: what a release publishes,
 the checks that must pass first (CI, the engineering-quality harness, telemetry
 journeys, and hands-on testing on an Apple silicon Mac, an Intel Mac and a Windows
-PC), and the steps to draft, sign, test and publish.
+PC), and the steps to draft, sign, test and publish. FAST's blocking style, type, security
+and dependency checks (`scripts/fast_static_checks.py`) run on every push and
+again before the draft workflow builds anything.
 
 In short, the **Build Release Draft** GitHub Actions workflow builds and signs the
 Windows files, builds the unsigned universal Mac app and creates a draft release;
@@ -406,19 +421,25 @@ Windows:
 ```powershell
 python -m venv .venv
 . .\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements-dev.txt
+python -m pip install -r requirements-dev.txt -r engineering-quality/requirements.txt
 python -m pytest -q
 python -m compileall -q yt_downloader main.py
+python scripts/fast_static_checks.py
 ```
 
 macOS:
 
 ```bash
 ./install_macos_dependencies.sh
+.venv/bin/python -m pip install -r engineering-quality/requirements.txt
 .venv/bin/python -m pytest -q
 .venv/bin/python -m compileall -q yt_downloader main.py macos_smoke_test.py
 .venv/bin/python macos_smoke_test.py
+.venv/bin/python scripts/fast_static_checks.py
 ```
+
+`scripts/fast_static_checks.py` runs the same formatting, lint, type, security
+and dependency checks as the FAST gate; fix anything it reports before pushing.
 
 The suite covers export planning, output preservation, metadata, path safety,
 queue and player lifetime, consent, and UI ownership/geometry. Native tests are

@@ -1,4 +1,16 @@
-# VODForge 0.2.5 release showcase
+# What's New assets
+
+**Current status:** no showcase is shown. `SHOWCASE_MODE` in
+`yt_downloader/whats_new.py` has been `"none"` since 0.2.6, so upgraders see no
+What's New window; Help → What's New still opens the last catalog. The text
+below describes the 0.2.5 showcase that used these files, and the earlier Tk-era
+captures. `scripts/focus_ui_preview.py`, mentioned below, was removed with the
+Tk interface.
+
+To publish a new showcase, set `SHOWCASE_MODE` and a new `SHOWCASE_ID` in that
+release, and package any new clips on Mac and Windows with their manifest hashes.
+
+## VODForge 0.2.5 release showcase
 
 The `release-0.2.5-design-v1` catalog intentionally introduces the full workspace
 redesign plus the current Custom settings, file movement and reliability changes.
@@ -23,7 +35,7 @@ issues are fixed. Technical diagnostic fields are not product-facing highlights.
 
 ---
 
-# Feature preview assets
+## Feature preview assets
 
 The user-requested release orientation will use short, actual VODForge UI recordings
 produced in Shotbase, with a visible cursor, deliberate interaction, readable result
@@ -43,7 +55,7 @@ The initial silent decoder test pattern is a test fixture, not a feature recordi
 The release catalog excludes longstanding Everyday/Optimized for presets. Watch
 and Library are described as updated views/actions, not newly introduced destinations.
 
-## Historical showcase captures
+### Historical showcase captures
 
 These are native VODForge UI captures, not generated UI mockups. Activity is a
 direct Forge capture after a real YouTube download (DMSUSyAy0qM), with telemetry

@@ -37,6 +37,24 @@ compared with the original, and taken back out. Run it like the release journey;
 remotely with `JOURNEY=deletion_journey.py mac-remote-journey.sh ...` or
 `windows-release-journey.ps1 -Journey deletion_journey.py`.
 
+`update_journey.py` updates an older signed build (the baseline) to the release
+candidate through the app's own updater, against a local QA update feed, with
+telemetry sent only to the preview service. `--scenario install_on_quit` lets the
+automatic update download and verify, quits, and requires the candidate to open;
+`--scenario repair` fails the first download and requires **Update needs
+attention** and a working **Repair VODForge**. Both then reopen with a newer
+version served to check the update window on launch. On a Mac it hides Xcode and
+the Command Line Tools from the app, as on most people's Macs; on Windows it holds
+the helper's ready file open, as antivirus software can. Run it on each machine
+(`mac-remote-journey.sh` with `JOURNEY=update_journey.py`, or
+`windows-release-journey.ps1 -Journey update_journey.py`); the release gate needs
+all six results. Build the baseline from the candidate's source labelled as the
+previous version: on a Mac, the draft's `unsigned-review` app with its version
+files and Info.plist changed and an ad-hoc signature (download it before
+finalizing, which deletes it); on Windows, `windows-bootstrap.ps1 -PreviewTelemetry
+-Version <previous>`. Job IDs for `windows-release-journey.ps1` allow letters,
+digits and hyphens only, and `-Installer` needs an install folder that doesn't exist.
+
 `VODFORGE_NATIVE_TRASH_RECEIPTS=<file.jsonl> pytest tests/test_archive_trash_hierarchy.py`
 runs the 56 deletion-hierarchy cases through the real system Trash on macOS or
 Windows instead of a stand-in folder, writing one receipt per file.
@@ -121,4 +139,4 @@ bounds with a second identity check after capture, recorded explicitly as
 
 After `restart_observed`, request the final normal quit with `--control-action finish` on that visible event. A receipt is not accepted merely because event names exist: the collector validates order, timezone-aware timestamps, native window receipts, screenshots and hashes, two clean launches, immutable candidate/archive/bundle identity before and after the journey, bundled ffprobe readability, pipeline diagnostics, persistent history, stable output hashes, and cleanup.
 
-This recorder standardizes evidence collection; it is not itself a UI automation engine. Until a repository-owned native driver can reliably address VODForge's custom Tk navigation, the tier remains explicitly automation-assisted and reports missing UI evidence as a benchmark gap rather than promoting headless success.
+This recorder standardizes evidence collection; it is not itself a UI automation engine, and the tier stays explicitly automation-assisted: missing UI evidence is reported as a gap, never replaced by headless success. For unattended pre-release testing, `release_journey.py`, `deletion_journey.py` and `update_journey.py` (above) drive the Qt app through the OS accessibility interface.

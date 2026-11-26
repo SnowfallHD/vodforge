@@ -45,6 +45,37 @@ Each entry below records a defect class that was found, why the existing checks
 missed it, and what now covers it, newest first. Entries describe the code at
 their date; some name modules that have since been removed.
 
+## FAST runs before a release is built — 2026-11-25
+
+- Found: the signed 0.3.0 candidate passed CI, every update test and every
+  release journey, then failed FAST on line wrapping in four files (one shipped)
+  and a Bandit B105 false alarm on `"attribution_claim_token": None`. Both came in
+  after 0.2.9 and FAST had not been run since, so nothing reported them until the
+  files were already signed. 0.3.0 was published from the tested commit and the
+  two issues were fixed on main afterwards.
+- Why it was missed: the Tests workflow runs the pytest groups but not FAST's
+  formatting, lint, type, security or dependency commands, and the release guide
+  listed FAST without saying it must run before the draft.
+- Now: `scripts/fast_static_checks.py` runs FAST's own blocking commands
+  (`static_analysis.tool_commands`, filtered by `release_gate.FAST_REQUIRED_COMMANDS`
+  minus the pytest groups CI already runs). The Tests workflow's `fast-static` job
+  runs it on every push, and the release workflow's `windows` and `macos` builds
+  need it to pass. `tests/test_fast_static_gate.py` fails if the script drifts
+  from FAST's commands or either workflow stops running it. Restoring the two
+  0.3.0 files makes the script fail ruff_format and bandit.
+
+## An update swap briefly leaves no app — 2026-11-25
+
+- Found: the Intel install-on-quit update journey for 0.3.0 failed with
+  `FileNotFoundError` on the app's `Info.plist`. The Mac ended on 0.3.0, Developer
+  ID signed. The journey polls the installed version every second, and on the
+  slower Intel Mac it read the bundle in the moment the installer had moved the
+  old app aside and not yet moved the new one in.
+- Fix: `update_journey.py` treats a missing or half-written `Info.plist` as not
+  yet installed. The app's swap was correct; this was the harness. The Intel rerun
+  passed. Any poll of an app that an installer replaces must tolerate its brief
+  absence.
+
 ## Locked files, slow catch-up and the remaining unknowns — 2026-11-11
 
 Defects left open by the earlier passes:
@@ -1468,13 +1499,11 @@ as invalid evidence and corrected before the fail-before run.
 
 ## Native control lifecycle gate
 
-`unit_static.native_surface_contract` runs the opt-in source-native control suite
-with a real Tk display. NORMAL/DEEP release evaluation requires this scenario.
-Missing, empty, skipped, or failing native evidence is not a pass. Coverage includes
-outside clicks (including targets that stop event propagation), Escape, owner/anchor
-unmapping, window focus transfer, repeated cleanup, field chrome coverage and
-Canvas/ttk field-image parity. These checks complement, not replace, packaged
-Mac/Windows interaction evidence and actual cross-application switching.
+`unit_static.native_surface_contract` runs the rendered Qt scene and component
+suites offscreen (see [Commands](#commands)). NORMAL/DEEP release evaluation
+requires this scenario. Missing, empty, skipped, or failing native evidence is not
+a pass. These checks complement, not replace, packaged Mac/Windows interaction
+evidence and actual cross-application switching.
 
 The runner supplies the intended source and harness roots to its child process,
 ahead of inherited Python search paths. The native report plugin records actual
@@ -1491,24 +1520,18 @@ split focused reruns and an interrupted process cannot substitute for a clean,
 uninterrupted combined execution and teardown. Keep OS-injected and physical
 input claims separate. Only one native GUI owner may run on a host at a time.
 
-The earlier choice-control audit excluded `tk.Menu` command/context menus and
-checked selection rather than dismissal lifetime. Native command menus remain
-intentional separate controls, not migrated choice fields. Do not describe that
-inventory as all menus. Standard fields share `ui_chrome.field_border_image`;
-adapters retain native editing/layout mechanics, not separate border designs.
-
 This directory is an isolated adversarial test system for answering a bounded question with receipts:
 
 > Is VODForge actually well engineered, performant, reliable, secure, and maintainable under the scenarios we executed?
 
-The harness is intentionally not another downloader. Its high-volume integration layer constructs a real production `DownloadJob` and calls the shared `DownloadWorkerCore._download_worker_single` owner without constructing Tk. From that point onward VODForge performs its own yt-dlp preflight/download, export planning, `.vfstage` ownership, FFmpeg post-processing/transcode, ffprobe validation, atomic final commit, metadata/thumbnail sidecars, and worker events. Tk and Qt consume this same worker owner.
+The harness is intentionally not another downloader. Its high-volume integration layer constructs a real production `DownloadJob` and calls the shared `DownloadWorkerCore._download_worker_single` owner without constructing the UI. From that point onward VODForge performs its own yt-dlp preflight/download, export planning, `.vfstage` ownership, FFmpeg post-processing/transcode, ffprobe validation, atomic final commit, metadata/thumbnail sidecars, and worker events. The Qt app consumes this same worker owner.
 
 ## Evidence tiers
 
 Every scenario has one of three non-interchangeable evidence tiers:
 
 1. `unit_static` — existing/unit/property tests plus direct production-helper contracts, lint, type, security, dependency, dead-code, complexity, mutation, and change-surface signals. These scenarios do not claim to execute the complete worker.
-2. `headless_production_pipeline` — real VODForge worker orchestration with real yt-dlp, FFmpeg, ffprobe, files, local HTTP faults, and process/resource measurement, but no Tk UI.
+2. `headless_production_pipeline` — real VODForge worker orchestration with real yt-dlp, FFmpeg, ffprobe, files, local HTTP faults, and process/resource measurement, but no UI.
 3. `packaged_app_e2e` — an exact packaged artifact driven through its visible UI, real worker, yt-dlp/FFmpeg, final media, shutdown/restart behavior, and independent artifact/output receipts.
 
 A headless pass is never reported as full-application proof. If the packaged tier did not run, the report says `skipped` and leaves UI/settings/queue/lifecycle integration unproven.
@@ -1522,15 +1545,9 @@ denied permission before granting permission and exercising real Python HTTP
 serialization against the loopback Worker/D1. No claim receipt substitutes for
 analytics permission.
 
-Run real Tk event-loop timing checks separately with:
-
-```sh
-VODFORGE_DISABLE_TELEMETRY=1 VODFORGE_NATIVE_UI_TESTS=1 PYTHONPATH=. \
-  .venv/bin/pytest -q -s tests/test_analytics_native_journey.py
-```
-
-These intercept region responses, browser opening and claim transport. They
-measure the source owner's browser-request/prompt timing, not OS browser focus.
+The Qt consent and refusal journeys are in `tests/test_qt_analytics_session.py`
+(real transports, every request recorded). The former Tk event-loop timing check,
+`tests/test_analytics_native_journey.py`, was removed with the Tk interface.
 
 (The app no longer opens a browser page on first launch, and
 `quality_harness/analytics_browser_journey.js` was removed with it; the rest of
@@ -1608,8 +1625,8 @@ separate settings/help menus. The scene suite additionally checks momentum
 wheel deltas, menu anchors, header geometry across tabs, and mini-player
 continuity. The offscreen gate pins Qt Quick's software backend, matching the
 package-build source tests. Both scene and component groups must pass in
-separate processes; either failure fails the native-surface gate. The default
-`--ui tk` retains the legacy Tk contract for Tk builds. The separate
+separate processes; either failure fails the native-surface gate. The Tk
+contract was removed with the Tk interface. The separate
 signed packaged-app and preview-D1 journeys remain required; an offscreen QML
 source test cannot establish an installed desktop journey.
 
@@ -1724,8 +1741,7 @@ For Qt, return to Library > Folders > the saved item > Description after the
 driver-requested restart. Record `restart_observed` there with
 `--observed-text` set to the exact fixture Description. The verifier binds that
 event to the second launch's private Qt visibility receipt and checks rendered
-geometry, selected owner and projection identity. Tk continues to require its
-own post-restart history-load activity line.
+geometry, selected owner and projection identity.
 
 If a UI surface cannot be reached, keep it missing and use `--allow-gap` only
 when recording the next later event. The recorder adds the skipped event names
@@ -1750,10 +1766,10 @@ Include a completed packaged receipt in a normal/deep comparison:
 5. observe progress produced by the real worker;
 6. observe truthful completion;
 7. use `Command+2` (`Ctrl+2` on Windows/Linux) to open Library and inspect the committed item;
-8. prove the known nonempty fixture Description is visibly inside the unchanged 360 px Selected Item rail, taller than the two-line-capped Tags region, and capped at the Library table's lower edge while the extreme title retains at least two measured visible lines;
+8. open Library → Folders, select the saved export, open its Description tab, and prove the known nonempty fixture Description is visible there;
 9. request normal app shutdown.
 
-Each observation is a structured event in `driver-events.json`: `app_visible`, `url_entered`, `settings_observed`, `forge_started`, `progress_observed`, `completion_observed`, `library_observed`, `library_description_observed`, `shutdown_requested`, `restart_requested`, and `restart_observed`. The recorder copies screenshots under the session's `ui/` directory, hashes them, timestamps the event, and rejects duplicates or wrong order. `library_description_observed` must include the exact visible fixture text. A private, launch-bound Tk receipt independently proves that the Description heading/body are mapped and contained, its first display line is visible, its body is taller than Tags and ends at the measured Library table edge, the rail's configured height remains the pre-existing 360 px while any responsive grid allocation is recorded separately, Tags is bounded to two requested text lines, the stress title retains at least two font-measured visible lines, and the stress title/path were ellipsized. The `control.json` action `relaunch` makes the session reopen the same exact artifact with the same isolated app data so restart/history and media hashes can be checked before the final quit.
+Each observation is a structured event in `driver-events.json`: `app_visible`, `url_entered`, `settings_observed`, `forge_started`, `progress_observed`, `completion_observed`, `library_observed`, `library_description_observed`, `shutdown_requested`, `restart_requested`, and `restart_observed`. The recorder copies screenshots under the session's `ui/` directory, hashes them, timestamps the event, and rejects duplicates or wrong order. `library_description_observed` must include the exact visible fixture text. A private, launch-bound Qt visibility receipt independently proves that the Description heading and body are mapped and inside the Folder Inspector, and records their geometry, the selected owner and the projection identity. The `control.json` action `relaunch` makes the session reopen the same exact artifact with the same isolated app data so restart/history and media hashes can be checked before the final quit.
 
 The deeper packaged profile is first-class rather than an implied consequence of the smoke journey:
 
@@ -1765,25 +1781,18 @@ The deeper packaged profile is first-class rather than an implied consequence of
 
 It additionally requires visible receipts for a throttled active run, a second run queued through the UI, cancellation requested through the UI, a clean cancelled state, the queued job advancing, and that queued job reaching completion. A smoke pass therefore proves only the happy path plus restart and does not claim queue/cancellation coverage.
 
-The UI driver is observation/control only. It does not call production Python helpers, forge outputs, or synthesize worker events. VODForge exposes real-user view shortcuts (`Command+1/2/3` on macOS, `Ctrl+1/2/3` on Windows/Linux) through the same canonical view authority as the visible navigation. This gives native drivers a stable route when Tk children are not exposed through accessibility. Missing Library evidence still fails the tier instead of being replaced by shortcut existence or headless evidence.
+The UI driver is observation/control only. It does not call production Python helpers, forge outputs, or synthesize worker events. VODForge exposes real-user view shortcuts (`Command+1/2/3` on macOS, `Ctrl+1/2/3` on Windows/Linux) through the same canonical view authority as the visible navigation. This gives native drivers a stable route that does not depend on clicking the navigation buttons. Missing Library evidence still fails the tier instead of being replaced by shortcut existence or headless evidence.
 
 ### Native driver keyboard fallback
 
 If a coordinate click only changes hover and does not invoke the control, stop
 repeating it. A hover screenshot is not proof of activation or an app click defect.
-Use ordinary keyboard navigation and observe the resulting window:
-
-- With focus in the Forge URL entry, press Tab twice (format selector, then
-  Settings) and Space. Verify that **VODForge Settings** actually opens before
-  recording `settings_observed`. This route was observed in the signed 0.2.0
-  macOS arm64 candidate; recheck focus/order for other layouts and platforms.
-- Escape closes Settings. Verify the Forge window before continuing.
-- Use the existing view shortcuts above for Library and Activity.
+Find the control by its accessible name, as `runners/release_journey.py` does, or
+use ordinary keyboard navigation, and observe the resulting window before
+recording an event. Use the view shortcuts above for Library and Activity.
 
 Do not assume Command-comma is implemented or use invisible callback invocation
 as a substitute. Keep failed/limited runs intact; retry with new session evidence.
-The keyboard Settings observation alone does not prove download, completion,
-Library, or restart steps.
 
 ## Corpus policy
 

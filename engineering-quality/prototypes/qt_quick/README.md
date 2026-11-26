@@ -1,3 +1,9 @@
+> **Historical.** This records the Qt Quick port while it was being qualified
+> beside the Tk interface (September 2026). The port is complete: the app is
+> Qt-only, the Tk interface has been removed, and the current app lives in
+> `yt_downloader/qt_quick`. Current behavior is described in the main README and
+> `docs/`. `plain_qt.py` and `resize_probe.py` here are the original experiments.
+
 # Qt Quick port in progress
 
 The resize experiment has become an isolated application port under
